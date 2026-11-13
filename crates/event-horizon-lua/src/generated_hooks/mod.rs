@@ -690,10 +690,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "world_hold",
         "cannot: world_hold: unsupported: WorldHold borrows render state (render thread)",
     ),
-    (
-        "world_primitives",
-        "cannot: world_primitives: unsupported: WorldPrimitives borrows render state (render thread)",
-    ),
+    ("world_primitives", "generated"),
 ];
 
 pub use horizon_client::mod_api::HookSide;
@@ -1233,14 +1230,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 4;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 5;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "dffca52ae7d390b5";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "32c709323a93e4ae";
 
 #[cfg(test)]
 mod test_support;
@@ -1709,6 +1706,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "trample",
     "vehicle_moved_v2",
     "wind_burst",
+    "world_primitives",
 ];
 
 /// The generated hooks whose `kind` filter runs: `horizon.on` rejects a
@@ -2280,6 +2278,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(trample, none, horizon_client::mod_api::TrampleEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: pos, fall_distance: copy]);
     gen_cancel!(vehicle_moved_v2, game_mut, horizon_client::mod_api::VehicleMovedV2Event<'_>, (field kind), [player: opt_uuid, dimension: cloned, vehicle: copy, kind: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3])]);
     gen_collect!(wind_burst, game_mut, horizon_client::mod_api::WindBurstEvent<'_>, (none), [dimension: cloned, center: vec3, blocks: s_vec([i32;3]) => w_vec([i32;3])]);
+    gen_frame_collect!(world_primitives, game_ref, horizon_client::mod_api::WorldPrimitivesEvent<'_>, (none), [partial: copy, camera: vec3, primitives: world_primitives]);
     };
 }
 
@@ -70330,6 +70329,108 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_world_primitives() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_world_primitives",
+            "horizon.on(\"world_primitives\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.partial == 1.5, \"partial\")\n    assert(event.camera.x == 2.0, \"camera\")\n    assert(event.camera.y == 3.0, \"camera\")\n    assert(event.camera.z == 4.0, \"camera\")\n    assert(type(event.primitives.line) == \"function\", \"primitives\")\n    assert(type(event.primitives.box_outline) == \"function\", \"primitives\")\n    assert(type(event.primitives.filled_box) == \"function\", \"primitives\")\n    assert(type(event.primitives.beam) == \"function\", \"primitives\")\n    assert(type(event.primitives.text) == \"function\", \"primitives\")\n    assert(type(event.primitives.sprite) == \"function\", \"primitives\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut primitives = WorldPrimitives::default();
+        dispatch_world_primitives(
+            &FakeHost::empty(),
+            &firing_mods,
+            1.5,
+            [2.0, 3.0, 4.0],
+            &mut primitives,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_world_primitives_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_primitives_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut primitives = WorldPrimitives::default();
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_primitives(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                &mut primitives,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "world_primitives read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_primitives read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_primitives read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_world_primitives_cost_live",
+            "horizon.on(\"world_primitives\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut primitives = WorldPrimitives::default();
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_world_primitives(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                &mut primitives,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "world_primitives built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "world_primitives read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "world_primitives read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_hook_sides_answer_the_tagged_side() {
         assert_eq!(hook_side("hud"), Some(HookSide::Client));
         assert_eq!(hook_side("server_tick"), Some(HookSide::Server));
@@ -75772,6 +75873,17 @@ mod generated_tests {
                 "test:dimension",
                 [2.0, 3.0, 4.0],
                 &mut blocks,
+            );
+        }
+        // world_primitives: unregistered, nothing runs.
+        {
+            let mut primitives = WorldPrimitives::default();
+            dispatch_world_primitives(
+                &FakeHost::empty(),
+                &firing_mods,
+                1.5,
+                [2.0, 3.0, 4.0],
+                &mut primitives,
             );
         }
         assert_eq!(witness(&lua), 0, "no handler ran");

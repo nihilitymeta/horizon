@@ -60,7 +60,7 @@ impl ReentrantTurn {
     /// Non-blocking `try_lock`-style take: `Some` without waiting
     /// when the turn is free (or the caller already holds it),
     /// `None` at once when another thread holds it. Frame hooks
-    /// (`hud`, `gui_layer_post`, `gui_layer_pre`) run on the Render
+    /// (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) run on the Render
     /// thread and must never wait a frame's worth of time for the state.
     #[track_caller]
     pub fn try_acquire(&self, label: Option<&str>) -> Option<Guard<'_>> {

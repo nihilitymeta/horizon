@@ -56,7 +56,7 @@ pub mod nbt;
 /// endless loop would otherwise freeze the game.
 pub const HANDLER_BUDGET: Duration = Duration::from_millis(250);
 /// Wall-clock time one handler of a hook that fires every frame (`hud`,
-/// `gui_layer_post`, `gui_layer_pre`) may take: a 250 ms stall would freeze rendering, so a
+/// `gui_layer_post`, `gui_layer_pre`, `world_primitives`) may take: a 250 ms stall would freeze rendering, so a
 /// frame hook gets a slice of a frame instead (see `hud_hooks`). Scaled by
 /// the handler count like `HANDLER_BUDGET`.
 pub(crate) const FRAME_BUDGET: Duration = Duration::from_millis(8);
@@ -202,7 +202,7 @@ const CLIENT_API: &[&str] = &[
     "marker_clear",
 ];
 /// The server-only `horizon` names a client state's draw-hook handler
-/// (`hud`, `gui_layer_post`, `gui_layer_pre`) may still call: the reads that answer through
+/// (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) may still call: the reads that answer through
 /// the shared host (`Reader::Shared`, `&self` only), and the two queued
 /// chat actions (`tell`, `broadcast`) that run after the frame. The
 /// saved-table reads and `summon` are listed only so the call reaches
@@ -460,7 +460,7 @@ pub(crate) enum Reader<'a> {
     /// A hook without a host (a `none`-host generated arm): reads fail.
     None,
     Host(&'a mut dyn Host),
-    /// A draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`): the hook's `&dyn Host`,
+    /// A draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`): the hook's `&dyn Host`,
     /// shared with the draw closures. Every `&self` read works through it;
     /// reads that need `&mut` (saved data, the acting player's stacks, a
     /// direct summon) fail with a draw-hook error.
@@ -469,7 +469,7 @@ pub(crate) enum Reader<'a> {
 }
 
 impl Reader<'_> {
-    /// Whether this reader serves a draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`).
+    /// Whether this reader serves a draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`).
     fn is_draw(&self) -> bool {
         matches!(self, Reader::Shared(_))
     }
@@ -849,11 +849,11 @@ impl LuaMod {
         };
         let no_host = || mlua::Error::runtime(format!("horizon.{what}: no host"));
         // A read that needs `&mut` from a draw hook (`hud`,
-        // `gui_layer_post`, `gui_layer_pre`): names the helper, as an ordinary handler
+        // `gui_layer_post`, `gui_layer_pre`, `world_primitives`): names the helper, as an ordinary handler
         // error (it resets the frame-overrun count, like any error).
         let draw_unavailable = || {
             mlua::Error::runtime(format!(
-                "horizon.{what}: not available in draw hooks (hud, gui_layer_post, gui_layer_pre)"
+                "horizon.{what}: not available in draw hooks (hud, gui_layer_post, gui_layer_pre, world_primitives)"
             ))
         };
         Ok(match what {
@@ -2694,7 +2694,7 @@ impl LuaMod {
             api.set(
                 action,
                 lua.create_function(move |lua, args: MultiValue| {
-                    // A draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`) may queue only
+                    // A draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) may queue only
                     // `tell` and `broadcast`: a marker call there fails at
                     // the call (`run_action` cannot tell a draw firing from
                     // any other), as a `&mut` read does — and so does a
@@ -2704,7 +2704,7 @@ impl LuaMod {
                         && slot.raw_get::<Option<bool>>(4)?.unwrap_or(false)
                     {
                         return Err(mlua::Error::runtime(format!(
-                            "horizon.{action}: not available in draw hooks (hud, gui_layer_post, gui_layer_pre)"
+                            "horizon.{action}: not available in draw hooks (hud, gui_layer_post, gui_layer_pre, world_primitives)"
                         )));
                     }
                     // Outside a hook's handlers nothing would take the
@@ -2893,7 +2893,7 @@ impl LuaMod {
         // A client state keeps only `CLIENT_API`; every other entry raises
         // the server-only error. One pass over the finished table, so a
         // name added later is server-only by default. A draw hook
-        // (`hud`, `gui_layer_post`, `gui_layer_pre`) keeps the shared host, but only for
+        // (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) keeps the shared host, but only for
         // the names in `DRAW_API`: one of those delegates to the real
         // entry, which answers or refuses as a draw hook
         // (`Reader::Shared`); every other server-only name raises the
@@ -3130,7 +3130,7 @@ impl LuaMod {
         Flow::Continue
     }
 
-    /// A frame hook's (`hud`, `gui_layer_post`, `gui_layer_pre`) handlers finished: `overrun`
+    /// A frame hook's (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) handlers finished: `overrun`
     /// when the budget stopped them. A handler that errors, or runs clean,
     /// resets its count; one that keeps missing `FRAME_BUDGET` is disabled
     /// after `FRAME_OVERRUNS_UNTIL_DISABLED` consecutive misses, until
@@ -4304,7 +4304,7 @@ fn marker_key_name(key: &Value) -> String {
 /// never an extra key (`w`), and read as plain data (a metatable never
 /// supplies a component: `raw_get`, and the scan iterates the table's
 /// own keys only).
-fn marker_vec3(action: &str, field: &str, t: &Table) -> mlua::Result<[f64; 3]> {
+pub(crate) fn marker_vec3(action: &str, field: &str, t: &Table) -> mlua::Result<[f64; 3]> {
     for pair in t.pairs::<Value, Value>() {
         let (key, _) = pair.map_err(|e| {
             mlua::Error::runtime(format!("{action}: {field}: keys must be strings, got {e}"))
@@ -4359,7 +4359,13 @@ fn marker_vec3_field(action: &str, spec: &Table, field: &str) -> mlua::Result<[f
 }
 
 /// An integer Lua value in `[lo, hi]`, as a colour and a lifetime take.
-fn marker_int(action: &str, field: &str, v: &Value, lo: i64, hi: i64) -> mlua::Result<i64> {
+pub(crate) fn marker_int(
+    action: &str,
+    field: &str,
+    v: &Value,
+    lo: i64,
+    hi: i64,
+) -> mlua::Result<i64> {
     let n = match v {
         Value::Integer(i) => *i,
         Value::Number(n) if n.is_finite() && n.fract() == 0.0 => *n as i64,
@@ -4446,6 +4452,30 @@ fn marker_opt_bool(action: &str, spec: &Table, field: &str) -> mlua::Result<bool
             "{action}: {field}: must be a boolean, got {}",
             other.type_name()
         ))),
+    }
+}
+
+/// A colour of a marker or a world primitive: an ARGB integer in
+/// `0..=0xFFFF_FFFF`, or a table `{ r, g, b, a? }` of channels in `0..=255`
+/// (`a` defaults to 255). A bad value is named `{action}: color...`.
+pub(crate) fn marker_color(action: &str, v: &Value) -> mlua::Result<u32> {
+    match v {
+        Value::Table(t) => {
+            let channel = |axis: &str| -> mlua::Result<u32> {
+                match t.raw_get::<Value>(axis)? {
+                    Value::Nil => Err(mlua::Error::runtime(format!(
+                        "{action}: color.{axis}: missing (an integer in 0..=255)"
+                    ))),
+                    v => Ok(marker_int(action, &format!("color.{axis}"), &v, 0, 255)? as u32),
+                }
+            };
+            let a = match t.raw_get::<Value>("a")? {
+                Value::Nil => 255,
+                v => marker_int(action, "color.a", &v, 0, 255)? as u32,
+            };
+            Ok((a << 24) | (channel("r")? << 16) | (channel("g")? << 8) | channel("b")?)
+        }
+        v => Ok(marker_int(action, "color", v, 0, 0xFFFF_FFFF)? as u32),
     }
 }
 
@@ -4592,22 +4622,7 @@ fn marker_spec(action: &str, spec: &Table) -> mlua::Result<NativeMarker> {
     };
     let argb: u32 = match spec.raw_get::<Value>("color")? {
         Value::Nil => 0xFFFF_FFFF,
-        Value::Table(t) => {
-            let channel = |axis: &str| -> mlua::Result<u32> {
-                match t.raw_get::<Value>(axis)? {
-                    Value::Nil => Err(mlua::Error::runtime(format!(
-                        "{action}: color.{axis}: missing (an integer in 0..=255)"
-                    ))),
-                    v => Ok(marker_int(action, &format!("color.{axis}"), &v, 0, 255)? as u32),
-                }
-            };
-            let a = match t.raw_get::<Value>("a")? {
-                Value::Nil => 255,
-                v => marker_int(action, "color.a", &v, 0, 255)? as u32,
-            };
-            (a << 24) | (channel("r")? << 16) | (channel("g")? << 8) | channel("b")?
-        }
-        v => marker_int(action, "color", &v, 0, 0xFFFF_FFFF)? as u32,
+        v => marker_color(action, &v)?,
     };
     let through_walls = marker_opt_bool(action, spec, "through_walls")?;
     let ttl_ticks = marker_opt_int(action, spec, "ttl", 1, i64::MAX)?

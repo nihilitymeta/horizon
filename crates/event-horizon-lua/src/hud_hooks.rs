@@ -1,4 +1,5 @@
-//! The HUD pilot: `hud`, `gui_layer_post` and `gui_layer_pre` for scripted mods.
+//! The HUD pilot: `hud`, `gui_layer_post` and `gui_layer_pre` for scripted mods,
+//! and the world-primitives builder of `world_primitives` (`primitives_table`).
 //!
 //! The first native hooks whose events carry borrowed render handles (the
 //! `HudBatch` the handler draws into, the `Corners` it stacks boxes in) to
@@ -31,10 +32,13 @@
 //! positions are separate numbers (like the positions elsewhere), corners
 //! are the `Corner` names (`top_left`, `top_right`, `bottom_left`,
 //! `bottom_right`).
-use crate::lua_mods::{LuaMod, is_overrun, qualify};
-use horizon_client::mod_api::{Corner, Corners, Host, HudBatch, ItemStack};
-use mlua::{Error, Lua, Table};
-use std::cell::RefCell;
+use crate::lua_mods::{LuaMod, is_overrun, marker_color, marker_int, marker_vec3, qualify};
+use horizon_client::mod_api::{
+    Corner, Corners, Host, HudBatch, ItemStack, PrimitiveShape, WorldPrimitives,
+};
+use horizon_client::world_primitives::MAX_BEAM_HEIGHT;
+use mlua::{Error, Lua, Table, Value};
+use std::cell::{Cell, RefCell};
 
 /// The float arguments of a draw helper must be finite: a NaN or infinite
 /// size or position from a script would reach native layout. Refuses the
@@ -303,6 +307,345 @@ pub(crate) fn finish_cancel(
     }
 }
 
+/// The most primitives one handler call may draw through its `primitives`
+/// table, counted per frame and per mod. The renderer has no cap of its own
+/// (its buffers grow with the list), so this is the engine's bound on world
+/// markers, `MAX_MARKERS_TOTAL` in `game/native_markers.rs`: a mod may not
+/// add more than the whole level's markers may.
+pub(crate) const MAX_PRIMITIVES_PER_CALL: usize = 4096;
+
+/// Which optional settings a primitive call took (`{ through_walls, ... }`).
+#[derive(Clone, Copy, Default)]
+struct PrimitiveOptions {
+    through_walls: bool,
+    scale_with_distance: bool,
+    background: bool,
+}
+
+/// The optional options table of a primitive call: a boolean per name in
+/// `allowed` (any other key is an error naming the call and the key). Absent
+/// or nil means false; a value that is neither nil nor a table is an error
+/// naming the call and `options`.
+fn primitive_options(
+    helper: &str,
+    opts: Value,
+    allowed: &[&str],
+) -> mlua::Result<PrimitiveOptions> {
+    let mut out = PrimitiveOptions::default();
+    let table = match opts {
+        Value::Nil => return Ok(out),
+        Value::Table(table) => table,
+        other => {
+            return Err(Error::runtime(format!(
+                "{helper}: options: must be a table or nil, got {}",
+                other.type_name()
+            )));
+        }
+    };
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair.map_err(|e| Error::runtime(format!("{helper}: options: {e}")))?;
+        let key = match &key {
+            Value::String(s) => s.to_string_lossy(),
+            other => {
+                return Err(Error::runtime(format!(
+                    "{helper}: options: keys must be names, got {}",
+                    other.type_name()
+                )));
+            }
+        };
+        if !allowed.contains(&key.as_str()) {
+            return Err(Error::runtime(format!(
+                "{helper}: {key}: unknown option (this call takes {})",
+                allowed.join(", ")
+            )));
+        }
+        let on = match value {
+            Value::Nil => false,
+            Value::Boolean(b) => b,
+            other => {
+                return Err(Error::runtime(format!(
+                    "{helper}: {key}: must be a boolean, got {}",
+                    other.type_name()
+                )));
+            }
+        };
+        match key.as_str() {
+            "through_walls" => out.through_walls = on,
+            "scale_with_distance" => out.scale_with_distance = on,
+            _ => out.background = on,
+        }
+    }
+    Ok(out)
+}
+
+/// A position argument (`{x, y, z}`) named `helper`'s `field`.
+fn primitive_point(helper: &str, field: &str, v: &Value) -> mlua::Result<[f64; 3]> {
+    match v {
+        Value::Table(t) => marker_vec3(helper, field, t),
+        Value::Nil => Err(Error::runtime(format!(
+            "{helper}: {field}: missing (a table {{x, y, z}})"
+        ))),
+        other => Err(Error::runtime(format!(
+            "{helper}: {field}: must be a table {{x, y, z}}, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// A colour argument (an ARGB integer or `{r, g, b, a?}`) named `helper`'s `color`.
+fn primitive_color(helper: &str, v: &Value) -> mlua::Result<u32> {
+    match v {
+        Value::Nil => Err(Error::runtime(format!(
+            "{helper}: color: missing (an ARGB integer or {{r, g, b, a?}})"
+        ))),
+        v => marker_color(helper, v),
+    }
+}
+
+/// A size argument: a finite number of blocks or pixels, not negative.
+fn primitive_size(helper: &str, field: &str, v: &Value) -> mlua::Result<f32> {
+    let n = match v {
+        Value::Integer(i) => *i as f64,
+        Value::Number(n) => *n,
+        other => {
+            return Err(Error::runtime(format!(
+                "{helper}: {field}: must be a finite number, got {}",
+                other.type_name()
+            )));
+        }
+    };
+    // The sign is tested on the f64: a tiny negative rounds to `-0.0` as an f32.
+    let size = n as f32;
+    if !n.is_finite() || !size.is_finite() || n < 0.0 {
+        return Err(Error::runtime(format!(
+            "{helper}: {field}: must be a finite number that is not negative, got {n:e}"
+        )));
+    }
+    // `-0.0` is zero: it draws as `+0.0`.
+    Ok(if size == 0.0 { 0.0 } else { size })
+}
+
+/// A non-empty string argument (text, a sprite name) named `helper`'s `field`.
+fn primitive_name(helper: &str, field: &str, v: &Value) -> mlua::Result<String> {
+    match v {
+        Value::String(s) => {
+            let text = s.to_string_lossy();
+            if text.is_empty() {
+                return Err(Error::runtime(format!(
+                    "{helper}: {field}: must not be empty"
+                )));
+            }
+            Ok(text)
+        }
+        Value::Nil => Err(Error::runtime(format!(
+            "{helper}: {field}: missing (a string)"
+        ))),
+        other => Err(Error::runtime(format!(
+            "{helper}: {field}: must be a string, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// Adds one primitive to the frame's list, through the per-call cap. A
+/// primitive past the cap is an error naming the call and the cap; the
+/// primitives drawn before it stay drawn.
+fn push_primitive(
+    helper: &str,
+    primitives: &RefCell<&mut WorldPrimitives>,
+    drawn: &Cell<usize>,
+    shape: PrimitiveShape,
+    options: PrimitiveOptions,
+) -> mlua::Result<()> {
+    if drawn.get() >= MAX_PRIMITIVES_PER_CALL {
+        return Err(Error::runtime(format!(
+            "{helper}: a handler may draw at most {MAX_PRIMITIVES_PER_CALL} primitives per frame"
+        )));
+    }
+    let mut borrowed = primitives.try_borrow_mut().map_err(|_| {
+        Error::runtime(format!(
+            "{helper}: the primitives are already drawn into (reentrant draw)"
+        ))
+    })?;
+    let primitive = borrowed.push(shape);
+    if options.through_walls {
+        primitive.through_walls();
+    }
+    if options.scale_with_distance {
+        primitive.scale_with_distance();
+    }
+    if options.background {
+        primitive.background();
+    }
+    drawn.set(drawn.get() + 1);
+    Ok(())
+}
+
+/// The `primitives` table of a `world_primitives` handler's event: scoped
+/// functions over the frame's native list, each drawing at once. Positions
+/// are `{x, y, z}` tables, colours ARGB integers or `{r, g, b, a?}`, and the
+/// last argument of each call an optional options table. The table expires
+/// with the call.
+pub(crate) fn primitives_table<'s, 'e: 's, 'h: 's>(
+    scope: &'s mlua::Scope<'s, 'e>,
+    lua: &Lua,
+    primitives: &'h RefCell<&mut WorldPrimitives>,
+    drawn: &'h Cell<usize>,
+) -> mlua::Result<Table> {
+    const ALL: &[&str] = &["through_walls"];
+    const TEXT: &[&str] = &["through_walls", "scale_with_distance", "background"];
+    let table = lua.create_table()?;
+    table.set(
+        "line",
+        scope.create_function(
+            move |_, (from, to, color, width, opts): (Value, Value, Value, Value, Value)| {
+                const H: &str = "primitives.line";
+                let shape = PrimitiveShape::Line {
+                    from: primitive_point(H, "from", &from)?,
+                    to: primitive_point(H, "to", &to)?,
+                    color: primitive_color(H, &color)?,
+                    width: primitive_size(H, "width", &width)?,
+                };
+                push_primitive(
+                    H,
+                    primitives,
+                    drawn,
+                    shape,
+                    primitive_options(H, opts, ALL)?,
+                )
+            },
+        )?,
+    )?;
+    table.set(
+        "box_outline",
+        scope.create_function(
+            move |_, (min, max, color, width, opts): (Value, Value, Value, Value, Value)| {
+                const H: &str = "primitives.box_outline";
+                let shape = PrimitiveShape::BoxOutline {
+                    min: primitive_point(H, "min", &min)?,
+                    max: primitive_point(H, "max", &max)?,
+                    color: primitive_color(H, &color)?,
+                    width: primitive_size(H, "width", &width)?,
+                };
+                push_primitive(
+                    H,
+                    primitives,
+                    drawn,
+                    shape,
+                    primitive_options(H, opts, ALL)?,
+                )
+            },
+        )?,
+    )?;
+    table.set(
+        "filled_box",
+        scope.create_function(
+            move |_, (min, max, color, opts): (Value, Value, Value, Value)| {
+                const H: &str = "primitives.filled_box";
+                let shape = PrimitiveShape::FilledBox {
+                    min: primitive_point(H, "min", &min)?,
+                    max: primitive_point(H, "max", &max)?,
+                    color: primitive_color(H, &color)?,
+                };
+                push_primitive(
+                    H,
+                    primitives,
+                    drawn,
+                    shape,
+                    primitive_options(H, opts, ALL)?,
+                )
+            },
+        )?,
+    )?;
+    table.set(
+        "beam",
+        scope.create_function(
+            move |_, (base, height, color, opts): (Value, Value, Value, Value)| {
+                const H: &str = "primitives.beam";
+                let shape = PrimitiveShape::Beam {
+                    base: primitive_point(H, "base", &base)?,
+                    height: marker_int(H, "height", &height, 0, MAX_BEAM_HEIGHT as i64)? as u32,
+                    color: primitive_color(H, &color)?,
+                };
+                push_primitive(
+                    H,
+                    primitives,
+                    drawn,
+                    shape,
+                    primitive_options(H, opts, ALL)?,
+                )
+            },
+        )?,
+    )?;
+    table.set(
+        "text",
+        scope.create_function(
+            move |_, (at, text, color, scale, opts): (Value, Value, Value, Value, Value)| {
+                const H: &str = "primitives.text";
+                let shape = PrimitiveShape::Text {
+                    at: primitive_point(H, "at", &at)?,
+                    text: primitive_name(H, "text", &text)?,
+                    color: primitive_color(H, &color)?,
+                    scale: primitive_size(H, "scale", &scale)?,
+                    scale_with_distance: false,
+                    background: false,
+                };
+                push_primitive(
+                    H,
+                    primitives,
+                    drawn,
+                    shape,
+                    primitive_options(H, opts, TEXT)?,
+                )
+            },
+        )?,
+    )?;
+    table.set(
+        "sprite",
+        scope.create_function(
+            move |_, (at, sprite, size, color, opts): (Value, Value, Value, Value, Value)| {
+                const H: &str = "primitives.sprite";
+                let shape = PrimitiveShape::Sprite {
+                    at: primitive_point(H, "at", &at)?,
+                    sprite: primitive_name(H, "sprite", &sprite)?,
+                    size: primitive_size(H, "size", &size)?,
+                    color: primitive_color(H, &color)?,
+                };
+                push_primitive(
+                    H,
+                    primitives,
+                    drawn,
+                    shape,
+                    primitive_options(H, opts, ALL)?,
+                )
+            },
+        )?,
+    )?;
+    Ok(table)
+}
+
+/// The outcome of a read-only frame hook's (`world_primitives`) handlers: the
+/// frame budget counts as in `finish_cancel`. The hook's `&self` receiver has
+/// no mutable host, so a queued action (`tell`, `broadcast`) cannot run: it is
+/// reported as an error, once per queued action, and nothing else changes.
+pub(crate) fn finish_read_only(mod_: &LuaMod, hook: &str, outcome: Queued) {
+    match outcome {
+        Ok(actions) => {
+            mod_.note_frame_outcome(hook, false);
+            for (action, _) in actions {
+                mod_.error(format!(
+                    "{hook}: horizon.{action} is not available here: this hook only draws"
+                ));
+            }
+        }
+        Err(e) => {
+            let overrun = is_overrun(&e);
+            mod_.error(crate::lua_mods::handler_error_text(hook, &e));
+            mod_.note_frame_outcome(hook, overrun);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,8 +654,8 @@ mod tests {
     use horizon_client::mobs::{Mob, MobType};
     use horizon_client::mod_api::{
         BlockStateId, EntityRef, Hooks, HudEvent, ItemStack, MobView, NativeHeightmap, NativeHit,
-        NativeServerPlayer, NativeWorldEpoch, Text, dispatch_gui_layer_post,
-        dispatch_gui_layer_pre, dispatch_hud,
+        NativeServerPlayer, NativeWorldEpoch, PrimitiveShape, Text, WorldPrimitives,
+        dispatch_gui_layer_post, dispatch_gui_layer_pre, dispatch_hud, dispatch_world_primitives,
     };
     use horizon_client::test_events;
     use horizon_core::geometry::Vec3;
@@ -971,6 +1314,463 @@ mod tests {
         assert!(
             per_call < Duration::from_millis(1),
             "a hook nobody hears costs {per_call:?} a frame"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Dispatches `world_primitives` once over a fresh list (the host draws
+    /// nothing: the builder writes the list itself) and returns the list.
+    fn primitives_of(host: &RecordingHost, mods: &[Box<dyn Hooks>]) -> WorldPrimitives {
+        let mut primitives = WorldPrimitives::default();
+        dispatch_world_primitives(host, mods, 0.25, [10.0, 64.5, -3.0], &mut primitives);
+        primitives
+    }
+
+    /// Every primitive call reaches the frame's list with its own values:
+    /// positions as `{x, y, z}`, both colour forms, sizes, the text and sprite
+    /// names, and the options (`through_walls`, `scale_with_distance`,
+    /// `background`) on the primitive they name. The handler also sees the
+    /// partial tick and the camera it was given.
+    #[test]
+    fn each_primitive_call_reaches_the_list_with_its_values() {
+        let (m, id, dir) = hmod(
+            "primdraw",
+            "ruby_hud_primdraw",
+            r#"
+            horizon.on("world_primitives", function(event)
+              assert(event.partial == 0.25, "partial")
+              assert(event.camera.x == 10.0 and event.camera.y == 64.5 and event.camera.z == -3.0, "camera")
+              event.primitives.line({x = 1, y = 2, z = 3}, {x = 4, y = 5, z = 6}, 4278190080, 2)
+              event.primitives.box_outline({x = 0, y = 0, z = 0}, {x = 1, y = 1, z = 1}, {r = 255, g = 0, b = 0}, 1.5)
+              event.primitives.filled_box({x = 2, y = 2, z = 2}, {x = 3, y = 3, z = 3}, {r = 0, g = 255, b = 0, a = 128})
+              event.primitives.beam({x = 10, y = 64, z = -20}, 256, 0x80FF2010)
+              event.primitives.text({x = 0.5, y = 70, z = 0.5}, "Home", 4294967295, 1.0,
+                {through_walls = true, scale_with_distance = true, background = true})
+              event.primitives.sprite({x = 5, y = 6, z = 7}, "mymod:icon", 2, 255, {through_walls = true})
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let host = RecordingHost::default();
+        let primitives = primitives_of(&host, &mods);
+        no_error(&id);
+        let shapes: Vec<PrimitiveShape> = primitives.iter().map(|p| p.shape.clone()).collect();
+        assert_eq!(
+            shapes,
+            vec![
+                PrimitiveShape::Line {
+                    from: [1.0, 2.0, 3.0],
+                    to: [4.0, 5.0, 6.0],
+                    color: 0xFF00_0000,
+                    width: 2.0,
+                },
+                PrimitiveShape::BoxOutline {
+                    min: [0.0, 0.0, 0.0],
+                    max: [1.0, 1.0, 1.0],
+                    color: 0xFFFF_0000,
+                    width: 1.5,
+                },
+                PrimitiveShape::FilledBox {
+                    min: [2.0, 2.0, 2.0],
+                    max: [3.0, 3.0, 3.0],
+                    color: 0x8000_FF00,
+                },
+                PrimitiveShape::Beam {
+                    base: [10.0, 64.0, -20.0],
+                    height: 256,
+                    color: 0x80FF_2010,
+                },
+                PrimitiveShape::Text {
+                    at: [0.5, 70.0, 0.5],
+                    text: "Home".to_owned(),
+                    color: 0xFFFF_FFFF,
+                    scale: 1.0,
+                    scale_with_distance: true,
+                    background: true,
+                },
+                PrimitiveShape::Sprite {
+                    at: [5.0, 6.0, 7.0],
+                    sprite: "mymod:icon".to_owned(),
+                    size: 2.0,
+                    color: 255,
+                },
+            ]
+        );
+        let through: Vec<bool> = primitives.iter().map(|p| p.through_walls).collect();
+        assert_eq!(through, [false, false, false, false, true, true]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A bad argument is an error naming the call and the field, and the
+    /// handler carries on: each `pcall` below records its message, and every
+    /// one names `primitives.<call>: <field>`. Nothing is drawn for a bad call.
+    #[test]
+    fn a_bad_primitive_argument_is_an_error_naming_the_call_and_field() {
+        let (m, id, dir) = hmod(
+            "primbad",
+            "ruby_hud_primbad",
+            r#"
+            horizon.on("world_primitives", function(event)
+              local p = event.primitives
+              local origin = {x = 0, y = 0, z = 0}
+              local one = {x = 1, y = 1, z = 1}
+              local function try(f)
+                local ok, e = pcall(f)
+                if not ok then __errs = (__errs or "") .. tostring(e) .. "\n" end
+              end
+              try(function() p.line(origin, one, 255, 0 / 0) end)
+              try(function() p.line(origin, one, 255, -1) end)
+              try(function() p.line(origin, nil, 255, 1) end)
+              try(function() p.line({x = 0 / 0, y = 0, z = 0}, one, 255, 1) end)
+              try(function() p.line(origin, one, {r = 256, g = 0, b = 0}, 1) end)
+              try(function() p.line(origin, one, nil, 1) end)
+              try(function() p.line(origin, one, 255, 1, {background = true}) end)
+              try(function() p.line(origin, one, 255, 1, {through_walls = "yes"}) end)
+              try(function() p.beam(origin, 4096, 255) end)
+              try(function() p.text(origin, "", 255, 1) end)
+              try(function() p.sprite(origin, "", 1, 255) end)
+            end)
+            "#,
+        );
+        let state = m.lua.clone();
+        let mods = boxed(m);
+        let host = RecordingHost::default();
+        let primitives = primitives_of(&host, &mods);
+        no_error(&id);
+        assert!(primitives.is_empty(), "a bad call draws nothing");
+        let errs: String = state.globals().get("__errs").unwrap();
+        for needle in [
+            "primitives.line: width",
+            "primitives.line: to: missing",
+            "primitives.line: from",
+            "primitives.line: color.r",
+            "primitives.line: color: missing",
+            "primitives.line: background: unknown option (this call takes through_walls)",
+            "primitives.line: through_walls: must be a boolean",
+            "primitives.beam: height: must be an integer in 0..=2048",
+            "primitives.text: text: must not be empty",
+            "primitives.sprite: sprite: must not be empty",
+        ] {
+            assert!(errs.contains(needle), "missing {needle:?} in {errs}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A negative size too small for an `f32` is an error like any other
+    /// negative size: it does not round to `-0.0` and pass. Each sized call
+    /// names its field and draws nothing. A `-0.0` width is zero, not negative,
+    /// and draws as `+0.0`.
+    #[test]
+    fn a_negative_size_below_f32_precision_is_an_error_naming_the_field() {
+        let (m, id, dir) = hmod(
+            "primtiny",
+            "ruby_hud_primtiny",
+            r#"
+            horizon.on("world_primitives", function(event)
+              local p = event.primitives
+              local origin = {x = 0, y = 0, z = 0}
+              local one = {x = 1, y = 1, z = 1}
+              local function try(f)
+                local ok, e = pcall(f)
+                if not ok then __errs = (__errs or "") .. tostring(e) .. "\n" end
+              end
+              try(function() p.line(origin, one, 255, -1e-50) end)
+              try(function() p.text(origin, "Home", 255, -1e-50) end)
+              try(function() p.sprite(origin, "mymod:icon", -1e-50, 255) end)
+              p.line(origin, one, 255, -0.0)
+            end)
+            "#,
+        );
+        let state = m.lua.clone();
+        let mods = boxed(m);
+        let host = RecordingHost::default();
+        let primitives = primitives_of(&host, &mods);
+        no_error(&id);
+        let errs: String = state.globals().get("__errs").unwrap();
+        for needle in [
+            "primitives.line: width: must be a finite number that is not negative, got -1e-50",
+            "primitives.text: scale: must be a finite number that is not negative, got -1e-50",
+            "primitives.sprite: size: must be a finite number that is not negative, got -1e-50",
+        ] {
+            assert!(errs.contains(needle), "missing {needle:?} in {errs}");
+        }
+        let shapes: Vec<PrimitiveShape> = primitives.iter().map(|p| p.shape.clone()).collect();
+        assert_eq!(shapes.len(), 1, "only the -0.0 line is drawn");
+        let PrimitiveShape::Line { width, .. } = shapes[0] else {
+            panic!("expected a line, got {:?}", shapes[0]);
+        };
+        assert!(width == 0.0 && width.is_sign_positive(), "width {width:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The options argument is nil or a table. A boolean or a number there is
+    /// an error naming the call and `options`, not mlua's conversion message.
+    /// nil and `{}` still mean no options and draw.
+    #[test]
+    fn primitive_options_must_be_a_table_or_nil() {
+        let (m, id, dir) = hmod(
+            "primopts",
+            "ruby_hud_primopts",
+            r#"
+            horizon.on("world_primitives", function(event)
+              local p = event.primitives
+              local origin = {x = 0, y = 0, z = 0}
+              local one = {x = 1, y = 1, z = 1}
+              local function try(f)
+                local ok, e = pcall(f)
+                if not ok then __errs = (__errs or "") .. tostring(e) .. "\n" end
+              end
+              try(function() p.line(origin, one, 255, 1, true) end)
+              try(function() p.filled_box(origin, one, 255, 1) end)
+              try(function() p.text(origin, "Home", 255, 1, 5) end)
+              p.line(origin, one, 255, 1, nil)
+              p.box_outline(origin, one, 255, 1, {})
+              p.sprite(origin, "mymod:icon", 1, 255, {})
+            end)
+            "#,
+        );
+        let state = m.lua.clone();
+        let mods = boxed(m);
+        let host = RecordingHost::default();
+        let primitives = primitives_of(&host, &mods);
+        no_error(&id);
+        let errs: String = state.globals().get("__errs").unwrap();
+        for needle in [
+            "primitives.line: options: must be a table or nil",
+            "primitives.filled_box: options: must be a table or nil",
+            "primitives.text: options: must be a table or nil",
+        ] {
+            assert!(errs.contains(needle), "missing {needle:?} in {errs}");
+        }
+        assert!(!errs.contains("bad argument"), "{errs}");
+        let shapes: Vec<PrimitiveShape> = primitives.iter().map(|p| p.shape.clone()).collect();
+        assert_eq!(shapes.len(), 3, "only the nil and {{}} calls draw");
+        assert!(matches!(shapes[0], PrimitiveShape::Line { .. }));
+        assert!(matches!(shapes[1], PrimitiveShape::BoxOutline { .. }));
+        assert!(matches!(shapes[2], PrimitiveShape::Sprite { .. }));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The primitive cap: one call past `MAX_PRIMITIVES_PER_CALL` is an error
+    /// naming the cap, and the primitives before it stay drawn. Driven through
+    /// the builder directly, so the frame budget does not stop the loop first.
+    #[test]
+    fn the_primitive_cap_names_the_cap_and_keeps_what_came_before() {
+        let lua = mlua::Lua::new();
+        let mut list = WorldPrimitives::default();
+        let cell = RefCell::new(&mut list);
+        let drawn = Cell::new(0_usize);
+        let origin = lua.create_table().unwrap();
+        origin.set("x", 0.0).unwrap();
+        origin.set("y", 0.0).unwrap();
+        origin.set("z", 0.0).unwrap();
+        let far = lua.create_table().unwrap();
+        far.set("x", 1.0).unwrap();
+        far.set("y", 1.0).unwrap();
+        far.set("z", 1.0).unwrap();
+        lua.scope(|scope| {
+            let table = primitives_table(scope, &lua, &cell, &drawn)?;
+            let line: mlua::Function = table.get("line")?;
+            for _ in 0..MAX_PRIMITIVES_PER_CALL {
+                line.call::<()>((origin.clone(), far.clone(), 255_u32, 1.0_f32, mlua::Value::Nil))?;
+            }
+            let over = line
+                .call::<()>((origin.clone(), far.clone(), 255_u32, 1.0_f32, mlua::Value::Nil))
+                .expect_err("the call past the cap fails");
+            let text = over.to_string();
+            assert!(
+                text.contains(&format!("primitives.line: a handler may draw at most {MAX_PRIMITIVES_PER_CALL} primitives per frame")),
+                "{text}"
+            );
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(list.len(), MAX_PRIMITIVES_PER_CALL);
+        assert_eq!(drawn.get(), MAX_PRIMITIVES_PER_CALL);
+    }
+
+    /// A handler that keeps `event.primitives` and draws with it after its call
+    /// gets a Lua error: the scope expired, and the builder raises
+    /// `CallbackDestructed` instead of drawing into a list it no longer holds.
+    #[test]
+    fn a_kept_primitives_table_is_an_error_after_its_call() {
+        let (m, id, dir) = hmod(
+            "primkept",
+            "ruby_hud_primkept",
+            r#"
+            horizon.on("world_primitives", function(event)
+              if SAVED == nil then SAVED = event.primitives
+              else SAVED.line({x = 0, y = 0, z = 0}, {x = 1, y = 1, z = 1}, 255, 1) end
+            end)
+            "#,
+        );
+        let mods = boxed(m);
+        let host = RecordingHost::default();
+        assert!(
+            primitives_of(&host, &mods).is_empty(),
+            "keeping the table draws nothing"
+        );
+        no_error(&id);
+        let primitives = primitives_of(&host, &mods);
+        let e = last_error(&id).expect("the kept table failed");
+        assert!(e.contains("destructed"), "{e}");
+        assert!(primitives.is_empty(), "the expired table drew nothing");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Two mods share the frame's list in load order: the first mod's
+    /// primitives come first, then the second's, each from its own handler.
+    #[test]
+    fn two_world_primitives_handlers_draw_in_load_order() {
+        let (first, first_id, first_dir) = hmod(
+            "primfirst",
+            "ruby_hud_primfirst",
+            r#"horizon.on("world_primitives", function(event)
+              event.primitives.box_outline({x = 1, y = 0, z = 0}, {x = 2, y = 1, z = 1}, 255, 1)
+            end)"#,
+        );
+        let (second, second_id, second_dir) = hmod(
+            "primsecond",
+            "ruby_hud_primsecond",
+            r#"horizon.on("world_primitives", function(event)
+              event.primitives.filled_box({x = 3, y = 0, z = 0}, {x = 4, y = 1, z = 1}, 255)
+            end)"#,
+        );
+        let mods = vec![
+            Box::new(first) as Box<dyn Hooks>,
+            Box::new(second) as Box<dyn Hooks>,
+        ];
+        let host = RecordingHost::default();
+        let primitives = primitives_of(&host, &mods);
+        no_error(&first_id);
+        no_error(&second_id);
+        let shapes: Vec<PrimitiveShape> = primitives.iter().map(|p| p.shape.clone()).collect();
+        assert_eq!(
+            shapes,
+            vec![
+                PrimitiveShape::BoxOutline {
+                    min: [1.0, 0.0, 0.0],
+                    max: [2.0, 1.0, 1.0],
+                    color: 255,
+                    width: 1.0,
+                },
+                PrimitiveShape::FilledBox {
+                    min: [3.0, 0.0, 0.0],
+                    max: [4.0, 1.0, 1.0],
+                    color: 255,
+                },
+            ]
+        );
+        std::fs::remove_dir_all(&first_dir).unwrap();
+        std::fs::remove_dir_all(&second_dir).unwrap();
+    }
+
+    /// A queued action cannot run from this hook (its receiver is `&self`):
+    /// the handler's `tell` is reported as an error and nothing is sent.
+    #[test]
+    fn a_queued_action_in_world_primitives_is_reported_not_run() {
+        let (m, id, dir) = hmod(
+            "primtell",
+            "ruby_hud_primtell",
+            r#"horizon.on("world_primitives", function(event)
+              horizon.tell("draw_steve", "from the world pass")
+            end)"#,
+        );
+        let mods = boxed(m);
+        let host = RecordingHost {
+            players: vec![draw_player()],
+            ..Default::default()
+        };
+        let primitives = primitives_of(&host, &mods);
+        assert!(primitives.is_empty());
+        let e = last_error(&id).expect("the queued action was reported");
+        assert!(e.contains("horizon.tell is not available here"), "{e}");
+        assert!(host.tells.lock().unwrap().is_empty(), "nothing was sent");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An infinite `world_primitives` handler is stopped within the frame
+    /// budget, like the other frame hooks: the 250 ms handler budget never
+    /// applies to a hook that fires every frame.
+    #[test]
+    fn an_infinite_world_primitives_handler_is_stopped_within_the_frame_budget() {
+        let (m, id, dir) = hmod(
+            "primloop",
+            "ruby_hud_primloop",
+            r#"horizon.on("world_primitives", function() while true do end end)"#,
+        );
+        let mods = boxed(m);
+        let host = RecordingHost::default();
+        let started = Instant::now();
+        let primitives = primitives_of(&host, &mods);
+        let elapsed = started.elapsed();
+        println!("world_primitives infinite loop stopped after {elapsed:?}");
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "stopped after {elapsed:?}"
+        );
+        assert!(primitives.is_empty(), "a stopped handler draws nothing");
+        let e = last_error(&id).expect("the loop failed");
+        assert!(e.contains("ran over its time budget"), "{e}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `world_primitives` dispatch nobody hears costs no Lua work: no scope,
+    /// no tables, like the unheard `gui_layer_pre` hook.
+    #[test]
+    fn an_unregistered_world_primitives_hook_costs_no_lua_work() {
+        let (m, _id, dir) = hmod(
+            "primidle",
+            "ruby_hud_primidle",
+            "horizon.on(\"gui_layer_post\", function() end)",
+        );
+        let mods = boxed(m);
+        let host = RecordingHost::default();
+        let mut primitives = WorldPrimitives::default();
+        for _ in 0..10 {
+            dispatch_world_primitives(&host, &mods, 0.0, [0.0; 3], &mut primitives);
+        }
+        let started = Instant::now();
+        let n = 2000;
+        for _ in 0..n {
+            dispatch_world_primitives(&host, &mods, 0.0, [0.0; 3], &mut primitives);
+        }
+        let per_call = started.elapsed() / n;
+        println!("world_primitives without a handler: {per_call:?} per call");
+        assert!(primitives.is_empty(), "an unheard hook draws nothing");
+        assert!(
+            per_call < Duration::from_millis(1),
+            "a hook nobody hears costs {per_call:?} a frame"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A server state does not get the hook: a `world_primitives` handler in
+    /// `scripts/server/` is refused at load, like every client hook.
+    #[test]
+    fn a_server_state_refuses_world_primitives_at_load() {
+        let dir =
+            std::env::temp_dir().join(format!("horizon-lua-hud-primserver-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ruby.hmod");
+        let manifest = MANIFEST_TEXT.replacen("ruby_hud", "ruby_hud_primserver", 1);
+        let lua = "horizon.on(\"world_primitives\", function() end)";
+        std::fs::write(
+            &path,
+            Package::write_files(
+                &manifest,
+                None,
+                &[("scripts/server/init.lua", lua.as_bytes())],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let e = LuaMod::load(&path, LuaSide::Server, &[])
+            .expect_err("a client hook in the server state must fail to load");
+        assert!(
+            e.contains("hook 'world_primitives' runs on the client"),
+            "{e}"
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -236,6 +236,12 @@ pub enum Conv {
     /// only `hud` classifies a live `&mut Corners`, so the stock arms
     /// must never see it.
     Corners,
+    /// A world-primitives hook's `primitives` out: the event table carries
+    /// it as a table of scoped builder functions (`event.primitives.line`...),
+    /// built from the borrowed `WorldPrimitives` by the bespoke frame arm
+    /// (`gen_frame_collect!`). Documentary, like `HudBatch`: only
+    /// `world_primitives` classifies a live `&mut WorldPrimitives`.
+    WorldPrimitives,
 }
 
 /// How a `replace` out value reads back: nil stays `None`, a table or value
@@ -356,11 +362,11 @@ pub struct Model {
     /// A cancel hook's flag parameter: removed from the table, set through
     /// `horizon.cancel()`, asserted on the native side.
     pub cancel_flag: Option<String>,
-    /// A frame hook draws through a borrowed `HudBatch` every frame: the
-    /// emitter gives it the bespoke frame arm (`Reader::Shared`,
-    /// `FRAME_BUDGET`, `finish`/`note_frame_outcome`) instead of the stock
-    /// shell. Derived from the parameter shape (any `HudBatch` parameter),
-    /// never from the hook's name.
+    /// A frame hook draws through a borrowed `HudBatch` (or `WorldPrimitives`)
+    /// every frame: the emitter gives it the bespoke frame arm
+    /// (`Reader::Shared`, `FRAME_BUDGET`, `finish`/`note_frame_outcome`)
+    /// instead of the stock shell. Derived from the parameter shape (any
+    /// `HudBatch` or `WorldPrimitives` parameter), never from the hook's name.
     pub frame: bool,
     pub kind: Kind,
     /// The event's elided lifetimes (`""`, `"<'_>"`, `"<'_, '_>"`).
@@ -986,7 +992,7 @@ fn mentions_stack(ty: &syn::Type) -> bool {
 /// here AND a new `gen_frame!` arm whose tokens match its fields; the
 /// `model.frame` flag alone never suffices, and widening this list to a
 /// hook with any other shape fails macro expansion by design.
-const FRAME_HOOKS: &[&str] = &["hud", "gui_layer_post", "gui_layer_pre"];
+const FRAME_HOOKS: &[&str] = &["hud", "gui_layer_post", "gui_layer_pre", "world_primitives"];
 
 /// `is_out` is the hook's collect out (the only `&mut` whose write-back the
 /// contract owns).
@@ -1120,6 +1126,12 @@ fn mut_of(
     // keeps its entries for them.
     if FRAME_HOOKS.contains(&hook) && is_path(elem, "HudBatch") {
         return FieldOutcome::Conv(Conv::HudBatch, "HudBatch".into());
+    }
+    // A world-primitives hook's builder (`horizon_client::world_primitives`):
+    // the event table carries it as scoped functions, seeded inline by the
+    // frame arm. Name-gated the same way as the batch.
+    if FRAME_HOOKS.contains(&hook) && is_path(elem, "WorldPrimitives") {
+        return FieldOutcome::Conv(Conv::WorldPrimitives, "WorldPrimitives".into());
     }
     // Only `hud` (`FRAME_HOOKS[0]`) carries `Corners`: the only hook
     // whose `gen_frame!` arm seeds a corners table.
@@ -2984,7 +2996,6 @@ fn cannot_id(id: &str) -> Option<String> {
             | "NativePlayerRender"
             | "BlockEntityDraw"
             | "NativeWorldDraw"
-            | "WorldPrimitives"
             | "WorldHold"
             | "RenderNeeds"
             | "Corners"
@@ -3716,7 +3727,10 @@ fn model_of(
     // batch classifies reach generation with one.
     let frame = params.iter().any(|(_, t)| {
         let (inner, _) = deref(t);
-        last_ident(inner).as_deref() == Some("HudBatch")
+        matches!(
+            last_ident(inner).as_deref(),
+            Some("HudBatch" | "WorldPrimitives")
+        )
     });
     Ok(Model {
         event: event_name(name),
@@ -3877,6 +3891,18 @@ pub fn assert_lines(
             .iter()
             .map(|f| a(&format!("type({e}.{f}) == \"function\"")))
             .collect(),
+        // A world-primitives hook's builder: one assert per function.
+        Conv::WorldPrimitives => [
+            "line",
+            "box_outline",
+            "filled_box",
+            "beam",
+            "text",
+            "sprite",
+        ]
+        .iter()
+        .map(|f| a(&format!("type({e}.{f}) == \"function\"")))
+        .collect(),
         Conv::Bytes | Conv::PathStr => vec![a(&format!("{e} == {lua}"))],
         Conv::Player | Conv::PlayerOpt => vec![
             a(&format!("{e}.uuid == {lua}")),
@@ -4404,6 +4430,11 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         Conv::Corners => plain(
             "Corners::new(800.0, 600.0, 0.0)".into(),
             "\"corners\"".into(),
+        ),
+        // A world-primitives hook's builder: an empty list to draw into.
+        Conv::WorldPrimitives => plain(
+            "WorldPrimitives::default()".into(),
+            "\"world_primitives\"".into(),
         ),
         // A block-entity tick's dimension seeds inline in the bespoke arm
         // (its tag only documents the seed): sampling one is a model bug.
@@ -4969,6 +5000,28 @@ mod tests {
                 );
             }
             class => panic!("gui_layer_pre should generate, got {class:?}"),
+        }
+        // `world_primitives` is a read-only frame hook: a `&self` host, the
+        // collect out carried as a scoped builder table, and no cancel flag.
+        match class_of("world_primitives") {
+            Class::Generated(model) => {
+                assert_eq!(model.host, Host::GameRef, "world_primitives host");
+                assert_eq!(model.contract, "collect", "world_primitives contract");
+                assert!(
+                    matches!(model.kind, Kind::None),
+                    "world_primitives takes no kind"
+                );
+                assert!(model.frame, "world_primitives runs the frame path");
+                assert!(
+                    model
+                        .fields
+                        .iter()
+                        .any(|f| f.name == "primitives" && f.conv == Conv::WorldPrimitives),
+                    "world_primitives seeds its builder"
+                );
+                assert_eq!(model.cancel_flag, None, "world_primitives cancels nothing");
+            }
+            class => panic!("world_primitives should generate, got {class:?}"),
         }
         match class_of("hud") {
             Class::Generated(model) => {

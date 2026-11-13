@@ -37,6 +37,8 @@ export type Carried = { [string]: number }
 export type CommandResult = { ran: boolean, result: number, output: { string }, output_components: { Component } }
 export type HudBatch = { fill: (x: number, y: number, w: number, h: number, argb: number) -> (), text: (text: string, x: number, y: number, rgb: number, shadow: boolean) -> (), sprite: (name: string, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number) -> boolean, item: (id: string, x: number, y: number, size: number) -> boolean, item_stack: (stack: Item, x: number, y: number, size: number) -> boolean, item_model: (item: string, model: string, x: number, y: number, size: number) -> boolean, quad: (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, x4: number, y4: number, argb: number) -> (), text_width: (text: string) -> number }
 export type HudCorners = { place: (corner: string, w: number, h: number) -> (number, number), shown: (corner: string) -> boolean }
+export type PrimitiveOptions = { through_walls: boolean?, scale_with_distance: boolean?, background: boolean? }
+export type WorldPrimitives = { line: (from: Vec3, to: Vec3, color: (number | { r: number, g: number, b: number, a: number? }), width: number, options: PrimitiveOptions?) -> (), box_outline: (min: Vec3, max: Vec3, color: (number | { r: number, g: number, b: number, a: number? }), width: number, options: PrimitiveOptions?) -> (), filled_box: (min: Vec3, max: Vec3, color: (number | { r: number, g: number, b: number, a: number? }), options: PrimitiveOptions?) -> (), beam: (base: Vec3, height: number, color: (number | { r: number, g: number, b: number, a: number? }), options: PrimitiveOptions?) -> (), text: (at: Vec3, text: string, color: (number | { r: number, g: number, b: number, a: number? }), scale: number, options: PrimitiveOptions?) -> (), sprite: (at: Vec3, sprite: string, size: number, color: (number | { r: number, g: number, b: number, a: number? }), options: PrimitiveOptions?) -> () }
 export type MarkerSpec = { kind: "box" | "line" | "beam" | "text" | "icon", pos: Vec3, size: (Vec3 | number)?, filled: boolean?, to: Vec3?, height: number?, text: string?, scale: number?, sprite: string?, color: (number | { r: number, g: number, b: number, a: number? })?, through_walls: boolean?, ttl: number? }
 
 -- The event tables of the generated hooks: one table per hook,
@@ -57,7 +59,7 @@ export type MarkerSpec = { kind: "box" | "line" | "beam" | "text" | "icon", pos:
 -- An item's `extra` keeps its NBT types when edited in place; a fresh
 -- table reads with default types.
 --
--- In hud, gui_layer_post and gui_layer_pre, `horizon.time`, `block`, `block_property`,
+-- In hud, gui_layer_post, gui_layer_pre and world_primitives, `horizon.time`, `block`, `block_property`,
 -- `light` read the client's world; `player` with no argument reads the
 -- window's own player and `real_time` the wall clock; `players`, `mob`,
 -- `mobs`, `raycast`, `surface_height` need a server and read empty on a
@@ -519,6 +521,7 @@ export type WorldBorderBoundsChangedEvent = {  }
 export type WorldBorderCenterChangedEvent = {  }
 export type WorldGameRuleChangeEvent = { player: PlayerRef, rule: string, value: string }
 export type WorldLifecycleEvent = { authority: string, epoch: number, tick: number, phase: string, error_text: string }
+export type WorldPrimitivesEvent = { partial: number, camera: Vec3, primitives: WorldPrimitives }
 export type WorldSavedEvent = { wait: boolean }
 export type ZoomEvent = { zoom: { factor: number, smooth: boolean, turn: number }?? }
 
@@ -978,6 +981,7 @@ export type HorizonOn =
     ((name: "world_border_center_changed", fn: (event: WorldBorderCenterChangedEvent) -> ()) -> ()) &
     ((name: "world_game_rule_change", fn: (event: WorldGameRuleChangeEvent) -> ()) -> ()) &
     ((name: "world_lifecycle", fn: (event: WorldLifecycleEvent) -> ()) -> ()) &
+    ((name: "world_primitives", fn: (event: WorldPrimitivesEvent) -> ()) -> ()) &
     ((name: "world_saved", fn: (event: WorldSavedEvent) -> ()) -> ()) &
     ((name: "zoom", fn: (event: ZoomEvent) -> ()) -> ())
 

@@ -13116,7 +13116,9 @@ fn generated_client_reads_work_in_a_draw_hook_but_actions_do_not() {
             .globals()
             .get::<String>("__draw_err")
             .unwrap()
-            .contains("not available in draw hooks (hud, gui_layer_post, gui_layer_pre)"),
+            .contains(
+                "not available in draw hooks (hud, gui_layer_post, gui_layer_pre, world_primitives)"
+            ),
         "{:?}",
         state.globals().get::<String>("__draw_err")
     );

@@ -241,7 +241,10 @@ fn lua_cell(model: &Model) -> String {
     if model.frame {
         let mut calls: Vec<String> = Vec::new();
         for f in &model.fields {
-            if matches!(f.conv, Conv::HudBatch | Conv::Corners) {
+            if matches!(
+                f.conv,
+                Conv::HudBatch | Conv::Corners | Conv::WorldPrimitives
+            ) {
                 calls.push(format!("`{}`", f.name));
             }
         }
@@ -268,6 +271,11 @@ fn lua_cell(model: &Model) -> String {
         Host::GameMut | Host::LevelWrite => {}
         Host::None if matches!(model.kind, Kind::Mob { .. }) => {}
         Host::None => cell.push_str("; no host: queued actions are dropped"),
+        // A read-only frame hook reports a queued action as an error
+        // (`hud_hooks::finish_read_only`), where the other read-only hooks drop it.
+        Host::GameRef if model.frame => {
+            cell.push_str("; reads only: a queued action is reported as an error")
+        }
         Host::GameRef | Host::Level | Host::LevelMut | Host::LevelTicks => {
             cell.push_str("; reads only: queued actions are dropped")
         }
@@ -1202,7 +1210,9 @@ mod tests {
                     row.name
                 );
             }
-            if model.contract == "collect" {
+            // A frame hook's collect out is a scoped builder every handler
+            // draws into (its cell says so), not a value the handlers edit in turn.
+            if model.contract == "collect" && !model.frame {
                 assert!(
                     cell.contains("in turn"),
                     "{} says its handlers edit in turn",

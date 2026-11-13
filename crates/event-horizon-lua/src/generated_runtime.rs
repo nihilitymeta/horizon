@@ -1867,6 +1867,47 @@ macro_rules! gen_frame_cancel {
     };
 }
 
+/// A read-only frame hook (`world_primitives`): like the `gen_frame!` arms
+/// (the same frame turn, early-out, `FRAME_BUDGET` and overrun counting),
+/// but the native receiver is `&self` (`game_ref`), so no `&mut` host
+/// exists to run queued actions with. The event carries `partial`, the
+/// `camera` as `{x, y, z}`, and the `primitives` builder table, whose draws
+/// land in the native `WorldPrimitives` as the handler calls them, up to the
+/// per-call cap (`hud_hooks::primitives_table`). A queued action is reported
+/// as an error after the call: this hook only draws.
+macro_rules! gen_frame_collect {
+    ($name:ident, game_ref, $event:ty, $kind:tt, [partial : copy, camera : vec3, primitives : world_primitives $(,)?]) => {
+        fn $name(&self, host: &dyn horizon_client::mod_api::Host, _event: &mut $event) {
+            let hook = stringify!($name);
+            let Some(_frame_turn) = self.turn.try_acquire(Some(hook)) else {
+                return;
+            };
+            if !self.has_handlers(hook) {
+                self.note_frame_outcome(hook, false);
+                return;
+            }
+            let lua = &self.lua;
+            let primitives = std::cell::RefCell::new(&mut *_event.primitives);
+            let drawn = std::cell::Cell::new(0_usize);
+            let outcome = lua.scope(|scope| {
+                let table = lua.create_table()?;
+                #[cfg(test)]
+                crate::generated_runtime::note_event_table();
+                table.set("partial", _event.partial)?;
+                let camera = lua.create_table()?;
+                camera.set("x", _event.camera[0])?;
+                camera.set("y", _event.camera[1])?;
+                camera.set("z", _event.camera[2])?;
+                table.set("camera", camera)?;
+                let builder = crate::hud_hooks::primitives_table(scope, lua, &primitives, &drawn)?;
+                table.set("primitives", builder)?;
+                self.run_handlers_with(hook, None, Reader::Shared(host), table, FRAME_BUDGET)
+            });
+            crate::hud_hooks::finish_read_only(self, hook, outcome);
+        }
+    };
+}
+
 /// The data-pack files: like a `game_ref` collect hook, but the collect
 /// runs on every call including the first. The first load only logs (the
 /// logger is up now); from the second on, the scripts are read and run

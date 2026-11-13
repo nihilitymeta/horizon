@@ -161,6 +161,19 @@ const TYPES: &[(&str, &str)] = &[
         "HudCorners",
         "{ place: (corner: string, w: number, h: number) -> (number, number), shown: (corner: string) -> boolean }",
     ),
+    // The world-primitives builder (`primitives` on `world_primitives`): the
+    // six draw functions, each taking its positions as `Vec3` tables and
+    // ARGB colours (an integer, or `{ r, g, b, a? }`) and an optional
+    // options table; they draw nothing until the frame's handler returns
+    // and expire with the call (docs/lua-bindings.md, "World primitives").
+    (
+        "PrimitiveOptions",
+        "{ through_walls: boolean?, scale_with_distance: boolean?, background: boolean? }",
+    ),
+    (
+        "WorldPrimitives",
+        "{ line: (from: Vec3, to: Vec3, color: (number | { r: number, g: number, b: number, a: number? }), width: number, options: PrimitiveOptions?) -> (), box_outline: (min: Vec3, max: Vec3, color: (number | { r: number, g: number, b: number, a: number? }), width: number, options: PrimitiveOptions?) -> (), filled_box: (min: Vec3, max: Vec3, color: (number | { r: number, g: number, b: number, a: number? }), options: PrimitiveOptions?) -> (), beam: (base: Vec3, height: number, color: (number | { r: number, g: number, b: number, a: number? }), options: PrimitiveOptions?) -> (), text: (at: Vec3, text: string, color: (number | { r: number, g: number, b: number, a: number? }), scale: number, options: PrimitiveOptions?) -> (), sprite: (at: Vec3, sprite: string, size: number, color: (number | { r: number, g: number, b: number, a: number? }), options: PrimitiveOptions?) -> () }",
+    ),
     // The world markers (`horizon.marker_set(id, spec)`): one table type
     // for every kind, the fields of the other kinds optional and, at
     // runtime, an error (docs/lua-bindings.md, "World markers").
@@ -662,7 +675,7 @@ fn render() -> Result<String, String> {
         out.push_str(&format!("export type {name} = {def}\n"));
     }
     out.push_str("\n-- The event tables of the generated hooks: one table per hook,\n-- holding the struct's fields by name.\n");
-    out.push_str("--\n-- A text field reads as its plain string plus a `<field>_component`\n-- table (vanilla JSON). A write is a string, a component table, or both:\n-- the changed side wins; both changed, the component wins; a cleared\n-- component falls back to the string. Setting the plain side to nil leaves\n-- a required text alone and clears an optional one (nil on both sides\n-- clears it too). In-place edits of the seeded component table count.\n--\n-- A sequence field reads its holes as nil. Edits in place keep positions:\n-- a cleared trailing slot shrinks the list (`false` pins an explicit hole\n-- instead), an append past the seeded length grows it (up to 65536 extra\n-- entries; replace the table to grow it further), while a table the script\n-- replaces wholesale reads its own length (use `false` for holes there).\n-- An item's `extra` keeps its NBT types when edited in place; a fresh\n-- table reads with default types.\n--\n-- In hud, gui_layer_post and gui_layer_pre, `horizon.time`, `block`, `block_property`,\n-- `light` read the client's world; `player` with no argument reads the\n-- window's own player and `real_time` the wall clock; `players`, `mob`,\n-- `mobs`, `raycast`, `surface_height` need a server and read empty on a\n-- client window; `world_data`, `player_data`, `entity_data`, the acting\n-- player's inventory reads and `summon` raise an error. `held` on the\n-- player tables reads nil there, and `acting_player` answers nil with no\n-- acting player.\n");
+    out.push_str("--\n-- A text field reads as its plain string plus a `<field>_component`\n-- table (vanilla JSON). A write is a string, a component table, or both:\n-- the changed side wins; both changed, the component wins; a cleared\n-- component falls back to the string. Setting the plain side to nil leaves\n-- a required text alone and clears an optional one (nil on both sides\n-- clears it too). In-place edits of the seeded component table count.\n--\n-- A sequence field reads its holes as nil. Edits in place keep positions:\n-- a cleared trailing slot shrinks the list (`false` pins an explicit hole\n-- instead), an append past the seeded length grows it (up to 65536 extra\n-- entries; replace the table to grow it further), while a table the script\n-- replaces wholesale reads its own length (use `false` for holes there).\n-- An item's `extra` keeps its NBT types when edited in place; a fresh\n-- table reads with default types.\n--\n-- In hud, gui_layer_post, gui_layer_pre and world_primitives, `horizon.time`, `block`, `block_property`,\n-- `light` read the client's world; `player` with no argument reads the\n-- window's own player and `real_time` the wall clock; `players`, `mob`,\n-- `mobs`, `raycast`, `surface_height` need a server and read empty on a\n-- client window; `world_data`, `player_data`, `entity_data`, the acting\n-- player's inventory reads and `summon` raise an error. `held` on the\n-- player tables reads nil there, and `acting_player` answers nil with no\n-- acting player.\n");
     for g in &generated {
         out.push_str(&format!("export type {} = {}\n", g.event_ty, g.event_def));
     }
