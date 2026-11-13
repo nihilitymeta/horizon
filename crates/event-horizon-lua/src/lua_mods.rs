@@ -11227,7 +11227,7 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         }
     }
 
-    /// A scoreboard host for the four write helpers (issue 61). It records
+    /// A scoreboard host for the scoreboard write helpers (issue 61). It records
     /// every write call and keeps a board that applies the rule the native
     /// host applies (`game/native_scoreboard.rs`: a write only in
     /// `<mod_id>.<name>`, an existing objective for a score write), so a
@@ -11240,6 +11240,10 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         scores: std::collections::BTreeMap<(String, String), i32>,
         /// `objective -> criteria`.
         objectives: std::collections::BTreeMap<String, String>,
+        /// The teams on the board.
+        teams: std::collections::BTreeSet<String>,
+        /// `holder -> team`: each holder's team.
+        team_of: std::collections::BTreeMap<String, String>,
     }
 
     /// Whether `mod_id` may write `name`: its own `<mod_id>.<rest>`.
@@ -11247,6 +11251,14 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         name.strip_prefix(mod_id)
             .and_then(|rest| rest.strip_prefix('.'))
             .is_some_and(|rest| !rest.is_empty())
+    }
+
+    /// Whether `mod_id` may move `holder` between teams: on no team, or on
+    /// one of its own (`game/native_scoreboard.rs`'s `may_move`).
+    fn may_move_team(host: &BoardHost, mod_id: &str, holder: &str) -> bool {
+        host.team_of
+            .get(holder)
+            .is_none_or(|team| own_objective(mod_id, team))
     }
 
     impl Host for BoardHost {
@@ -11309,6 +11321,61 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         }
         fn scoreboard_objectives(&self) -> Vec<String> {
             self.objectives.keys().cloned().collect()
+        }
+        fn scoreboard_add_team(&mut self, mod_id: &str, name: &str) -> bool {
+            self.calls.push(format!("add_team {mod_id} {name}"));
+            let word = name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '+'));
+            if !own_objective(mod_id, name) || !word || self.teams.contains(name) {
+                return false;
+            }
+            self.teams.insert(name.to_owned());
+            true
+        }
+        fn scoreboard_remove_team(&mut self, mod_id: &str, name: &str) -> bool {
+            self.calls.push(format!("remove_team {mod_id} {name}"));
+            if !own_objective(mod_id, name) || !self.teams.remove(name) {
+                return false;
+            }
+            self.team_of.retain(|_, team| team != name);
+            true
+        }
+        fn scoreboard_team_join(&mut self, mod_id: &str, team: &str, holder: &str) -> bool {
+            self.calls.push(format!("join {mod_id} {team} {holder}"));
+            if !own_objective(mod_id, team)
+                || !self.teams.contains(team)
+                || !may_move_team(self, mod_id, holder)
+            {
+                return false;
+            }
+            self.team_of.insert(holder.to_owned(), team.to_owned());
+            true
+        }
+        fn scoreboard_team_leave(&mut self, mod_id: &str, holder: &str) -> bool {
+            self.calls.push(format!("leave {mod_id} {holder}"));
+            if !self
+                .team_of
+                .get(holder)
+                .is_some_and(|t| own_objective(mod_id, t))
+            {
+                return false;
+            }
+            self.team_of.remove(holder);
+            true
+        }
+        fn scoreboard_teams(&self) -> Vec<String> {
+            self.teams.iter().cloned().collect()
+        }
+        fn scoreboard_team_of(&self, holder: &str) -> Option<String> {
+            self.team_of.get(holder).cloned()
+        }
+        fn scoreboard_team_members(&self, team: &str) -> Vec<String> {
+            self.team_of
+                .iter()
+                .filter(|(_, t)| t.as_str() == team)
+                .map(|(holder, _)| holder.clone())
+                .collect()
         }
     }
 
@@ -11464,6 +11531,111 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[test]
+    fn team_writes_reach_the_host_with_the_calling_mods_id() {
+        // The script passes no mod id: the runtime supplies `scoreteam` to all
+        // four team writes, and the queued actions run in the order written.
+        let (dir, path) = hmod_as(
+            "scoreteam",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("server_tick", function()
+                  horizon.scoreboard_add_team("scoreteam.a")
+                  horizon.scoreboard_team_join("scoreteam.a", "Steve")
+                  horizon.scoreboard_team_leave("Steve")
+                  horizon.scoreboard_remove_team("scoreteam.gone")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = BoardHost::default();
+        host.teams.insert("scoreteam.gone".to_owned());
+        one_server_tick(&m, &mut host);
+        assert_eq!(
+            host.calls,
+            [
+                "add_team scoreteam scoreteam.a",
+                "join scoreteam scoreteam.a Steve",
+                "leave scoreteam Steve",
+                "remove_team scoreteam scoreteam.gone",
+            ]
+        );
+        assert!(host.teams.contains("scoreteam.a"));
+        assert!(!host.teams.contains("scoreteam.gone"));
+        assert_eq!(host.team_of.get("Steve"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_cannot_join_or_leave_another_mods_team_but_reads_it() {
+        // `scoreg` owns `scoreg.mine` (empty). Alex is on vanilla's `red`, Carl
+        // on `scoreh.t` (another mod's). `scoreg` tries to put Alex on its team
+        // and to take Carl off his: the host refuses both, nothing moves, and no
+        // error is reported. The reads answer where they really are.
+        let (dir, path) = hmod_as(
+            "scoreg",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("server_tick", function()
+                  horizon.scoreboard_team_join("scoreg.mine", "Alex")
+                  horizon.scoreboard_team_join("red", "Alex")
+                  horizon.scoreboard_team_leave("Carl")
+                  READ_ALEX = horizon.scoreboard_team_of("Alex")
+                  READ_CARL = horizon.scoreboard_team_of("Carl")
+                  READ_NONE = horizon.scoreboard_team_of("Nobody")
+                  MEMBERS = horizon.scoreboard_team_members("red")
+                  TEAMS = horizon.scoreboard_teams()
+                end)
+                "#,
+            )],
+        );
+        set_status(ModStatus {
+            id: "scoreg".into(),
+            side: "server".to_owned(),
+            ..Default::default()
+        });
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = BoardHost::default();
+        host.teams.insert("red".to_owned());
+        host.teams.insert("scoreg.mine".to_owned());
+        host.teams.insert("scoreh.t".to_owned());
+        host.team_of.insert("Alex".to_owned(), "red".to_owned());
+        host.team_of
+            .insert("Carl".to_owned(), "scoreh.t".to_owned());
+        one_server_tick(&m, &mut host);
+        assert_eq!(
+            host.calls,
+            [
+                "join scoreg scoreg.mine Alex",
+                "join scoreg red Alex",
+                "leave scoreg Carl",
+            ]
+        );
+        assert_eq!(host.team_of.get("Alex").map(String::as_str), Some("red"));
+        assert_eq!(
+            host.team_of.get("Carl").map(String::as_str),
+            Some("scoreh.t")
+        );
+        let g = &m.lua;
+        assert_eq!(g.globals().get::<String>("READ_ALEX").unwrap(), "red");
+        assert_eq!(g.globals().get::<String>("READ_CARL").unwrap(), "scoreh.t");
+        assert!(g.globals().get::<Value>("READ_NONE").unwrap().is_nil());
+        let members = g.globals().get::<Table>("MEMBERS").unwrap();
+        assert_eq!(members.raw_len(), 1);
+        assert_eq!(members.get::<String>(1).unwrap(), "Alex");
+        let teams = g.globals().get::<Table>("TEAMS").unwrap();
+        assert_eq!(teams.raw_len(), 3);
+        let e = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == "scoreg")
+            .and_then(|s| s.error);
+        assert_eq!(e, None, "a refused team write is not a script error");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// Runs one server tick of a one-handler mod `id` whose handler
     /// makes `call`, and returns the error the status reports (the host
     /// must not have been called).
@@ -11509,6 +11681,22 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
             (
                 r#"horizon.scoreboard_remove_objective("scoreold", "scoreold.x")"#,
                 "scoreboard_remove_objective: takes 1 argument(s), got 2",
+            ),
+            (
+                r#"horizon.scoreboard_add_team("scoreold", "scoreold.t")"#,
+                "scoreboard_add_team: takes 1 argument(s), got 2",
+            ),
+            (
+                r#"horizon.scoreboard_remove_team("scoreold", "scoreold.t")"#,
+                "scoreboard_remove_team: takes 1 argument(s), got 2",
+            ),
+            (
+                r#"horizon.scoreboard_team_join("scoreold", "scoreold.t", "Steve")"#,
+                "scoreboard_team_join: takes 2 argument(s), got 3",
+            ),
+            (
+                r#"horizon.scoreboard_team_leave("scoreold", "Steve")"#,
+                "scoreboard_team_leave: takes 1 argument(s), got 2",
             ),
         ];
         for (call, want) in cases {

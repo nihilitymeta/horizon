@@ -790,6 +790,13 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn scoreboard_add_team(&mut self, mod_id: &str, name: &str) -> bool {
+        self.record(
+            "scoreboard_add_team",
+            &[mod_id.to_string(), name.to_string()],
+        );
+        !self.refuse
+    }
     fn scoreboard_objectives(&self) -> Vec<String> {
         self.record("scoreboard_objectives", &[]);
         vec!["alpha".to_owned(), "beta".to_owned()]
@@ -797,6 +804,13 @@ impl Host for GenHost {
     fn scoreboard_remove_objective(&mut self, mod_id: &str, name: &str) -> bool {
         self.record(
             "scoreboard_remove_objective",
+            &[mod_id.to_string(), name.to_string()],
+        );
+        !self.refuse
+    }
+    fn scoreboard_remove_team(&mut self, mod_id: &str, name: &str) -> bool {
+        self.record(
+            "scoreboard_remove_team",
             &[mod_id.to_string(), name.to_string()],
         );
         !self.refuse
@@ -825,6 +839,36 @@ impl Host for GenHost {
             ],
         );
         !self.refuse
+    }
+    fn scoreboard_team_join(&mut self, mod_id: &str, team: &str, holder: &str) -> bool {
+        self.record(
+            "scoreboard_team_join",
+            &[mod_id.to_string(), team.to_string(), holder.to_string()],
+        );
+        !self.refuse
+    }
+    fn scoreboard_team_leave(&mut self, mod_id: &str, holder: &str) -> bool {
+        self.record(
+            "scoreboard_team_leave",
+            &[mod_id.to_string(), holder.to_string()],
+        );
+        !self.refuse
+    }
+    fn scoreboard_team_members(&self, team: &str) -> Vec<String> {
+        self.record("scoreboard_team_members", &[team.to_string()]);
+        vec!["alpha".to_owned(), "beta".to_owned()]
+    }
+    fn scoreboard_team_of(&self, holder: &str) -> Option<String> {
+        self.record("scoreboard_team_of", &[holder.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
+    }
+    fn scoreboard_teams(&self) -> Vec<String> {
+        self.record("scoreboard_teams", &[]);
+        vec!["alpha".to_owned(), "beta".to_owned()]
     }
     fn screen_pos(&self) -> Option<[i32; 3]> {
         self.record("screen_pos", &[]);
@@ -11117,6 +11161,111 @@ fn scoreboard_score_is_generated_and_exact() {
 }
 
 #[test]
+fn scoreboard_team_members_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "scoreboard_team_members",
+        rest(
+            &lua,
+            &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.raw_len(), 2);
+        assert_eq!(t.get::<String>(1).unwrap(), "alpha");
+        assert_eq!(t.get::<String>(2).unwrap(), "beta");
+    }
+    assert_eq!(h.logged(), ["scoreboard_team_members ruby:gen1"]);
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "scoreboard_team_members",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("scoreboard_team_members"), "{text}");
+        assert!(text.contains("team"), "{text}");
+    }
+}
+
+#[test]
+fn scoreboard_team_of_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "scoreboard_team_of",
+        rest(
+            &lua,
+            &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["scoreboard_team_of ruby:gen1"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "scoreboard_team_of",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "scoreboard_team_of",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("scoreboard_team_of"), "{text}");
+        assert!(text.contains("holder"), "{text}");
+    }
+}
+
+#[test]
+fn scoreboard_teams_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(&lua, &h, "scoreboard_teams", rest(&lua, &[]))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.raw_len(), 2);
+        assert_eq!(t.get::<String>(1).unwrap(), "alpha");
+        assert_eq!(t.get::<String>(2).unwrap(), "beta");
+    }
+    assert_eq!(h.logged(), ["scoreboard_teams"]);
+}
+
+#[test]
 fn screen_pos_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -12816,8 +12965,12 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "respawn_player",
             "scoreboard_add_objective",
             "scoreboard_add_score",
+            "scoreboard_add_team",
             "scoreboard_remove_objective",
+            "scoreboard_remove_team",
             "scoreboard_set_score",
+            "scoreboard_team_join",
+            "scoreboard_team_leave",
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
@@ -12894,6 +13047,9 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "profile_by_uuid",
             "scoreboard_objectives",
             "scoreboard_score",
+            "scoreboard_team_members",
+            "scoreboard_team_of",
+            "scoreboard_teams",
             "sneaking",
             "text_allowed",
             "world_seed",
@@ -12972,8 +13128,12 @@ fn every_generated_name_is_a_function_on_horizon() {
             "respawn_player",
             "scoreboard_add_objective",
             "scoreboard_add_score",
+            "scoreboard_add_team",
             "scoreboard_remove_objective",
+            "scoreboard_remove_team",
             "scoreboard_set_score",
+            "scoreboard_team_join",
+            "scoreboard_team_leave",
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
@@ -13045,6 +13205,9 @@ fn every_generated_name_is_a_function_on_horizon() {
             "profile_by_uuid",
             "scoreboard_objectives",
             "scoreboard_score",
+            "scoreboard_team_members",
+            "scoreboard_team_of",
+            "scoreboard_teams",
             "sneaking",
             "text_allowed",
             "world_seed",
@@ -13103,8 +13266,12 @@ fn generated_server_names_raise_in_a_client_state() {
             "respawn_player",
             "scoreboard_add_objective",
             "scoreboard_add_score",
+            "scoreboard_add_team",
             "scoreboard_remove_objective",
+            "scoreboard_remove_team",
             "scoreboard_set_score",
+            "scoreboard_team_join",
+            "scoreboard_team_leave",
             "set_attribute_base",
             "set_block_property_with",
             "set_break_progress",
@@ -13176,6 +13343,9 @@ fn generated_server_names_raise_in_a_client_state() {
             "profile_by_uuid",
             "scoreboard_objectives",
             "scoreboard_score",
+            "scoreboard_team_members",
+            "scoreboard_team_of",
+            "scoreboard_teams",
             "sneaking",
             "text_allowed",
             "world_seed",

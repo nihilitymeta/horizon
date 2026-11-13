@@ -1181,10 +1181,17 @@ declare horizon: {
     respawn_player: (who: string | ReadPlayer) -> (),
     scoreboard_add_objective: (name: string, name2: string) -> (),
     scoreboard_add_score: (name: string, name2: string, value: number) -> (),
+    scoreboard_add_team: (name: string) -> (),
     scoreboard_objectives: () -> { string },
     scoreboard_remove_objective: (name: string) -> (),
+    scoreboard_remove_team: (name: string) -> (),
     scoreboard_score: (name: string, name2: string) -> number?,
     scoreboard_set_score: (name: string, name2: string, value: number) -> (),
+    scoreboard_team_join: (name: string, name2: string) -> (),
+    scoreboard_team_leave: (name: string) -> (),
+    scoreboard_team_members: (name: string) -> { string },
+    scoreboard_team_of: (name: string) -> string?,
+    scoreboard_teams: () -> { string },
     screen_pos: () -> Vec3?, -- client state only
     screen_title: () -> string?, -- client state only
     set_attribute_base: (who: string | ReadPlayer, name: string, value: number) -> (),

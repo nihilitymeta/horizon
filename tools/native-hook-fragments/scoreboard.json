@@ -24,10 +24,38 @@
     {
       "name": "scoreboard_remove_objective",
       "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_remove_objective"
+    },
+    {
+      "name": "scoreboard_teams",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_teams"
+    },
+    {
+      "name": "scoreboard_team_of",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_team_of"
+    },
+    {
+      "name": "scoreboard_team_members",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_team_members"
+    },
+    {
+      "name": "scoreboard_add_team",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_add_team"
+    },
+    {
+      "name": "scoreboard_remove_team",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_remove_team"
+    },
+    {
+      "name": "scoreboard_team_join",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_team_join"
+    },
+    {
+      "name": "scoreboard_team_leave",
+      "target": "horizon_client::game::native_scoreboard::Game<'_>::native_scoreboard_team_leave"
     }
   ],
-  "rust_summary": "the scoreboard: a score read for any objective, a score written, an objective created or removed only in the mod's own `<mod_id>.<name>` namespace.",
-  "doc_summary": "`scoreboard_score(holder, objective)` reads any objective's score (`None` when missing); `scoreboard_set_score`, `scoreboard_add_score` (saturating), `scoreboard_add_objective` and `scoreboard_remove_objective` write only the mod's own `<mod_id>.<name>` objectives and return `false` when refused; `scoreboard_objectives` lists every objective. Bundles need \"hooks\": @API:scoreboard@.",
+  "rust_summary": "the scoreboard: a score read for any objective, a score written, an objective created or removed only in the mod's own `<mod_id>.<name>` namespace, and team membership (the mod's own teams, joined and left only under the rule in `native_scoreboard.rs`).",
+  "doc_summary": "`scoreboard_score(holder, objective)` reads any objective's score (`None` when missing); `scoreboard_set_score`, `scoreboard_add_score` (saturating), `scoreboard_add_objective` and `scoreboard_remove_objective` write only the mod's own `<mod_id>.<name>` objectives and return `false` when refused; `scoreboard_objectives` lists every objective. `scoreboard_teams`, `scoreboard_team_of(holder)` (`None` on no team) and `scoreboard_team_members(team)` read any team; `scoreboard_add_team`, `scoreboard_remove_team` and `scoreboard_team_join(team, holder)` act only on the mod's own `<mod_id>.<name>` teams, and `scoreboard_team_join` refuses a holder on a team the mod does not own; `scoreboard_team_leave(holder)` leaves only the mod's own team. Writes return `false` when refused. Bundles need \"hooks\": @API:scoreboard@.",
   "comments": [
     "crates/horizon-client/src/game/native_scoreboard.rs"
   ]

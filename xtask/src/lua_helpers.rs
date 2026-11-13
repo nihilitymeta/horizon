@@ -67,8 +67,12 @@ pub const EXCLUDED: &[(&str, &str)] = &[
 pub const BOUND_MOD_ID: &[&str] = &[
     "scoreboard_add_objective",
     "scoreboard_add_score",
+    "scoreboard_add_team",
     "scoreboard_remove_objective",
+    "scoreboard_remove_team",
     "scoreboard_set_score",
+    "scoreboard_team_join",
+    "scoreboard_team_leave",
 ];
 
 /// Whether `name`'s first parameter is bound to the calling mod (see

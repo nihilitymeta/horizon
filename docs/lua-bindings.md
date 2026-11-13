@@ -253,7 +253,7 @@ runs a console command; `run_command_as` already covers that). Regenerate with
 `cargo run -p xtask -- lua-helpers` (its `--check` fails when any of the five outputs — the bridge, its tests, the
 exposure page, `hook-points.md` and `horizon.d.lua` — is stale).
 The helpers in `BOUND_MOD_ID` (the same file) take the calling mod's id from the runtime, not from the script: their
-first parameter `mod_id` is left out of the Lua signature. Today that is the four scoreboard writes.
+first parameter `mod_id` is left out of the Lua signature. Today those are the scoreboard writes (objectives, scores and teams).
 
 ## The `horizon` table
 
@@ -562,6 +562,19 @@ commands, which is what `horizon.command` declares and `perform_command` hears.
 | `horizon.scoreboard_add_score(holder, objective, delta)` | Adds to the score in one of your own objectives (saturating at the i32 bounds; a score not yet set starts at 0) |
 | `horizon.scoreboard_add_objective(name, criteria)` | Creates the objective `<your mod id>.<name>` with the criteria (`dummy`, `health`, ...) |
 | `horizon.scoreboard_remove_objective(name)` | Removes your objective `<your mod id>.<name>` and every score in it |
+| `horizon.scoreboard_teams()` | The names of every team on the board (vanilla's and every mod's), as a sequence of strings (`{}` when there are none) |
+| `horizon.scoreboard_team_of(holder)` | The name of the team the holder is on, any team's; nil when on none. A read never creates an entry |
+| `horizon.scoreboard_team_members(team)` | The holders on the team, any team's, as a sequence of strings (`{}` for an unknown team) |
+| `horizon.scoreboard_add_team(name)` | Creates the team `<your mod id>.<name>`; the name must be one `/team add` accepts (letters, digits, `_`, `-`, `.`, `+`) |
+| `horizon.scoreboard_remove_team(name)` | Removes your team `<your mod id>.<name>`; its members lose their team |
+| `horizon.scoreboard_team_join(team, holder)` | Puts the holder on your team `<your mod id>.<team>`, off their previous team |
+| `horizon.scoreboard_team_leave(holder)` | Takes the holder off your team; only from a team you own |
+
+Teams follow the same rule as objectives: a mod writes only teams named `<your mod id>.<name>`, and reads any team.
+Joining a team puts the holder on it, so it moves a holder off their previous team. A join is refused when the
+team does not exist, or when the holder is on a team the mod does not own (a vanilla team or another mod's): a
+mod cannot pull a player off someone else's team. Re-joining the team the holder is on succeeds. A leave is
+refused unless the holder is on one of your teams. Team colours, prefixes and options are not in these helpers.
 
 Reads take any objective. A write takes only an objective named `<your mod id>.<name>` that exists (a score write)
 or is free (an add), and not a read-only criteria. The runtime supplies your mod id, the one `horizon.mod_id`
@@ -569,7 +582,7 @@ holds: the script does not pass it. A call that still passes it first (`scoreboa
 is an error naming the helper and the count (`scoreboard_set_score: takes 3 argument(s), got 4`), and nothing is
 written. A write the host refuses (another mod's or a vanilla objective, a missing one, a read-only criteria) changes
 nothing and is silent in Lua: the bridge drops the host's `false`, so a script that needs to know reads the score
-back with `scoreboard_score`. Wrong types and missing arguments are errors naming the helper and the argument
+back with `scoreboard_score` (or `scoreboard_team_of` for a team). Wrong types and missing arguments are errors naming the helper and the argument
 (`scoreboard_set_score: value: ...`). The board is the server's: the scoreboard helpers exist only in a server state (`scripts/server/`), and a client state that calls one gets the usual server-only error (`horizon.scoreboard_score is only available in scripts/server/ (this is the client state of mod <id>)`).
 A read sees the world's saved board from the moment the world opens, `level_load` included.
 
