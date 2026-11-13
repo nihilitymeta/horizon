@@ -4397,6 +4397,29 @@ fn marker_number(action: &str, spec: &Table, field: &str) -> mlua::Result<f64> {
     })
 }
 
+/// The `sprite` field of an icon's `spec`: a non-empty string (the native
+/// checks its characters and length). Raw, like every spec read.
+fn marker_sprite(action: &str, spec: &Table) -> mlua::Result<String> {
+    match spec.raw_get::<Value>("sprite")? {
+        Value::String(s) => {
+            let s = s.to_string_lossy();
+            if s.is_empty() {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: sprite: must be a non-empty string"
+                )));
+            }
+            Ok(s)
+        }
+        Value::Nil => Err(mlua::Error::runtime(format!(
+            "{action}: sprite: missing (a string, e.g. \"item/diamond\")"
+        ))),
+        other => Err(mlua::Error::runtime(format!(
+            "{action}: sprite: must be a string, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
 /// An integer field of `spec` in `[lo, hi]`, or `None` when absent (a
 /// lifetime above `u32::MAX` is clamped and refused by the native, not
 /// here: the native's range is not duplicated).
@@ -4439,17 +4462,17 @@ fn marker_spec(action: &str, spec: &Table) -> mlua::Result<NativeMarker> {
     let kind = match spec.raw_get::<Value>("kind")? {
         Value::String(s) => {
             let s = s.to_string_lossy();
-            if ["box", "line", "beam", "text"].contains(&s.as_str()) {
+            if ["box", "line", "beam", "text", "icon"].contains(&s.as_str()) {
                 s
             } else {
                 return Err(mlua::Error::runtime(format!(
-                    "{action}: kind: must be \"box\", \"line\", \"beam\" or \"text\", got {s:?}"
+                    "{action}: kind: must be \"box\", \"line\", \"beam\", \"text\" or \"icon\", got {s:?}"
                 )));
             }
         }
         Value::Nil => {
             return Err(mlua::Error::runtime(format!(
-                "{action}: kind: missing (\"box\", \"line\", \"beam\" or \"text\")"
+                "{action}: kind: missing (\"box\", \"line\", \"beam\", \"text\" or \"icon\")"
             )));
         }
         other => {
@@ -4468,13 +4491,25 @@ fn marker_spec(action: &str, spec: &Table) -> mlua::Result<NativeMarker> {
         })?;
         match key.as_str() {
             "kind" | "pos" | "color" | "through_walls" | "ttl" => {}
-            "size" | "filled" if kind == "box" => {}
+            "size" if kind == "box" || kind == "icon" => {}
+            "filled" if kind == "box" => {}
             "to" if kind == "line" => {}
             "height" if kind == "beam" => {}
             "text" | "scale" if kind == "text" => {}
-            "size" | "filled" => {
+            "sprite" if kind == "icon" => {}
+            "size" => {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: {key}: only valid for kinds \"box\" and \"icon\", not \"{kind}\""
+                )));
+            }
+            "filled" => {
                 return Err(mlua::Error::runtime(format!(
                     "{action}: {key}: only valid for kind \"box\", not \"{kind}\""
+                )));
+            }
+            "sprite" => {
+                return Err(mlua::Error::runtime(format!(
+                    "{action}: {key}: only valid for kind \"icon\", not \"{kind}\""
                 )));
             }
             "to" => {
@@ -4510,6 +4545,21 @@ fn marker_spec(action: &str, spec: &Table) -> mlua::Result<NativeMarker> {
         },
         "beam" => NativeMarkerShape::Beam {
             height: marker_number(action, spec, "height")?,
+        },
+        "icon" => NativeMarkerShape::Icon {
+            sprite: marker_sprite(action, spec)?,
+            size: {
+                // The native's range (0.25..=16) is checked there; a size
+                // that is negative or infinite as f32 is a script error here.
+                let s = marker_number(action, spec, "size")?;
+                let size = s as f32;
+                if s < 0.0 || !size.is_finite() {
+                    return Err(mlua::Error::runtime(format!(
+                        "{action}: size: must be a finite number from 0 up that fits in 32 bits, got {s:e}"
+                    )));
+                }
+                size
+            },
         },
         _ => NativeMarkerShape::Text {
             text: match spec.raw_get::<Value>("text")? {
@@ -11298,6 +11348,64 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
     }
 
     #[test]
+    fn icon_marker_reaches_the_host_with_sprite_size_and_shared_fields() {
+        // An icon's `size` is a number (a box's is a `{x, y, z}`); its
+        // sprite, anchor, colour, through-walls and lifetime reach the host
+        // as given. Size 1.5 and sprite "block/stone" are read by value.
+        let (dir, path) = hmod(
+            "marker_icon",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                horizon.on("client_tick_post", function(event)
+                  horizon.marker_set("i", { kind = "icon", pos = { x = 3, y = 70, z = -4 },
+                    sprite = "item/diamond", size = 1.5,
+                    color = { r = 1, g = 2, b = 3, a = 4 }, through_walls = true, ttl = 40 })
+                  horizon.marker_set("j", { kind = "icon", pos = { x = 0, y = 0, z = 0 },
+                    sprite = "block/stone", size = 16 })
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = MarkerHost::new();
+        horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        let expected = vec![
+            (
+                "ruby".to_owned(),
+                "i".to_owned(),
+                NativeMarker {
+                    pos: [3.0, 70.0, -4.0],
+                    shape: NativeMarkerShape::Icon {
+                        sprite: "item/diamond".to_owned(),
+                        size: 1.5,
+                    },
+                    argb: 0x0401_0203,
+                    through_walls: true,
+                    ttl_ticks: Some(40),
+                },
+            ),
+            (
+                "ruby".to_owned(),
+                "j".to_owned(),
+                NativeMarker {
+                    pos: [0.0; 3],
+                    shape: NativeMarkerShape::Icon {
+                        sprite: "block/stone".to_owned(),
+                        size: 16.0,
+                    },
+                    argb: 0xFFFF_FFFF,
+                    through_walls: false,
+                    ttl_ticks: None,
+                },
+            ),
+        ];
+        assert_eq!(*host.sets.lock().unwrap(), expected);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn marker_set_replaces_by_id_and_move_remove_clear_reach_the_host() {
         // A second `marker_set` with the same id reaches the host again (the
         // native replaces), and `marker_move`, `marker_remove` and
@@ -11429,6 +11537,56 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
                 "colour integer -1",
                 "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, color = -1 }".to_string(),
                 "marker_set: color: must be an integer in 0..=",
+            ),
+            (
+                "icon missing sprite",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, size = 1 }".to_string(),
+                "marker_set: sprite: missing",
+            ),
+            (
+                "icon empty sprite",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = \"\", size = 1 }".to_string(),
+                "marker_set: sprite: must be a non-empty string",
+            ),
+            (
+                "icon non-string sprite",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = 7, size = 1 }".to_string(),
+                "marker_set: sprite: must be a string, got integer",
+            ),
+            (
+                "icon missing size",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = \"item/diamond\" }".to_string(),
+                "marker_set: size: missing",
+            ),
+            (
+                "icon infinite size",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = \"item/diamond\", size = 1 / 0 }".to_string(),
+                "marker_set: size: must be a finite number",
+            ),
+            (
+                "icon negative size",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = \"item/diamond\", size = -1 }".to_string(),
+                "marker_set: size: must be a finite number from 0 up",
+            ),
+            (
+                "icon size as a vector",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = \"item/diamond\", size = { x = 1, y = 1, z = 1 } }".to_string(),
+                "marker_set: size: must be a finite number",
+            ),
+            (
+                "icon with a box's filled",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = \"item/diamond\", size = 1, filled = true }".to_string(),
+                "marker_set: filled: only valid for kind \"box\", not \"icon\"",
+            ),
+            (
+                "icon with an unknown key",
+                "{ kind = \"icon\", pos = { x = 0, y = 0, z = 0 }, sprite = \"item/diamond\", size = 1, tint = 3 }".to_string(),
+                "marker_set: tint: unknown key",
+            ),
+            (
+                "box with a sprite",
+                "{ kind = \"box\", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, sprite = \"item/diamond\" }".to_string(),
+                "marker_set: sprite: only valid for kind \"icon\", not \"box\"",
             ),
             (
                 "integer key",
@@ -11807,6 +11965,9 @@ end)"#,
                 expect_client_only("marker_set", function()
                   horizon.marker_set("a", { kind = "box", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } })
                 end)
+                expect_client_only("marker_set", function()
+                  horizon.marker_set("b", { kind = "icon", pos = { x = 0, y = 0, z = 0 }, sprite = "item/diamond", size = 1 })
+                end)
                 expect_client_only("marker_move", function()
                   horizon.marker_move("a", { x = 0, y = 0, z = 0 })
                 end)
@@ -11836,6 +11997,8 @@ end)"#,
                 horizon.on("hud", function(event)
                   local ok, e = pcall(horizon.marker_set, "a", { kind = "box", pos = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 } })
                   PA = (not ok) and tostring(e) or "queued"
+                  local ok2, e2 = pcall(horizon.marker_set, "b", { kind = "icon", pos = { x = 0, y = 0, z = 0 }, sprite = "item/diamond", size = 1 })
+                  PB = (not ok2) and tostring(e2) or "queued"
                 end)
                 "#,
             )],
@@ -11849,6 +12012,8 @@ end)"#,
         horizon_client::mod_api::dispatch_hud(&mut host, &mods, &mut batch, &mut corners);
         let pa: String = state.globals().get("PA").unwrap();
         assert!(pa.contains("not available in draw hooks"), "{pa}");
+        let pb: String = state.globals().get("PB").unwrap();
+        assert!(pb.contains("not available in draw hooks"), "{pb}");
         assert!(host.sets.lock().unwrap().is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -430,7 +430,7 @@ end)
 
 ### World markers
 
-A marker is something a client mod keeps drawn in the world: a box, a line, a beam or text at a world
+A marker is something a client mod keeps drawn in the world: a box, a line, a beam, text or an icon at a world
 position, drawn every frame until the mod moves or removes it or its lifetime runs out. Unlike
 `event.batch` draws, a marker is set once and the engine keeps drawing it. Markers are the client
 state only (`scripts/client/`): a server state's marker calls raise `horizon.<name> is only
@@ -456,27 +456,29 @@ The `spec` table of `marker_set` holds exactly the fields of its `kind`, plus th
 
 | Key | Kinds | Meaning (default) |
 |---|---|---|
-| `kind` | all | `"box"`, `"line"`, `"beam"` or `"text"` (required) |
+| `kind` | all | `"box"`, `"line"`, `"beam"`, `"text"` or `"icon"` (required) |
 | `pos` | all | The anchor, `{x, y, z}` in world coordinates (required) |
-| `size` | `box` | `{x, y, z}`, the box's size along each axis (required) |
+| `size` | `box`, `icon` | For a `box`, `{x, y, z}`, the box's size along each axis (required). For an `icon`, a number, the icon's width in blocks (required) |
 | `filled` | `box` | `true` draws the six faces, `false` the twelve edges (`false`) |
 | `to` | `line` | `{x, y, z}`, an offset from `pos` to the line's end (required) |
 | `height` | `beam` | A number, blocks up (required; drawn rounded to a whole block) |
 | `text` | `text` | A string, centred on `pos` and facing the camera (required) |
 | `scale` | `text` | A number, a name tag's size at 1 (`1`) |
+| `sprite` | `icon` | A string naming an atlas sprite, such as `"item/diamond"` or `"block/stone"` (required); an empty one is a script error, and the native checks its characters and length |
 | `color` | all | An ARGB integer `0xAARRGGBB` (`0xFFFFFFFF`), or `{r, g, b, a?}` with bytes 0..255 (`a` defaults to 255) |
 | `through_walls` | all | Seen through walls (`false`) |
 | `ttl` | all | An integer lifetime in game ticks; absent means until removed |
 
 An unknown key is a script error naming the key (a typo like `thru_walls` is not ignored), and a
 key that does not belong to the kind (like `height` on a box) is an error naming it. A missing
-required key, a wrong type, a non-finite number, a non-integer or non-positive `ttl`, or a colour
-component outside 0..255 are script errors naming the helper and the field (`marker_set: size:
-...`). A spec is read as plain data, not through its metatable: a prototype table's `__index` is
+required key, a wrong type, a non-finite number, a non-integer or non-positive `ttl`, a colour
+component outside 0..255, an empty icon `sprite`, or an icon `size` that is negative or does not
+fit in 32 bits are script errors naming the helper and the field (`marker_set: size: ...`). A spec is read as plain data, not through its metatable: a prototype table's `__index` is
 never consulted, so every field must be set on the spec itself. The `{x, y, z}` tables (`pos`,
-`size`, `to`) carry exactly `x`, `y` and `z`, and `scale` must fit in 32 bits (a finite number
+a box's `size`, `to`) carry exactly `x`, `y` and `z`, and `scale` must fit in 32 bits (a finite number
 past f32's range is an error, not infinity). The native's own ranges are not re-checked in the
-script: the native refuses out-of-range values and answers `false`.
+script: the character set and length of an icon's `sprite` name and the icon `size` range (0.25 to
+16) are the native's to refuse, answering `false`.
 
 A host refusal is not a script error: over a cap, out of range, off a window, or a marker id of
 another owner. The refusal is reported (`marker_set: the engine refused ...`) and it does not
@@ -485,9 +487,9 @@ simply not drawn.
 
 The native limits, in one place: 256 markers per mod and 4096 in every mod together (replacing a
 marker does not count twice); marker and mod ids of 1 to 64 characters; text of 1 to 64
-characters; every coordinate finite within 30,000,000 of the origin, the far point of a
-box/line/beam included; box sides 0 to 256; a line offset at most 512 blocks long; beam heights
-0 to 512; text scales 0.25 to 8; lifetimes of 1 to 72,000 game ticks. A lifetime runs on game
+characters; icon sprite names of 1 to 64 characters of `a-z`, `0-9`, `_`, `/`, `.` and `-`; every coordinate finite within 30,000,000 of the origin, the far point of a
+box/line/beam/icon included; box sides 0 to 256; a line offset at most 512 blocks long; beam heights
+0 to 512; text scales 0.25 to 8; icon sizes 0.25 to 16; lifetimes of 1 to 72,000 game ticks. A lifetime runs on game
 time, so `/tick freeze` holds it too. A marker belongs to the level it was set in and is drawn
 only there, including after a move; markers farther than 256 blocks are not drawn until the
 camera comes closer. A mod turned off loses its markers; opening or closing a world drops every

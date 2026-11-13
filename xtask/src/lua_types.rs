@@ -166,7 +166,7 @@ const TYPES: &[(&str, &str)] = &[
     // runtime, an error (docs/lua-bindings.md, "World markers").
     (
         "MarkerSpec",
-        "{ kind: \"box\" | \"line\" | \"beam\" | \"text\", pos: Vec3, size: Vec3?, filled: boolean?, to: Vec3?, height: number?, text: string?, scale: number?, color: (number | { r: number, g: number, b: number, a: number? })?, through_walls: boolean?, ttl: number? }",
+        "{ kind: \"box\" | \"line\" | \"beam\" | \"text\" | \"icon\", pos: Vec3, size: (Vec3 | number)?, filled: boolean?, to: Vec3?, height: number?, text: string?, scale: number?, sprite: string?, color: (number | { r: number, g: number, b: number, a: number? })?, through_walls: boolean?, ttl: number? }",
     ),
 ];
 
