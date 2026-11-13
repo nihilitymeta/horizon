@@ -1495,8 +1495,16 @@ fn tuple_ts(inner: &str) -> String {
             .collect();
         format!("{{ {} }}", pairs.join(", "))
     } else {
-        let elems: Vec<String> = shape.elems.iter().map(|e| tuple_elem_ts(e)).collect();
-        format!("{{ {} }}", elems.join(", "))
+        // Luau has no tuple table type: a positional pair is an array of whatever its elements
+        // can be, so `(string, i32)` is `{ string | number }` and `(bool, bool)` is `{ boolean }`.
+        let mut kinds: Vec<String> = Vec::new();
+        for e in &shape.elems {
+            let ts = tuple_elem_ts(e);
+            if !kinds.contains(&ts) {
+                kinds.push(ts);
+            }
+        }
+        format!("{{ {} }}", kinds.join(" | "))
     }
 }
 

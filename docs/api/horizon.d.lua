@@ -1111,9 +1111,9 @@ declare horizon: {
     biome: (value: Vec3) -> string?,
     biome_name: (value: number) -> string?,
     block_entity_sync: (value: Vec3) -> (),
-    chat_input: () -> { string, number }?, -- client state only
+    chat_input: () -> { string | number }?, -- client state only
     clear_between: (name: string, value: Vec3, value2: Vec3) -> boolean,
-    client_block_obstruction: (value: Vec3) -> { boolean, boolean }?, -- client state only
+    client_block_obstruction: (value: Vec3) -> { boolean }?, -- client state only
     client_entity_move: (who: string | ReadPlayer, value: number, value2: Vec3, value3: number) -> (), -- client state only
     client_entity_set: (who: string | ReadPlayer, value: number, value2: Data) -> (),
     client_visual_clear: (value: Vec3, value2: Vec3) -> boolean, -- client state only
@@ -1188,7 +1188,7 @@ declare horizon: {
     level_seed: (name: string) -> number?,
     level_set_day_time: (name: string, value: number) -> (),
     level_set_weather: (name: string, value: number, value2: number, value3: boolean, value4: boolean) -> (),
-    level_weather: (name: string) -> { number, number }?,
+    level_weather: (name: string) -> { number }?,
     lightning_bolt: (name: string, value: Vec3, value2: boolean) -> (),
     lit_block_name: (value: Vec3) -> string?,
     max_players: () -> number?,
@@ -1221,7 +1221,7 @@ declare horizon: {
     player_view_distance: (who: string | ReadPlayer) -> number?,
     playing: () -> boolean, -- client state only
     primary_group: (who: string | ReadPlayer) -> string?,
-    profile_by_name: (name: string) -> { string, string }?,
+    profile_by_name: (name: string) -> { string }?,
     profile_by_uuid: (who: string | ReadPlayer) -> string?,
     proxy_forwarding: () -> string?,
     recipe_categories_changed: () -> (),
@@ -1253,7 +1253,7 @@ declare horizon: {
     set_block_entity: (name: string, value: Vec3, name2: string) -> (),
     set_block_property_with: (value: Vec3, name: string, name2: string, value2: number) -> (),
     set_break_progress: (value: number, value2: Vec3, value3: number) -> (),
-    set_compass_target: (who: string | ReadPlayer, value: { string, Vec3 }?) -> (),
+    set_compass_target: (who: string | ReadPlayer, value: { string | Vec3 }?) -> (),
     set_entity_data: (value: number, value2: Data) -> (),
     set_flight: (who: string | ReadPlayer, value: boolean, value2: boolean) -> (),
     set_game_mode: (who: string | ReadPlayer, value: number) -> (),

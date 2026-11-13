@@ -168,9 +168,9 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `biome` | server | - | read | `(value: Vec3) -> string?` |
 | `biome_name` | server | - | read | `(value: number) -> string?` |
 | `block_entity_sync` | server | - | action | `(value: Vec3) -> ()` |
-| `chat_input` | client | - | read | `() -> { string, number }?` |
+| `chat_input` | client | - | read | `() -> { string | number }?` |
 | `clear_between` | server | - | read | `(name: string, value: Vec3, value2: Vec3) -> boolean` |
-| `client_block_obstruction` | client | - | read | `(value: Vec3) -> { boolean, boolean }?` |
+| `client_block_obstruction` | client | - | read | `(value: Vec3) -> { boolean }?` |
 | `client_entity_move` | client | - | action | `(who: string | ReadPlayer, value: number, value2: Vec3, value3: number) -> ()` |
 | `client_entity_set` | server | - | action | `(who: string | ReadPlayer, value: number, value2: Data) -> ()` |
 | `client_visual_clear` | client | - | read | `(value: Vec3, value2: Vec3) -> boolean` |
@@ -245,7 +245,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `level_seed` | server | level | read | `(name: string) -> number?` |
 | `level_set_day_time` | server | level | action | `(name: string, value: number) -> ()` |
 | `level_set_weather` | server | level | action | `(name: string, value: number, value2: number, value3: boolean, value4: boolean) -> ()` |
-| `level_weather` | server | level | read | `(name: string) -> { number, number }?` |
+| `level_weather` | server | level | read | `(name: string) -> { number }?` |
 | `lightning_bolt` | server | - | action | `(name: string, value: Vec3, value2: boolean) -> ()` |
 | `lit_block_name` | server | - | read | `(value: Vec3) -> string?` |
 | `max_players` | server | - | read | `() -> number?` |
@@ -278,7 +278,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `player_view_distance` | server | - | read | `(who: string | ReadPlayer) -> number?` |
 | `playing` | client | - | read | `() -> boolean` |
 | `primary_group` | server | - | read | `(who: string | ReadPlayer) -> string?` |
-| `profile_by_name` | server | - | read | `(name: string) -> { string, string }?` |
+| `profile_by_name` | server | - | read | `(name: string) -> { string }?` |
 | `profile_by_uuid` | server | - | read | `(who: string | ReadPlayer) -> string?` |
 | `proxy_forwarding` | server | - | read | `() -> string?` |
 | `recipe_categories_changed` | server | - | action | `() -> ()` |
@@ -310,7 +310,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `set_block_entity` | server | - | action | `(name: string, value: Vec3, name2: string) -> ()` |
 | `set_block_property_with` | server | - | action | `(value: Vec3, name: string, name2: string, value2: number) -> ()` |
 | `set_break_progress` | server | - | action | `(value: number, value2: Vec3, value3: number) -> ()` |
-| `set_compass_target` | server | - | action | `(who: string | ReadPlayer, value: { string, Vec3 }?) -> ()` |
+| `set_compass_target` | server | - | action | `(who: string | ReadPlayer, value: { string | Vec3 }?) -> ()` |
 | `set_entity_data` | server | - | action | `(value: number, value2: Data) -> ()` |
 | `set_flight` | server | - | action | `(who: string | ReadPlayer, value: boolean, value2: boolean) -> ()` |
 | `set_game_mode` | server | - | action | `(who: string | ReadPlayer, value: number) -> ()` |
@@ -334,13 +334,13 @@ Generated but excluded (the denylist): these all have plain args and a supported
 
 ## Plain tuple shapes (8)
 
-- `chat_input` -> `() -> { string, number }?`
-- `client_block_obstruction` -> `(value: Vec3) -> { boolean, boolean }?`
+- `chat_input` -> `() -> { string | number }?`
+- `client_block_obstruction` -> `(value: Vec3) -> { boolean }?`
 - `level_height` -> `(name: string) -> { min: number, max: number }?`
-- `level_weather` -> `(name: string) -> { number, number }?`
+- `level_weather` -> `(name: string) -> { number }?`
 - `player_textures` -> `(who: string | ReadPlayer) -> { value: string, signature: string? }?`
-- `profile_by_name` -> `(name: string) -> { string, string }?`
-- `set_compass_target` -> `(who: string | ReadPlayer, value: { string, Vec3 }?) -> ()`
+- `profile_by_name` -> `(name: string) -> { string }?`
+- `set_compass_target` -> `(who: string | ReadPlayer, value: { string | Vec3 }?) -> ()`
 - `set_profile_property` -> `(who: string | ReadPlayer, name: string, value: { value: string, signature: string? }?) -> ()`
 
 ## Already Lua (70)
