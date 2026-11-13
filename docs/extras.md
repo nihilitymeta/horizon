@@ -7,7 +7,7 @@ again restores vanilla's behaviour completely.
 
 The **Zoom**, **Minimap**, **FPS counter** and **Keystrokes** extras are one built-in native mod now
 (`crates/event-horizon-extras`, [native-mods.md](native-mods.md)): they look and work as they did, and their settings and switches carry
-over. See [the extras that became a mod](#the-extras-that-became-a-mod).
+over. See [the extras that became a mod](#moved-to-native-mods).
 
 ## Where they live
 
@@ -17,9 +17,9 @@ over. See [the extras that became a mod](#the-extras-that-became-a-mod).
 | Dynamic lights: item glow, nearest sources | `crates/horizon-client-render/src/dynamic_light.rs` (unit tested), `game/dynamic_lights.rs`, `terrain.wgsl` and `entity.wgsl` (`dynamic_block_light`) |
 | HUD drawing (a native mod's minimap, corner stacking) | `crates/horizon-client/src/extras_hud.rs` |
 | Minimap colours, tiles and image (for whichever mod shows one) | `crates/horizon-client-render/src/minimap.rs` |
-| Reconnect policy and backoff | `crates/horizon-client/src/reconnect.rs` |
-| Game glue (input hooks, per-frame update) | `crates/horizon-client/src/game/extras.rs` |
-| Mouse Tweaks-style controls, sort buttons | `crates/horizon-client/src/game/tweaks.rs` |
+| Reconnect policy and backoff | `crates/horizon-client/src/reconnect.rs`; its game glue (connect, join, leave, the countdown) in `game/extras/reconnect.rs` |
+| Game glue (input hooks, per-frame update) | `crates/horizon-client/src/game/extras.rs`; each extra's own glue in a child module, `game/extras/` |
+| Mouse Tweaks-style controls, sort buttons | `crates/horizon-client/src/game/extras/mouse_tweaks.rs`, `game/extras/sorting.rs` |
 | Sort order and its clicks | `crates/horizon-client/src/inv_sort.rs` (pure, unit tested) |
 | The music page's rows, and the pools it filters | `options_ui.rs` (`Page::Music`), `crates/horizon-client/src/music.rs` (`track_groups`, `MusicManager::set_off`), `sound_events.rs` (`sound_except`) |
 | Cosmetics (show mine, show others'), off with their flag | `extras.rs`, `crates/horizon-client/src/game/cosmetics.rs` ([cosmetics.md](cosmetics.md)) |
@@ -57,6 +57,10 @@ in Controls, and adding one would put a non-vanilla mapping into `options.txt`.
 - Displays blocks and entities with a fully bright lightmap, including in dark caves.
 - Turning it off restores the normal lightmap using the current brightness,
   time of day and effects. The brightness slider keeps its normal range.
+- Held off on another's server (#3823): a multiplayer server or another player's LAN world draws the normal
+  lightmap and the graphics screen hides the row, while the saved choice stays for the next world. Single
+  player, a LAN host, a splitscreen seat in P1's world and Replay Studio keep it (`fullbright_held`,
+  `game/options.rs`).
 
 ### Dynamic lights (`dynamicLights`, default off)
 - A light source held by a player or mob (main or off hand), dropped as an item, or an entity on
@@ -73,7 +77,7 @@ in Controls, and adding one would put a non-vanilla mapping into `options.txt`.
 - Off: nothing is gathered and the shaders' loop runs zero times (the count is 0), so it costs
   nothing measurable (numbers in the pull request, #814).
 
-### The extras that became a mod
+### Moved to native mods
 
 The **Zoom**, **Minimap**, **FPS counter** and **Keystrokes** extras are one built-in native mod:
 `crates/event-horizon-extras`, installed by `event_horizon::builtin_mods` before the developer tools and
@@ -180,10 +184,13 @@ once and the screens click exactly as vanilla's (`tools/test_menu_click_parity.p
 and the container screen tests are unchanged).
 
 ### Sorting (`sort`, default off; `sortKey`, unbound)
-- A small button right of the container's title (chests, barrels, ender
-  chests, shulker boxes) and one right of the "Inventory" line (the main
-  inventory; the hotbar is left alone). The key, when bound on the Extras
-  page, sorts the part under the cursor (the container when over no slot).
+- On every menu screen, by its slots' roles (`native_slot_roles`): a small
+  button over the top right of its storage slots (chests, barrels, ender
+  chests, shulker boxes, hoppers, dispensers, a mount's chest, a mod menu
+  type's linked slots) and one right of the "Inventory" line (the main
+  inventory; the hotbar is left alone), crafting tables and workstations
+  included. The key, when bound on the Extras page, sorts the part under the
+  cursor (the storage when over no slot).
 - Partial stacks of one item merge, then the stacks go in creative tab order
   (the search tab's), then by name; full stacks before the partial one,
   empty slots last. It needs an empty hand.

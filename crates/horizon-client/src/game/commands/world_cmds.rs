@@ -124,7 +124,7 @@ impl Game<'_> {
 
     // ---- /damage ----------------------------------------------------------------
 
-    fn damage_kind(ty: &str) -> DamageKind {
+    pub(in crate::game) fn damage_kind(ty: &str) -> DamageKind {
         match ty.trim_start_matches("minecraft:") {
             "player_attack" => DamageKind::PlayerAttack,
             "mace_smash" => DamageKind::MaceSmash,
@@ -310,6 +310,7 @@ impl Game<'_> {
             Target::Crystal(id) => {
                 self.command_damage_crystal(id, ty, Self::damage_kind(ty), cause.or(by))
             }
+            Target::Stand(id) => self.command_damage_stand(id, ty, cause.or(by)),
             _ => false,
         }
     }
@@ -361,6 +362,48 @@ impl Game<'_> {
         }
     }
 
+    /// `ItemStack.canBeHurtBy` is false: the dropped item's `damage_resistant`
+    /// (its own components, else its item's) holds the damage type `source`.
+    pub(in crate::game) fn item_resistant_to(&self, index: usize, source: &str) -> bool {
+        let registry = &self.motion.health.damage;
+        // Use the same defaults and stack patch as the component resolver,
+        // including defaults changed by native mods and removed components.
+        let components =
+            self.pack
+                .item_renderer
+                .models
+                .components(&horizon_client::item_render::stack_view(
+                    &self.dropped[index].stack,
+                ));
+        let matches = |value: &str| {
+            let (tag, value) = value
+                .strip_prefix('#')
+                .map_or((false, value), |v| (true, v));
+            let name = if value.contains(':') {
+                value.to_owned()
+            } else {
+                format!("minecraft:{value}")
+            };
+            if tag {
+                registry
+                    .id(source)
+                    .is_some_and(|id| registry.in_tag(id, &name))
+            } else {
+                source == name
+            }
+        };
+        match components
+            .get("minecraft:damage_resistant")
+            .and_then(|v| v.get("types"))
+        {
+            Some(serde_json::Value::String(value)) => matches(value),
+            Some(serde_json::Value::Array(values)) => {
+                values.iter().any(|v| v.as_str().is_some_and(matches))
+            }
+            _ => false,
+        }
+    }
+
     /// `ItemEntity.hurtServer`: the item branch reached by `DamageCommand.damage`.
     fn command_damage_item(
         &mut self,
@@ -393,46 +436,9 @@ impl Game<'_> {
         {
             return false;
         }
-        // Use the same defaults and stack patch as the component resolver,
-        // including defaults changed by native mods and removed components.
-        let components =
-            self.pack
-                .item_renderer
-                .models
-                .components(&horizon_client::item_render::stack_view(
-                    &self.dropped[index].stack,
-                ));
-        let resistant = |source: &str| {
-            let matches = |value: &str| {
-                let (tag, value) = value
-                    .strip_prefix('#')
-                    .map_or((false, value), |v| (true, v));
-                let name = if value.contains(':') {
-                    value.to_owned()
-                } else {
-                    format!("minecraft:{value}")
-                };
-                if tag {
-                    registry
-                        .id(source)
-                        .is_some_and(|id| registry.in_tag(id, &name))
-                } else {
-                    source == name
-                }
-            };
-            match components
-                .get("minecraft:damage_resistant")
-                .and_then(|v| v.get("types"))
-            {
-                Some(serde_json::Value::String(value)) => matches(value),
-                Some(serde_json::Value::Array(values)) => {
-                    values.iter().any(|v| v.as_str().is_some_and(matches))
-                }
-                _ => false,
-            }
-        };
-        if resistant(damage_type)
-            || registry.in_tag(kind, "minecraft:is_fire") && resistant("minecraft:in_fire")
+        if self.item_resistant_to(index, damage_type)
+            || registry.in_tag(kind, "minecraft:is_fire")
+                && self.item_resistant_to(index, "minecraft:in_fire")
         {
             return false;
         }
@@ -512,18 +518,19 @@ impl Game<'_> {
     // ---- /rotate and /swing -----------------------------------------------------------
 
     pub(super) fn cmd_rotate(&mut self, ctx: &Context) -> R<i32> {
-        let targets = self.entities(ctx, "target", false)?;
+        let targets = super::without_knots(self.entities(ctx, "target", false)?)?;
         let Some(t) = targets.first().copied() else {
             return Ok(0);
         };
         let Some(pos) = self.target_position(t) else {
             return Ok(0);
         };
-        let current = self.target_rotation(t);
         let mut look_at_target = None;
         let rot = if let Some(Arg::Coords(c)) = ctx.get("rotation") {
-            // Relative parts are offsets from the entity's own rotation.
-            c.rotation(current)
+            // RotateCommand.rotate: relative parts are offsets from the command
+            // source's rotation (WorldCoordinates.getRotation); the entity's own
+            // rotation cancels out in Entity.forceSetRotation.
+            c.rotation(self.source_rotation())
         } else {
             let mut faced_entity = None;
             let to = if ctx.has("entity") {
@@ -1299,7 +1306,12 @@ impl Game<'_> {
                         )))
                     }
                     "attribute.modifier.add" => {
-                        if finalize::has_modifier(m, attr, &modifier_id) {
+                        // AttributeInstance.hasModifier: the modeled transient
+                        // minecraft:baby counts too.
+                        if finalize::has_modifier(m, attr, &modifier_id)
+                            || (modifier_id == "minecraft:baby"
+                                && finalize::transient(m, attr).is_some())
+                        {
                             return Err(text_error(
                                 "commands.attribute.failed.modifier_already_present",
                                 &[Text::literal(modifier_id.clone()), description, name],
@@ -1320,10 +1332,20 @@ impl Game<'_> {
                         )))
                     }
                     "attribute.modifier.remove" => {
-                        if !finalize::has_modifier(m, attr, &modifier_id) {
+                        // AttributeInstance.removeModifier: a permanent one, else
+                        // the modeled transient minecraft:baby (until setBaby).
+                        if finalize::has_modifier(m, attr, &modifier_id) {
+                            finalize::remove_modifier(m, attr, &modifier_id);
+                        } else if modifier_id == "minecraft:baby"
+                            && finalize::transient(m, attr).is_some()
+                        {
+                            m.extra
+                                .attributes
+                                .get_or_insert_with(Box::default)
+                                .baby_speed_removed = true;
+                        } else {
                             return Err(no_modifier);
                         }
-                        finalize::remove_modifier(m, attr, &modifier_id);
                         Ok(Some((
                             1,
                             Text::translate(
@@ -1901,7 +1923,7 @@ impl Game<'_> {
                 &[&max_y, &self.world.bottom_y()],
             ));
         }
-        let targets = self.entities(ctx, "targets", false)?;
+        let targets = super::without_knots(self.entities(ctx, "targets", false)?)?;
         if targets.is_empty() {
             return Err(err("argument.entity.notfound.entity", &[]));
         }
@@ -2057,6 +2079,8 @@ impl Game<'_> {
                 None,
                 false,
             );
+            // teleportTo(..., Set.of(), ...): a transition with no motion.
+            self.teleport_stops(t);
             let closest = points
                 .iter()
                 .enumerate()

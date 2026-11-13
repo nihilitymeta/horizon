@@ -329,7 +329,7 @@ pub fn remove(home: &Path, name: &str) -> Result<Entry, String> {
     }
     if let Some(id) = super::horizon::mod_id(&entry).filter(|_| entry.source == SourceId::Horizon) {
         // The `.hmod` a mod that turned native left behind (horizon::install_version).
-        if entry.file.ends_with(".hnmod") {
+        if super::super::native_status::is_native_file(&entry.file) {
             let _ = fs::remove_file(home.join(super::java::MODS_DIR).join(format!("{id}.hmod")));
         }
         super::java::set_enabled(home, id, false)?;
@@ -341,8 +341,18 @@ pub fn remove(home: &Path, name: &str) -> Result<Entry, String> {
     Ok(entry)
 }
 
-/// The newer version `entry` can be updated to, if any.
-pub fn update_for(source: &dyn Source, entry: &Entry) -> Result<Option<Version>, String> {
+/// The newer version `entry`, installed in game folder `home`, can be updated to, if any. A
+/// registry native mod's is the newest that builds on the Horizon `home` plays.
+pub fn update_for(
+    source: &dyn Source,
+    entry: &Entry,
+    home: &Path,
+) -> Result<Option<Version>, String> {
+    if entry.source == SourceId::Horizon {
+        if let Some(update) = super::horizon::fitting_update(&entry.project, &entry.version, home) {
+            return Ok(update);
+        }
+    }
     let project = source.project(&entry.project)?;
     let versions = source.versions(&project)?;
     Ok(pick(project.kind, &versions, true)

@@ -14,6 +14,36 @@ use horizon_client::{
 use horizon_world::nbt::{JavaString, Tag};
 use std::collections::HashMap;
 
+/// `LodestoneTracker.tick`: existing native eligibility/loaded-block predicate.
+/// The POI/unloaded boundary is unchanged; callers mutate their actual stacks.
+pub(super) fn lodestone_target_gone(game: &Game<'_>, stack: &ItemStack, dim: &str) -> bool {
+    let Some(tracker) = stack
+        .data()
+        .and_then(|d| d.other("minecraft:lodestone_tracker"))
+    else {
+        return false;
+    };
+    let (Some(target), true) = (
+        tracker.get("target"),
+        horizon_client::save::number(tracker.get("tracked")).is_none_or(|v| v != 0),
+    ) else {
+        return false;
+    };
+    let Some(Tag::IntArray(pos)) = target.get("pos") else {
+        return false;
+    };
+    let [x, y, z] = [pos[0], pos[1], pos[2]];
+    horizon_client::save::text(target.get("dimension")).as_deref() == Some(dim)
+        && game.world.chunks.contains_key(&(x >> 4, z >> 4))
+        && game
+            .res
+            .facts()
+            .get(game.world.block(x, y, z))
+            .name
+            .as_ref()
+            != "minecraft:lodestone"
+}
+
 /// What a decoration is filed under in `MapItemSavedData.decorations` (a
 /// `LinkedHashMap<String, MapDecoration>`): a player's marker by their
 /// connection, the banner at a position (`MapBanner.getId`), a framed map's
@@ -677,6 +707,17 @@ impl MapData {
         Some(map)
     }
 }
+/// What a read of a map gives: from the cache when the map is loaded, else from its saved file.
+fn map_read<T>(
+    cached: Option<&MapData>,
+    saved: impl FnOnce() -> Option<MapData>,
+    read: impl Fn(&MapData) -> T,
+) -> Option<T> {
+    match cached {
+        Some(map) => Some(read(map)),
+        None => saved().map(|map| read(&map)),
+    }
+}
 pub(super) struct Maps {
     pub data: HashMap<i32, MapData>,
     /// The highest map id handed out (`maps/last_id.dat`), loaded on first use.
@@ -896,6 +937,30 @@ impl Game<'_> {
     fn map_path(&self, name: &str) -> std::path::PathBuf {
         self.world_root.join("data/minecraft/maps").join(name)
     }
+    /// `native_map_colors`: the 128 x 128 colour ids of the world's map `map_id`, row by row (vanilla's
+    /// `MapItemSavedData.colors`), from the loaded map or its saved file, which is not loaded here. None for a map the
+    /// world never made or saved, and on a client of a server (as `native_paint_map`).
+    pub(super) fn native_map_colors(&self, map_id: i32) -> Option<Vec<u8>> {
+        self.native_map_read(map_id, |map| map.colors.clone())
+    }
+    /// `native_map_meta`: the scale, dimension and locked flag of the world's map `map_id`, read as
+    /// `native_map_colors` reads it.
+    pub(super) fn native_map_meta(&self, map_id: i32) -> Option<(u8, String, bool)> {
+        self.native_map_read(map_id, |map| (map.scale, map.dimension.clone(), map.locked))
+    }
+    fn native_map_read<T>(&self, map_id: i32, read: impl Fn(&MapData) -> T) -> Option<T> {
+        if self.remote.is_some() || self.world_root.as_os_str().is_empty() {
+            return None;
+        }
+        let saved = || {
+            if self.maps.missing.contains(&map_id) {
+                return None;
+            }
+            horizon_client::save::read_dat(&self.map_path(&format!("{map_id}.dat")))
+                .and_then(|t| MapData::from_nbt(&t))
+        };
+        map_read(self.maps.data.get(&map_id), saved, read)
+    }
     /// The map's data, loaded from `data/minecraft/maps/<id>.dat` on first use.
     pub(super) fn map(&mut self, id: i32) -> Option<&mut MapData> {
         if !self.maps.data.contains_key(&id) && !self.maps.missing.contains(&id) {
@@ -1007,6 +1072,15 @@ impl Game<'_> {
         let Some(map) = horizon_client::structure_blocks::take_pending_map(item) else {
             return true;
         };
+        self.materialize_exploration_map(item, &map, origin)
+    }
+    /// The existing exploration-map materialization, shared with command modifiers.
+    pub(super) fn materialize_exploration_map(
+        &mut self,
+        item: &mut ItemStack,
+        map: &horizon_world::loot::ExplorationMap,
+        origin: [f64; 3],
+    ) -> bool {
         let names = self.structure_tag(&map.destination);
         let from = origin.map(|v| v.floor() as i32);
         let found = self
@@ -1087,7 +1161,7 @@ impl Game<'_> {
         let scale = 1i32 << m.scale;
         let start_x = m.center[0] / scale - 64;
         let start_z = m.center[1] / scale - 64;
-        let sea_level = 63;
+        let sea_level = horizon_world::level::sea_level_of(self.level_key());
         let quarts: Vec<[i32; 3]> = (0..128)
             .flat_map(|row| {
                 (0..128).map(move |column| {
@@ -1283,41 +1357,81 @@ impl Game<'_> {
     /// lodestone is gone loses its target. A target in an unloaded chunk waits.
     pub(super) fn tick_lodestone_compasses(&mut self) {
         let dim = self.dimension_id();
-        let gone = |game: &Self, stack: &ItemStack| -> bool {
-            let Some(tracker) = stack
-                .data()
-                .and_then(|d| d.other("minecraft:lodestone_tracker"))
-            else {
-                return false;
-            };
-            let (Some(target), true) = (
-                tracker.get("target"),
-                horizon_client::save::number(tracker.get("tracked")).is_none_or(|v| v != 0),
-            ) else {
-                return false;
-            };
-            let Some(Tag::IntArray(pos)) = target.get("pos") else {
-                return false;
-            };
-            let [x, y, z] = [pos[0], pos[1], pos[2]];
-            horizon_client::save::text(target.get("dimension")).as_deref() == Some(dim)
-                && game.world.chunks.contains_key(&(x >> 4, z >> 4))
-                && game
-                    .res
-                    .facts()
-                    .get(game.world.block(x, y, z))
-                    .name
-                    .as_ref()
-                    != "minecraft:lodestone"
-        };
         for slot in (0..self.inventory.len()).chain([super::shield::OFFHAND_SLOT]) {
-            if self.stack_in(slot).is_some_and(|s| gone(self, s))
+            if self
+                .stack_in(slot)
+                .is_some_and(|s| lodestone_target_gone(self, s, dim))
                 && let Some(s) = self.stack_in_mut(slot)
             {
                 s.data_mut().set_other(
                     "minecraft:lodestone_tracker",
                     Some(Tag::Compound(Default::default())),
                 );
+            }
+        }
+        // `LivingEntity.tick` ticks `EntityEquipment` (the armour slots) as
+        // well as the inventory, so a compass worn there loses its target too.
+        let gone = self.armor.each_ref().map(|stack| {
+            stack
+                .as_ref()
+                .is_some_and(|s| lodestone_target_gone(self, s, dim))
+        });
+        for (stack, gone) in self.armor.iter_mut().zip(gone) {
+            if gone && let Some(stack) = stack {
+                stack.data_mut().set_other(
+                    "minecraft:lodestone_tracker",
+                    Some(Tag::Compound(Default::default())),
+                );
+            }
+        }
+    }
+    /// `LivingEntity.aiStep` -> `EntityEquipment.tick` for the host's player
+    /// and every mob: [`Self::tick_lodestone_compasses`] and
+    /// [`Self::tick_mob_compasses`].
+    pub(super) fn tick_equipment_compasses(&mut self) {
+        self.tick_lodestone_compasses();
+        self.tick_mob_compasses();
+    }
+    /// `EntityEquipment.tick` -> `CompassItem.inventoryTick` for mobs: a
+    /// compass a mob holds in its main hand or wears loses its target when
+    /// the lodestone is gone. (A mob keeps no components for its off hand.)
+    fn tick_mob_compasses(&mut self) {
+        use horizon_client::mobs::gear;
+        const TRACKER: &str = "minecraft:lodestone_tracker";
+        let dim = self.dimension_id();
+        let gone_in = |stack: Option<&ItemStack>| {
+            stack.is_some_and(|s| {
+                s.item.as_ref() == "minecraft:compass" && lodestone_target_gone(self, s, dim)
+            })
+        };
+        let mut gone: Vec<(usize, usize)> = Vec::new();
+        for (i, m) in self.mobs.iter().enumerate() {
+            if gone_in(m.extra.main_hand_stack()) {
+                gone.push((i, gear::MAIN));
+            }
+            if let Some(g) = m.extra.gear.as_deref() {
+                for slot in [gear::HEAD, gear::CHEST, gear::LEGS, gear::FEET] {
+                    if gone_in(g.stacks[slot].as_ref()) {
+                        gone.push((i, slot));
+                    }
+                }
+            }
+        }
+        for (i, slot) in gone {
+            let m = &mut self.mobs[i];
+            if slot == gear::MAIN {
+                if let Some(mut stack) = m.extra.main_hand_stack().cloned() {
+                    stack
+                        .data_mut()
+                        .set_other(TRACKER, Some(Tag::Compound(Default::default())));
+                    m.extra.set_main_hand_stack(Some(stack));
+                }
+            } else if let Some(Some(stack)) =
+                m.extra.gear.as_deref_mut().map(|g| &mut g.stacks[slot])
+            {
+                stack
+                    .data_mut()
+                    .set_other(TRACKER, Some(Tag::Compound(Default::default())));
             }
         }
     }
@@ -1944,6 +2058,8 @@ impl Game<'_> {
 #[cfg(test)]
 mod live_frame_tests;
 #[cfg(test)]
+mod native_read_tests;
+#[cfg(test)]
 mod save_tests;
 
 #[cfg(test)]
@@ -2157,3 +2273,6 @@ mod tests {
         assert!(game.map(map_id).unwrap().banners.is_empty());
     }
 }
+
+#[cfg(test)]
+mod command_exploration_map_test_file;

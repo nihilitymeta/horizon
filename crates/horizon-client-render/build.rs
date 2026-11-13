@@ -1,13 +1,10 @@
-//! Generates the native render mod API, and collects the build's feature registry, one
-//! `registry/<id>.json` per toggleable feature (`src/mod_registry.rs`), into a generated list. A
-//! feature branch registers itself by adding a file, so no two branches ever edit the same list.
+//! Collects the build's feature registry, one `registry/<id>.json` per toggleable feature
+//! (`src/mod_registry.rs`), into a generated list. A feature branch registers itself by adding a
+//! file, so no two branches ever edit the same list. std only: the engine crate may not depend on
+//! the mod API generator (docs/layers.md).
 use std::{env, fs, path::PathBuf};
 
 fn main() {
-    let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("../..");
-    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    horizon_mod_api_gen::generate(&root, &out_dir, horizon_mod_api_gen::Target::Render)
-        .expect("generating native render mod API");
     feature_registry();
 }
 

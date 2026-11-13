@@ -75,8 +75,8 @@ impl Behaviours {
     pub(crate) fn implements(&self, state: BlockStateId, interface: Interface) -> bool {
         self.data(state).implements(interface)
     }
-    pub(crate) fn fluid_in(&self, kind: FluidKind, mask: u8) -> bool {
-        mask & (1 << kind as u8) != 0
+    pub(crate) fn fluid_in(&self, kind: FluidKind, mask: crate::fluid::FluidMask) -> bool {
+        mask & kind.mask() != 0
     }
     pub(crate) fn is_water_fluid(&self, kind: FluidKind) -> bool {
         self.fluid_in(kind, self.fluid_tags.water)
@@ -366,8 +366,14 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
     pub fn raw_brightness(&self, pos: BlockPos, darken: i32) -> i32 {
         super::raw_brightness(self.level, pos, darken)
     }
-    /// `LevelReader.getMaxLocalRawBrightness(pos)`.
+    /// `LevelReader.getMaxLocalRawBrightness(pos)`: full daylight outside the
+    /// +-30,000,000 gate, where there is no chunk to ask.
     pub fn max_local_raw_brightness(&self, pos: BlockPos) -> i32 {
+        if !(-30_000_000..30_000_000).contains(&pos.x)
+            || !(-30_000_000..30_000_000).contains(&pos.z)
+        {
+            return 15;
+        }
         self.raw_brightness(pos, self.level.sky_darken())
     }
     pub fn is_redstone_conductor(&self, state: BlockStateId, _pos: BlockPos) -> bool {

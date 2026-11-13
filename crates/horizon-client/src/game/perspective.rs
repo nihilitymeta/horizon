@@ -9,6 +9,7 @@ use horizon_client::{
     collisions::SceneCollisions,
 };
 use horizon_client::{
+    entities::nameplate::NameplateDistances,
     hud::HudBatch,
     mobs::{Anim, Brain, Mob, MobType},
     mouse::Rotation,
@@ -256,18 +257,6 @@ fn shadow_pass_takes_own_model(
     shadow_draws_player && !(shader_pack && spectator)
 }
 
-/// `LivingEntityRenderer.solveBodyRot` for the rider of a living vehicle: the
-/// body faces the vehicle's body, the head turning at most 85 degrees from it,
-/// and past 50 degrees the body turns a fifth of the head's offset along.
-fn rider_body_yaw(head: f32, vehicle_body: f32) -> f32 {
-    let diff = wrap(head - vehicle_body).clamp(-85.0, 85.0);
-    let mut body = head - diff;
-    if diff.abs() > 50.0 {
-        body += diff * 0.2;
-    }
-    body
-}
-
 fn wrap(d: f32) -> f32 {
     let d = d % 360.0;
     if d >= 180.0 {
@@ -293,18 +282,18 @@ impl Game<'_> {
     /// front of) it, pulled in where visual shapes are in the way. Returns the
     /// position, yaw and pitch to render from.
     pub(super) fn camera_view(&mut self, partial: f32) -> Option<(glam::DVec3, f32, f32)> {
-        if self.studio_freecam.active {
+        if self.studio.flying() {
             return Some((
-                self.studio_freecam.position,
-                self.studio_freecam.yaw,
-                self.studio_freecam.pitch,
+                self.studio.freecam.position,
+                self.studio.freecam.yaw,
+                self.studio.freecam.pitch,
             ));
         }
         // Minecraft.cameraEntity: a server's spectator camera on a mob or
         // another player.
-        let (entity, descending, entity_kind) = match self.camera_mob() {
-            Some(m) => (
-                super::remote_camera::mob_camera_entity(m),
+        let (entity, descending, entity_kind) = match self.camera_entity() {
+            Some(e) => (
+                e,
                 false,
                 horizon_world::collision_context::EntityContextKind::Living,
             ),
@@ -324,8 +313,8 @@ impl Game<'_> {
             }
         };
         let mut view = self.view;
-        // An emote pulls the camera back from the player's face (`game/emotes.rs`).
-        let pull = self.emote_camera_pull(partial);
+        // A hook may pull the camera back (an emote, from the player's face).
+        let pull = self.hooks_camera_distance(partial);
         let kind = match self.camera_type {
             CameraType::FirstPerson => horizon_client::camera::CameraType::FirstPerson,
             CameraType::ThirdPersonBack => horizon_client::camera::CameraType::ThirdPersonBack,
@@ -378,6 +367,17 @@ impl Game<'_> {
             view.y_rot,
             view.x_rot,
         ))
+    }
+    /// `Camera.rotation()` as the quads of particles take it: the frame's camera (a
+    /// bed's, a front view's, a mod's), not the player's own yaw and pitch.
+    pub(super) fn particle_rotation(&self) -> glam::Quat {
+        if self.studio.flying() {
+            return self.camera_orientation();
+        }
+        let (yaw, pitch) = self
+            .posed_rotation
+            .unwrap_or((self.view.y_rot, self.view.x_rot));
+        super::camera_rotation(CameraType::FirstPerson, yaw, pitch)
     }
     /// The player as `Camera.alignWithEntity` sees it.
     fn player_camera_entity(&mut self) -> Option<CameraEntity> {
@@ -462,11 +462,17 @@ impl Game<'_> {
     /// Keep the player's model in step with the player (`LivingEntity.tick`
     /// body turning, `WalkAnimationState`, the swing and the pose).
     pub(super) fn tick_player_model(&mut self) {
-        let scale = self
-            .player
-            .as_mut()
-            .and_then(|p| p.attribute("minecraft:scale").ok())
-            .unwrap_or(1.0) as f32;
+        let (scale, nameplate) = self.player.as_mut().map_or_else(
+            || (1.0, NameplateDistances::default()),
+            |p| {
+                let scale = p.attribute("minecraft:scale").unwrap_or(1.0) as f32;
+                let nameplate = NameplateDistances {
+                    name_tag: p.attribute("minecraft:name_tag_distance").ok(),
+                    below_name: p.attribute("minecraft:below_name_distance").ok(),
+                };
+                (scale, nameplate)
+            },
+        );
         let Some(p) = self.player.as_ref() else {
             self.player_model = None;
             return;
@@ -530,6 +536,7 @@ impl Game<'_> {
         };
         m.extra.ints[1] = bed;
         m.extra.model_scale = scale;
+        m.set_nameplate(nameplate);
         // The crouch flag is still last tick's here.
         let (from, at) =
             player_model_positions(previous_position, position, m.extra.crouching, crouching);
@@ -551,7 +558,8 @@ impl Game<'_> {
             // A living vehicle's rider is drawn from its body
             // (`LivingEntityRenderer.solveBodyRot`).
             Some(RiddenBody::Living(body)) => {
-                m.body_yaw += wrap(rider_body_yaw(yaw, body) - m.body_yaw);
+                m.body_yaw +=
+                    wrap(horizon_client::mobs::riders::solve_body_rot(yaw, body) - m.body_yaw);
             }
             // A minecart's, a cushion's: the body turns as on foot.
             None => {
@@ -656,8 +664,9 @@ impl Game<'_> {
     /// The model's old pitch is the player's `xRotO`, which the turn moves
     /// with `xRot` (`turn_rotation`).
     pub(super) fn turn_player(&mut self, xo: f64, yo: f64) {
-        if self.studio_freecam.active {
-            self.studio_freecam
+        if self.studio.flying() {
+            self.studio
+                .freecam
                 .turn((xo * 0.15) as f32, (yo * 0.15) as f32);
             return;
         }
@@ -710,7 +719,7 @@ impl Game<'_> {
     /// `LevelExtractor`'s skip of the camera entity: the player's own body
     /// is drawn unless the camera is in first person, or while it sleeps.
     pub(super) fn own_body_in_view(&self) -> bool {
-        !self.camera_type.first_person() || self.sleeping.is_some() || self.studio_freecam.active
+        !self.camera_type.first_person() || self.sleeping.is_some() || self.studio.flying()
     }
     /// Whether the player's own model shows in the world view (its body or,
     /// while invisible, only its armour and held items).
@@ -813,19 +822,8 @@ impl Game<'_> {
                 packed,
                 out,
             );
-            if super::cosmetics::enabled() {
-                let base = horizon_client::mobs::render::base_transform(m, alpha as f32, camera);
-                self.cosmetics_geometry(
-                    m,
-                    true,
-                    base,
-                    Some(camera),
-                    alpha as f32,
-                    packed,
-                    false,
-                    out,
-                );
-            }
+            let world = horizon_hooks::players::Pass::World;
+            self.own_layers_geometry(m, world, camera, alpha as f32, packed, out);
             self.player_elytra_geometry(m, chest, camera, alpha as f32, packed, out);
             self.spin_attack_geometry(m, camera, alpha as f32, packed, out);
             self.shoulder_parrots_geometry(m, camera, alpha as f32, packed, out);
@@ -939,10 +937,8 @@ impl Game<'_> {
             240 | 240 << 8,
             &mut verts,
         );
-        if super::cosmetics::enabled() {
-            let base = horizon_client::mobs::render::base_transform(&m, 1.0, camera);
-            self.cosmetics_geometry(&m, true, base, None, 1.0, 240 | 240 << 8, false, &mut verts);
-        }
+        let picture = horizon_hooks::players::Pass::Picture;
+        self.own_layers_geometry(&m, picture, camera, 1.0, 240 | 240 << 8, &mut verts);
         // `WingsLayer` draws through `RenderTypes.armorCutoutNoCull`: the
         // wings' faces show from both sides (the elytra texture is empty on
         // the face that looks at the body).
@@ -965,12 +961,9 @@ impl Game<'_> {
             .as_ref()
             .filter(|p| p.fire_ticks > 0 && !p.spectator)
             .map(|p| (p.dimensions.width, p.dimensions.height));
+        let glints = preview_glint_quads(&verts, gui, wings.clone(), self.glint_frame);
         let quads = player_preview_quads_no_cull(verts, gui, fire, &atlas.sprites, wings);
-        let start = batch.vertices.len();
-        for (_, p, uv, color) in quads {
-            batch.quad_3d(p, uv, color);
-        }
-        batch.depth_since(start, [x0, y0, x1, y1]);
+        emit_preview(batch, quads, glints, [x0, y0, x1, y1]);
     }
     /// The survival inventory's player box (`InventoryScreen`).
     pub(super) fn draw_inventory_player(&self, batch: &mut HudBatch, ox: f32, oy: f32) {
@@ -1409,6 +1402,82 @@ pub(super) fn player_preview_quads_no_cull(
     quads
 }
 
+/// One glint face of a GUI model: its corners, the face's atlas UV (the mask),
+/// the transformed glint UV, and whether it is the armour's glint.
+pub(super) type PreviewGlint = ([[f32; 3]; 4], [[f32; 2]; 4], [[f32; 2]; 4], bool);
+
+/// `EquipmentLayerRenderer.renderLayers`' glint on a GUI model: the faces of
+/// the layers drawn with a glint render type because their stack `hasFoil`,
+/// `armorCutoutNoCullGlint` and the trim's `trimmedArmorGlint`
+/// (`mobs::render::ARMOR_GLINT`, which `armor_layers` gives a foil piece's
+/// trim too; the model UV in `glint_uv`, scrolled here by
+/// `ARMOR_ENTITY_GLINT_TEXTURING`), and the items' glint (overlays 7, 8 and
+/// 33; `glint_uv` already transformed). Each face is culled and turned as
+/// `player_preview_quads_no_cull` does with it.
+pub(super) fn preview_glint_quads(
+    verts: &[horizon_client::mesher::Vertex],
+    gui: glam::Mat4,
+    no_cull: std::ops::Range<usize>,
+    frame: horizon_client::item_render::GlintFrame,
+) -> Vec<PreviewGlint> {
+    let armor_glint = horizon_client::item_render::Glint {
+        speed: frame.speed,
+        alpha: frame.alpha,
+        millis: frame.millis,
+        scale: 0.16,
+    };
+    let mut out = Vec::new();
+    for (index, q) in verts.as_chunks::<4>().0.iter().enumerate() {
+        let armor = match q[0].layer & 0xffff {
+            horizon_client::mobs::render::ARMOR_GLINT => true,
+            7 | 8 | horizon_client::gfx::TRANSLUCENT_GLINT_ITEM_OVERLAY => false,
+            _ => continue,
+        };
+        let p: [glam::Vec3; 4] =
+            std::array::from_fn(|i| gui.transform_point3(glam::Vec3::from_array(q[i].pos)));
+        let back = (p[1] - p[0]).cross(p[2] - p[0]).z >= 0.0;
+        if back && !no_cull.contains(&(index * 4)) {
+            continue;
+        }
+        let mut pos = p.map(|v| v.to_array());
+        let mut uv: [[f32; 2]; 4] = std::array::from_fn(|i| q[i].uv);
+        let mut glint_uv: [[f32; 2]; 4] = std::array::from_fn(|i| {
+            if armor {
+                armor_glint.uv(q[i].glint_uv)
+            } else {
+                q[i].glint_uv
+            }
+        });
+        if back {
+            pos.reverse();
+            uv.reverse();
+            glint_uv.reverse();
+        }
+        out.push((pos, uv, glint_uv, armor));
+    }
+    out
+}
+
+/// `GuiEntityRenderer.renderToTexture`: a GUI model into `batch` in the box
+/// `clip`, its faces with a depth buffer, then their glint over them in the
+/// same pass.
+pub(super) fn emit_preview(
+    batch: &mut horizon_client::hud::HudBatch,
+    quads: Vec<(f32, [[f32; 3]; 4], [[f32; 2]; 4], u32)>,
+    glints: Vec<PreviewGlint>,
+    clip: [f32; 4],
+) {
+    let start = batch.vertices.len();
+    for (_, p, uv, color) in quads {
+        batch.quad_3d(p, uv, color);
+    }
+    let glint = batch.vertices.len();
+    for (p, uv, glint_uv, armor) in glints {
+        batch.quad_3d_glint(p, uv, glint_uv, armor);
+    }
+    batch.depth_glint_since(start, glint, clip);
+}
+
 /// `Entity.turn` adds the turn to `xRotO` as well as to `xRot`, so the local
 /// player's `getXRot(partialTick)` follows the mouse every frame instead of
 /// easing in over a tick (#3844), while a change the tick made itself (the
@@ -1654,6 +1723,66 @@ mod preview_tests {
         assert_eq!(first_away.len(), 1);
     }
 
+    /// #12666: enchanted armour glints on the inventory's player as in the
+    /// world: `armorCutoutNoCullGlint` layers and foil items get a glint face.
+    #[test]
+    fn the_preview_glints_its_enchanted_armour_and_items() {
+        use horizon_client::{item_render::GlintFrame, mesher::Vertex, mobs::render::ARMOR_GLINT};
+        let face = |layer: u32, glint_uv: [f32; 2]| {
+            [[-1.0, -1.0], [-1.0, 1.0], [1.0, 1.0], [1.0, -1.0]].map(|[x, y]| Vertex {
+                pos: [x, y, 0.0],
+                uv: [0.5 + x / 4.0, 0.5 + y / 4.0],
+                layer,
+                color: u32::MAX,
+                light: 0,
+                normal: [0; 4],
+                glint_uv,
+            })
+        };
+        let mut away = face(ARMOR_GLINT, [0.25, 0.75]);
+        away.reverse();
+        let verts: Vec<_> = [
+            face(0, [0.0; 2]),
+            face(ARMOR_GLINT, [0.25, 0.75]),
+            face(7, [3.0, 4.0]),
+            // The upper bits carry the HDR tier, not the overlay.
+            face(ARMOR_GLINT | 1 << 16, [0.25, 0.75]),
+            away,
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let frame = GlintFrame {
+            millis: 1234.0,
+            speed: 0.5,
+            alpha: 0.75,
+            sprite: true,
+        };
+        let gui = glam::Mat4::IDENTITY;
+        let glints = preview_glint_quads(&verts, gui, 0..0, frame);
+        // The plain face has none; the armour face looking away is culled.
+        assert_eq!(glints.len(), 3);
+        let armor = horizon_client::item_render::Glint {
+            speed: 0.5,
+            alpha: 0.75,
+            millis: 1234.0,
+            scale: 0.16,
+        };
+        let (pos, uv, glint_uv, is_armor) = glints[0];
+        assert!(is_armor);
+        assert_eq!(pos, std::array::from_fn(|i| verts[4 + i].pos));
+        assert_eq!(uv[0], verts[4].uv);
+        // ARMOR_ENTITY_GLINT_TEXTURING scrolls the model UV.
+        assert_eq!(glint_uv[0], armor.uv([0.25, 0.75]));
+        // The item's glint UV is already transformed.
+        assert_eq!((glints[1].2[0], glints[1].3), ([3.0, 4.0], false));
+        assert!(glints[2].3);
+        // A no-cull (wings) face that looks away keeps its glint, turned.
+        let kept = preview_glint_quads(&verts, gui, 16..20, frame);
+        assert_eq!(kept.len(), 4);
+        assert_eq!(kept[3].0[0], verts[16 + 3].pos);
+    }
+
     #[test]
     fn the_inventory_preview_is_lit_as_entity_in_ui() {
         // A face looking at the viewer, up, down, to the right and to the left.
@@ -1860,7 +1989,9 @@ mod preview_tests {
     /// fifth of the turn.
     #[test]
     fn a_living_vehicles_rider_faces_its_body_within_85_degrees() {
-        let body = |head, vehicle| (super::rider_body_yaw(head, vehicle) * 1000.0).round() / 1000.0;
+        let body = |head, vehicle| {
+            (horizon_client::mobs::riders::solve_body_rot(head, vehicle) * 1000.0).round() / 1000.0
+        };
         assert_eq!(body(60.0, 40.0), 40.0);
         assert_eq!(body(100.0, 40.0), 52.0);
         assert_eq!(body(140.0, 40.0), 72.0);

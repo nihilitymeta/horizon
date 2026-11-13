@@ -1567,7 +1567,6 @@ impl Def {
                         | S::Turtle
                         | S::Guardian
                         | S::ElderGuardian
-                        | S::IronGolem
                         | S::CopperGolem
                         | S::Nautilus
                 ),

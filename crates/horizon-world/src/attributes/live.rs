@@ -379,12 +379,10 @@ impl<G: FnMut() -> i32> LiveAttributes<G> {
         let key = self.key(name).ok_or(Error::MissingAttribute)?;
         self.cached_value(Some(&key))
     }
-    /// The current value: `computed` rather than the cache, so a dirty instance
-    /// reports the write that dirtied it. Takes `&self` and leaves the cache and
-    /// the dirty flag alone, unlike `value`.
-    pub fn value_now(&self, key: Option<&Key>) -> Result<f64, Error> {
+    /// The computed value of the attribute, calculating current dirty modifiers if needed.
+    pub fn computed_value(&self, key: Option<&Key>) -> Result<f64, Error> {
         if let Some(handle) = self.map.instances.get(key) {
-            return Ok(self.data.node(&handle)?.value.computed());
+            return Ok(self.data.node(&handle)?.value.compute_value());
         }
         let key = key.ok_or(Error::NullAttribute)?;
         let base = self.data.base(key).ok_or(Error::MissingAttribute)?;
@@ -395,10 +393,10 @@ impl<G: FnMut() -> i32> LiveAttributes<G> {
             .definition
             .sanitize(base))
     }
-    /// `value_now` of the attribute with this registered name.
-    pub fn value_now_of(&self, name: &str) -> Result<f64, Error> {
+    /// `computed_value` of the attribute with this registered name.
+    pub fn computed_value_of(&self, name: &str) -> Result<f64, Error> {
         let key = self.key(name).ok_or(Error::MissingAttribute)?;
-        self.value_now(Some(&key))
+        self.computed_value(Some(&key))
     }
     pub fn modifier_value(&mut self, key: Option<Key>, id: &str) -> Result<f64, Error> {
         self.map

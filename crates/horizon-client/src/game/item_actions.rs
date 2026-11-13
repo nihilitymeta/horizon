@@ -108,8 +108,13 @@ impl Game<'_> {
                     .map(|guest| super::commands::Target::Guest(guest.conn))
             })
         };
+        // The mod hooks hear no natural fence knot (#13036): its click
+        // keeps the knot's own path below.
         if let Some(id) = named
-            && let Some(entity) = self.level_entity(id).or_else(|| player(self, id))
+            && let Some(entity) = self
+                .level_entity(id)
+                .filter(|t| !matches!(t, commands::Target::Knot(_)))
+                .or_else(|| player(self, id))
         {
             // The point clicked, measured from the entity's position: a
             // guest's packet carries it, and the local player's is where the
@@ -189,7 +194,8 @@ impl Game<'_> {
         let fluid = match &*stack.item {
             "minecraft:lava_bucket" => "minecraft:lava",
             "minecraft:powder_snow_bucket" => "minecraft:powder_snow",
-            _ => "minecraft:water",
+            item => horizon_world::fluid::FluidKind::of_bucket(item)
+                .map_or("minecraft:water", |f| f.info().name),
         };
         let mut cancel = false;
         self.native_bucket_empty(uuid, &name, pos, fluid, &mut cancel);

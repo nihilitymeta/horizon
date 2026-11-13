@@ -7,6 +7,7 @@ pub use horizon_client_lib::*;
 pub mod dev_input;
 pub mod entry;
 pub mod game;
+mod horizon_look;
 pub mod mod_api;
 /// Constructors for the mod API's `#[non_exhaustive]` event and player structs
 /// (whos-carmen/horizon#28): the structs say fields may be added, so only their
@@ -15,3 +16,8 @@ pub mod mod_api;
 /// turns them on for a dev-dependency; players' builds never see them.
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_events;
+
+#[cfg(test)]
+mod brewing_speed_load_tests;
+#[cfg(test)]
+mod living_death_tests;

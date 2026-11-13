@@ -18,9 +18,13 @@ pub mod consent;
 pub mod live;
 pub mod outbox;
 pub mod payload;
-pub mod scrub;
 pub mod server_status;
-pub mod system;
+/// The machine's probes, from the platform (`horizon-system`). Kept at this path for the
+/// launcher and the benchmark.
+pub use horizon_platform::system;
+/// Takes private text out before it leaves (`horizon_system::scrub`). Kept at this path for the
+/// launcher.
+pub use horizon_platform::system::scrub;
 #[cfg(feature = "upload")]
 pub mod upload;
 
@@ -36,8 +40,10 @@ pub const SCHEMA: u32 = 1;
 /// (cores, clocks, VRAM, drive, screen, power, form), 2026-10-23.
 pub const CONSENT_VERSION: u32 = 2;
 
-/// Horizon's ingest server (`crates/horizon-telemetry-server`, on Railway).
-pub const DEFAULT_ENDPOINT: &str = "https://telemetry.playhorizon.dev";
+/// The ingest server (`crates/horizon-telemetry-server`, on Railway). `HORIZON_TELEMETRY_URL`
+/// overrides it (a local server); `HORIZON_TELEMETRY_URL=off` sends nothing at all, no ping
+/// either (tests and automated runs). What is sent still depends on the player's switches.
+pub const DEFAULT_ENDPOINT: &str = horizon_addresses::TELEMETRY;
 
 /// Where items are sent, if anywhere. Event Horizon sends nothing, the "I'm playing" ping
 /// included, unless `HORIZON_TELEMETRY_URL` names a server: its builds are not Horizon's, and

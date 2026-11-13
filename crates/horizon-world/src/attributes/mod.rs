@@ -276,11 +276,10 @@ impl Instance {
         }
         Ok(())
     }
-    /// The value the instance currently has, computed from the base and every
-    /// modifier without touching the cache or clearing the dirty flag: a
-    /// reader that only observes (`AttributeInstance.getValue` on the paths
-    /// vanilla reads without storing) still sees the last write.
-    pub fn computed(&self) -> f64 {
+    pub fn compute_value(&self) -> f64 {
+        if !self.dirty {
+            return self.cached;
+        }
         let mut base = self.base;
         for m in self.operation_modifiers(Operation::AddValue) {
             base += m.amount();
@@ -296,7 +295,7 @@ impl Instance {
     }
     pub fn value(&mut self) -> f64 {
         if self.dirty {
-            self.cached = self.computed();
+            self.cached = self.compute_value();
             self.dirty = false;
         }
         self.cached
@@ -359,14 +358,43 @@ fn array_put(map: &mut Vec<Modifier>, m: Modifier) -> Option<Modifier> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::Infallible;
 
     struct Silent;
     impl Observer for Silent {
-        type Error = Infallible;
-        fn dirty(&mut self, _: &mut Instance) -> Result<(), Infallible> {
+        type Error = std::convert::Infallible;
+        fn dirty(&mut self, _: &mut Instance) -> Result<(), Self::Error> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn compute_value_evaluates_dirty_modifiers_without_clearing_state() {
+        let def = Definition::ranged(4.0, 0.0, 1024.0).unwrap();
+        let mut inst = Instance::new(def);
+        assert_eq!(inst.base_value(), 4.0);
+        assert_eq!(inst.compute_value(), 4.0);
+
+        let m1 = Modifier::new("test:add", 16.0, Operation::AddValue).unwrap();
+        inst.add_transient(m1, &mut Silent).unwrap();
+        assert!(inst.is_dirty());
+        assert_eq!(inst.compute_value(), 20.0);
+        // compute_value did not mutate or reset dirty flag
+        assert!(inst.is_dirty());
+
+        let m2 = Modifier::new("test:mult_base", 0.5, Operation::AddMultipliedBase).unwrap();
+        inst.add_transient(m2, &mut Silent).unwrap();
+        // (4.0 + 16.0) + (20.0 * 0.5) = 30.0
+        assert_eq!(inst.compute_value(), 30.0);
+
+        let m3 = Modifier::new("test:mult_total", 0.1, Operation::AddMultipliedTotal).unwrap();
+        inst.add_transient(m3, &mut Silent).unwrap();
+        // 30.0 * 1.1 = 33.0
+        assert!((inst.compute_value() - 33.0).abs() < 1e-6);
+
+        // Calling value() updates cache and clears dirty
+        assert!((inst.value() - 33.0).abs() < 1e-6);
+        assert!(!inst.is_dirty());
+        assert!((inst.compute_value() - 33.0).abs() < 1e-6);
     }
 
     #[test]
@@ -376,9 +404,9 @@ mod tests {
         let instance = Instance::new(Definition::basic(20.0));
         assert!(instance.is_dirty());
         assert_eq!(instance.cached_value(), 0.0);
-        assert_eq!(instance.computed(), 20.0);
-        assert!(instance.is_dirty(), "computed clears no flag");
-        assert_eq!(instance.cached_value(), 0.0, "computed fills no cache");
+        assert_eq!(instance.compute_value(), 20.0);
+        assert!(instance.is_dirty(), "compute_value clears no flag");
+        assert_eq!(instance.cached_value(), 0.0, "compute_value fills no cache");
 
         // add_transient: (20 + 5) * (1 + 0.5) = 37.5. The cache still holds the
         // value from before the writes, as it does after a packet.
@@ -396,14 +424,14 @@ mod tests {
                 &mut observer,
             )
             .unwrap();
-        assert_eq!(instance.computed(), 37.5);
+        assert_eq!(instance.compute_value(), 37.5);
         assert_eq!(instance.cached_value(), 0.0);
-        assert_eq!(instance.value(), 37.5, "value equals computed");
+        assert_eq!(instance.value(), 37.5, "value equals compute_value");
         assert_eq!(instance.cached_value(), 37.5);
 
         // remove_all: back to the base, with the cache still at 37.5.
         instance.remove_all(&mut observer).unwrap();
-        assert_eq!(instance.computed(), 20.0);
+        assert_eq!(instance.compute_value(), 20.0);
         assert_eq!(instance.cached_value(), 37.5);
         assert_eq!(instance.value(), 20.0);
 
@@ -415,7 +443,7 @@ mod tests {
                 &mut observer,
             )
             .unwrap();
-        assert_eq!(ranged.computed(), 20.0);
+        assert_eq!(ranged.compute_value(), 20.0);
         assert_eq!(ranged.value(), 20.0);
     }
 }

@@ -75,7 +75,7 @@ Never sent: account names or UUIDs, world names, server or LAN addresses, chat, 
 
 The ping is off by default in Event Horizon: it is sent only when a server is named (see above). The launcher's first-run question and Settings → Data collection still show it beside the switches under an "Always on" label (`launcher/src/collection.rs`). That label is the ping's own policy, not whether this build sends it.
 
-While the game runs (not a dedicated server, a benchmark or a run that quits by itself, and only when a server is named: `horizon_telemetry::endpoint()`), a thread of its own (`crates/horizon-client/src/heartbeat.rs`) sends `POST /v1/live` once a minute. It also sends one at once when a world is opened to or closed from LAN or friends:
+While the game runs (not a dedicated server, a benchmark or a run that quits by itself, and only when a server is named: `horizon_telemetry::endpoint()`), a thread of its own (`crates/horizon-heartbeat`, which the official executable plugs into the game) sends `POST /v1/live` once a minute. It also sends one at once when a world is opened to or closed from LAN or friends:
 
 ```json
 { "session": "9b1c…", "version": "v2026.10.22", "platform": "macos", "lan": false }

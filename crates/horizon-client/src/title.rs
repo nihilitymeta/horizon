@@ -24,6 +24,7 @@ mod flat;
 mod onboarding;
 #[cfg(test)]
 mod tests;
+mod world_folder;
 pub mod world_management;
 pub use buffet::State as BuffetEditor;
 pub use create_world::{DIFFICULTIES, WorldOptions};
@@ -395,6 +396,8 @@ pub enum Action {
     Connect {
         address: String,
         lan: bool,
+        /// The Realms screen asked for it (`ServerData.isRealm`).
+        realm: bool,
     },
     /// Create World's Data Packs screen on the new world's pack folder.
     DataPacks {
@@ -418,6 +421,9 @@ pub struct Title {
     caret: RefCell<crate::ui::Caret>,
     scroll: Cell<crate::ui::Scroll>,
     create_return_to_main: bool,
+    /// The Generate New World tile's request while the title shows Create New World
+    /// (`RealmsCreateWorldFlow.createWorld`): its settings upload into the Realm's slot.
+    realms_create: Option<crate::realms::CreateWorldRequest>,
     message_lines: Cell<usize>,
     /// The SafetyScreen's checkbox as last drawn: x, y, width, height.
     warning_check: Cell<[f32; 4]>,
@@ -820,6 +826,7 @@ impl Title {
             caret: RefCell::default(),
             scroll: Cell::default(),
             create_return_to_main: false,
+            realms_create: None,
             message_lines: Cell::new(1),
             warning_check: Cell::new([0.0; 4]),
             credits_button: Cell::new([0.0; 4]),
@@ -918,6 +925,14 @@ impl Title {
             && let Some(dir) = &options.pack_dir
         {
             let _ = std::fs::remove_dir_all(dir);
+        }
+        if let Some(request) = self.realms_create.take() {
+            // `CreateWorldScreen.openFresh`'s cancel: the screen the reset screen was
+            // opened from (the configuration screen, or the list for a new Realm).
+            let mut screen = crate::realms::Screen::with_saves(Some(self.saves.clone()));
+            screen.cancel_create_world(request);
+            self.mode = Mode::Realms(screen);
+            return;
         }
         if self.create_return_to_main {
             self.mode = Mode::Main;
@@ -1376,6 +1391,7 @@ impl Title {
         Some(Action::Connect {
             address,
             lan: false,
+            realm: true,
         })
     }
     pub fn take_open_request(&mut self) -> Option<String> {
@@ -1769,31 +1785,73 @@ impl Title {
             options: options.clone(),
         }
     }
+    /// Create New World's Create: a local world normally; while the Realms screen's
+    /// Generate New World tile asked for the screen, its settings go back to that screen
+    /// and upload there (`RealmsCreateWorldFlow.createWorld`), no local world made.
+    fn create_or_upload(&mut self) -> Action {
+        let Some(request) = self.realms_create.take() else {
+            return self.create_action();
+        };
+        let Mode::Create {
+            name,
+            seed,
+            creative,
+            options,
+            ..
+        } = &self.mode
+        else {
+            return Action::None;
+        };
+        let (name, seed, creative, options) =
+            (name.clone(), seed.clone(), *creative, options.clone());
+        let enabled_features = options.enabled_features(&self.resources);
+        let disabled: Vec<String> = crate::datapack::feature_packs(&self.resources)
+            .iter()
+            .map(|pack| pack.id.clone())
+            .filter(|id| !options.data_packs.contains(id))
+            .collect();
+        // `WorldOptions.randomSeed` when no seed was entered.
+        let seed = parse_seed(&seed).unwrap_or_else(|| {
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos() as u64);
+            (t ^ (t >> 29)).wrapping_mul(0x9E37_79B9_7F4A_7C15) as i64
+        });
+        let mut level = Level {
+            name,
+            seed,
+            creative,
+            day_time: 0,
+            health: 20.0,
+            food: 20,
+            saturation: 5.0,
+            ..Level::default()
+        };
+        level.hardcore = options.hardcore;
+        level.difficulty = DIFFICULTIES[options.difficulty()].into();
+        level.allow_commands = Some(options.commands(creative));
+        level.enabled_features = enabled_features.clone();
+        level.game_rules = options
+            .rules
+            .copy_with_features(&enabled_features)
+            .by_name();
+        let world = crate::realms::CreatedWorld {
+            level,
+            world_gen: options.world_gen(),
+            flat_settings: options.flat_settings(),
+            single_biome: options.single_biome().map(str::to_owned),
+            data_packs: (options.data_packs.clone(), disabled),
+            pack_dir: options.pack_dir.clone(),
+        };
+        let mut screen = crate::realms::Screen::with_saves(Some(self.saves.clone()));
+        screen.start_create_world_upload(request, world);
+        self.mode = Mode::Realms(screen);
+        Action::None
+    }
     /// The folder a new world named `name` gets (`findResultFolder`).
     fn target_folder(&self, name: &str) -> String {
-        let base: String = name
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        let base = if base.trim().is_empty() {
-            "World".to_owned()
-        } else {
-            base.trim().to_owned()
-        };
-        // FileUtil.findAvailableName: append (n) until unused.
-        let mut folder = base.clone();
-        let mut n = 1;
-        while self.saves.join(&folder).exists() {
-            folder = format!("{base} ({n})");
-            n += 1;
-        }
-        folder
+        let new_world = lang::get_or("selectWorld.newWorld", "New World");
+        world_folder::result_folder(name, &new_world, |f| self.saves.join(f).exists())
     }
     fn buttons(&self, w: f32, h: f32) -> Vec<Button> {
         // The game rules draw and press their own.
@@ -1862,8 +1920,8 @@ impl Title {
                     )
                     .does(crate::widgets::Action::Exit),
                 ];
-                // CommonButtons' icon buttons; Horizon's Join a Friend (an
-                // invite code) sits behind vanilla's Friends button.
+                // CommonButtons' icon buttons: vanilla's Friends button opens a crate's page or
+                // Join a Friend, inactive with neither (`multiplayer::title_entry`).
                 for (i, (key, plain, id, icon)) in [
                     ("gui.friends.open", "Friends", 5, "friends/friends"),
                     ("options.language", "Language...", 6, "icon/language"),
@@ -1882,7 +1940,7 @@ impl Title {
                         y + 72.0,
                         20.0,
                         &lang::get_or(key, plain),
-                        true,
+                        id != 5 || crate::multiplayer::has_title_entry(),
                         id,
                     );
                     button.icon = Some((icon, 15.0));
@@ -2520,17 +2578,17 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         }
         // CommonButtons and FriendsButton narrate their `.narration`, and
         // read their tooltip as a hint.
-        let icon = |narration: &str, tooltip: &str| {
-            Narratable::named(narration_text(narration, &[]), rect, b.enabled)
-                .hint(narration_text(tooltip, &[]))
+        let icon = |narration: &str| {
+            let named = Narratable::named(narration_text(narration, &[]), rect, b.enabled);
+            match self.button_tooltip(b.id) {
+                Some(tooltip) => named.hint(narration_text(tooltip, &[])),
+                None => named,
+            }
         };
         let narratable = match b.id {
-            5 => icon("gui.friends.open.narration", "gui.friends.open.tooltip"),
-            6 => icon("options.language.narration", "options.language.tooltip"),
-            7 => icon(
-                "accessibility.onboarding.accessibility.button.narration",
-                "options.accessibility.tooltip",
-            ),
+            5 => icon("gui.friends.open.narration"),
+            6 => icon("options.language.narration"),
+            7 => icon("accessibility.onboarding.accessibility.button.narration"),
             _ => Narratable::button(b.label.clone(), rect, b.enabled),
         };
         // TitleScreen.init adds the icon row after Minecraft Realms and before
@@ -2540,6 +2598,23 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             2 | 3 => 2,
             _ => 0,
         })
+    }
+
+    /// The `Tooltip` vanilla sets on a button of the open screen, as its key:
+    /// `CommonButtons.language` and `accessibility` on the title's icon row and
+    /// the onboarding screen, and `FriendsButton` while friends are available
+    /// (always, for Horizon's Join a Friend).
+    fn button_tooltip(&self, id: u8) -> Option<&'static str> {
+        match (&self.mode, id) {
+            (Mode::Main, 5) => Some("gui.friends.open.tooltip"),
+            (Mode::Main, 6) | (Mode::Onboarding(_), onboarding::LANGUAGE) => {
+                Some("options.language.tooltip")
+            }
+            (Mode::Main, 7) | (Mode::Onboarding(_), onboarding::ACCESSIBILITY) => {
+                Some("options.accessibility.tooltip")
+            }
+            _ => None,
+        }
     }
 
     pub fn draw(
@@ -3276,6 +3351,8 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 self.focused_button.is_none(),
             ),
         }
+        // The hovered button's `Tooltip`, drawn once the widgets are.
+        let mut button_tooltip = None;
         for b in self.buttons(w, h) {
             crate::widgets::record(&b.label, [b.x, b.y, b.w, 20.0], b.enabled);
             // Realms' icon buttons have no label to record.
@@ -3289,6 +3366,9 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 cursor.0 >= b.x && cursor.0 < b.x + b.w && cursor.1 >= b.y && cursor.1 < b.y + 20.0;
             crate::widgets::narratable(|| self.button_narration(&b).hovered(inside));
             crate::widgets::widget_cursor(inside, b.enabled);
+            if inside && let Some(key) = self.button_tooltip(b.id) {
+                button_tooltip = Some((key, [b.x, b.y, b.w, 20.0]));
+            }
             let is_focused = self.focused_button == Some(b.id);
             let hover = b.enabled && (inside || is_focused);
             let sprite = if !b.enabled {
@@ -3365,6 +3445,14 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         }
         if let Mode::Realms(screen) = &self.mode {
             screen.draw_tooltip(atlas, batch, cursor, (w, h));
+        }
+        // WidgetTooltipHolder.refreshTooltipForNextRenderPass: beside the
+        // pointer and kept by its button (`MenuTooltipPositioner`), split at
+        // `Tooltip`'s 170. It comes after the onboarding fade: vanilla fades
+        // the widgets, not the tooltip.
+        if let Some((key, rect)) = button_tooltip {
+            let lines = atlas.font.split(&Text::translate(key, &[]), 170.0);
+            crate::ui::tooltip_menu(batch, atlas, &lines, cursor, rect);
         }
         if let Some((slide, toast)) = &self.toast {
             let (title, message) = toast.text();
@@ -3551,12 +3639,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             .map(|b| b.id);
         if hit.is_some() {
             self.focused_button = hit;
-        } else if matches!(
-            self.mode,
-            Mode::Multiplayer(
-                crate::multiplayer::Screen::Edit { .. } | crate::multiplayer::Screen::Friend { .. }
-            )
-        ) {
+        } else if matches!(&self.mode, Mode::Multiplayer(screen) if screen.has_fields()) {
             // A press on a text field takes the focus from the button.
             self.focused_button = None;
         }
@@ -3643,9 +3726,18 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                     crate::realms::Outcome::Connect(address) => Action::Connect {
                         address,
                         lan: false,
+                        realm: true,
                     },
                     crate::realms::Outcome::OpenUri(uri) => Action::OpenUri(uri),
                     crate::realms::Outcome::Copy(text) => Action::CopyText(text),
+                    crate::realms::Outcome::CreateWorld(request) => {
+                        // `RealmsCreateWorldFlow.createWorld`: Create New World's settings
+                        // upload into the Realm's slot instead of a local world.
+                        self.realms_create = Some(request);
+                        self.create_return_to_main = false;
+                        self.mode = Self::new_world();
+                        Action::None
+                    }
                     crate::realms::Outcome::None => Action::None,
                 }
             }
@@ -3658,13 +3750,15 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                     self.mode = Mode::Main;
                     Action::None
                 }
-                crate::multiplayer::Outcome::Connect { address, lan } => {
-                    Action::Connect { address, lan }
-                }
+                crate::multiplayer::Outcome::Connect { address, lan } => Action::Connect {
+                    address,
+                    lan,
+                    realm: false,
+                },
                 crate::multiplayer::Outcome::None => Action::None,
             },
             (Mode::Main, Some(5)) => {
-                self.mode = Mode::Multiplayer(crate::multiplayer::Screen::friend(true));
+                self.mode = crate::multiplayer::title_entry().map_or(Mode::Main, Mode::Multiplayer);
                 Action::None
             }
             (Mode::Onboarding(_), Some(onboarding::SOUNDS)) => Action::Sounds,
@@ -3972,7 +4066,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 *self.experiments.get_mut() = Some(experiments::ExperimentsScreen::new(flags));
                 Action::None
             }
-            (Mode::Create { .. }, Some(21)) => self.create_action(),
+            (Mode::Create { .. }, Some(21)) => self.create_or_upload(),
             (Mode::Create { options, .. }, Some(31)) => {
                 if options.pack_dir.is_none() {
                     match crate::datapack::temp_folder() {
@@ -4191,6 +4285,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                     Action::Connect {
                         address,
                         lan: false,
+                        realm: true,
                     },
                     true,
                 ),
@@ -4208,18 +4303,27 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             }
             return (Action::None, false);
         }
+        if matches!(self.mode, Mode::Create { .. }) {
+            let upload = self.realms_create.is_some();
+            let action = self.create_or_upload();
+            // A press on Create is a button click: the local world, or the upload.
+            let sound = upload || matches!(action, Action::Create { .. });
+            return (action, sound);
+        }
         match &self.mode {
-            Mode::Create { .. } => {
-                let action = self.create_action();
-                let sound = matches!(action, Action::Create { .. });
-                (action, sound)
-            }
             Mode::Multiplayer(screen) => match screen.confirm() {
                 crate::multiplayer::Outcome::Connect { address, lan } => {
                     if matches!(screen, crate::multiplayer::Screen::Direct { .. }) {
                         crate::multiplayer::remember_direct_join(&self.saves, &address);
                     }
-                    (Action::Connect { address, lan }, true)
+                    (
+                        Action::Connect {
+                            address,
+                            lan,
+                            realm: false,
+                        },
+                        true,
+                    )
                 }
                 _ => (Action::None, false),
             },
@@ -4783,6 +4887,12 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             return;
         };
         self.allows_multiplayer = status.allows_multiplayer();
+        // `Minecraft`'s constructor: the account's `friendsPreferences` decide whether
+        // the friends service starts (`Minecraft.friendsEnabled`).
+        crate::social::init(
+            status.properties.friends_enabled,
+            status.properties.accept_friend_invites,
+        );
         if !QUEUED.swap(true, Ordering::Relaxed) {
             self.ban_queue
                 .extend(initial_notices(status, &session.name));
@@ -5172,6 +5282,8 @@ mod classic_tests {
 
     #[test]
     fn classic_main_menu_icons_route_language_and_accessibility() {
+        // Join a Friend needs a resolver (title/tests.rs tests the icon without one).
+        crate::net::JOINS_FRIENDS_IN_TEST.set(true);
         let mut title = Title::new(
             PathBuf::new(),
             Path::new("/nonexistent/horizon-test-resources"),
