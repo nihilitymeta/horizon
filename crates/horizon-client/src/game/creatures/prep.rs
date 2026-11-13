@@ -118,6 +118,7 @@ pub(super) fn hookless<'w>(base: &MobWorld<'w>) -> impl Fn() -> MobWorld<'w> + S
         who_lookup: _,
         foreign: _,
         border,
+        kinds,
     } = base.clone();
     move || MobWorld {
         world,
@@ -163,6 +164,7 @@ pub(super) fn hookless<'w>(base: &MobWorld<'w>) -> impl Fn() -> MobWorld<'w> + S
         who_lookup: None,
         foreign: None,
         border,
+        kinds,
     }
 }
 

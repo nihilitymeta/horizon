@@ -1068,7 +1068,7 @@ mod rendered_item_tests {
 #[cfg(test)]
 mod native_pack_tests {
     use super::{active_pack, pack_draws_flat, picked_pack_shape};
-    use horizon_client::mod_list::{Installed, ModList, NativePage};
+    use horizon_client::mod_list::{Installed, ModKind, ModList, NativePage};
 
     #[test]
     fn unknown_pack_is_optimistic_but_refusal_owner_and_presence_override_it() {
@@ -1084,6 +1084,7 @@ mod native_pack_tests {
             problem: None,
             dev: false,
             native: Some(NativePage::default()),
+            kind: ModKind::Native,
         });
         let root =
             std::env::temp_dir().join(format!("horizon-frame-policy-{}", std::process::id()));

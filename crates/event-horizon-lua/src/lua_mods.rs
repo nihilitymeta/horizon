@@ -3817,6 +3817,7 @@ impl LuaMod {
                     palette: vec![name],
                     filters: Vec::new(),
                     runs,
+                    ..Default::default()
                 };
                 let dimension = host.dimension().to_owned();
                 if let Err(e) = host.edit_blocks(&dimension, &edit) {
@@ -8637,6 +8638,7 @@ experimental = ["scripts"]
             &mut test_events::explosion_detonate_event(
                 "minecraft:overworld",
                 [1.0, 2.0, 3.0],
+                None,
                 &mut blocks,
             ),
         );

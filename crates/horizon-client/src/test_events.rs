@@ -75,11 +75,13 @@ pub fn entity_tick_post_event<'a>(
 pub fn explosion_detonate_event<'a>(
     dimension: &'a str,
     center: [f64; 3],
+    source: Option<(u32, &'a str)>,
     blocks: &'a mut Vec<[i32; 3]>,
 ) -> ExplosionDetonateEvent<'a> {
     ExplosionDetonateEvent {
         dimension,
         center,
+        source,
         blocks,
     }
 }
@@ -423,6 +425,11 @@ pub fn native_server_player(
         selected_slot: 0,
         nickname: None,
         hidden: None,
+        fake: false,
+        using_item: false,
+        blocking: false,
+        sprinting: false,
+        gliding: false,
     }
 }
 /// Builds `PerformCommandEvent` for the workspace's own tests: the struct is

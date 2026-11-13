@@ -24,7 +24,7 @@ impl Game<'_> {
             health: player.health.health(),
             max_health: player
                 .attributes
-                .value_now_of("minecraft:max_health")
+                .computed_value_of("minecraft:max_health")
                 .unwrap_or(20.0) as f32,
             absorption: player.health.absorption(),
             food: player.health.food.food,
@@ -36,7 +36,7 @@ impl Game<'_> {
             xp_total: self.experience.total,
             armor: player
                 .attributes
-                .value_now_of("minecraft:armor")
+                .computed_value_of("minecraft:armor")
                 .unwrap_or(0.0),
             position: [player.position.x, player.position.y, player.position.z],
             yaw: self.yaw,

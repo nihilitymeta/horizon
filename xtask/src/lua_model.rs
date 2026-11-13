@@ -1302,6 +1302,7 @@ fn struct_key_of(ty: &syn::Type) -> Option<String> {
         "[f32;3]",
     ];
     const OPT_STRUCTS: &[&str] = &[
+        "Text",
         "Music",
         "NativeZoom",
         "NativeMinimap",

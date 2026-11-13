@@ -488,6 +488,12 @@ impl Game<'_> {
                 selected_slot: 0,
                 nickname: None,
                 hidden: None,
+                fake: false,
+                using_item: self.using.is_some(),
+                blocking: self.using.is_some()
+                    && self.held().is_some_and(|s| &*s.item == "minecraft:shield"),
+                sprinting: p.sprinting,
+                gliding: p.fall_flying,
             },
         );
         players
@@ -2234,6 +2240,11 @@ mod tests {
             selected_slot: 0,
             nickname: None,
             hidden: None,
+            fake: false,
+            using_item: false,
+            blocking: false,
+            sprinting: false,
+            gliding: false,
         };
         assert_eq!(player_permission(std::slice::from_ref(&player), 7), Some(2));
         assert_eq!(player_permission(std::slice::from_ref(&player), 8), None);

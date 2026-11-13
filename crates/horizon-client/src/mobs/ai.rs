@@ -6289,18 +6289,60 @@ mod removed_mob_tests {
     use super::*;
     use crate::mobs::goals::Goal;
     use crate::mobs::world::with_test_world;
-    use std::cell::{Cell, RefCell};
-    use std::rc::Rc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex, MutexGuard};
+
+    /// The goal is `Send + Sync`, so its shared test state is too: these keep the names and
+    /// methods of the `Rc<RefCell<..>>` and `Cell`s the tests were written with.
+    #[derive(Debug, Clone)]
+    struct Log(Arc<Mutex<Vec<String>>>);
+    impl Log {
+        fn new() -> Self {
+            Self(Arc::new(Mutex::new(Vec::new())))
+        }
+        fn borrow(&self) -> MutexGuard<'_, Vec<String>> {
+            self.0.lock().unwrap()
+        }
+        fn borrow_mut(&self) -> MutexGuard<'_, Vec<String>> {
+            self.0.lock().unwrap()
+        }
+    }
+    #[derive(Debug, Clone)]
+    struct Flag(Arc<AtomicBool>);
+    impl Flag {
+        fn new(on: bool) -> Self {
+            Self(Arc::new(AtomicBool::new(on)))
+        }
+        fn get(&self) -> bool {
+            self.0.load(Ordering::SeqCst)
+        }
+        fn set(&self, on: bool) {
+            self.0.store(on, Ordering::SeqCst);
+        }
+    }
+    #[derive(Debug, Clone)]
+    struct Count(Arc<AtomicU32>);
+    impl Count {
+        fn new(n: u32) -> Self {
+            Self(Arc::new(AtomicU32::new(n)))
+        }
+        fn get(&self) -> u32 {
+            self.0.load(Ordering::SeqCst)
+        }
+        fn set(&self, n: u32) {
+            self.0.store(n, Ordering::SeqCst);
+        }
+    }
 
     /// A scripted goal logging each callback, removing the mob in `remove_in`
     /// once armed — a convert or despawn action in that callback.
     #[derive(Debug, Clone)]
     struct Rec {
-        log: Rc<RefCell<Vec<String>>>,
+        log: Log,
         name: &'static str,
         remove_in: &'static str,
-        armed: Rc<Cell<bool>>,
-        stops: Rc<Cell<u32>>,
+        armed: Flag,
+        stops: Count,
     }
     impl Goal for Rec {
         fn box_clone(&self) -> Box<dyn Goal> {
@@ -6355,12 +6397,12 @@ mod removed_mob_tests {
     }
 
     fn rec(
-        log: &Rc<RefCell<Vec<String>>>,
+        log: &Log,
         name: &'static str,
         remove_in: &'static str,
-        armed: &Rc<Cell<bool>>,
-    ) -> (Rec, Rc<Cell<u32>>) {
-        let stops = Rc::new(Cell::new(0));
+        armed: &Flag,
+    ) -> (Rec, Count) {
+        let stops = Count::new(0);
         (
             Rec {
                 log: log.clone(),
@@ -6393,8 +6435,8 @@ mod removed_mob_tests {
                 events: &mut events,
             };
             // The control: nothing removes, everything runs in order.
-            let log = Rc::new(RefCell::new(Vec::new()));
-            let armed = Rc::new(Cell::new(true));
+            let log = Log::new();
+            let armed = Flag::new(true);
             let mut m = cow(types);
             let (run, _) = rec(&log, "Run", "", &armed);
             let (vanish, _) = rec(&log, "Vanish", "", &armed);
@@ -6420,8 +6462,8 @@ mod removed_mob_tests {
                 "a mob that is not removed runs all its goals"
             );
             // The removal: only Run runs first, then Vanish removes the mob.
-            let log = Rc::new(RefCell::new(Vec::new()));
-            let armed = Rc::new(Cell::new(false));
+            let log = Log::new();
+            let armed = Flag::new(false);
             let mut m = cow(types);
             let (run, run_stops) = rec(&log, "Run", "", &armed);
             let (vanish, _) = rec(&log, "Vanish", remove_in, &armed);
@@ -6471,8 +6513,8 @@ mod removed_mob_tests {
             let mut lr = LegacyRandom::new(1);
             let mut events = Vec::new();
             // The control: nothing removes, both selectors run in order.
-            let log = Rc::new(RefCell::new(Vec::new()));
-            let armed = Rc::new(Cell::new(true));
+            let log = Log::new();
+            let armed = Flag::new(true);
             let mut m = cow(types);
             m.ai.targets.clear();
             m.ai.goals.clear();
@@ -6499,8 +6541,8 @@ mod removed_mob_tests {
                 "a mob that is not removed runs both selectors"
             );
             // The removal: the target removes the mob, the goals never run.
-            let log = Rc::new(RefCell::new(Vec::new()));
-            let armed = Rc::new(Cell::new(false));
+            let log = Log::new();
+            let armed = Flag::new(false);
             let mut m = cow(types);
             m.ai.targets.clear();
             m.ai.goals.clear();

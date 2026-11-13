@@ -789,6 +789,12 @@ fn a_physical_trigger_hook_cancels_for_the_player_it_names() {
         fn state_with_property(&self, _: BlockStateId, _: &str, _: &str) -> Option<BlockStateId> {
             None
         }
+        fn state_block(&self, _: BlockStateId) -> Option<String> {
+            None
+        }
+        fn state_properties(&self, _: BlockStateId) -> Vec<(String, String)> {
+            Vec::new()
+        }
     }
     struct Claims;
     impl Hooks for Claims {

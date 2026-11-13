@@ -971,7 +971,11 @@ impl FileReader<'_> {
     /// the size), for a caller that copies it without reading it; `None` in an archive.
     pub fn path(&self, name: &str) -> Result<Option<std::path::PathBuf>, String> {
         check_path(name)?;
-        let Self::Dir(root) = self else {
+        // A file a script registered has no path on disk.
+        if self.registered.contains_key(name) {
+            return Ok(None);
+        }
+        let ReadFrom::Dir(root) = &self.from else {
             return Ok(None);
         };
         let path = root.join(name);
