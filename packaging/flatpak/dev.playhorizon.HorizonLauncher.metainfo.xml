@@ -15,7 +15,7 @@
   </description>
   <launchable type="desktop-id">dev.playhorizon.HorizonLauncher.desktop</launchable>
   <url type="homepage">https://playhorizon.dev</url>
-  <url type="bugtracker">https://github.com/whos-carmen/horizon/issues</url>
+  <url type="bugtracker">https://github.com/nihilitymeta/horizon/issues</url>
   <developer id="dev.playhorizon">
     <name>Event Horizon</name>
   </developer>

@@ -17,8 +17,15 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// The source a launcher starts with: Event Horizon's releases.
-pub const DEFAULT: &str = "whos-carmen/horizon";
+/// The source a launcher starts with: Event Horizon's releases (`nihilitymeta/horizon`, moved there
+/// from `whos-carmen/horizon` on 2026-11-11).
+pub const DEFAULT: &str = "nihilitymeta/horizon";
+/// Repositories that moved, old name then new: a saved list that names an old one is renamed to the
+/// new one when it loads (`migrate`).
+const RENAMED: &[(&str, &str)] = &[
+    ("whos-carmen/horizon", "nihilitymeta/horizon"),
+    ("whos-carmen/horizon-modkit", "nihilitymeta/horizon-modkit"),
+];
 const FILE: &str = "game-sources.json";
 /// The most a release archive may be: a game build is ~100 MB, packed.
 const MAX_ARCHIVE: u64 = 512 << 20;
@@ -91,8 +98,33 @@ fn default_list() -> Vec<Source> {
 fn parse(text: Option<&str>) -> Vec<Source> {
     match text {
         None => default_list(),
-        Some(text) => serde_json::from_str(text).unwrap_or_else(|_| default_list()),
+        Some(text) => serde_json::from_str(text)
+            .map(migrate)
+            .unwrap_or_else(|_| default_list()),
     }
+}
+
+/// `repo` under its new name when it moved (`RENAMED`), else as it is.
+fn renamed(repo: &str) -> String {
+    RENAMED
+        .iter()
+        .find(|(old, _)| same_repo(old, repo))
+        .map_or_else(|| repo.to_owned(), |(_, new)| (*new).to_owned())
+}
+
+/// A saved list with its moved repositories renamed. Where that leaves two entries for one
+/// repository, one stays: the one with an install, else the first.
+fn migrate(sources: Vec<Source>) -> Vec<Source> {
+    let mut out: Vec<Source> = Vec::new();
+    for mut source in sources {
+        source.repo = renamed(&source.repo);
+        match out.iter().position(|s| same_repo(&s.repo, &source.repo)) {
+            None => out.push(source),
+            Some(i) if out[i].installed.is_none() && source.installed.is_some() => out[i] = source,
+            Some(_) => {}
+        }
+    }
+    out
 }
 
 pub fn load() -> Vec<Source> {
@@ -199,11 +231,12 @@ pub fn set_auto_update(repo: &str, on: bool) -> Result<(), String> {
     })
 }
 
-/// The first of a release's files whose name ends with one of `ends`, one of `repo`'s own (a
-/// release can't point at another repository's file). Shared with `modkit`.
+/// The first of a release's files whose name ends with one of `ends`, one of `repo`'s own or of the
+/// repository the release's own page names (a moved repository's releases still link the new name);
+/// a release can't point at another repository's file. Shared with `modkit`.
 pub(crate) fn asset(repo: &str, release: &serde_json::Value, ends: &[String]) -> Option<Release> {
     let tag = release["tag_name"].as_str()?.to_owned();
-    let own = format!("https://github.com/{repo}/releases/download/");
+    let home = html_repo(release);
     let assets = release["assets"]
         .as_array()
         .map(Vec::as_slice)
@@ -211,25 +244,72 @@ pub(crate) fn asset(repo: &str, release: &serde_json::Value, ends: &[String]) ->
     assets.iter().find_map(|a| {
         let name = a["name"].as_str()?;
         let url = a["browser_download_url"].as_str()?;
-        (ends.iter().any(|e| name.ends_with(e.as_str())) && url.starts_with(&own)).then(|| {
-            Release {
-                repo: repo.to_owned(),
-                tag: tag.clone(),
-                asset: name.to_owned(),
-                url: url.to_owned(),
-                size: a["size"].as_u64().unwrap_or(0),
-                published: release["published_at"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned(),
-                sha256: a["digest"]
-                    .as_str()
-                    .and_then(|d| d.strip_prefix("sha256:"))
-                    .filter(|d| d.len() == 64)
-                    .map(str::to_ascii_lowercase),
-            }
+        let ours = in_repo(url, repo) || home.as_deref().is_some_and(|h| in_repo(url, h));
+        (ends.iter().any(|e| name.ends_with(e.as_str())) && ours).then(|| Release {
+            repo: repo.to_owned(),
+            tag: tag.clone(),
+            asset: name.to_owned(),
+            url: url.to_owned(),
+            size: a["size"].as_u64().unwrap_or(0),
+            published: release["published_at"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            sha256: a["digest"]
+                .as_str()
+                .and_then(|d| d.strip_prefix("sha256:"))
+                .filter(|d| d.len() == 64)
+                .map(str::to_ascii_lowercase),
         })
     })
+}
+
+/// The `owner/name` a release's `html_url` names (`https://github.com/<owner>/<name>/releases/tag/<tag>`);
+/// None for any other link, or for a name with anything but letters, digits, `.`, `_` and `-`.
+fn html_repo(release: &serde_json::Value) -> Option<String> {
+    let link = release["html_url"].as_str()?;
+    let (repo, _tag) = link
+        .strip_prefix("https://github.com/")?
+        .split_once("/releases/tag/")?;
+    let (owner, name) = repo.split_once('/')?;
+    let plain = |part: &str| {
+        !matches!(part, "" | "." | "..")
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    (plain(owner) && plain(name)).then(|| format!("{owner}/{name}"))
+}
+
+/// Whether `url` is a plain download from `repo`'s releases:
+/// `https://github.com/<owner>/<name>/releases/download/<tag>/<file>`, the owner and name compared
+/// without case. The launcher has no URL parser of its own (its `url` is only ureq's), so this is
+/// checked on the text: anything that could leave the path (`..`, a `%` escape, a backslash, a
+/// userinfo, port, query or fragment, a third segment) is refused, and so is any character outside
+/// a file name's set.
+fn in_repo(url: &str, repo: &str) -> bool {
+    if url.contains("..") {
+        return false;
+    }
+    let Some((of, path)) = url
+        .strip_prefix("https://github.com/")
+        .and_then(|rest| rest.split_once("/releases/download/"))
+    else {
+        return false;
+    };
+    let mut segments = path.split('/');
+    let (Some(tag), Some(file), None) = (segments.next(), segments.next(), segments.next()) else {
+        return false;
+    };
+    same_repo(of, repo) && [tag, file].into_iter().all(plain_segment)
+}
+
+/// A path segment that is a tag or a file name: letters, digits and `. _ + -`, not `.` or `..`.
+fn plain_segment(part: &str) -> bool {
+    !matches!(part, "" | "." | "..")
+        && part
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
 }
 
 /// The archive for `platform` in a release's JSON: `<name>-<platform>.tar.gz` or `.zip`.
@@ -428,8 +508,22 @@ fn local_build(version: &str) -> Option<String> {
 /// (`0.1.0`, `Nightly 2026-11-05`).
 fn release_build(version: &str) -> Option<String> {
     let about = build_import::about(version)?;
-    let tag = about.file.strip_prefix(DEFAULT)?.strip_prefix(' ')?;
-    Some(release_name(tag))
+    Some(release_name(tag_of_label(&about.file)?))
+}
+
+/// The release tag in a source's label (`nihilitymeta/horizon eh-nightly-2026-11-05`), for Event
+/// Horizon's own repositories, under their old names too: an install made before the move keeps its
+/// label. Only the game's old names count: a moved repository that is not `DEFAULT` (the modkit)
+/// is no Event Horizon release.
+fn tag_of_label(file: &str) -> Option<&str> {
+    std::iter::once(DEFAULT)
+        .chain(
+            RENAMED
+                .iter()
+                .filter(|(_, new)| new.eq_ignore_ascii_case(DEFAULT))
+                .map(|(old, _)| *old),
+        )
+        .find_map(|repo| file.strip_prefix(repo)?.strip_prefix(' '))
 }
 
 /// `eh-v0.1.0` → `0.1.0`, `eh-nightly-2026-11-05` → `Nightly 2026-11-05`.
@@ -657,8 +751,217 @@ mod tests {
         assert!(repo_of("https://gitlab.com/a/b").is_err());
     }
 
+    #[test]
+    fn the_default_source_is_the_moved_repository_and_old_names_are_renamed() {
+        assert_eq!(DEFAULT, "nihilitymeta/horizon");
+        let saved = r#"[{"repo":"WHOS-CARMEN/Horizon","auto_update":true,"installed":{"tag":"eh-nightly-2026-11-08-2","version":"imported-2026-11-07-a1fbfaa"}}]"#;
+        let list = parse(Some(saved));
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].repo, "nihilitymeta/horizon");
+        assert!(list[0].auto_update);
+        assert_eq!(
+            list[0].installed,
+            Some(Installed {
+                tag: "eh-nightly-2026-11-08-2".into(),
+                version: "imported-2026-11-07-a1fbfaa".into(),
+            })
+        );
+        // A repository that did not move is left alone.
+        assert_eq!(parse(Some(r#"[{"repo":"a/b"}]"#))[0].repo, "a/b");
+    }
+
+    #[test]
+    fn an_old_and_a_new_entry_for_one_repository_collapse_to_the_installed_one() {
+        let installed =
+            r#""installed":{"tag":"eh-v0.1.0","version":"imported-2026-11-04-abcdef1"}"#;
+        let old_first = format!(
+            r#"[{{"repo":"whos-carmen/horizon","auto_update":true}},{{"repo":"nihilitymeta/horizon","auto_update":false,{installed}}}]"#
+        );
+        let new_first = format!(
+            r#"[{{"repo":"nihilitymeta/horizon","auto_update":false,{installed}}},{{"repo":"whos-carmen/horizon","auto_update":true}}]"#
+        );
+        for saved in [old_first, new_first] {
+            let list = parse(Some(saved.as_str()));
+            assert_eq!(list.len(), 1, "{saved}");
+            assert_eq!(list[0].repo, "nihilitymeta/horizon");
+            assert_eq!(list[0].installed.as_ref().unwrap().tag, "eh-v0.1.0");
+            assert_eq!(
+                list[0].installed.as_ref().unwrap().version,
+                "imported-2026-11-04-abcdef1"
+            );
+        }
+    }
+
+    #[test]
+    fn a_label_from_before_the_move_still_names_its_release() {
+        assert_eq!(
+            tag_of_label("whos-carmen/horizon eh-nightly-2026-11-08-2"),
+            Some("eh-nightly-2026-11-08-2")
+        );
+        assert_eq!(
+            tag_of_label("nihilitymeta/horizon eh-v0.1.0"),
+            Some("eh-v0.1.0")
+        );
+        assert_eq!(tag_of_label("someone/else eh-v0.1.0"), None);
+    }
+
+    #[test]
+    fn a_modkit_or_other_label_is_not_an_event_horizon_release() {
+        assert_eq!(tag_of_label("whos-carmen/horizon-modkit v0.7.1"), None);
+        assert_eq!(tag_of_label("nihilitymeta/horizon-modkit v0.7.1"), None);
+        assert_eq!(tag_of_label("whos-carmen/horizon-evil eh-v0.1.0"), None);
+    }
+
     fn release(assets: serde_json::Value) -> serde_json::Value {
         serde_json::json!({ "tag_name": "eh-v0.1.0", "assets": assets })
+    }
+
+    /// A release as GitHub reports it through the moved repository: its files and its page name
+    /// `nihilitymeta/horizon`, whatever repository was asked for.
+    fn moved_release(platform: &str) -> serde_json::Value {
+        serde_json::json!({
+            "tag_name": "eh-nightly-2026-11-13-2",
+            "html_url": "https://github.com/nihilitymeta/horizon/releases/tag/eh-nightly-2026-11-13-2",
+            "assets": [
+                { "name": format!("event-horizon-{platform}.tar.gz"),
+                  "browser_download_url": format!("https://github.com/nihilitymeta/horizon/releases/download/eh-nightly-2026-11-13-2/event-horizon-{platform}.tar.gz") },
+            ],
+        })
+    }
+
+    #[test]
+    fn a_release_of_a_moved_repository_is_accepted_under_its_old_name() {
+        let ends = [".tar.gz".to_owned()];
+        let json = moved_release("linux-x86_64");
+        let found = asset("whos-carmen/horizon", &json, &ends).unwrap();
+        assert_eq!(found.repo, "whos-carmen/horizon");
+        assert_eq!(found.tag, "eh-nightly-2026-11-13-2");
+        assert_eq!(
+            found.url,
+            "https://github.com/nihilitymeta/horizon/releases/download/eh-nightly-2026-11-13-2/event-horizon-linux-x86_64.tar.gz"
+        );
+        // Under the new name too, and with the owner and name in another case.
+        assert!(asset("nihilitymeta/horizon", &json, &ends).is_some());
+        assert!(asset("NihilityMeta/Horizon", &json, &ends).is_some());
+        let shouting = serde_json::json!({
+            "tag_name": "eh-v0.1.0",
+            "html_url": "https://github.com/NIHILITYMETA/HORIZON/releases/tag/eh-v0.1.0",
+            "assets": [
+                { "name": "event-horizon-linux-x86_64.tar.gz",
+                  "browser_download_url": "https://github.com/nihilitymeta/horizon/releases/download/eh-v0.1.0/event-horizon-linux-x86_64.tar.gz" },
+            ],
+        });
+        assert!(asset("whos-carmen/horizon", &shouting, &ends).is_some());
+    }
+
+    #[test]
+    fn a_file_of_a_third_repository_is_refused_whatever_the_release_says() {
+        let ends = [".tar.gz".to_owned()];
+        let elsewhere = serde_json::json!({
+            "tag_name": "eh-v0.1.0",
+            "html_url": "https://github.com/nihilitymeta/horizon/releases/tag/eh-v0.1.0",
+            "assets": [
+                { "name": "event-horizon-linux-x86_64.tar.gz",
+                  "browser_download_url": "https://github.com/someone/else/releases/download/x/event-horizon-linux-x86_64.tar.gz" },
+            ],
+        });
+        assert!(asset("whos-carmen/horizon", &elsewhere, &ends).is_none());
+        assert!(asset("nihilitymeta/horizon", &elsewhere, &ends).is_none());
+    }
+
+    #[test]
+    fn a_page_that_is_not_a_release_of_a_plain_repository_adds_no_accepted_repository() {
+        let ends = [".tar.gz".to_owned()];
+        let file = "https://github.com/x/y/releases/download/t/event-horizon-linux-x86_64.tar.gz";
+        // Not a github.com release page at all.
+        let not_github = serde_json::json!({
+            "tag_name": "t",
+            "html_url": "https://example.com/x/y/releases/tag/t",
+            "assets": [{ "name": "event-horizon-linux-x86_64.tar.gz", "browser_download_url": file }],
+        });
+        assert!(asset("a/b", &not_github, &ends).is_none());
+        // A name with more than one slash in it.
+        let three_parts = serde_json::json!({
+            "tag_name": "t",
+            "html_url": "https://github.com/x/y/z/releases/tag/t",
+            "assets": [{ "name": "event-horizon-linux-x86_64.tar.gz", "browser_download_url": file }],
+        });
+        assert!(asset("a/b", &three_parts, &ends).is_none());
+        // A name with characters GitHub's names do not use.
+        let odd_name = serde_json::json!({
+            "tag_name": "t",
+            "html_url": "https://github.com/x/y%20z/releases/tag/t",
+            "assets": [{ "name": "event-horizon-linux-x86_64.tar.gz",
+                         "browser_download_url": "https://github.com/x/y%20z/releases/download/t/event-horizon-linux-x86_64.tar.gz" }],
+        });
+        assert!(asset("a/b", &odd_name, &ends).is_none());
+    }
+
+    #[test]
+    fn a_url_that_only_starts_like_a_release_of_its_repository_is_refused() {
+        let ends = [".tar.gz".to_owned()];
+        let file = "event-horizon-linux-x86_64.tar.gz";
+        // Each starts with the repository's release prefix, then leaves it: `..` segments, percent
+        // escapes of dots, backslashes. The URL parser sends each one to another repository.
+        let crafted = [
+            format!("https://github.com/nihilitymeta/horizon/releases/download/../../../../evil/malware/releases/download/t/{file}"),
+            format!("https://github.com/nihilitymeta/horizon/releases/download/%2e%2e/%2e%2e/%2e%2e/%2e%2e/evil/malware/releases/download/t/{file}"),
+            format!("https://github.com/nihilitymeta/horizon/releases/download/..\\..\\..\\..\\evil\\malware\\releases\\download\\t\\{file}"),
+        ];
+        let release = |url: &str, page: &str| {
+            serde_json::json!({
+                "tag_name": "t",
+                "html_url": format!("https://github.com/{page}/releases/tag/t"),
+                "assets": [{ "name": file, "browser_download_url": url }],
+            })
+        };
+        for url in &crafted {
+            // Through the configured repository's own name...
+            let by_config = release(url, "nihilitymeta/horizon");
+            assert!(
+                asset("nihilitymeta/horizon", &by_config, &ends).is_none(),
+                "{url}"
+            );
+            // ...and through the name the release's page gives (the repository moved).
+            let by_page = release(url, "nihilitymeta/horizon");
+            assert!(
+                asset("whos-carmen/horizon", &by_page, &ends).is_none(),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plain_release_url_is_accepted_under_the_configured_and_the_page_repository() {
+        let ends = [".tar.gz".to_owned()];
+        let file = "event-horizon-linux-x86_64.tar.gz";
+        for tag in ["eh-v0.1.0", "eh-nightly-2026-11-13-2", "eh-v0.1.0+1"] {
+            let url =
+                format!("https://github.com/nihilitymeta/horizon/releases/download/{tag}/{file}");
+            let release = serde_json::json!({
+                "tag_name": tag,
+                "html_url": format!("https://github.com/nihilitymeta/horizon/releases/tag/{tag}"),
+                "assets": [{ "name": file, "browser_download_url": url }],
+            });
+            let found = asset("nihilitymeta/horizon", &release, &ends).unwrap();
+            assert_eq!(found.url, url);
+            assert!(
+                asset("whos-carmen/horizon", &release, &ends).is_some(),
+                "{tag}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_game_source_takes_a_moved_release_through_the_api() {
+        let Some(platform) = platform() else {
+            return;
+        };
+        let json = moved_release(platform);
+        let api = |_: &str| -> Result<Option<serde_json::Value>, String> { Ok(Some(json.clone())) };
+        let found = latest("whos-carmen/horizon", &api).unwrap().unwrap();
+        assert_eq!(found.repo, "whos-carmen/horizon");
+        assert_eq!(found.tag, "eh-nightly-2026-11-13-2");
     }
 
     #[test]

@@ -1,5 +1,5 @@
-//! The modkit (`whos-carmen/horizon-modkit`): the Lua library Event Horizon's mods are written
-//! with, so a prerequisite of playing them rather than a game build. Only Event Horizon runs its
+//! The modkit (`nihilitymeta/horizon-modkit`, moved there from `whos-carmen/horizon-modkit`): the Lua
+//! library Event Horizon's mods are written with, so a prerequisite of playing them rather than a game build. Only Event Horizon runs its
 //! scripts, so its GitHub release, `horizon_modkit.hmod`, goes into the `horizon-mods/` of every
 //! instance that plays an Event Horizon build (`game_sources::is_event_horizon`), turned on; a copy
 //! is kept, so an instance that starts playing one gets it at the next update check. Which version is installed,
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const REPO: &str = "whos-carmen/horizon-modkit";
+pub const REPO: &str = "nihilitymeta/horizon-modkit";
 /// The mod id in its manifest, and the file it installs as.
 pub const ID: &str = "horizon_modkit";
 const FILE: &str = "modkit.json";
@@ -232,6 +232,35 @@ mod tests {
         );
         let none = serde_json::json!({ "tag_name": "v0.7.1", "assets": [] });
         assert!(pick(&none).is_err());
+    }
+
+    #[test]
+    fn the_modkit_release_from_its_moved_repository_is_accepted() {
+        // GitHub reports the moved repository's files and page under the new name.
+        let json = serde_json::json!({
+            "tag_name": "v0.7.1",
+            "html_url": "https://github.com/nihilitymeta/horizon-modkit/releases/tag/v0.7.1",
+            "assets": [
+                { "name": "horizon_modkit.hmod",
+                  "browser_download_url": "https://github.com/nihilitymeta/horizon-modkit/releases/download/v0.7.1/horizon_modkit.hmod" },
+            ],
+        });
+        let api = |_: &str| -> Result<Option<serde_json::Value>, String> { Ok(Some(json.clone())) };
+        let found = latest(&api).unwrap();
+        assert_eq!(found.tag, "v0.7.1");
+        assert_eq!(found.repo, REPO);
+        // Another repository's file is refused, whatever the release says about itself.
+        let stolen = serde_json::json!({
+            "tag_name": "v0.7.1",
+            "html_url": "https://github.com/nihilitymeta/horizon-modkit/releases/tag/v0.7.1",
+            "assets": [
+                { "name": "horizon_modkit.hmod",
+                  "browser_download_url": "https://github.com/someone/else/releases/download/v0.7.1/horizon_modkit.hmod" },
+            ],
+        });
+        let api =
+            |_: &str| -> Result<Option<serde_json::Value>, String> { Ok(Some(stolen.clone())) };
+        assert!(latest(&api).is_err());
     }
 
     #[test]

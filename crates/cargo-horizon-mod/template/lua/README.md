@@ -1,6 +1,6 @@
 # {name}
 
-A [Horizon](https://playhorizon.dev) mod written in Lua with [Horizon Modkit](https://github.com/whos-carmen/horizon-modkit).
+A [Horizon](https://playhorizon.dev) mod written in Lua with [Horizon Modkit](https://github.com/nihilitymeta/horizon-modkit).
 `scripts/registry.lua` declares what the mod adds.
 
 ```sh
