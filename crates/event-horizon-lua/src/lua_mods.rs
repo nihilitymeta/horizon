@@ -11246,6 +11246,8 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         teams: std::collections::BTreeSet<String>,
         /// `holder -> team`: each holder's team.
         team_of: std::collections::BTreeMap<String, String>,
+        /// `slot -> objective` shown in each display slot.
+        displays: std::collections::BTreeMap<String, String>,
     }
 
     /// Whether `mod_id` may write `name`: its own `<mod_id>.<rest>`.
@@ -11379,6 +11381,37 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
                 .map(|(holder, _)| holder.clone())
                 .collect()
         }
+        fn scoreboard_set_display(&mut self, mod_id: &str, slot: &str, objective: &str) -> bool {
+            self.calls
+                .push(format!("set_display {mod_id} {slot} {objective}"));
+            if !horizon_client::scoreboard::display_slot_valid(slot)
+                || !own_objective(mod_id, objective)
+                || !self.objectives.contains_key(objective)
+            {
+                return false;
+            }
+            self.displays.insert(slot.to_owned(), objective.to_owned());
+            true
+        }
+        fn scoreboard_clear_display(&mut self, mod_id: &str, slot: &str) -> bool {
+            self.calls.push(format!("clear_display {mod_id} {slot}"));
+            if !horizon_client::scoreboard::display_slot_valid(slot)
+                || !self
+                    .displays
+                    .get(slot)
+                    .is_some_and(|o| own_objective(mod_id, o))
+            {
+                return false;
+            }
+            self.displays.remove(slot);
+            true
+        }
+        fn scoreboard_display_objective(&self, slot: &str) -> Option<String> {
+            if !horizon_client::scoreboard::display_slot_valid(slot) {
+                return None;
+            }
+            self.displays.get(slot).cloned()
+        }
     }
 
     /// One server tick of `m`: its handlers run, then their queued actions.
@@ -11496,6 +11529,74 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
             .find(|s| s.id == "scorec")
             .and_then(|s| s.error);
         assert_eq!(e, None, "a refused write is not a script error");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn display_slot_writes_are_the_mods_own_and_reads_see_any_slot() {
+        // `scoredisp` shows its `scoredisp.a` in `list` and takes `sidebar`
+        // from vanilla's `kills` (a set may displace another owner's objective).
+        // Clearing `sidebar` while it shows `kills` is refused, and so is a set
+        // of `kills` itself, a clear of an empty slot and a slot that is not one.
+        let (dir, path) = hmod_as(
+            "scoredisp",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("server_tick", function()
+                  horizon.scoreboard_set_display("list", "scoredisp.a")
+                  horizon.scoreboard_clear_display("sidebar")
+                  horizon.scoreboard_set_display("below_name", "kills")
+                  horizon.scoreboard_clear_display("below_name")
+                  horizon.scoreboard_clear_display("nope")
+                  READ_LIST = horizon.scoreboard_display_objective("list")
+                  READ_SIDEBAR = horizon.scoreboard_display_objective("sidebar")
+                  READ_BAD = horizon.scoreboard_display_objective("nope")
+                  READ_NONE = horizon.scoreboard_display_objective("below_name")
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = BoardHost::default();
+        host.objectives
+            .insert("scoredisp.a".to_owned(), "dummy".to_owned());
+        host.objectives
+            .insert("kills".to_owned(), "dummy".to_owned());
+        host.displays
+            .insert("sidebar".to_owned(), "kills".to_owned());
+        one_server_tick(&m, &mut host);
+        let first_tick = host.calls.clone();
+        // Queued writes apply after the handler, so the reads (made inside it)
+        // see the board as the first tick left it: a second tick reads them.
+        one_server_tick(&m, &mut host);
+        assert_eq!(
+            first_tick,
+            [
+                "set_display scoredisp list scoredisp.a",
+                "clear_display scoredisp sidebar",
+                "set_display scoredisp below_name kills",
+                "clear_display scoredisp below_name",
+                "clear_display scoredisp nope",
+            ]
+        );
+        assert_eq!(
+            host.displays.get("list").map(String::as_str),
+            Some("scoredisp.a")
+        );
+        assert_eq!(
+            host.displays.get("sidebar").map(String::as_str),
+            Some("kills")
+        );
+        assert_eq!(host.displays.get("below_name"), None);
+        let g = &m.lua;
+        assert_eq!(
+            g.globals().get::<String>("READ_LIST").unwrap(),
+            "scoredisp.a"
+        );
+        assert_eq!(g.globals().get::<String>("READ_SIDEBAR").unwrap(), "kills");
+        assert!(g.globals().get::<Value>("READ_BAD").unwrap().is_nil());
+        assert!(g.globals().get::<Value>("READ_NONE").unwrap().is_nil());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

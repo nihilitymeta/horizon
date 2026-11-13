@@ -253,7 +253,7 @@ runs a console command; `run_command_as` already covers that). Regenerate with
 `cargo run -p xtask -- lua-helpers` (its `--check` fails when any of the five outputs — the bridge, its tests, the
 exposure page, `hook-points.md` and `horizon.d.lua` — is stale).
 The helpers in `BOUND_MOD_ID` (the same file) take the calling mod's id from the runtime, not from the script: their
-first parameter `mod_id` is left out of the Lua signature. Today those are the scoreboard writes (objectives, scores and teams).
+first parameter `mod_id` is left out of the Lua signature. Today those are the scoreboard writes (objectives, scores, teams and display slots).
 
 ## The `horizon` table
 
@@ -569,12 +569,22 @@ commands, which is what `horizon.command` declares and `perform_command` hears.
 | `horizon.scoreboard_remove_team(name)` | Removes your team `<your mod id>.<name>`; its members lose their team |
 | `horizon.scoreboard_team_join(team, holder)` | Puts the holder on your team `<your mod id>.<team>`, off their previous team |
 | `horizon.scoreboard_team_leave(holder)` | Takes the holder off your team; only from a team you own |
+| `horizon.scoreboard_display_objective(slot)` | The name of the objective shown in the display slot (`list`, `sidebar`, `below_name`, `sidebar.team.<color>`), any objective's; nil when the slot is empty or is not a display slot. A read never changes the board |
+| `horizon.scoreboard_set_display(slot, objective)` | Shows your objective `<your mod id>.<name>` in the slot, replacing what the slot showed |
+| `horizon.scoreboard_clear_display(slot)` | Empties the slot, only when it shows one of your objectives |
 
 Teams follow the same rule as objectives: a mod writes only teams named `<your mod id>.<name>`, and reads any team.
 Joining a team puts the holder on it, so it moves a holder off their previous team. A join is refused when the
 team does not exist, or when the holder is on a team the mod does not own (a vanilla team or another mod's): a
 mod cannot pull a player off someone else's team. Re-joining the team the holder is on succeeds. A leave is
 refused unless the holder is on one of your teams. Team colours, prefixes and options are not in these helpers.
+
+Display slots: a read shows what any valid slot holds. A set shows your objective in a valid slot and may replace
+what the slot shows, another owner's objective included; the displaced objective keeps its scores. A set is refused
+unless the slot is valid and the objective is one of yours, existing and not read-only. A clear is refused unless the
+slot is valid and shows one of your objectives, so a mod never empties a slot another owner set. This asymmetry is the
+lead's choice (issue 61, not in the owner's wording): the owner may reject it, and then a set would be held to the
+same namespace rule as a clear.
 
 Reads take any objective. A write takes only an objective named `<your mod id>.<name>` that exists (a score write)
 or is free (an add), and not a read-only criteria. The runtime supplies your mod id, the one `horizon.mod_id`

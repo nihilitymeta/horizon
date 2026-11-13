@@ -115,8 +115,10 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "scoreboard_add_objective",
     "scoreboard_add_score",
     "scoreboard_add_team",
+    "scoreboard_clear_display",
     "scoreboard_remove_objective",
     "scoreboard_remove_team",
+    "scoreboard_set_display",
     "scoreboard_set_score",
     "scoreboard_team_join",
     "scoreboard_team_leave",
@@ -212,6 +214,7 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "profile_by_uuid",
     "proxy_forwarding",
     "registry_name",
+    "scoreboard_display_objective",
     "scoreboard_objectives",
     "scoreboard_score",
     "scoreboard_team_members",
@@ -1130,6 +1133,19 @@ pub(crate) fn run_generated_action(
             let _ = host.scoreboard_add_team(mod_id, &name);
             Ok(())
         })(host)),
+        "scoreboard_clear_display" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let n = args.raw_len();
+            if n > 1 {
+                return Err(mlua::Error::runtime(format!(
+                    "scoreboard_clear_display: takes 1 argument(s), got {n} (the mod id is the runtime's: do not pass it)"
+                )));
+            }
+            let slot: String = read_action_arg(args, 1, "scoreboard_clear_display", "slot")?;
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.scoreboard_clear_display(mod_id, &slot);
+            Ok(())
+        })(host)),
         "scoreboard_remove_objective" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let n = args.raw_len();
             if n > 1 {
@@ -1154,6 +1170,21 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.scoreboard_remove_team(mod_id, &name);
+            Ok(())
+        })(host)),
+        "scoreboard_set_display" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let n = args.raw_len();
+            if n > 2 {
+                return Err(mlua::Error::runtime(format!(
+                    "scoreboard_set_display: takes 2 argument(s), got {n} (the mod id is the runtime's: do not pass it)"
+                )));
+            }
+            let slot: String = read_action_arg(args, 1, "scoreboard_set_display", "slot")?;
+            let objective: String =
+                read_action_arg(args, 2, "scoreboard_set_display", "objective")?;
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.scoreboard_set_display(mod_id, &slot, &objective);
             Ok(())
         })(host)),
         "scoreboard_set_score" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
@@ -2464,6 +2495,13 @@ pub(crate) fn generated_read(
             let n2: i64 = read_arg(lua, &rest, 2, "registry_name", "id")?;
             let id: i32 = i32::try_from(n2).unwrap_or(if n2 < 0 { i32::MIN } else { i32::MAX });
             match h.registry_name(&registry, id) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "scoreboard_display_objective" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let slot: String = read_arg(lua, &rest, 1, "scoreboard_display_objective", "slot")?;
+            match h.scoreboard_display_objective(&slot) {
                 Some(v) => Ok(Value::String(lua.create_string(v)?)),
                 None => Ok(Value::Nil),
             }

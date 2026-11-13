@@ -975,6 +975,21 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn scoreboard_clear_display(&mut self, mod_id: &str, slot: &str) -> bool {
+        self.record(
+            "scoreboard_clear_display",
+            &[mod_id.to_string(), slot.to_string()],
+        );
+        !self.refuse
+    }
+    fn scoreboard_display_objective(&self, slot: &str) -> Option<String> {
+        self.record("scoreboard_display_objective", &[slot.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
+    }
     fn scoreboard_objectives(&self) -> Vec<String> {
         self.record("scoreboard_objectives", &[]);
         vec!["alpha".to_owned(), "beta".to_owned()]
@@ -999,6 +1014,13 @@ impl Host for GenHost {
             &[holder.to_string(), objective.to_string()],
         );
         if self.none { None } else { Some(3) }
+    }
+    fn scoreboard_set_display(&mut self, mod_id: &str, slot: &str, objective: &str) -> bool {
+        self.record(
+            "scoreboard_set_display",
+            &[mod_id.to_string(), slot.to_string(), objective.to_string()],
+        );
+        !self.refuse
     }
     fn scoreboard_set_score(
         &mut self,
@@ -13096,6 +13118,57 @@ fn respawn_player_is_generated_and_exact() {
 }
 
 #[test]
+fn scoreboard_display_objective_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "scoreboard_display_objective",
+        rest(
+            &lua,
+            &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["scoreboard_display_objective ruby:gen1"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "scoreboard_display_objective",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "scoreboard_display_objective",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("scoreboard_display_objective"), "{text}");
+        assert!(text.contains("slot"), "{text}");
+    }
+}
+
+#[test]
 fn scoreboard_objectives_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -15627,8 +15700,10 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "scoreboard_add_objective",
             "scoreboard_add_score",
             "scoreboard_add_team",
+            "scoreboard_clear_display",
             "scoreboard_remove_objective",
             "scoreboard_remove_team",
+            "scoreboard_set_display",
             "scoreboard_set_score",
             "scoreboard_team_join",
             "scoreboard_team_leave",
@@ -15724,6 +15799,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "profile_by_uuid",
             "proxy_forwarding",
             "registry_name",
+            "scoreboard_display_objective",
             "scoreboard_objectives",
             "scoreboard_score",
             "scoreboard_team_members",
@@ -15821,8 +15897,10 @@ fn every_generated_name_is_a_function_on_horizon() {
             "scoreboard_add_objective",
             "scoreboard_add_score",
             "scoreboard_add_team",
+            "scoreboard_clear_display",
             "scoreboard_remove_objective",
             "scoreboard_remove_team",
+            "scoreboard_set_display",
             "scoreboard_set_score",
             "scoreboard_team_join",
             "scoreboard_team_leave",
@@ -15913,6 +15991,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "profile_by_uuid",
             "proxy_forwarding",
             "registry_name",
+            "scoreboard_display_objective",
             "scoreboard_objectives",
             "scoreboard_score",
             "scoreboard_team_members",
@@ -15990,8 +16069,10 @@ fn generated_server_names_raise_in_a_client_state() {
             "scoreboard_add_objective",
             "scoreboard_add_score",
             "scoreboard_add_team",
+            "scoreboard_clear_display",
             "scoreboard_remove_objective",
             "scoreboard_remove_team",
+            "scoreboard_set_display",
             "scoreboard_set_score",
             "scoreboard_team_join",
             "scoreboard_team_leave",
@@ -16082,6 +16163,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "profile_by_uuid",
             "proxy_forwarding",
             "registry_name",
+            "scoreboard_display_objective",
             "scoreboard_objectives",
             "scoreboard_score",
             "scoreboard_team_members",

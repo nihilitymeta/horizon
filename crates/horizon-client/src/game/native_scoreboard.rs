@@ -187,6 +187,53 @@ fn may_move(board: &Scoreboard, mod_id: &str, holder: &str) -> bool {
         .is_none_or(|t| own_name(mod_id, &t.name))
 }
 
+/// The name of the objective shown in display slot `slot` (`list`, `sidebar`,
+/// `below_name`, `sidebar.team.<color>`); None when the slot is empty or not a
+/// display slot. Never changes the board.
+pub(super) fn display_objective(board: &Scoreboard, slot: &str) -> Option<String> {
+    if !sb::display_slot_valid(slot) {
+        return None;
+    }
+    board.display_objective(slot).map(|o| o.name.clone())
+}
+
+/// Shows mod `mod_id`'s own writable objective in display slot `slot`,
+/// replacing whatever the slot showed (a displaced objective keeps its
+/// scores). False, with nothing changed, when the slot is not a display slot or
+/// the objective is not writable by the mod (the rule of [`set_score`]). Lead's
+/// choice, flagged in docs/lua-bindings.md: a set may displace another owner's
+/// objective; only [`clear_display`] is held to the mod's own namespace.
+pub(super) fn set_display(
+    board: &mut Scoreboard,
+    mod_id: &str,
+    slot: &str,
+    objective: &str,
+) -> bool {
+    if !sb::display_slot_valid(slot) || !writable(board, mod_id, objective) {
+        return false;
+    }
+    board.set_display_objective(slot, Some(objective));
+    true
+}
+
+/// Empties display slot `slot`, when it is a display slot that shows an
+/// objective of mod `mod_id`'s own namespace. False, with nothing changed,
+/// otherwise: an empty slot, or one showing another owner's objective (the
+/// lead's choice, flagged in docs/lua-bindings.md).
+pub(super) fn clear_display(board: &mut Scoreboard, mod_id: &str, slot: &str) -> bool {
+    if !sb::display_slot_valid(slot) {
+        return false;
+    }
+    let own = board
+        .display
+        .get(slot)
+        .is_some_and(|name| own_name(mod_id, name));
+    if own {
+        board.set_display_objective(slot, None);
+    }
+    own
+}
+
 /// Helpers for server mods, kept as stable as the hook points. A client
 /// window has no server board: reads answer None or empty, writes return
 /// false.
@@ -350,6 +397,46 @@ impl Game<'_> {
         }
         self.load_scoreboard();
         team_leave(&mut self.score.board, mod_id, holder)
+    }
+    /// The name of the objective shown in display slot `slot` (`list`,
+    /// `sidebar`, `below_name`, `sidebar.team.<color>`), any slot's: vanilla's,
+    /// a command's and every mod's. None when the slot is empty or is not a
+    /// display slot, or off a server. Never creates anything. API
+    /// @API:scoreboard@.
+    pub(super) fn native_scoreboard_display_objective(&self, slot: &str) -> Option<String> {
+        if self.remote.is_some() {
+            return None;
+        }
+        display_objective(&self.score.board, slot)
+    }
+    /// Shows the mod's own objective `objective` (`<mod_id>.<rest>`) in display
+    /// slot `slot`, replacing what the slot showed. False, with nothing changed,
+    /// when the slot is not a display slot, the objective is not the mod's, does
+    /// not exist, is of a read-only criteria, or off a server. It may replace
+    /// another owner's objective in the slot (the lead's choice; see
+    /// docs/lua-bindings.md). API @API:scoreboard@.
+    pub(super) fn native_scoreboard_set_display(
+        &mut self,
+        mod_id: &str,
+        slot: &str,
+        objective: &str,
+    ) -> bool {
+        if self.remote.is_some() {
+            return false;
+        }
+        self.load_scoreboard();
+        set_display(&mut self.score.board, mod_id, slot, objective)
+    }
+    /// Empties display slot `slot` when it shows one of the mod's own
+    /// objectives. False, with nothing changed, when the slot is not a display
+    /// slot, is empty, shows another owner's objective, or off a server. API
+    /// @API:scoreboard@.
+    pub(super) fn native_scoreboard_clear_display(&mut self, mod_id: &str, slot: &str) -> bool {
+        if self.remote.is_some() {
+            return false;
+        }
+        self.load_scoreboard();
+        clear_display(&mut self.score.board, mod_id, slot)
     }
 }
 
@@ -707,5 +794,100 @@ mod tests {
         assert!(sorted_members(&b, "nope").is_empty());
         // Reading creates nothing.
         assert_eq!(b.team_members().count(), 3);
+    }
+
+    /// `board()` with `mymod.pts` shown in `list` and vanilla's `kills` in
+    /// `sidebar`.
+    fn shown_board() -> Scoreboard {
+        let mut b = board();
+        b.set_display_objective("list", Some("mymod.pts"));
+        b.set_display_objective("sidebar", Some("kills"));
+        b
+    }
+
+    #[test]
+    fn reads_any_display_slot_and_never_creates() {
+        let b = shown_board();
+        assert_eq!(display_objective(&b, "list").as_deref(), Some("mymod.pts"));
+        assert_eq!(display_objective(&b, "sidebar").as_deref(), Some("kills"));
+        // An empty slot, and names that are not display slots.
+        assert_eq!(display_objective(&b, "below_name"), None);
+        assert_eq!(display_objective(&b, "sidebar.team.red"), None);
+        assert_eq!(display_objective(&b, "belowname"), None);
+        assert_eq!(display_objective(&b, "sidebar.team.nope"), None);
+        assert_eq!(b.display.len(), 2);
+    }
+
+    #[test]
+    fn team_sidebar_slots_are_display_slots() {
+        let mut b = board();
+        assert!(set_display(
+            &mut b,
+            "mymod",
+            "sidebar.team.red",
+            "mymod.pts"
+        ));
+        assert_eq!(
+            display_objective(&b, "sidebar.team.red").as_deref(),
+            Some("mymod.pts")
+        );
+    }
+
+    #[test]
+    fn set_display_shows_own_objective_and_displaces_another_owners() {
+        let mut b = shown_board();
+        // The lead's choice: the mod may replace the vanilla objective in
+        // `sidebar`; the displaced one keeps its scores.
+        assert!(set_display(&mut b, "mymod", "sidebar", "mymod.pts"));
+        assert_eq!(
+            display_objective(&b, "sidebar").as_deref(),
+            Some("mymod.pts")
+        );
+        assert_eq!(score(&b, HOLDER, "kills"), Some(1));
+        assert_eq!(b.objectives.len(), 2);
+    }
+
+    #[test]
+    fn set_display_refuses_bad_slots_and_unwritable_objectives() {
+        let mut b = shown_board();
+        let reg = Registries::default();
+        assert!(add_objective(&mut b, &reg, "mymod", "mymod.hp", "health"));
+        // Not a display slot.
+        assert!(!set_display(
+            &mut b,
+            "mymod",
+            "sidebar.team.nope",
+            "mymod.pts"
+        ));
+        assert!(!set_display(&mut b, "mymod", "bogus", "mymod.pts"));
+        // Vanilla's objective, another mod's, a missing one, a read-only one.
+        assert!(!set_display(&mut b, "mymod", "below_name", "kills"));
+        assert!(!set_display(&mut b, "mymod", "below_name", "other.x"));
+        assert!(!set_display(&mut b, "mymod", "below_name", "mymod.nope"));
+        assert!(!set_display(&mut b, "mymod", "below_name", "mymod.hp"));
+        // A mod id that prefixes another cannot show its objective.
+        assert!(!set_display(&mut b, "mym", "below_name", "mymod.pts"));
+        // Nothing changed.
+        assert_eq!(display_objective(&b, "list").as_deref(), Some("mymod.pts"));
+        assert_eq!(display_objective(&b, "sidebar").as_deref(), Some("kills"));
+        assert_eq!(display_objective(&b, "below_name"), None);
+    }
+
+    #[test]
+    fn clear_display_empties_only_an_own_slot() {
+        let mut b = shown_board();
+        // Another owner's objective in `sidebar`: refused, still shown.
+        assert!(!clear_display(&mut b, "mymod", "sidebar"));
+        assert_eq!(display_objective(&b, "sidebar").as_deref(), Some("kills"));
+        // An empty slot, a non-slot, and a prefix of the mod id: all refused.
+        assert!(!clear_display(&mut b, "mymod", "below_name"));
+        assert!(!clear_display(&mut b, "mymod", "nope"));
+        assert!(!clear_display(&mut b, "mym", "list"));
+        assert_eq!(display_objective(&b, "list").as_deref(), Some("mymod.pts"));
+        // The mod's own objective: cleared, its scores kept.
+        assert!(clear_display(&mut b, "mymod", "list"));
+        assert_eq!(display_objective(&b, "list"), None);
+        assert_eq!(score(&b, HOLDER, "mymod.pts"), Some(2));
+        assert!(!clear_display(&mut b, "mymod", "list"));
     }
 }
