@@ -11307,6 +11307,9 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
                 .get(&(holder.to_owned(), objective.to_owned()))
                 .copied()
         }
+        fn scoreboard_objectives(&self) -> Vec<String> {
+            self.objectives.keys().cloned().collect()
+        }
     }
 
     /// One server tick of `m`: its handlers run, then their queued actions.
@@ -11424,6 +11427,40 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
             .find(|s| s.id == "scorec")
             .and_then(|s| s.error);
         assert_eq!(e, None, "a refused write is not a script error");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn scoreboard_objectives_reach_lua_as_the_hosts_names_in_order() {
+        // A string-list read is a 1-based array: the host's objectives in
+        // the order it gives them (the board's name order here). An empty
+        // board is an empty table, not nil.
+        let (dir, path) = hmod_as(
+            "scoref",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on("server_tick", function()
+                  NAMES = horizon.scoreboard_objectives()
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = BoardHost::default();
+        host.objectives
+            .insert("scoref.x".to_owned(), "dummy".to_owned());
+        host.objectives
+            .insert("zeta".to_owned(), "health".to_owned());
+        one_server_tick(&m, &mut host);
+        let names = m.lua.globals().get::<mlua::Table>("NAMES").unwrap();
+        assert_eq!(names.raw_len(), 2);
+        assert_eq!(names.get::<String>(1).unwrap(), "scoref.x");
+        assert_eq!(names.get::<String>(2).unwrap(), "zeta");
+        host.objectives.clear();
+        one_server_tick(&m, &mut host);
+        let names = m.lua.globals().get::<mlua::Table>("NAMES").unwrap();
+        assert_eq!(names.raw_len(), 0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

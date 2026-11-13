@@ -1118,6 +1118,7 @@ declare horizon: {
     entity_set_rotation: (value: number, value2: number, value3: number) -> (),
     entity_set_silent: (value: number, value2: boolean) -> (),
     entity_set_velocity: (value: number, value2: Vec3) -> (),
+    entity_tags: (value: number) -> { string }?,
     entity_velocity: (value: number) -> Vec3?,
     entity_view_vector: (value: number) -> Vec3?,
     equipment: (value: "mainhand" | "offhand" | "head" | "chest" | "legs" | "feet" | "body" | "saddle") -> Item?,
@@ -1161,6 +1162,7 @@ declare horizon: {
     move_entity: (name: string, value: number, value2: Vec3, value3: number, value4: number) -> (),
     play_local_sound: (name: string, value: Vec3, value2: number, value3: number, value4: number) -> (), -- client state only
     player_break_block: (who: string | ReadPlayer, value: Vec3, value2: boolean) -> (),
+    player_channels: (who: string | ReadPlayer) -> { string },
     player_equipment: (who: string | ReadPlayer, value: "mainhand" | "offhand" | "head" | "chest" | "legs" | "feet" | "body" | "saddle") -> Item?,
     player_head: (who: string | ReadPlayer) -> Item,
     player_sneaking: (who: string | ReadPlayer) -> boolean?,
@@ -1179,6 +1181,7 @@ declare horizon: {
     respawn_player: (who: string | ReadPlayer) -> (),
     scoreboard_add_objective: (name: string, name2: string) -> (),
     scoreboard_add_score: (name: string, name2: string, value: number) -> (),
+    scoreboard_objectives: () -> { string },
     scoreboard_remove_objective: (name: string) -> (),
     scoreboard_score: (name: string, name2: string) -> number?,
     scoreboard_set_score: (name: string, name2: string, value: number) -> (),

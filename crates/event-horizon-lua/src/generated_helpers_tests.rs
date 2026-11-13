@@ -339,6 +339,14 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn entity_tags(&self, entity: EntityRef) -> Option<Vec<String>> {
+        self.record("entity_tags", &[entity.id().to_string()]);
+        if self.none {
+            None
+        } else {
+            Some(vec!["alpha".to_owned(), "beta".to_owned()])
+        }
+    }
     fn entity_velocity(&self, entity: EntityRef) -> Option<[f64; 3]> {
         self.record("entity_velocity", &[entity.id().to_string()]);
         if self.none {
@@ -659,6 +667,10 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn player_channels(&self, player: u128) -> Vec<String> {
+        self.record("player_channels", &[player.to_string()]);
+        vec!["alpha".to_owned(), "beta".to_owned()]
+    }
     fn player_equipment(&self, uuid: u128, slot: EquipmentSlot) -> Option<ItemStack> {
         self.record(
             "player_equipment",
@@ -777,6 +789,10 @@ impl Host for GenHost {
             ],
         );
         !self.refuse
+    }
+    fn scoreboard_objectives(&self) -> Vec<String> {
+        self.record("scoreboard_objectives", &[]);
+        vec!["alpha".to_owned(), "beta".to_owned()]
     }
     fn scoreboard_remove_objective(&mut self, mod_id: &str, name: &str) -> bool {
         self.record(
@@ -5214,6 +5230,105 @@ fn entity_set_velocity_is_generated_and_exact() {
             .unwrap_err();
         let text = err.to_string();
         assert!(text.contains("entity_set_velocity"), "{text}");
+        assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
+fn entity_tags_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "entity_tags",
+        rest(&lua, &[mlua::Value::Integer(7)]),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.raw_len(), 2);
+        assert_eq!(t.get::<String>(1).unwrap(), "alpha");
+        assert_eq!(t.get::<String>(2).unwrap(), "beta");
+    }
+    assert_eq!(h.logged(), ["entity_tags 7"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "entity_tags",
+            rest(&lua, &[mlua::Value::Integer(7)]),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "entity_tags",
+            rest(&lua, &[mlua::Value::Integer(999)]),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_tags",
+            rest(&lua, &[mlua::Value::Integer(-1)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_tags.entity"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_tags",
+            rest(&lua, &[mlua::Value::Number(1.5)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_tags.entity"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_tags",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_tags.entity"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "entity_tags",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_tags"), "{text}");
         assert!(text.contains("entity"), "{text}");
     }
 }
@@ -9826,6 +9941,55 @@ fn player_break_block_is_generated_and_exact() {
 }
 
 #[test]
+fn player_channels_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "player_channels",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.raw_len(), 2);
+        assert_eq!(t.get::<String>(1).unwrap(), "alpha");
+        assert_eq!(t.get::<String>(2).unwrap(), "beta");
+    }
+    assert_eq!(
+        h.logged(),
+        ["player_channels 24249434048109030647017182301789831168"]
+    );
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "player_channels",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ghost").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(
+            matches!(&v, mlua::Value::Table(t) if t.raw_len() == 0),
+            "{v:?}"
+        );
+        assert!(h.logged().is_empty());
+    }
+}
+
+#[test]
 fn player_equipment_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -10874,6 +11038,22 @@ fn respawn_player_is_generated_and_exact() {
             "an unresolvable player calls nothing"
         );
     }
+}
+
+#[test]
+fn scoreboard_objectives_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(&lua, &h, "scoreboard_objectives", rest(&lua, &[]))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(v, mlua::Value::Table(_)), "{v:?}");
+    if let mlua::Value::Table(t) = &v {
+        assert_eq!(t.raw_len(), 2);
+        assert_eq!(t.get::<String>(1).unwrap(), "alpha");
+        assert_eq!(t.get::<String>(2).unwrap(), "beta");
+    }
+    assert_eq!(h.logged(), ["scoreboard_objectives"]);
 }
 
 #[test]
@@ -12681,6 +12861,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "entity_on_ground",
             "entity_pose",
             "entity_position",
+            "entity_tags",
             "entity_velocity",
             "entity_view_vector",
             "equipment",
@@ -12702,6 +12883,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "lit_block_name",
             "max_players",
             "max_stack_size",
+            "player_channels",
             "player_equipment",
             "player_head",
             "player_sneaking",
@@ -12710,6 +12892,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "player_view_distance",
             "profile_by_name",
             "profile_by_uuid",
+            "scoreboard_objectives",
             "scoreboard_score",
             "sneaking",
             "text_allowed",
@@ -12829,6 +13012,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "entity_on_ground",
             "entity_pose",
             "entity_position",
+            "entity_tags",
             "entity_velocity",
             "entity_view_vector",
             "equipment",
@@ -12850,6 +13034,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "lit_block_name",
             "max_players",
             "max_stack_size",
+            "player_channels",
             "player_equipment",
             "player_head",
             "player_sneaking",
@@ -12858,6 +13043,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "player_view_distance",
             "profile_by_name",
             "profile_by_uuid",
+            "scoreboard_objectives",
             "scoreboard_score",
             "sneaking",
             "text_allowed",
@@ -12957,6 +13143,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "entity_on_ground",
             "entity_pose",
             "entity_position",
+            "entity_tags",
             "entity_velocity",
             "entity_view_vector",
             "equipment",
@@ -12978,6 +13165,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "lit_block_name",
             "max_players",
             "max_stack_size",
+            "player_channels",
             "player_equipment",
             "player_head",
             "player_sneaking",
@@ -12986,6 +13174,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "player_view_distance",
             "profile_by_name",
             "profile_by_uuid",
+            "scoreboard_objectives",
             "scoreboard_score",
             "sneaking",
             "text_allowed",

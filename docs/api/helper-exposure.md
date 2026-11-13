@@ -4,11 +4,11 @@
 
 Every native host helper (`native-hooks.json` plus the pending `tools/native-hook-fragments/`, 415 in all) lands in exactly one class: `generated` (plain args and a supported return: the generator can emit the `horizon.*` bridge), `already-lua` (a hand-written Lua helper already stands behind it), `adapter` (a hand-written converter would unblock it: the table names the blocking types), `handle` (an opaque draw/mod handle, needing its own design), or `cannot` (no bridge, with the reason). `docs/api/hook-exposure.md` is the same idea for hook points. This page is `lua-helpers`'s human-readable record; `crates/event-horizon-lua/src/generated_helpers.rs` is its bridge for the enabled helpers. Enabled is every `generated` helper except the [`EXCLUDED`] denylist below.
 
-136 generated (126 enabled, 10 excluded), 70 already-lua, 136 adapter, 29 handle, 44 cannot (415 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
+139 generated (129 enabled, 10 excluded), 70 already-lua, 133 adapter, 29 handle, 44 cannot (415 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
 
 ## What the numbers say
 
-103 distinct blocking types, ranked by how many helpers they block (one conversion each).
+102 distinct blocking types, ranked by how many helpers they block (one conversion each).
 
 | Type | Helpers blocked | Conversion |
 | --- | --- | --- |
@@ -26,7 +26,6 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `Option<str>` | 3 | an optional Lua argument (nil when absent) |
 | `Option<u128>` | 3 | an optional Lua argument (nil when absent) |
 | `Text` | 3 | a string, or a component table (the text rule) |
-| `Vec<String>` | 3 | an array table, element by element |
 | `[i32; 2]` | 3 | an `{x, z}` table |
 | `[str]` | 3 | an array table, element by element |
 | `[u8]` | 3 | a string of bytes (a Lua string) |
@@ -81,7 +80,6 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `Option<Vec<ItemStack>>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<Vec<NativeEffect>>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<Vec<NativeFluidTank>>` | 1 | an optional Lua argument (nil when absent) |
-| `Option<Vec<String>>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<[[f64; 3]; 2]>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<[f64; 2]>` | 1 | an optional Lua argument (nil when absent) |
 | `Option<[f64; 3]>` | 1 | an optional Lua argument (nil when absent) |
@@ -104,6 +102,7 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `Vec<NativeStack>` | 1 | an array table, element by element |
 | `Vec<Option<BlockSprites>>` | 1 | an array table, element by element |
 | `Vec<Option<SpriteRef>>` | 1 | an array table, element by element |
+| `Vec<String>` | 1 | an array table, element by element |
 | `Vec<u32>` | 1 | an array table, element by element |
 | `Vec<u64>` | 1 | an array table, element by element |
 | `[CustomRecipe]` | 1 | an array table, element by element |
@@ -116,7 +115,7 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `[u32]` | 1 | an array table, element by element |
 | `u64` | 1 | an id as a string of hex/digits (a Lua number cannot hold it exactly) |
 
-Converting the top 1 (`Option<PathBuf>`) would unblock 4 Adapter helpers; the top 3 (`Option<PathBuf>, ParticleOptions, Value`) would unblock 11; the top 5 (`Option<PathBuf>, ParticleOptions, Value, BlockStateId, ItemStack`) would unblock 14; the top 8 would unblock 20; the top 10 would unblock 26; the top 15 would unblock 41; the top 20 would unblock 50; converting all 103 together would unblock 136 (every Adapter helper, as each lists only those types).
+Converting the top 1 (`Option<PathBuf>`) would unblock 4 Adapter helpers; the top 3 (`Option<PathBuf>, ParticleOptions, Value`) would unblock 11; the top 5 (`Option<PathBuf>, ParticleOptions, Value, BlockStateId, ItemStack`) would unblock 14; the top 8 would unblock 20; the top 10 would unblock 26; the top 15 would unblock 40; the top 20 would unblock 49; converting all 102 together would unblock 133 (every Adapter helper, as each lists only those types).
 
 What the generator could not express: a `&mut self` helper returning data (a queued action has no way back; it needs the run_command_as callback design); a `Result` return (no error design yet); a callback/closure parameter (needs that same design); an opaque `&mut` draw/mod handle; and every non-plain type above. Native-name types in the adapter list are all small read conversions of the same kinds.
 
@@ -140,7 +139,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `watch_entity_data` | dev/diagnostic: not for mod scripts |
 | `watch_server_packets` | dev/diagnostic: not for mod scripts |
 
-## Generated, enabled (126)
+## Generated, enabled (129)
 
 | Helper | Side | Receiver | Kind | Lua signature |
 | --- | --- | --- | --- | --- |
@@ -187,6 +186,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `entity_set_rotation` | server | entity | action | `(value: number, value2: number, value3: number) -> ()` |
 | `entity_set_silent` | server | entity | action | `(value: number, value2: boolean) -> ()` |
 | `entity_set_velocity` | server | entity | action | `(value: number, value2: Vec3) -> ()` |
+| `entity_tags` | server | entity | read | `(value: number) -> { string }?` |
 | `entity_velocity` | server | entity | read | `(value: number) -> Vec3?` |
 | `entity_view_vector` | server | entity | read | `(value: number) -> Vec3?` |
 | `equipment` | server | - | read | `(value: "mainhand" | "offhand" | "head" | "chest" | "legs" | "feet" | "body" | "saddle") -> Item?` |
@@ -230,6 +230,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `move_entity` | server | - | action | `(name: string, value: number, value2: Vec3, value3: number, value4: number) -> ()` |
 | `play_local_sound` | client | - | action | `(name: string, value: Vec3, value2: number, value3: number, value4: number) -> ()` |
 | `player_break_block` | server | - | action | `(who: string | ReadPlayer, value: Vec3, value2: boolean) -> ()` |
+| `player_channels` | server | - | read | `(who: string | ReadPlayer) -> { string }` |
 | `player_equipment` | server | - | read | `(who: string | ReadPlayer, value: "mainhand" | "offhand" | "head" | "chest" | "legs" | "feet" | "body" | "saddle") -> Item?` |
 | `player_head` | server | - | read | `(who: string | ReadPlayer) -> Item` |
 | `player_sneaking` | server | - | read | `(who: string | ReadPlayer) -> boolean?` |
@@ -248,6 +249,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `respawn_player` | server | - | action | `(who: string | ReadPlayer) -> ()` |
 | `scoreboard_add_objective` | server | - | action | `(name: string, name2: string) -> ()` |
 | `scoreboard_add_score` | server | - | action | `(name: string, name2: string, value: number) -> ()` |
+| `scoreboard_objectives` | server | - | read | `() -> { string }` |
 | `scoreboard_remove_objective` | server | - | action | `(name: string) -> ()` |
 | `scoreboard_score` | server | - | read | `(name: string, name2: string) -> number?` |
 | `scoreboard_set_score` | server | - | action | `(name: string, name2: string, value: number) -> ()` |
@@ -357,7 +359,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `title_times` | already a hand-written Lua helper |
 | `weather` | already a hand-written Lua helper |
 
-## Adapter: a converter would unblock it (136)
+## Adapter: a converter would unblock it (133)
 
 | Helper | Reason |
 | --- | --- |
@@ -405,7 +407,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `entity_dimensions` | blocks on `Option<[f64; 2]>` |
 | `entity_nbt` | blocks on `Option<Compound>` |
 | `entity_rotation` | blocks on `Option<[f32; 2]>` |
-| `entity_tags` | blocks on `Option<Vec<String>>` |
 | `entity_teleport_to` | blocks on `Option<[f32; 2]>` |
 | `entity_uuid` | blocks on `Option<u128>` |
 | `experience_orbs` | blocks on `Vec<NativeExperienceOrb>` |
@@ -445,7 +446,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `panel_items` | blocks on `Vec<NativeStack>` |
 | `play_sound_to` | blocks on `Option<[f64; 3]>` |
 | `player_advancements` | blocks on `Option<Value>` |
-| `player_channels` | blocks on `Vec<String>` |
 | `player_client` | blocks on `Option<NativeClientInfo>` |
 | `player_compound` | blocks on `Option<Tag>` |
 | `player_food` | blocks on `Option<(3 elements)>` |
@@ -460,7 +460,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `recipes_of_type` | blocks on `[CustomRecipe]` |
 | `run_command_as_owner` | blocks on `Vec<String>` |
 | `run_command_captured` | blocks on `NativeCommandResult` |
-| `scoreboard_objectives` | blocks on `Vec<String>` |
 | `screen_extra_data` | blocks on `Option<[u8]>` |
 | `select_ids` | blocks on `Vec<u32>` |
 | `send_map` | blocks on `[u8]` |

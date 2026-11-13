@@ -784,7 +784,14 @@ fn player_fallback(row: &HelperRow, kind: GenKind) -> Vec<String> {
                 }
                 GenKind::Read => {
                     out.push(format!("let Some(uuid) = uuid_of(h, &{local}) else {{",));
-                    out.push("    return Ok(Value::Nil);".to_owned());
+                    // A non-optional string list is the empty table for an
+                    // absent player (the host's `Vec` is empty for one who
+                    // is not on); every other read answers nil.
+                    if row.ret == "Vec<String>" {
+                        out.push("    return Ok(Value::Table(lua.create_table()?));".to_owned());
+                    } else {
+                        out.push("    return Ok(Value::Nil);".to_owned());
+                    }
                     out.push("};".to_owned());
                 }
             }
@@ -918,6 +925,9 @@ fn value_of(scalar: &str, expr: &str) -> String {
         "ItemStack" => format!("Value::Table(crate::lua_mods::item_table_of(lua, &{expr})?)"),
         // A block-state name: the `state_name` string.
         "BlockStateId" => format!("Value::String(lua.create_string(h.state_name({expr}))?)"),
+        // A string list: a 1-based sequence table of its strings (an empty
+        // list is an empty table), the `Option`'s nil being `read_arm`'s.
+        "Vec<String>" => format!("Value::Table(lua.create_sequence_from({expr})?)"),
         _ => format!("Value::Integer(i64::from({expr}))"),
     }
 }
@@ -1726,6 +1736,10 @@ fn canned_string() -> &'static str {
     "ruby:gen"
 }
 
+/// The canned `Vec<String>` a string-list read answers (two distinct
+/// names, in this order: the Lua array must keep it).
+const STRING_LIST: [&str; 2] = ["alpha", "beta"];
+
 fn canned_float() -> f64 {
     1.5
 }
@@ -1856,6 +1870,11 @@ fn canned(scalar: &str) -> String {
         }
         // One canned block state.
         "BlockStateId" => "BlockStateId(7)".to_owned(),
+        // Two distinct strings, so a reordered list fails a return test.
+        "Vec<String>" => format!(
+            "vec![{:?}.to_owned(), {:?}.to_owned()]",
+            STRING_LIST[0], STRING_LIST[1]
+        ),
         _ if scalar.starts_with('(') => {
             let elems = crate::lua_helper_model::tuple_elems(scalar);
             let values: Vec<String> = elems
@@ -2897,8 +2916,16 @@ fn helper_test(row: &HelperRow, backend: &Backend) -> String {
                 let mut ghost = literals.clone();
                 ghost[pos] =
                     "mlua::Value::String(lua.create_string(\"ghost\").unwrap())".to_owned();
+                // A string list is the empty table for a player who is not
+                // on (the native doc's `Empty`), never nil; any other read
+                // answers nil.
+                let unresolved = if row.ret == "Vec<String>" {
+                    "assert!(matches!(&v, mlua::Value::Table(t) if t.raw_len() == 0), \"{v:?}\");"
+                } else {
+                    "assert!(matches!(v, mlua::Value::Nil));"
+                };
                 out.push_str(&format!(
-                    "    {{\n        let h = {host_new}(false, false);\n        let v = {read_fn}(&lua, &h, {:?}, rest(&lua, &[{}])).unwrap().unwrap();\n        assert!(matches!(v, mlua::Value::Nil));\n        assert!(h.logged().is_empty());\n    }}\n",
+                    "    {{\n        let h = {host_new}(false, false);\n        let v = {read_fn}(&lua, &h, {:?}, rest(&lua, &[{}])).unwrap().unwrap();\n        {unresolved}\n        assert!(h.logged().is_empty());\n    }}\n",
                     row.name,
                     ghost.join(", ")
                 ));
@@ -3067,6 +3094,10 @@ fn value_asserts(row: &HelperRow) -> String {
             "    if let mlua::Value::String(s) = &v {{\n        assert_eq!(s.to_string_lossy(), {:?});\n    }}\n",
             canned_string()
         ),
+        "Vec<String>" => format!(
+            "    if let mlua::Value::Table(t) = &v {{\n        assert_eq!(t.raw_len(), 2);\n        assert_eq!(t.get::<String>(1).unwrap(), {:?});\n        assert_eq!(t.get::<String>(2).unwrap(), {:?});\n    }}\n",
+            STRING_LIST[0], STRING_LIST[1]
+        ),
         _ => String::new(),
     }
 }
@@ -3082,7 +3113,7 @@ fn lua_type_of(row: &HelperRow) -> String {
         "bool" => "mlua::Value::Boolean(true)".to_owned(),
         "String" | "u128" | "LevelRef" | "BlockStateId" => "mlua::Value::String(_)".to_owned(),
         "f32" | "f64" => "mlua::Value::Number(_)".to_owned(),
-        "[f64; 3]" | "[i32; 3]" | "ItemStack" => "mlua::Value::Table(_)".to_owned(),
+        "[f64; 3]" | "[i32; 3]" | "ItemStack" | "Vec<String>" => "mlua::Value::Table(_)".to_owned(),
         _ if scalar.starts_with('(') => "mlua::Value::Table(_)".to_owned(),
         _ => "mlua::Value::Integer(_)".to_owned(),
     }
@@ -3909,6 +3940,7 @@ enum RetKind {
     ItemStack,
     BlockStateId,
     Tuple,
+    StringList,
 }
 
 #[cfg(test)]
@@ -3926,6 +3958,7 @@ const ALL_RET_KINDS: &[RetKind] = &[
     RetKind::ItemStack,
     RetKind::BlockStateId,
     RetKind::Tuple,
+    RetKind::StringList,
 ];
 
 #[cfg(test)]
@@ -3947,6 +3980,7 @@ fn ret_kind(row: &HelperRow) -> RetKind {
         "[i32; 3]" => RetKind::PosInt,
         "ItemStack" => RetKind::ItemStack,
         "BlockStateId" => RetKind::BlockStateId,
+        "Vec<String>" => RetKind::StringList,
         _ if scalar.starts_with('(') => RetKind::Tuple,
         _ => RetKind::Int,
     }

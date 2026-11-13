@@ -150,6 +150,7 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "entity_on_ground",
     "entity_pose",
     "entity_position",
+    "entity_tags",
     "entity_velocity",
     "entity_view_vector",
     "equipment",
@@ -171,6 +172,7 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "lit_block_name",
     "max_players",
     "max_stack_size",
+    "player_channels",
     "player_equipment",
     "player_head",
     "player_sneaking",
@@ -179,6 +181,7 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "player_view_distance",
     "profile_by_name",
     "profile_by_uuid",
+    "scoreboard_objectives",
     "scoreboard_score",
     "sneaking",
     "text_allowed",
@@ -1594,6 +1597,17 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "entity_tags" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let entity_id: Value = read_arg(lua, &rest, 1, "entity_tags", "entity")?;
+            let entity_id: u32 = entity_id_of("entity_tags", "entity", &entity_id)?;
+            let Some(entity) = h.entity(entity_id) else {
+                return Ok(Value::Nil);
+            };
+            match h.entity_tags(entity) {
+                Some(v) => Ok(Value::Table(lua.create_sequence_from(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
         "entity_velocity" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let entity_id: Value = read_arg(lua, &rest, 1, "entity_velocity", "entity")?;
             let entity_id: u32 = entity_id_of("entity_velocity", "entity", &entity_id)?;
@@ -1881,6 +1895,15 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "player_channels" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let player: Value = read_arg(lua, &rest, 1, "player_channels", "player")?;
+            let Some(uuid) = uuid_of(h, &player) else {
+                return Ok(Value::Table(lua.create_table()?));
+            };
+            Ok(Value::Table(
+                lua.create_sequence_from(h.player_channels(uuid))?,
+            ))
+        })(h)),
         "player_equipment" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let uuid: Value = read_arg(lua, &rest, 1, "player_equipment", "uuid")?;
             let slot_lua: Value = read_arg(lua, &rest, 2, "player_equipment", "slot")?;
@@ -1976,6 +1999,11 @@ pub(crate) fn generated_read(
                 Some(v) => Ok(Value::String(lua.create_string(v)?)),
                 None => Ok(Value::Nil),
             }
+        })(h)),
+        "scoreboard_objectives" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            Ok(Value::Table(
+                lua.create_sequence_from(h.scoreboard_objectives())?,
+            ))
         })(h)),
         "scoreboard_score" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let holder: String = read_arg(lua, &rest, 1, "scoreboard_score", "holder")?;

@@ -334,6 +334,38 @@ fn is_opt_item_stack(ty: &Type) -> bool {
             if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_item_stack(inner)))
 }
 
+/// Whether the type is a `Vec<String>`: a string list, an array table of
+/// strings in a read's return (`Vec<String>` as an argument still blocks).
+fn is_vec_string(ty: &Type) -> bool {
+    let Type::Path(p) = ty else {
+        return false;
+    };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    seg.ident == "Vec"
+        && matches!(&seg.arguments, syn::PathArguments::AngleBracketed(args)
+            if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if inner_is_string(inner)))
+}
+
+/// Whether the type is an `Option<Vec<String>>`: the string list, or nil.
+fn is_opt_vec_string(ty: &Type) -> bool {
+    let Type::Path(p) = ty else {
+        return false;
+    };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    seg.ident == "Option"
+        && matches!(&seg.arguments, syn::PathArguments::AngleBracketed(args)
+            if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_vec_string(inner)))
+}
+
+/// Whether the type is the plain `String` name (a `Vec`'s element).
+fn inner_is_string(ty: &Type) -> bool {
+    matches!(ty, Type::Path(p) if p.qself.is_none() && p.path.is_ident("String"))
+}
+
 /// Whether the type is a [`Compound`] (or `&Compound`, which the bridge
 /// borrows back for the host call): the NBT table, read through
 /// `nbt::table_to_compound`.
@@ -655,6 +687,7 @@ fn collect_blocks(
         || (in_return && opt_vec3_layout(ty).is_some())
         || is_item_stack(ty)
         || (in_return && is_opt_item_stack(ty))
+        || (in_return && (is_vec_string(ty) || is_opt_vec_string(ty)))
         || is_compound(ty)
         || is_equipment_slot(ty)
         || is_opt_block_state_id(ty)
@@ -761,6 +794,13 @@ fn supported_return(f: &syn::ItemFn) -> Option<String> {
     }
     if is_opt_item_stack(ty) {
         return Some("Option<ItemStack>".to_owned());
+    }
+    // A string list: an array table of strings, or nil for `None`.
+    if is_vec_string(ty) {
+        return Some("Vec<String>".to_owned());
+    }
+    if is_opt_vec_string(ty) {
+        return Some("Option<Vec<String>>".to_owned());
     }
     // An optional block-state name: the `state_name` string, or nil
     // (`Option<LevelRef>`'s precedent, for states).
@@ -1142,7 +1182,11 @@ pub fn classify_helpers(root: &Path) -> Result<Vec<HelperRow>, String> {
         // converts through the `Host::level` lookup), so it adds none
         // either.
         let mut eff_blocking = blocking;
-        if ret.is_none()
+        // A string list is a read's return only: a `&mut self` helper
+        // returning one stays an Adapter, as it was before.
+        let string_list_write =
+            receiver_mut && matches!(ret.as_deref(), Some("Vec<String>" | "Option<Vec<String>>"));
+        if (ret.is_none() || string_list_write)
             && let ReturnType::Type(_, ty) = &f.sig.output
         {
             let head = blocking_head(ty);
@@ -1605,6 +1649,9 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
         "Option<ItemStack>" => "Item?".to_owned(),
         "[f64; 3]" | "[i32; 3]" => "Vec3".to_owned(),
         "Option<[f64; 3]>" | "Option<[i32; 3]>" => "Vec3?".to_owned(),
+        // A string list: an array table of strings, or nil for `None`.
+        "Vec<String>" => "{ string }".to_owned(),
+        "Option<Vec<String>>" => "{ string }?".to_owned(),
         // An optional tuple return: nil for `None`, the table for
         // `Some`.
         _ if row.ret.starts_with("Option<(") => {
@@ -1934,6 +1981,44 @@ mod tests {
                 "on should name the collision, got {why}"
             ),
             class => panic!("on should be Cannot, got {class:?}"),
+        }
+    }
+
+    /// A `Vec<String>` return is a string-list read: it blocks nothing,
+    /// `Option<Vec<String>>` likewise, while a `Vec<String>` argument still
+    /// blocks. The three real helpers that return one classify Generated;
+    /// no `&mut self` helper with such a return is Generated (a write keeps
+    /// its Adapter class).
+    #[test]
+    fn a_string_list_return_is_a_read_not_a_blocker() {
+        let read: syn::ItemFn =
+            syn::parse_quote! { fn native_names(&self) -> Vec<String> { todo!() } };
+        let optional: syn::ItemFn = syn::parse_quote! { fn native_tags(&self, e: EntityRef) -> Option<Vec<String>> { todo!() } };
+        let arg: syn::ItemFn = syn::parse_quote! { fn native_take(&self, names: Vec<String>) {} };
+        assert!(blocks_of(&read).0.is_empty());
+        assert_eq!(supported_return(&read).as_deref(), Some("Vec<String>"));
+        assert!(blocks_of(&optional).0.is_empty());
+        assert_eq!(
+            supported_return(&optional).as_deref(),
+            Some("Option<Vec<String>>")
+        );
+        assert!(blocks_of(&arg).0.contains(&"Vec<String>".to_owned()));
+        let rows = classify_helpers(&root()).unwrap();
+        for name in ["scoreboard_objectives", "player_channels", "entity_tags"] {
+            let row = rows.iter().find(|r| r.name == name).unwrap();
+            assert!(
+                matches!(&row.class, HelperClass::Generated(GenKind::Read)),
+                "{name} should be Generated(Read), got {:?}",
+                row.class
+            );
+        }
+        for row in rows.iter().filter(|r| r.receiver_mut) {
+            let list = matches!(row.ret.as_str(), "Vec<String>" | "Option<Vec<String>>");
+            assert!(
+                !(list && matches!(row.class, HelperClass::Generated(_))),
+                "{} is a write returning a string list and must not be Generated",
+                row.name
+            );
         }
     }
 }

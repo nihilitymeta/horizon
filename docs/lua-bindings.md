@@ -233,7 +233,8 @@ range is an error (it does not saturate, unlike a plain integer argument). Level
 string (`"minecraft:overworld"`, `"minecraft:the_nether"`): the `level_*` helpers take it as a string, resolved
 against the loaded dimensions (a read with an unknown dimension answers nil, an action does nothing, the same
 rule as an unresolved entity or player). A `Direction` is one of its six lowercase names (`"down"`, `"up"`,
-`"north"`, `"south"`, `"west"`, `"east"`); any other value is an error. A plain pair reads as a positional
+`"north"`, `"south"`, `"west"`, `"east"`); any other value is an error. A string list reads as a sequence of
+strings (`{"a", "b"}`, in the host's order; an empty list is `{}`, and an optional one is nil for `None`). A plain pair reads as a positional
 sequence `{a, b}`, or as a named table where a sequence would lose a nil second element: the optional climate and
 profile reads return the pair or nil — e.g. `level_height` returns `{min = ..., max = ...}` and
 `player_textures` returns `{value = ..., signature = ...}` (the signature is nil when unsigned) — and a
@@ -556,6 +557,7 @@ commands, which is what `horizon.command` declares and `perform_command` hears.
 | Function | Description |
 |---|---|
 | `horizon.scoreboard_score(holder, objective)` | The holder's score in any objective (vanilla's, a command block's, another mod's); nil when the objective or the score does not exist. A read never creates a score |
+| `horizon.scoreboard_objectives()` | The names of every objective on the board (vanilla's, a command block's, every mod's), in the order `/scoreboard objectives list` shows them, as a sequence of strings (`{}` when there are none) |
 | `horizon.scoreboard_set_score(holder, objective, value)` | Sets the score in one of your own objectives |
 | `horizon.scoreboard_add_score(holder, objective, delta)` | Adds to the score in one of your own objectives (saturating at the i32 bounds; a score not yet set starts at 0) |
 | `horizon.scoreboard_add_objective(name, criteria)` | Creates the objective `<your mod id>.<name>` with the criteria (`dummy`, `health`, ...) |
