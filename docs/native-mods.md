@@ -4890,8 +4890,8 @@ within 256 blocks of the camera to the frame's primitives: a farther one is skip
 the camera comes closer. They are drawn by the same pipelines, at the same depth and resolution, and are made
 camera-relative the same way as the hook's own. Markers draw whenever the world does, including under an open screen.
 
-Bundles need `"hooks": @API:marker_set@`, `@API:marker_move@`, `@API:marker_remove@` and
-`@API:marker_clear_owner@`.
+Bundles need `"hooks": @API:markers@`, `@API:markers@`, `@API:markers@` and
+`@API:markers@`.
 
 ### Holding the world's picture
 

@@ -302,7 +302,7 @@ impl Game<'_> {
     /// Markers farther than 256 blocks from the camera are not drawn until it
     /// comes closer. False, with the marker the id had left as it was, for an
     /// invalid marker or over the cap; false on a server, which draws none.
-    /// API @API:marker_set@.
+    /// API @API:markers@.
     pub(super) fn native_marker_set(
         &mut self,
         owner: &str,
@@ -322,7 +322,7 @@ impl Game<'_> {
     /// left and the level it was set in stay. False when that id has no
     /// marker, or `pos` is invalid: outside the game's coordinate bounds
     /// itself, or enough that the marker's far corner, line end, beam top or
-    /// icon edge would leave them; false on a server. API @API:marker_move@.
+    /// icon edge would leave them; false on a server. API @API:markers@.
     pub(super) fn native_marker_move(&mut self, owner: &str, id: &str, pos: [f64; 3]) -> bool {
         if !self.native_window() {
             return false;
@@ -331,7 +331,7 @@ impl Game<'_> {
     }
 
     /// Stops drawing the world marker `id` of the mod `owner`. False when that
-    /// id has no marker; false on a server. API @API:marker_remove@.
+    /// id has no marker; false on a server. API @API:markers@.
     pub(super) fn native_marker_remove(&mut self, owner: &str, id: &str) -> bool {
         if !self.native_window() {
             return false;
@@ -341,7 +341,7 @@ impl Game<'_> {
 
     /// Stops drawing every world marker of the mod `owner`: what a mod turned
     /// off or reloaded leaves behind. Nothing when it keeps none, or on a
-    /// server. API @API:marker_clear_owner@.
+    /// server. API @API:markers@.
     pub(super) fn native_marker_clear_owner(&mut self, owner: &str) {
         if !self.native_window() {
             return;
