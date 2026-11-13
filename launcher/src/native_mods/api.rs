@@ -778,9 +778,15 @@ mod tests {
         fs::write(stage_dir.join("crates/event-horizon/Cargo.toml"), "").unwrap();
         for target in [super::super::Target::Client, super::super::Target::Server] {
             assert_eq!(game_package(&stage_dir, target, false), "event-horizon");
-            assert_eq!(executable(game_package(&stage_dir, target, false)), "horizon-client");
+            assert_eq!(
+                executable(game_package(&stage_dir, target, false)),
+                "horizon-client"
+            );
         }
-        assert_eq!(game_package(&stage_dir, super::super::Target::Client, true), PACKAGE);
+        assert_eq!(
+            game_package(&stage_dir, super::super::Target::Client, true),
+            PACKAGE
+        );
         fs::remove_dir_all(stage_dir).unwrap();
     }
 
