@@ -1518,6 +1518,7 @@ fn struct_ts(key: &str) -> &'static str {
         "(Text,u32)" => "{ text: string, component: Component?, count: number }",
         "(i32,u32)" => "{ value: number, max: number }",
         "(i32,i32)" => "{ min: number, max: number }",
+        "(u32,&str)" => "{ entity: number, kind: string }",
         "(String,Value)" => "{ path: string, data: Data }",
         "(String,Vec<u8>)" => "{ path: string, data: string }",
         "(String,Compound)" => "{ name: string, tag: Data }",
@@ -2117,6 +2118,15 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
                 leaf("remainder.count", "1".into()),
                 leaf("remainder.damage", "0".into()),
                 leaf("event", format!("{}", 2000 + n)),
+            ],
+        ),
+        // An explosion's source, read-only: the entity id and its kind.
+        "(u32,&str)" => fixed(
+            format!("({}, \"minecraft:tnt\")", 7 + n),
+            format!("{{ entity = {}, kind = \"minecraft:tnt\" }}", 7 + n),
+            vec![
+                leaf("entity", format!("{}", 7 + n)),
+                leaf("kind", "\"minecraft:tnt\"".into()),
             ],
         ),
         "(String,Value)" => fixed(
@@ -2979,6 +2989,8 @@ pub(crate) fn tuple_struct(ty: &syn::Type) -> Option<(String, String)> {
         ["String", "Compound"] => "{ name: string, tag: Data }",
         ["&'staticstr", "&'staticstr"] => "{ a: string, b: string }",
         ["usize", "usize"] => "{ start: number, end: number }",
+        // An explosion's source: the entity id and its kind id.
+        ["u32", "&str"] => "{ entity: number, kind: string }",
         _ => return None,
     };
     Some((key, ts.to_owned()))

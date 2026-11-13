@@ -42,7 +42,7 @@ pub const LUA_HOOK_SURFACE_VERSION: u32 = 6;
 /// The committed fingerprint of the surface `LUA_HOOK_SURFACE_VERSION`
 /// describes: `lua-hooks --check` fails when the freshly computed one
 /// differs, so nobody forgets the bump above.
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "555adbae0bd51987";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "3408212d2eaccf35";
 
 /// The macro's host kind for a model host.
 fn host_ident(host: Host) -> &'static str {

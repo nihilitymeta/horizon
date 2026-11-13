@@ -199,6 +199,7 @@ export type ExperienceOrbCanMergeEvent = { dimension: string, into: number, from
 export type ExperienceOrbMergeEvent = { dimension: string, into: number, from: number, from_value: number }
 export type ExperienceOrbPickupEvent = { player: string, dimension: string, orb: number, value: number, count: number }
 export type ExperienceOrbPickupListenedEvent = { listened: boolean }
+export type ExplosionDetonateEvent = { dimension: string, center: Vec3, source: { entity: number, kind: string }?, blocks: { Vec3 } }
 export type ExplosionKnockbackEvent = { dimension: string, center: Vec3, blocks: { Vec3 }, entity: number?, knockback_velocity: Vec3 }
 export type ExplosionPrimeEvent = { center: Vec3, radius: number }
 export type FillBucketEvent = { stack: Item, pos: Vec3 }
@@ -674,6 +675,7 @@ export type HorizonOn =
     ((name: "experience_orb_merge", fn: (event: ExperienceOrbMergeEvent) -> ()) -> ()) &
     ((name: "experience_orb_pickup", fn: (event: ExperienceOrbPickupEvent) -> ()) -> ()) &
     ((name: "experience_orb_pickup_listened", fn: (event: ExperienceOrbPickupListenedEvent) -> ()) -> ()) &
+    ((name: "explosion_detonate", fn: (event: ExplosionDetonateEvent) -> ()) -> ()) &
     ((name: "explosion_knockback", fn: (event: ExplosionKnockbackEvent) -> (), kind: string?) -> ()) &
     ((name: "explosion_prime", fn: (event: ExplosionPrimeEvent) -> ()) -> ()) &
     ((name: "fill_bucket", fn: (event: FillBucketEvent) -> ()) -> ()) &

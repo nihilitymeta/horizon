@@ -82,10 +82,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("right_click_block", "generated"),
     ("block_spread", "generated"),
     ("piston_move", "generated"),
-    (
-        "explosion_detonate",
-        "adapter: explosion_detonate: adapter: an optional value needs its table form",
-    ),
+    ("explosion_detonate", "generated"),
     ("fill_bucket", "generated"),
     ("attack_entity", "generated"),
     ("net_from_client", "generated"),
@@ -1307,7 +1304,7 @@ pub const LUA_HOOK_SURFACE_VERSION: u32 = 6;
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "555adbae0bd51987";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "3408212d2eaccf35";
 
 #[cfg(test)]
 mod test_support;
@@ -1359,6 +1356,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "right_click_block",
     "block_spread",
     "piston_move",
+    "explosion_detonate",
     "fill_bucket",
     "attack_entity",
     "net_from_client",
@@ -1947,6 +1945,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(right_click_block, game_mut, horizon_client::mod_api::RightClickBlockEvent, (none), [pos: pos, face: pos]);
     gen_cancel!(block_spread, level, horizon_client::mod_api::BlockSpreadEvent<'_>, (none), [dimension: dim, kind: cloned, from: pos_struct, to: pos_struct]);
     gen_cancel!(piston_move, level, horizon_client::mod_api::PistonMoveEvent<'_>, (none), [dimension: dim, piston: pos_struct, direction: pos, push: s_slice(horizon_client::mod_api::BlockPos), destroy: s_slice(horizon_client::mod_api::BlockPos)]);
+    gen_collect!(explosion_detonate, game_mut, horizon_client::mod_api::ExplosionDetonateEvent<'_>, (none), [dimension: cloned, center: vec3, source: s_opt((u32,&str)), blocks: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_cancel!(fill_bucket, game_mut, horizon_client::mod_api::FillBucketEvent<'_>, (none), [stack: item, pos: pos]);
     gen_cancel!(attack_entity, game_mut, horizon_client::mod_api::AttackEntityEvent<'_>, (field kind), [entity: copy, kind: cloned, pos: vec3]);
     gen_listen!(net_from_client, game_mut, horizon_client::mod_api::NetFromClientEvent<'_>, (none), [player: uuid, channel: cloned, data: s_bytes]);
@@ -9973,6 +9972,209 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+    }
+
+    #[test]
+    fn generated_explosion_detonate() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_explosion_detonate",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2.0, \"center\")\n    assert(event.center.y == 3.0, \"center\")\n    assert(event.center.z == 4.0, \"center\")\n    assert(event.source.entity == 9, \"source\")\n    assert(event.source.kind == \"minecraft:tnt\", \"source\")\n    assert(event.blocks[1].x == 4, \"blocks\")\n    assert(event.blocks[1].y == 5, \"blocks\")\n    assert(event.blocks[1].z == 6, \"blocks\")\n    assert(event.blocks[2].x == 5, \"blocks\")\n    assert(event.blocks[2].y == 6, \"blocks\")\n    assert(event.blocks[2].z == 7, \"blocks\")\n    event.blocks = { { x = 64, y = 65, z = 66 } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut blocks = vec![[4, 5, 6], [5, 6, 7]];
+        dispatch_explosion_detonate(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:dimension",
+            [2.0, 3.0, 4.0],
+            Some((9, "minecraft:tnt")),
+            &mut blocks,
+        );
+        assert_eq!(format!("{:?}", blocks), format!("{:?}", vec![[64, 65, 66]]));
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_explosion_detonate_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_explosion_detonate_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut blocks = vec![[4, 5, 6], [5, 6, 7]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_explosion_detonate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                Some((9, "minecraft:tnt")),
+                &mut blocks,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "explosion_detonate read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "explosion_detonate read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "explosion_detonate read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_explosion_detonate_cost_live",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut blocks = vec![[4, 5, 6], [5, 6, 7]];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_explosion_detonate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                Some((9, "minecraft:tnt")),
+                &mut blocks,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "explosion_detonate built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "explosion_detonate read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "explosion_detonate read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_explosion_detonate_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_explosion_detonate_duo_a1",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_explosion_detonate_duo_b1",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut blocks = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_explosion_detonate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                Some((9, "minecraft:tnt")),
+                &mut blocks,
+            );
+            assert_eq!(
+                format!("{:?}", &blocks[blocks.len() - 2..]),
+                format!("{:?}", vec![[64, 65, 66], [65, 66, 67]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_explosion_detonate_duo_a2",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_explosion_detonate_duo_b2",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut blocks = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_explosion_detonate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                Some((9, "minecraft:tnt")),
+                &mut blocks,
+            );
+            assert_eq!(
+                format!("{:?}", &blocks[blocks.len() - 2..]),
+                format!("{:?}", vec![[65, 66, 67], [64, 65, 66]])
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_explosion_detonate_duo_b3",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 65, y = 66, z = 67 })\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_explosion_detonate_duo_e3",
+            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut blocks = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_explosion_detonate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                Some((9, "minecraft:tnt")),
+                &mut blocks,
+            );
+            assert_eq!(
+                format!("{:?}", &blocks[blocks.len() - 1..]),
+                format!("{:?}", vec![[65, 66, 67]])
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -72995,6 +73197,18 @@ mod generated_tests {
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
+        }
+        // explosion_detonate: unregistered, nothing runs.
+        {
+            let mut blocks = vec![[4, 5, 6], [5, 6, 7]];
+            dispatch_explosion_detonate(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:dimension",
+                [2.0, 3.0, 4.0],
+                Some((9, "minecraft:tnt")),
+                &mut blocks,
+            );
         }
         // fill_bucket: unregistered, nothing runs.
         {

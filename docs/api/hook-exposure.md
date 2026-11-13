@@ -4,7 +4,7 @@
 
 Every native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). The Side column is the hook's `side` tag (`client`, `server` or `both`). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason. The two declaration-served hooks (`block_entity` and `block_entity_ticks`) are generated and omitted from the event-table list below: they are served from the `horizon.block_entity` declarations, build no event table, and take no `horizon.on` registration.
 
-477 hooks are generated and omitted below. The rest:
+478 hooks are generated and omitted below. The rest:
 
 ## Borrows render state (render thread) (24)
 
@@ -66,7 +66,7 @@ No event-table mapping exists: the argument cannot enter the Lua state.
 | `recipe_lookup` | client | type NativeStack has no mapping; type NativeRecipeLookup has no mapping |
 | `world_warp` | client | type WorldWarp has no mapping |
 
-## Adapter hooks (19)
+## Adapter hooks (18)
 
 Not event tables yet: a hand-written converter would unblock these.
 
@@ -80,7 +80,6 @@ Not event tables yet: a hand-written converter would unblock these.
 | `config_reloading` | both | a config file only the game constructs |
 | `config_unloading` | server | a config file only the game constructs |
 | `entity_data_to` | server | a tuple needs its table form |
-| `explosion_detonate` | server | an optional value needs its table form |
 | `explosion_entities` | server | a scalar list needs its table form |
 | `fishing_medium` | both | a replace out needs its table form |
 | `health_hud` | client | a replace out needs its table form |

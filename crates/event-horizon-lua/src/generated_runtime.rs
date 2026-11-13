@@ -2833,6 +2833,22 @@ impl LuaStruct for (i32, u32) {
 }
 
 /// Fire odds (`{min, max}` in order).
+/// An explosion's source, read-only: `{entity, kind}` with the entity id and
+/// its kind id. A script cannot write it back (the hook's out is `blocks`).
+impl LuaStruct for (u32, &str) {
+    fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
+        let t = lua.create_table()?;
+        t.set("entity", v.0)?;
+        t.set("kind", v.1)?;
+        Ok(Value::Table(t))
+    }
+    fn from_value(_lua: &Lua, _v: Value, field: &str) -> mlua::Result<Self> {
+        Err(mlua::Error::runtime(format!(
+            "{field}: a source is read-only"
+        )))
+    }
+}
+
 impl LuaStruct for (i32, i32) {
     fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
         let t = lua.create_table()?;
