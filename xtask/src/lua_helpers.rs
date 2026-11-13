@@ -937,6 +937,10 @@ fn value_of(scalar: &str, expr: &str) -> String {
         // A string list: a 1-based sequence table of its strings (an empty
         // list is an empty table), the `Option`'s nil being `read_arm`'s.
         "Vec<String>" => format!("Value::Table(lua.create_sequence_from({expr})?)"),
+        // A game rule's value: a boolean, or an integer (a Lua number).
+        "GameRuleValue" => format!(
+            "match {expr} {{ horizon_client::mod_api::GameRuleValue::Bool(b) => Value::Boolean(b), horizon_client::mod_api::GameRuleValue::Int(n) => Value::Integer(i64::from(n)) }}"
+        ),
         _ => format!("Value::Integer(i64::from({expr}))"),
     }
 }
@@ -1879,6 +1883,9 @@ fn canned(scalar: &str) -> String {
         }
         // One canned block state.
         "BlockStateId" => "BlockStateId(7)".to_owned(),
+        // One canned game rule value: a boolean (the integer arm is a
+        // hand test in `lua_mods.rs`, since a double answers one value).
+        "GameRuleValue" => "horizon_client::mod_api::GameRuleValue::Bool(true)".to_owned(),
         // Two distinct strings, so a reordered list fails a return test.
         "Vec<String>" => format!(
             "vec![{:?}.to_owned(), {:?}.to_owned()]",
@@ -1952,6 +1959,9 @@ fn tests_of(rows: &[HelperRow], backend: &Backend) -> String {
         }
         if uses("BlockStateId") {
             out.push_str("use horizon_client::mod_api::BlockStateId;\n");
+        }
+        if uses("GameRuleValue") {
+            out.push_str("use horizon_client::mod_api::GameRuleValue;\n");
         }
     }
     out.push_str("use std::sync::Mutex;\n\n");
@@ -3123,6 +3133,8 @@ fn lua_type_of(row: &HelperRow) -> String {
         "String" | "u128" | "LevelRef" | "BlockStateId" => "mlua::Value::String(_)".to_owned(),
         "f32" | "f64" => "mlua::Value::Number(_)".to_owned(),
         "[f64; 3]" | "[i32; 3]" | "ItemStack" | "Vec<String>" => "mlua::Value::Table(_)".to_owned(),
+        // The canned `Bool(true)` (exact: a boolean rule reads as `true`).
+        "GameRuleValue" => "mlua::Value::Boolean(true)".to_owned(),
         _ if scalar.starts_with('(') => "mlua::Value::Table(_)".to_owned(),
         _ => "mlua::Value::Integer(_)".to_owned(),
     }
@@ -3950,6 +3962,7 @@ enum RetKind {
     BlockStateId,
     Tuple,
     StringList,
+    GameRule,
 }
 
 #[cfg(test)]
@@ -3968,6 +3981,7 @@ const ALL_RET_KINDS: &[RetKind] = &[
     RetKind::BlockStateId,
     RetKind::Tuple,
     RetKind::StringList,
+    RetKind::GameRule,
 ];
 
 #[cfg(test)]
@@ -3990,6 +4004,7 @@ fn ret_kind(row: &HelperRow) -> RetKind {
         "ItemStack" => RetKind::ItemStack,
         "BlockStateId" => RetKind::BlockStateId,
         "Vec<String>" => RetKind::StringList,
+        "GameRuleValue" => RetKind::GameRule,
         _ if scalar.starts_with('(') => RetKind::Tuple,
         _ => RetKind::Int,
     }

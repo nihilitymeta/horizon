@@ -1178,6 +1178,7 @@ declare horizon: {
     level_block_state: (name: string, value: Vec3) -> string?,
     level_day_time: (name: string) -> number?,
     level_difficulty: (name: string) -> string?,
+    level_game_rule: (name: string, name2: string) -> (boolean | number)?,
     level_game_time: (name: string) -> number?,
     level_height: (name: string) -> { min: number, max: number }?,
     level_is_loaded: (name: string, value: Vec3) -> boolean,

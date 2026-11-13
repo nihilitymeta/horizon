@@ -361,6 +361,22 @@ fn is_opt_vec_string(ty: &Type) -> bool {
             if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_vec_string(inner)))
 }
 
+/// Whether the type is an `Option<GameRuleValue>`: the rule's value (a
+/// boolean or an integer), or nil for an unknown rule. Only a return:
+/// the enum as an argument (`level_set_game_rule`) still blocks.
+fn is_opt_game_rule_value(ty: &Type) -> bool {
+    let Type::Path(p) = ty else {
+        return false;
+    };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    seg.ident == "Option"
+        && matches!(&seg.arguments, syn::PathArguments::AngleBracketed(args)
+            if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner))
+                if matches!(inner, Type::Path(q) if q.qself.is_none() && q.path.is_ident("GameRuleValue"))))
+}
+
 /// Whether the type is the plain `String` name (a `Vec`'s element).
 fn inner_is_string(ty: &Type) -> bool {
     matches!(ty, Type::Path(p) if p.qself.is_none() && p.path.is_ident("String"))
@@ -688,6 +704,7 @@ fn collect_blocks(
         || is_item_stack(ty)
         || (in_return && is_opt_item_stack(ty))
         || (in_return && (is_vec_string(ty) || is_opt_vec_string(ty)))
+        || (in_return && is_opt_game_rule_value(ty))
         || is_compound(ty)
         || is_equipment_slot(ty)
         || is_opt_block_state_id(ty)
@@ -801,6 +818,11 @@ fn supported_return(f: &syn::ItemFn) -> Option<String> {
     }
     if is_opt_vec_string(ty) {
         return Some("Option<Vec<String>>".to_owned());
+    }
+    // A game rule's value: a boolean or an integer, or nil for an
+    // unknown rule (`GameRuleValue`, the enum `/gamerule` reads).
+    if is_opt_game_rule_value(ty) {
+        return Some("Option<GameRuleValue>".to_owned());
     }
     // An optional block-state name: the `state_name` string, or nil
     // (`Option<LevelRef>`'s precedent, for states).
@@ -1660,6 +1682,8 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
         // A string list: an array table of strings, or nil for `None`.
         "Vec<String>" => "{ string }".to_owned(),
         "Option<Vec<String>>" => "{ string }?".to_owned(),
+        // A game rule's value: a boolean (`Bool`) or a number (`Int`), or nil.
+        "Option<GameRuleValue>" => "(boolean | number)?".to_owned(),
         // An optional tuple return: nil for `None`, the table for
         // `Some`.
         _ if row.ret.starts_with("Option<(") => {
@@ -2028,5 +2052,41 @@ mod tests {
                 row.name
             );
         }
+    }
+
+    /// `Option<GameRuleValue>` is a read's return (a boolean or an integer,
+    /// or nil for an unknown rule): `level_game_rule` is Generated(Read).
+    /// The enum as an argument still blocks, so `level_set_game_rule` (no
+    /// game-rule writes) stays an Adapter naming it.
+    #[test]
+    fn a_game_rule_value_return_is_a_read_and_an_argument_still_blocks() {
+        let read: syn::ItemFn = syn::parse_quote! {
+            fn native_rule(&self, level: LevelRef, rule: &str) -> Option<GameRuleValue> { todo!() }
+        };
+        let arg: syn::ItemFn = syn::parse_quote! {
+            fn native_set_rule(&mut self, rule: &str, value: GameRuleValue) {}
+        };
+        assert!(blocks_of(&read).0.is_empty());
+        assert_eq!(
+            supported_return(&read).as_deref(),
+            Some("Option<GameRuleValue>")
+        );
+        assert!(blocks_of(&arg).0.contains(&"GameRuleValue".to_owned()));
+        let rows = classify_helpers(&root()).unwrap();
+        let get = rows.iter().find(|r| r.name == "level_game_rule").unwrap();
+        assert!(
+            matches!(&get.class, HelperClass::Generated(GenKind::Read)),
+            "level_game_rule should be Generated(Read), got {:?}",
+            get.class
+        );
+        let set = rows
+            .iter()
+            .find(|r| r.name == "level_set_game_rule")
+            .unwrap();
+        assert!(
+            matches!(&set.class, HelperClass::Adapter(b) if b.contains(&"GameRuleValue".to_owned())),
+            "level_set_game_rule must stay blocked on GameRuleValue, got {:?}",
+            set.class
+        );
     }
 }

@@ -234,7 +234,7 @@ string (`"minecraft:overworld"`, `"minecraft:the_nether"`): the `level_*` helper
 against the loaded dimensions (a read with an unknown dimension answers nil, an action does nothing, the same
 rule as an unresolved entity or player). A `Direction` is one of its six lowercase names (`"down"`, `"up"`,
 `"north"`, `"south"`, `"west"`, `"east"`); any other value is an error. A string list reads as a sequence of
-strings (`{"a", "b"}`, in the host's order; an empty list is `{}`, and an optional one is nil for `None`). A plain pair reads as a positional
+strings (`{"a", "b"}`, in the host's order; an empty list is `{}`, and an optional one is nil for `None`). A game rule's value reads as a boolean or a number (`level_game_rule`; nil for an unknown rule), and the game-rule writes are not exposed. A plain pair reads as a positional
 sequence `{a, b}`, or as a named table where a sequence would lose a nil second element: the optional climate and
 profile reads return the pair or nil — e.g. `level_height` returns `{min = ..., max = ...}` and
 `player_textures` returns `{value = ..., signature = ...}` (the signature is nil when unsigned) — and a
@@ -392,7 +392,10 @@ but that player.
 `server_tick`, a mob or block tick, a death. Inside a player's own hook, such as a click, a command or a pickup,
 nothing runs, and the log says so at debug level. Queue the call there with
 `horizon.after(1, function() horizon.run_command(...) end)`. `run_command` is the way to reach what the API has no
-function for yet, such as the time, the weather, `/tp` of a player and game rules.
+function for yet: `/tp` of a player, and setting a game rule, which `level_set_game_rule` deliberately does not
+expose (owner decision, #61). A rule's value reads as `level_game_rule` (a boolean, a number, or nil for an unknown
+rule), and the time, the weather and a player's game mode have `level_set_day_time`, `level_set_weather` and
+`set_game_mode` ([helper-exposure.md](api/helper-exposure.md)).
 
 ### Running a command as a player
 

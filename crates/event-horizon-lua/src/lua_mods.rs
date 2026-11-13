@@ -11739,6 +11739,52 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A host for the game-rule read (issue 61): `random_tick_speed` is an
+    /// integer rule, `advance_time` a boolean one, and any other name is
+    /// unknown. Only the level and the rule are answered.
+    struct RuleHost;
+
+    impl Host for RuleHost {
+        fn level(&self, dimension: &str) -> Option<horizon_client::mod_api::LevelRef> {
+            (dimension == "minecraft:overworld").then(|| {
+                horizon_client::mod_api::LevelRef::new(
+                    horizon_client::mod_api::NativeWorldEpoch::new(1),
+                    "minecraft:overworld",
+                )
+            })
+        }
+        fn level_game_rule(
+            &self,
+            _level: horizon_client::mod_api::LevelRef,
+            rule: &str,
+        ) -> Option<horizon_client::mod_api::GameRuleValue> {
+            match rule {
+                "random_tick_speed" => Some(horizon_client::mod_api::GameRuleValue::Int(7)),
+                "advance_time" => Some(horizon_client::mod_api::GameRuleValue::Bool(true)),
+                _ => None,
+            }
+        }
+    }
+
+    #[test]
+    fn game_rule_reads_an_integer_as_a_lua_number_and_an_unknown_rule_as_nil() {
+        // An integer rule is a Lua number (the integer subtype), and a rule
+        // the game does not have is nil, not an error.
+        let lua = mlua::Lua::new();
+        let read = |rule: &str| {
+            let args = mlua::MultiValue::from_iter([
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::String(lua.create_string(rule).unwrap()),
+            ]);
+            crate::generated_helpers::generated_read(&lua, &RuleHost, "level_game_rule", args)
+                .unwrap()
+                .unwrap()
+        };
+        assert!(matches!(read("random_tick_speed"), mlua::Value::Integer(7)));
+        assert!(matches!(read("advance_time"), mlua::Value::Boolean(true)));
+        assert!(matches!(read("no_such_rule"), mlua::Value::Nil));
+    }
+
     /// Runs one server tick of a one-handler mod `id` whose handler
     /// makes `call`, and returns the error the status reports (the host
     /// must not have been called).

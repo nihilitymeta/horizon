@@ -772,7 +772,7 @@ Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/ho
 | `level_difficulty` | — | generated | The difficulty (`Level.getDifficulty`): `peaceful`, `easy`, `normal` or `hard`, as `/difficulty` names it. API @API:level_world@. |
 | `level_dimension` | — |  | The dimension of the level in place. API @API:lua_console_helpers@. |
 | `level_entities` | — |  | Every entity of the open level `dimension`: its id (the one events and `native_entity` take), its type and its position, players included (as `native_level_stats` counts them). Empty on a client and for a level that isn't open. API @API:level_stats@. |
-| `level_game_rule` | — |  | Game rule `rule` (`minecraft:keep_inventory` or `keep_inventory`), as `/gamerule` queries it: None for an unknown rule. API @API:level_world@. |
+| `level_game_rule` | — | generated | Game rule `rule` (`minecraft:keep_inventory` or `keep_inventory`), as `/gamerule` queries it: None for an unknown rule. API @API:level_world@. |
 | `level_game_time` | 381 | generated | The ticks the server has run (`Level.getGameTime`), shared by every level as in vanilla. API 381. |
 | `level_height` | 381 | generated | The lowest block `y` and the height of the level (`LevelHeightAccessor.getMinY`, `getHeight`). API 381. |
 | `level_is_loaded` | 381 | generated | Whether `pos` is inside the world's height and its chunk is loaded (`Level.isLoaded`, which is false outside `isInValidBounds`): a block read or write there finds the world. API 381. |
@@ -1057,4 +1057,4 @@ Every hook point a native mod (`docs/native-mods.md`) or a trait mod (`crates/ho
 | `world_seed` | — | generated | The world's seed, as `/seed` prints it (`WorldOptions.seed`, Bukkit's `World.getSeed`): every level of the world generates from it, and `native_chunk_generate` gets the same value. None off a server: a client only knows a hash of its server's seed. API @API:world_seed@. |
 | `world_text` | — |  | Actual styled world font at (0,0), with ARGB default color and optional eight-offset ARGB outline. Returns the text advance in font pixels. The front of outlined text uses POLYGON_OFFSET. API @API:world_canvas@. |
 
-539 hook points, 505 helpers; 478 of the hooks and 240 of the helpers reaching Lua.
+539 hook points, 505 helpers; 478 of the hooks and 241 of the helpers reaching Lua.

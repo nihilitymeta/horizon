@@ -15,6 +15,7 @@ use crate::lua_mods::{LuaMod, LuaSide};
 use horizon_client::mod_api::BlockStateId;
 use horizon_client::mod_api::Compound;
 use horizon_client::mod_api::EquipmentSlot;
+use horizon_client::mod_api::GameRuleValue;
 use horizon_client::mod_api::ItemStack;
 use horizon_client::mod_api::{EntityRef, Host, LevelRef};
 use mlua::{Lua, Table};
@@ -541,6 +542,17 @@ impl Host for GenHost {
     fn level_difficulty(&self, level: LevelRef) -> Option<&'static str> {
         self.record("level_difficulty", &[level.dimension().to_string()]);
         if self.none { None } else { Some("ruby:gen") }
+    }
+    fn level_game_rule(&self, level: LevelRef, rule: &str) -> Option<GameRuleValue> {
+        self.record(
+            "level_game_rule",
+            &[level.dimension().to_string(), rule.to_string()],
+        );
+        if self.none {
+            None
+        } else {
+            Some(horizon_client::mod_api::GameRuleValue::Bool(true))
+        }
     }
     fn level_game_time(&self, level: LevelRef) -> Option<i64> {
         self.record("level_game_time", &[level.dimension().to_string()]);
@@ -8225,6 +8237,129 @@ fn level_difficulty_is_generated_and_exact() {
 }
 
 #[test]
+fn level_game_rule_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "level_game_rule",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "level minecraft:overworld",
+            "level_game_rule minecraft:overworld ruby:gen1"
+        ]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_game_rule",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "level_game_rule",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert_eq!(h.logged(), ["level minecraft:nowhere"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_game_rule",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Integer(3),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_game_rule.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_game_rule",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_game_rule.level"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "level_game_rule",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_game_rule"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
 fn level_game_time_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -15772,6 +15907,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "level_block_state",
             "level_day_time",
             "level_difficulty",
+            "level_game_rule",
             "level_game_time",
             "level_height",
             "level_is_loaded",
@@ -15964,6 +16100,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "level_block_state",
             "level_day_time",
             "level_difficulty",
+            "level_game_rule",
             "level_game_time",
             "level_height",
             "level_is_loaded",
@@ -16136,6 +16273,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "level_block_state",
             "level_day_time",
             "level_difficulty",
+            "level_game_rule",
             "level_game_time",
             "level_height",
             "level_is_loaded",

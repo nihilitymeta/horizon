@@ -187,6 +187,7 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "level_block_state",
     "level_day_time",
     "level_difficulty",
+    "level_game_rule",
     "level_game_time",
     "level_height",
     "level_is_loaded",
@@ -2186,6 +2187,21 @@ pub(crate) fn generated_read(
             };
             match h.level_difficulty(level) {
                 Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "level_game_rule" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let level_lua: Value = read_arg(lua, &rest, 1, "level_game_rule", "level")?;
+            let level_dim: String = dimension_of("level_game_rule", "level", &level_lua)?;
+            let rule: String = read_arg(lua, &rest, 2, "level_game_rule", "rule")?;
+            let Some(level) = h.level(&level_dim) else {
+                return Ok(Value::Nil);
+            };
+            match h.level_game_rule(level, &rule) {
+                Some(v) => Ok(match v {
+                    horizon_client::mod_api::GameRuleValue::Bool(b) => Value::Boolean(b),
+                    horizon_client::mod_api::GameRuleValue::Int(n) => Value::Integer(i64::from(n)),
+                }),
                 None => Ok(Value::Nil),
             }
         })(h)),
