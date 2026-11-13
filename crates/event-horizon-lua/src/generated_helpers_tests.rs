@@ -119,6 +119,17 @@ impl Host for GenHost {
             Some(("ruby:tup1_0".to_owned(), 4))
         }
     }
+    fn clear_between(&self, dimension: &str, from: [f64; 3], to: [f64; 3]) -> bool {
+        self.record(
+            "clear_between",
+            &[
+                dimension.to_string(),
+                format!("{:?}", from),
+                format!("{:?}", to),
+            ],
+        );
+        true
+    }
     fn client_block_obstruction(&self, pos: [i32; 3]) -> Option<(bool, bool)> {
         self.record("client_block_obstruction", &[format!("{:?}", pos)]);
         if self.none { None } else { Some((true, false)) }
@@ -155,6 +166,14 @@ impl Host for GenHost {
             None
         } else {
             Some(BlockStateId(7))
+        }
+    }
+    fn dimension_of_world(&self, world: &str) -> Option<String> {
+        self.record("dimension_of_world", &[world.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
         }
     }
     fn dismount(&mut self, entity: u32) -> bool {
@@ -311,6 +330,24 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn entity_set_attribute_base(&mut self, entity: EntityRef, attribute: &str, base: f64) -> bool {
+        self.record(
+            "entity_set_attribute_base",
+            &[
+                entity.id().to_string(),
+                attribute.to_string(),
+                base.to_string(),
+            ],
+        );
+        !self.refuse
+    }
+    fn entity_set_fire(&mut self, entity: EntityRef, ticks: i32) -> bool {
+        self.record(
+            "entity_set_fire",
+            &[entity.id().to_string(), ticks.to_string()],
+        );
+        !self.refuse
+    }
     fn entity_set_head_yaw(&mut self, entity: EntityRef, yaw: f32) -> bool {
         self.record(
             "entity_set_head_yaw",
@@ -339,6 +376,13 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn entity_swing(&mut self, entity: EntityRef, off_hand: bool) -> bool {
+        self.record(
+            "entity_swing",
+            &[entity.id().to_string(), off_hand.to_string()],
+        );
+        !self.refuse
+    }
     fn entity_tags(&self, entity: EntityRef) -> Option<Vec<String>> {
         self.record("entity_tags", &[entity.id().to_string()]);
         if self.none {
@@ -346,6 +390,17 @@ impl Host for GenHost {
         } else {
             Some(vec!["alpha".to_owned(), "beta".to_owned()])
         }
+    }
+    fn entity_use_item(&mut self, entity: EntityRef, off_hand: bool, using: bool) -> bool {
+        self.record(
+            "entity_use_item",
+            &[
+                entity.id().to_string(),
+                off_hand.to_string(),
+                using.to_string(),
+            ],
+        );
+        !self.refuse
     }
     fn entity_velocity(&self, entity: EntityRef) -> Option<[f64; 3]> {
         self.record("entity_velocity", &[entity.id().to_string()]);
@@ -376,6 +431,10 @@ impl Host for GenHost {
             })
         }
     }
+    fn expect_fake_player(&mut self, name: &str, fake: bool) -> bool {
+        self.record("expect_fake_player", &[name.to_string(), fake.to_string()]);
+        !self.refuse
+    }
     fn flame_particle(&mut self, at: [f64; 3], soul: bool) {
         self.record("flame_particle", &[format!("{:?}", at), soul.to_string()]);
     }
@@ -395,6 +454,17 @@ impl Host for GenHost {
         self.record("has_control_down", &[]);
         true
     }
+    fn has_line_of_sight(&self, from_entity: u32, to_entity: u32) -> bool {
+        self.record(
+            "has_line_of_sight",
+            &[from_entity.to_string(), to_entity.to_string()],
+        );
+        true
+    }
+    fn has_played_before(&self, uuid: u128) -> bool {
+        self.record("has_played_before", &[uuid.to_string()]);
+        true
+    }
     fn has_shift_down(&self) -> bool {
         self.record("has_shift_down", &[]);
         true
@@ -405,6 +475,10 @@ impl Host for GenHost {
             &[viewer.to_string(), entity.to_string(), hidden.to_string()],
         );
         !self.refuse
+    }
+    fn is_player_fake(&self, uuid: u128) -> bool {
+        self.record("is_player_fake", &[uuid.to_string()]);
+        true
     }
     fn item_from_snbt(&self, snbt: &str) -> Option<ItemStack> {
         self.record("item_from_snbt", &[snbt.to_string()]);
@@ -491,6 +565,14 @@ impl Host for GenHost {
         self.record("level_is_thundering", &[level.dimension().to_string()]);
         if self.none { None } else { Some(true) }
     }
+    fn level_name(&self) -> Option<String> {
+        self.record("level_name", &[]);
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
+    }
     fn level_play_sound(
         &mut self,
         level: LevelRef,
@@ -517,9 +599,47 @@ impl Host for GenHost {
         self.record("level_seed", &[level.dimension().to_string()]);
         if self.none { None } else { Some(3) }
     }
+    fn level_set_day_time(&mut self, level: LevelRef, time: i64) -> bool {
+        self.record(
+            "level_set_day_time",
+            &[level.dimension().to_string(), time.to_string()],
+        );
+        !self.refuse
+    }
+    fn level_set_weather(
+        &mut self,
+        level: LevelRef,
+        clear_time: i32,
+        weather_time: i32,
+        raining: bool,
+        thundering: bool,
+    ) -> bool {
+        self.record(
+            "level_set_weather",
+            &[
+                level.dimension().to_string(),
+                clear_time.to_string(),
+                weather_time.to_string(),
+                raining.to_string(),
+                thundering.to_string(),
+            ],
+        );
+        !self.refuse
+    }
     fn level_weather(&self, level: LevelRef) -> Option<(f32, f32)> {
         self.record("level_weather", &[level.dimension().to_string()]);
         if self.none { None } else { Some((1.5, 2.5)) }
+    }
+    fn lightning_bolt(&mut self, dimension: &str, pos: [f64; 3], visual_only: bool) -> bool {
+        self.record(
+            "lightning_bolt",
+            &[
+                dimension.to_string(),
+                format!("{:?}", pos),
+                visual_only.to_string(),
+            ],
+        );
+        !self.refuse
     }
     fn lit_block_name(&self, pos: [i32; 3]) -> Option<&str> {
         self.record("lit_block_name", &[format!("{:?}", pos)]);
@@ -532,6 +652,26 @@ impl Host for GenHost {
     fn max_stack_size(&self, item: &str) -> Option<u32> {
         self.record("max_stack_size", &[item.to_string()]);
         if self.none { None } else { Some(3) }
+    }
+    fn may_build(
+        &self,
+        player: u128,
+        name: &str,
+        dimension: &str,
+        pos: [i32; 3],
+        action: &str,
+    ) -> bool {
+        self.record(
+            "may_build",
+            &[
+                player.to_string(),
+                name.to_string(),
+                dimension.to_string(),
+                format!("{:?}", pos),
+                action.to_string(),
+            ],
+        );
+        true
     }
     fn menu_blur_radius(&self) -> f32 {
         self.record("menu_blur_radius", &[]);
@@ -612,6 +752,10 @@ impl Host for GenHost {
         self.record("mod_screen_open", &[mod_id.to_string()]);
         !self.refuse
     }
+    fn motd(&self) -> String {
+        self.record("motd", &[]);
+        "ruby:gen".to_owned()
+    }
     fn mount(&mut self, entity: u32, vehicle: u32) -> bool {
         self.record("mount", &[entity.to_string(), vehicle.to_string()]);
         !self.refuse
@@ -635,6 +779,10 @@ impl Host for GenHost {
             ],
         );
         !self.refuse
+    }
+    fn online_mode(&self) -> Option<bool> {
+        self.record("online_mode", &[]);
+        if self.none { None } else { Some(true) }
     }
     fn play_local_sound(
         &mut self,
@@ -696,6 +844,13 @@ impl Host for GenHost {
             extra: None,
         }
     }
+    fn player_permission_value(&self, player: u128, node: &str) -> Option<bool> {
+        self.record(
+            "player_permission_value",
+            &[player.to_string(), node.to_string()],
+        );
+        if self.none { None } else { Some(true) }
+    }
     fn player_sneaking(&self, uuid: u128) -> Option<bool> {
         self.record("player_sneaking", &[uuid.to_string()]);
         if self.none { None } else { Some(true) }
@@ -723,6 +878,14 @@ impl Host for GenHost {
         self.record("playing", &[]);
         true
     }
+    fn primary_group(&self, player: u128) -> Option<String> {
+        self.record("primary_group", &[player.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
+    }
     fn profile_by_name(&self, name: &str) -> Option<(u128, String)> {
         self.record("profile_by_name", &[name.to_string()]);
         if self.none {
@@ -739,6 +902,13 @@ impl Host for GenHost {
             Some("ruby:gen".to_owned())
         }
     }
+    fn proxy_forwarding(&self) -> Option<&'static str> {
+        self.record("proxy_forwarding", &[]);
+        if self.none { None } else { Some("ruby:gen") }
+    }
+    fn recipe_categories_changed(&self) {
+        self.record("recipe_categories_changed", &[]);
+    }
     fn refresh_biome_colors(&mut self) {
         self.record("refresh_biome_colors", &[]);
     }
@@ -748,6 +918,14 @@ impl Host for GenHost {
     fn refresh_player(&mut self, player: u128) -> bool {
         self.record("refresh_player", &[player.to_string()]);
         !self.refuse
+    }
+    fn registry_name(&self, registry: &str, id: i32) -> Option<String> {
+        self.record("registry_name", &[registry.to_string(), id.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
     }
     fn remove_effect(&mut self, uuid: u128, id: &str) -> bool {
         self.record("remove_effect", &[uuid.to_string(), id.to_string()]);
@@ -882,10 +1060,21 @@ impl Host for GenHost {
             Some("ruby:gen".to_owned())
         }
     }
+    fn server_port(&self) -> Option<u16> {
+        self.record("server_port", &[]);
+        if self.none { None } else { Some(3) }
+    }
     fn set_attribute_base(&mut self, uuid: u128, attribute: &str, base: f64) -> bool {
         self.record(
             "set_attribute_base",
             &[uuid.to_string(), attribute.to_string(), base.to_string()],
+        );
+        !self.refuse
+    }
+    fn set_block_entity(&mut self, dimension: &str, pos: [i32; 3], nbt: &str) -> bool {
+        self.record(
+            "set_block_entity",
+            &[dimension.to_string(), format!("{:?}", pos), nbt.to_string()],
         );
         !self.refuse
     }
@@ -935,6 +1124,10 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn set_game_mode(&mut self, player: u128, mode: i32) -> bool {
+        self.record("set_game_mode", &[player.to_string(), mode.to_string()]);
+        !self.refuse
+    }
     fn set_item_entity(&mut self, dimension: &str, id: u32, stack: ItemStack) -> bool {
         self.record(
             "set_item_entity",
@@ -944,6 +1137,10 @@ impl Host for GenHost {
                 format!("{:?}", stack),
             ],
         );
+        !self.refuse
+    }
+    fn set_player_fake(&mut self, uuid: u128, fake: bool) -> bool {
+        self.record("set_player_fake", &[uuid.to_string(), fake.to_string()]);
         !self.refuse
     }
     fn set_profile_property(
@@ -981,6 +1178,12 @@ impl Host for GenHost {
         self.record("text_width", &[text.to_string()]);
         1.5
     }
+    fn transfer_recipe_all(&mut self, book_id: i32, all: bool) {
+        self.record(
+            "transfer_recipe_all",
+            &[book_id.to_string(), all.to_string()],
+        );
+    }
     fn update_output_neighbors(&mut self, dimension: &str, pos: [i32; 3]) -> bool {
         self.record(
             "update_output_neighbors",
@@ -995,9 +1198,29 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn vehicle_of(&self, entity: u32) -> Option<u32> {
+        self.record("vehicle_of", &[entity.to_string()]);
+        if self.none { None } else { Some(3) }
+    }
+    fn whitelist_add(&self, uuid: u128, name: &str) -> bool {
+        self.record("whitelist_add", &[uuid.to_string(), name.to_string()]);
+        true
+    }
+    fn whitelist_remove(&mut self, uuid: u128, name: &str) -> bool {
+        self.record("whitelist_remove", &[uuid.to_string(), name.to_string()]);
+        !self.refuse
+    }
     fn window(&self) -> bool {
         self.record("window", &[]);
         true
+    }
+    fn world_of_dimension(&self, dimension: &str) -> Option<String> {
+        self.record("world_of_dimension", &[dimension.to_string()]);
+        if self.none {
+            None
+        } else {
+            Some("ruby:gen".to_owned())
+        }
     }
     fn world_seed(&self) -> Option<i64> {
         self.record("world_seed", &[]);
@@ -1334,6 +1557,206 @@ fn chat_input_is_generated_and_exact() {
             .unwrap()
             .unwrap();
         assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+}
+
+#[test]
+fn clear_between_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "clear_between",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 4.5).unwrap();
+                    t.set("y", 5.5).unwrap();
+                    t.set("z", 6.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        ["clear_between ruby:gen1 [1.5, 2.5, 3.5] [4.5, 5.5, 6.5]"]
+    );
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "clear_between",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", f64::NAN).unwrap();
+                        t.set("y", 2.5).unwrap();
+                        t.set("z", 3.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 4.5).unwrap();
+                        t.set("y", 5.5).unwrap();
+                        t.set("z", 6.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("clear_between.from"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "clear_between",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 2.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 4.5).unwrap();
+                        t.set("y", 5.5).unwrap();
+                        t.set("z", 6.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("clear_between.from"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "clear_between",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 2.5).unwrap();
+                        t.set("z", 3.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 4.5).unwrap();
+                        t.set("y", 5.5).unwrap();
+                        t.set("z", 6.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("clear_between.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "clear_between",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Integer(3),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 2.5).unwrap();
+                        t.set("z", 3.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 4.5).unwrap();
+                        t.set("y", 5.5).unwrap();
+                        t.set("z", 6.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("clear_between.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "clear_between",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 2.5).unwrap();
+                        t.set("z", 3.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 4.5).unwrap();
+                        t.set("y", 5.5).unwrap();
+                        t.set("z", 6.5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("clear_between"), "{text}");
+        assert!(text.contains("dimension"), "{text}");
     }
 }
 
@@ -2005,6 +2428,57 @@ fn default_state_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("default_state"), "{text}");
         assert!(text.contains("block"), "{text}");
+    }
+}
+
+#[test]
+fn dimension_of_world_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "dimension_of_world",
+        rest(
+            &lua,
+            &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["dimension_of_world ruby:gen1"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "dimension_of_world",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "dimension_of_world",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("dimension_of_world"), "{text}");
+        assert!(text.contains("world"), "{text}");
     }
 }
 
@@ -4851,6 +5325,210 @@ fn entity_remove_tag_is_generated_and_exact() {
 }
 
 #[test]
+fn entity_set_attribute_base_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::Integer(7),
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            mlua::Value::Number(1.5),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "entity_set_attribute_base", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host.logged(), ["entity_set_attribute_base 7 ruby:gen1 1.5"]);
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(999),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "entity_set_attribute_base", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable entity calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(-1),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_attribute_base", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_attribute_base.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Number(1.5),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_attribute_base", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_attribute_base.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_attribute_base", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_attribute_base.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(7),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Number(f64::NAN),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_attribute_base", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_attribute_base.base"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Number(1.5),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_attribute_base", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_attribute_base"), "{text}");
+        assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
+fn entity_set_fire_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(&lua, &[mlua::Value::Integer(7), mlua::Value::Integer(3)]);
+    run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host.logged(), ["entity_set_fire 7 3"]);
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Integer(7), mlua::Value::Integer(-1)]);
+        run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(host.logged(), ["entity_set_fire 7 -1"]);
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Integer(7), mlua::Value::Integer(300)]);
+        run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(host.logged(), ["entity_set_fire 7 300"]);
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Integer(999), mlua::Value::Integer(3)]);
+        run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable entity calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Integer(-1), mlua::Value::Integer(3)]);
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_fire.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Number(1.5), mlua::Value::Integer(3)]);
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_fire.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_fire.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_set_fire", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_set_fire"), "{text}");
+        assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
 fn entity_set_head_yaw_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -5279,6 +5957,86 @@ fn entity_set_velocity_is_generated_and_exact() {
 }
 
 #[test]
+fn entity_swing_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(&lua, &[mlua::Value::Integer(7), mlua::Value::Boolean(true)]);
+    run_generated_action(&lua, &mut host, "a", "entity_swing", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host.logged(), ["entity_swing 7 true"]);
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(999), mlua::Value::Boolean(true)],
+        );
+        run_generated_action(&lua, &mut host, "a", "entity_swing", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable entity calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(-1), mlua::Value::Boolean(true)],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_swing", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_swing.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Number(1.5), mlua::Value::Boolean(true)],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_swing", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_swing.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_swing", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_swing.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_swing", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_swing"), "{text}");
+        assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
 fn entity_tags_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -5373,6 +6131,107 @@ fn entity_tags_is_generated_and_exact() {
         .unwrap_err();
         let text = err.to_string();
         assert!(text.contains("entity_tags"), "{text}");
+        assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
+fn entity_use_item_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::Integer(7),
+            mlua::Value::Boolean(true),
+            mlua::Value::Boolean(false),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "entity_use_item", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host.logged(), ["entity_use_item 7 true false"]);
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(999),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "entity_use_item", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable entity calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(-1),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_use_item", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_use_item.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Number(1.5),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_use_item", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_use_item.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_use_item", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_use_item.entity"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "entity_use_item", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("entity_use_item"), "{text}");
         assert!(text.contains("entity"), "{text}");
     }
 }
@@ -5783,6 +6642,39 @@ fn equipment_is_generated_and_exact() {
 }
 
 #[test]
+fn expect_fake_player_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            mlua::Value::Boolean(true),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "expect_fake_player", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host.logged(), ["expect_fake_player ruby:gen1 true"]);
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "expect_fake_player", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("expect_fake_player"), "{text}");
+        assert!(text.contains("name"), "{text}");
+    }
+}
+
+#[test]
 fn flame_particle_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -6050,6 +6942,112 @@ fn has_control_down_is_generated_and_exact() {
 }
 
 #[test]
+fn has_line_of_sight_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "has_line_of_sight",
+        rest(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(4)]),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(h.logged(), ["has_line_of_sight 3 4"]);
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "has_line_of_sight",
+            rest(&lua, &[mlua::Value::Integer(-1), mlua::Value::Integer(-1)]),
+        )
+        .unwrap()
+        .unwrap();
+        let _ = v;
+        assert_eq!(h.logged(), ["has_line_of_sight 0 0"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "has_line_of_sight",
+            rest(
+                &lua,
+                &[mlua::Value::Integer(300), mlua::Value::Integer(300)],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        let _ = v;
+        assert_eq!(h.logged(), ["has_line_of_sight 300 300"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "has_line_of_sight",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                    mlua::Value::Integer(4),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("has_line_of_sight"), "{text}");
+        assert!(text.contains("from_entity"), "{text}");
+    }
+}
+
+#[test]
+fn has_played_before_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "has_played_before",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        ["has_played_before 24249434048109030647017182301789831168"]
+    );
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "has_played_before",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ghost").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+}
+
+#[test]
 fn has_shift_down_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -6161,6 +7159,47 @@ fn hide_entity_from_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("hide_entity_from"), "{text}");
         assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
+fn is_player_fake_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "is_player_fake",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        ["is_player_fake 24249434048109030647017182301789831168"]
+    );
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "is_player_fake",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ghost").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
     }
 }
 
@@ -7752,6 +8791,27 @@ fn level_is_thundering_is_generated_and_exact() {
 }
 
 #[test]
+fn level_name_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(&lua, &h, "level_name", rest(&lua, &[]))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["level_name"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(&lua, &h, "level_name", rest(&lua, &[]))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+}
+
+#[test]
 fn level_play_sound_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -8125,6 +9185,275 @@ fn level_seed_is_generated_and_exact() {
 }
 
 #[test]
+fn level_set_day_time_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+            mlua::Value::Integer(3),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "level_set_day_time", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        [
+            "level minecraft:overworld",
+            "level_set_day_time minecraft:overworld 3"
+        ]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::Integer(-1),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "level_set_day_time", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            [
+                "level minecraft:overworld",
+                "level_set_day_time minecraft:overworld -1"
+            ]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::Integer(300),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "level_set_day_time", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            [
+                "level minecraft:overworld",
+                "level_set_day_time minecraft:overworld 300"
+            ]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "level_set_day_time", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            ["level minecraft:nowhere"],
+            "an unresolved level calls nothing past the lookup"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Integer(3)]);
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_day_time", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_day_time.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_day_time", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_day_time.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_day_time", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_day_time"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn level_set_weather_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+            mlua::Value::Integer(3),
+            mlua::Value::Integer(4),
+            mlua::Value::Boolean(true),
+            mlua::Value::Boolean(false),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "level_set_weather", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        [
+            "level minecraft:overworld",
+            "level_set_weather minecraft:overworld 3 4 true false"
+        ]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::Integer(-1),
+                mlua::Value::Integer(-1),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "level_set_weather", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            [
+                "level minecraft:overworld",
+                "level_set_weather minecraft:overworld -1 -1 true true"
+            ]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+                mlua::Value::Integer(300),
+                mlua::Value::Integer(300),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "level_set_weather", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            [
+                "level minecraft:overworld",
+                "level_set_weather minecraft:overworld 300 300 true true"
+            ]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "level_set_weather", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            ["level minecraft:nowhere"],
+            "an unresolved level calls nothing past the lookup"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_weather", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_weather.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_weather", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_weather.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Integer(3),
+                mlua::Value::Integer(4),
+                mlua::Value::Boolean(true),
+                mlua::Value::Boolean(false),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_weather", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_weather"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
 fn level_weather_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -8227,6 +9556,145 @@ fn level_weather_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("level_weather"), "{text}");
         assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
+fn lightning_bolt_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            {
+                let t = lua.create_table().unwrap();
+                t.set("x", 1.5).unwrap();
+                t.set("y", 2.5).unwrap();
+                t.set("z", 3.5).unwrap();
+                mlua::Value::Table(t)
+            },
+            mlua::Value::Boolean(true),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "lightning_bolt", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        ["lightning_bolt ruby:gen1 [1.5, 2.5, 3.5] true"]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", f64::NAN).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "lightning_bolt", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("lightning_bolt.pos"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "lightning_bolt", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("lightning_bolt.pos"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "lightning_bolt", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("lightning_bolt.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "lightning_bolt", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("lightning_bolt.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 2.5).unwrap();
+                    t.set("z", 3.5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "lightning_bolt", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("lightning_bolt"), "{text}");
+        assert!(text.contains("dimension"), "{text}");
     }
 }
 
@@ -8400,6 +9868,231 @@ fn max_stack_size_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("max_stack_size"), "{text}");
         assert!(text.contains("item"), "{text}");
+    }
+}
+
+#[test]
+fn may_build_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "may_build",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::String(lua.create_string("ruby:gen3").unwrap()),
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        [
+            "may_build 24249434048109030647017182301789831168 ruby:gen1 ruby:gen2 [3, 4, 5] ruby:gen3"
+        ]
+    );
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "may_build",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ghost").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen3").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "may_build",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 1.5).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen3").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("may_build.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "may_build",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3000000000i64).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen3").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("may_build.pos"), "{text}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "may_build",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    mlua::Value::String(lua.create_string("").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen3").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("may_build.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "may_build",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    mlua::Value::Integer(3),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen3").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("may_build.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "may_build",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+                    {
+                        let t = lua.create_table().unwrap();
+                        t.set("x", 3).unwrap();
+                        t.set("y", 4).unwrap();
+                        t.set("z", 5).unwrap();
+                        mlua::Value::Table(t)
+                    },
+                    mlua::Value::String(lua.create_string("ruby:gen3").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("may_build"), "{text}");
+        assert!(text.contains("name"), "{text}");
     }
 }
 
@@ -9411,6 +11104,20 @@ fn mod_screen_open_is_generated_and_exact() {
 }
 
 #[test]
+fn motd_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(&lua, &h, "motd", rest(&lua, &[]))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["motd"]);
+}
+
+#[test]
 fn mount_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -9680,6 +11387,24 @@ fn move_entity_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("move_entity"), "{text}");
         assert!(text.contains("dimension"), "{text}");
+    }
+}
+
+#[test]
+fn online_mode_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(&lua, &h, "online_mode", rest(&lua, &[]))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(h.logged(), ["online_mode"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(&lua, &h, "online_mode", rest(&lua, &[]))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
     }
 }
 
@@ -10408,6 +12133,97 @@ fn player_head_is_generated_and_exact() {
 }
 
 #[test]
+fn player_permission_value_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "player_permission_value",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        ["player_permission_value 24249434048109030647017182301789831168 ruby:gen1"]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "player_permission_value",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "player_permission_value",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ghost").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "player_permission_value",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("player_permission_value"), "{text}");
+        assert!(text.contains("node"), "{text}");
+    }
+}
+
+#[test]
 fn player_sneaking_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -10698,6 +12514,68 @@ fn playing_is_generated_and_exact() {
 }
 
 #[test]
+fn primary_group_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "primary_group",
+        rest(
+            &lua,
+            &[mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            )],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(
+        h.logged(),
+        ["primary_group 24249434048109030647017182301789831168"]
+    );
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "primary_group",
+            rest(
+                &lua,
+                &[mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                )],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "primary_group",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ghost").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+}
+
+#[test]
 fn profile_by_name_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -10815,6 +12693,38 @@ fn profile_by_uuid_is_generated_and_exact() {
 }
 
 #[test]
+fn proxy_forwarding_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(&lua, &h, "proxy_forwarding", rest(&lua, &[]))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["proxy_forwarding"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(&lua, &h, "proxy_forwarding", rest(&lua, &[]))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+}
+
+#[test]
+fn recipe_categories_changed_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(&lua, &[]);
+    run_generated_action(&lua, &mut host, "a", "recipe_categories_changed", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host.logged(), ["recipe_categories_changed"]);
+}
+
+#[test]
 fn refresh_biome_colors_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -10867,6 +12777,107 @@ fn refresh_player_is_generated_and_exact() {
             host.logged().is_empty(),
             "an unresolvable player calls nothing"
         );
+    }
+}
+
+#[test]
+fn registry_name_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "registry_name",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["registry_name ruby:gen1 3"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "registry_name",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                    mlua::Value::Integer(3),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "registry_name",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
+                    mlua::Value::Integer(-1),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        let _ = v;
+        assert_eq!(h.logged(), ["registry_name ruby:gen -1"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "registry_name",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ruby:gen").unwrap()),
+                    mlua::Value::Integer(300),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        let _ = v;
+        assert_eq!(h.logged(), ["registry_name ruby:gen 300"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "registry_name",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                    mlua::Value::Integer(3),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("registry_name"), "{text}");
+        assert!(text.contains("registry"), "{text}");
     }
 }
 
@@ -11310,6 +13321,24 @@ fn screen_title_is_generated_and_exact() {
 }
 
 #[test]
+fn server_port_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(&lua, &h, "server_port", rest(&lua, &[]))
+        .unwrap()
+        .unwrap();
+    assert!(matches!(v, mlua::Value::Integer(_)), "{v:?}");
+    assert_eq!(h.logged(), ["server_port"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(&lua, &h, "server_port", rest(&lua, &[]))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+}
+
+#[test]
 fn set_attribute_base_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -11387,6 +13416,146 @@ fn set_attribute_base_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("set_attribute_base"), "{text}");
         assert!(text.contains("attribute"), "{text}");
+    }
+}
+
+#[test]
+fn set_block_entity_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            {
+                let t = lua.create_table().unwrap();
+                t.set("x", 3).unwrap();
+                t.set("y", 4).unwrap();
+                t.set("z", 5).unwrap();
+                mlua::Value::Table(t)
+            },
+            mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "set_block_entity", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        ["set_block_entity ruby:gen1 [3, 4, 5] ruby:gen2"]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 1.5).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_block_entity.pos"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3000000000i64).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_block_entity.pos"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_block_entity.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_block_entity.dimension"), "{text}");
+        assert!(host.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                {
+                    let t = lua.create_table().unwrap();
+                    t.set("x", 3).unwrap();
+                    t.set("y", 4).unwrap();
+                    t.set("z", 5).unwrap();
+                    mlua::Value::Table(t)
+                },
+                mlua::Value::String(lua.create_string("ruby:gen2").unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "set_block_entity", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_block_entity"), "{text}");
+        assert!(text.contains("dimension"), "{text}");
     }
 }
 
@@ -11932,6 +14101,105 @@ fn set_flight_is_generated_and_exact() {
 }
 
 #[test]
+fn set_game_mode_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            ),
+            mlua::Value::Integer(3),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "set_game_mode", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        ["set_game_mode 24249434048109030647017182301789831168 3"]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Integer(-1),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "set_game_mode", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            ["set_game_mode 24249434048109030647017182301789831168 -1"]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Integer(300),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "set_game_mode", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            ["set_game_mode 24249434048109030647017182301789831168 300"]
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ghost").unwrap()),
+                mlua::Value::Integer(3),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "set_game_mode", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable player calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Table(lua.create_table().unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "set_game_mode", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_game_mode"), "{text}");
+        assert!(text.contains("mode"), "{text}");
+    }
+}
+
+#[test]
 fn set_item_entity_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -12213,6 +14481,65 @@ fn set_item_entity_is_generated_and_exact() {
         let text = err.to_string();
         assert!(text.contains("set_item_entity"), "{text}");
         assert!(text.contains("dimension"), "{text}");
+    }
+}
+
+#[test]
+fn set_player_fake_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            ),
+            mlua::Value::Boolean(true),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "set_player_fake", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        ["set_player_fake 24249434048109030647017182301789831168 true"]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ghost").unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "set_player_fake", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable player calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Table(lua.create_table().unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "set_player_fake", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("set_player_fake"), "{text}");
+        assert!(text.contains("fake"), "{text}");
     }
 }
 
@@ -12652,6 +14979,55 @@ fn text_width_is_generated_and_exact() {
 }
 
 #[test]
+fn transfer_recipe_all_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(&lua, &[mlua::Value::Integer(3), mlua::Value::Boolean(true)]);
+    run_generated_action(&lua, &mut host, "a", "transfer_recipe_all", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(host.logged(), ["transfer_recipe_all 3 true"]);
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(-1), mlua::Value::Boolean(true)],
+        );
+        run_generated_action(&lua, &mut host, "a", "transfer_recipe_all", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(host.logged(), ["transfer_recipe_all -1 true"]);
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[mlua::Value::Integer(300), mlua::Value::Boolean(true)],
+        );
+        run_generated_action(&lua, &mut host, "a", "transfer_recipe_all", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(host.logged(), ["transfer_recipe_all 300 true"]);
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "transfer_recipe_all", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("transfer_recipe_all"), "{text}");
+        assert!(text.contains("book_id"), "{text}");
+    }
+}
+
+#[test]
 fn update_output_neighbors_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -12902,6 +15278,203 @@ fn update_signal_neighbors_is_generated_and_exact() {
 }
 
 #[test]
+fn vehicle_of_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "vehicle_of",
+        rest(&lua, &[mlua::Value::Integer(3)]),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Integer(_)), "{v:?}");
+    assert_eq!(h.logged(), ["vehicle_of 3"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "vehicle_of",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "vehicle_of",
+            rest(&lua, &[mlua::Value::Integer(-1)]),
+        )
+        .unwrap()
+        .unwrap();
+        let _ = v;
+        assert_eq!(h.logged(), ["vehicle_of 0"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "vehicle_of",
+            rest(&lua, &[mlua::Value::Integer(300)]),
+        )
+        .unwrap()
+        .unwrap();
+        let _ = v;
+        assert_eq!(h.logged(), ["vehicle_of 300"]);
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "vehicle_of",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("vehicle_of"), "{text}");
+        assert!(text.contains("entity"), "{text}");
+    }
+}
+
+#[test]
+fn whitelist_add_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "whitelist_add",
+        rest(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            ],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
+    assert_eq!(
+        h.logged(),
+        ["whitelist_add 24249434048109030647017182301789831168 ruby:gen1"]
+    );
+    {
+        let h = gen_host(false, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "whitelist_add",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(lua.create_string("ghost").unwrap()),
+                    mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil));
+        assert!(h.logged().is_empty());
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "whitelist_add",
+            rest(
+                &lua,
+                &[
+                    mlua::Value::String(
+                        lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                            .unwrap(),
+                    ),
+                    mlua::Value::Table(lua.create_table().unwrap()),
+                ],
+            ),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("whitelist_add"), "{text}");
+        assert!(text.contains("name"), "{text}");
+    }
+}
+
+#[test]
+fn whitelist_remove_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(
+                lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                    .unwrap(),
+            ),
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "whitelist_remove", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        ["whitelist_remove 24249434048109030647017182301789831168 ruby:gen1"]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("ghost").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "whitelist_remove", &t)
+            .unwrap()
+            .unwrap();
+        assert!(
+            host.logged().is_empty(),
+            "an unresolvable player calls nothing"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(
+                    lua.create_string("123e4567-e89b-12d3-a456-426614174000")
+                        .unwrap(),
+                ),
+                mlua::Value::Table(lua.create_table().unwrap()),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "whitelist_remove", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("whitelist_remove"), "{text}");
+        assert!(text.contains("name"), "{text}");
+    }
+}
+
+#[test]
 fn window_is_generated_and_exact() {
     let lua = lua();
     let h = gen_host(false, false);
@@ -12910,6 +15483,85 @@ fn window_is_generated_and_exact() {
         .unwrap();
     assert!(matches!(v, mlua::Value::Boolean(true)), "{v:?}");
     assert_eq!(h.logged(), ["window"]);
+}
+
+#[test]
+fn world_of_dimension_is_generated_and_exact() {
+    let lua = lua();
+    let h = gen_host(false, false);
+    let v = generated_read(
+        &lua,
+        &h,
+        "world_of_dimension",
+        rest(
+            &lua,
+            &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+        ),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(v, mlua::Value::String(_)), "{v:?}");
+    if let mlua::Value::String(s) = &v {
+        assert_eq!(s.to_string_lossy(), "ruby:gen");
+    }
+    assert_eq!(h.logged(), ["world_of_dimension ruby:gen1"]);
+    {
+        let h = gen_host(true, false);
+        let v = generated_read(
+            &lua,
+            &h,
+            "world_of_dimension",
+            rest(
+                &lua,
+                &[mlua::Value::String(lua.create_string("ruby:gen1").unwrap())],
+            ),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(v, mlua::Value::Nil), "{v:?}");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "world_of_dimension",
+            rest(&lua, &[mlua::Value::String(lua.create_string("").unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("world_of_dimension.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "world_of_dimension",
+            rest(&lua, &[mlua::Value::Integer(3)]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("world_of_dimension.dimension"), "{text}");
+        assert!(h.logged().is_empty(), "an empty dimension calls nothing");
+    }
+    {
+        let h = gen_host(false, false);
+        let err = generated_read(
+            &lua,
+            &h,
+            "world_of_dimension",
+            rest(&lua, &[mlua::Value::Table(lua.create_table().unwrap())]),
+        )
+        .unwrap()
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("world_of_dimension"), "{text}");
+        assert!(text.contains("dimension"), "{text}");
+    }
 }
 
 #[test]
@@ -12942,12 +15594,20 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "entity_merge_nbt",
             "entity_push",
             "entity_remove_tag",
+            "entity_set_attribute_base",
+            "entity_set_fire",
             "entity_set_head_yaw",
             "entity_set_rotation",
             "entity_set_silent",
             "entity_set_velocity",
+            "entity_swing",
+            "entity_use_item",
+            "expect_fake_player",
             "hide_entity_from",
             "level_play_sound",
+            "level_set_day_time",
+            "level_set_weather",
+            "lightning_bolt",
             "merge_entity_nbt",
             "mob_attack",
             "mob_follow",
@@ -12957,6 +15617,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "mount",
             "move_entity",
             "player_break_block",
+            "recipe_categories_changed",
             "refresh_commands",
             "refresh_player",
             "remove_effect",
@@ -12972,17 +15633,22 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "scoreboard_team_join",
             "scoreboard_team_leave",
             "set_attribute_base",
+            "set_block_entity",
             "set_block_property_with",
             "set_break_progress",
             "set_compass_target",
             "set_entity_data",
             "set_flight",
+            "set_game_mode",
             "set_item_entity",
+            "set_player_fake",
             "set_profile_property",
             "sleep_ignored",
             "teleport_vehicle",
+            "transfer_recipe_all",
             "update_output_neighbors",
             "update_signal_neighbors",
+            "whitelist_remove",
         ]
     );
     assert_eq!(
@@ -12990,7 +15656,9 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
         [
             "biome",
             "biome_name",
+            "clear_between",
             "default_state",
+            "dimension_of_world",
             "entity_air_supply",
             "entity_block_position",
             "entity_direction",
@@ -13019,6 +15687,9 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "entity_view_vector",
             "equipment",
             "fluid_flow",
+            "has_line_of_sight",
+            "has_played_before",
+            "is_player_fake",
             "item_from_snbt",
             "level",
             "level_block",
@@ -13031,27 +15702,39 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "level_is_loaded",
             "level_is_raining",
             "level_is_thundering",
+            "level_name",
             "level_seed",
             "level_weather",
             "lit_block_name",
             "max_players",
             "max_stack_size",
+            "may_build",
+            "motd",
+            "online_mode",
             "player_channels",
             "player_equipment",
             "player_head",
+            "player_permission_value",
             "player_sneaking",
             "player_stat",
             "player_textures",
             "player_view_distance",
+            "primary_group",
             "profile_by_name",
             "profile_by_uuid",
+            "proxy_forwarding",
+            "registry_name",
             "scoreboard_objectives",
             "scoreboard_score",
             "scoreboard_team_members",
             "scoreboard_team_of",
             "scoreboard_teams",
+            "server_port",
             "sneaking",
             "text_allowed",
+            "vehicle_of",
+            "whitelist_add",
+            "world_of_dimension",
             "world_seed",
         ]
     );
@@ -13105,12 +15788,20 @@ fn every_generated_name_is_a_function_on_horizon() {
             "entity_merge_nbt",
             "entity_push",
             "entity_remove_tag",
+            "entity_set_attribute_base",
+            "entity_set_fire",
             "entity_set_head_yaw",
             "entity_set_rotation",
             "entity_set_silent",
             "entity_set_velocity",
+            "entity_swing",
+            "entity_use_item",
+            "expect_fake_player",
             "hide_entity_from",
             "level_play_sound",
+            "level_set_day_time",
+            "level_set_weather",
+            "lightning_bolt",
             "merge_entity_nbt",
             "mob_attack",
             "mob_follow",
@@ -13120,6 +15811,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "mount",
             "move_entity",
             "player_break_block",
+            "recipe_categories_changed",
             "refresh_commands",
             "refresh_player",
             "remove_effect",
@@ -13135,20 +15827,27 @@ fn every_generated_name_is_a_function_on_horizon() {
             "scoreboard_team_join",
             "scoreboard_team_leave",
             "set_attribute_base",
+            "set_block_entity",
             "set_block_property_with",
             "set_break_progress",
             "set_compass_target",
             "set_entity_data",
             "set_flight",
+            "set_game_mode",
             "set_item_entity",
+            "set_player_fake",
             "set_profile_property",
             "sleep_ignored",
             "teleport_vehicle",
+            "transfer_recipe_all",
             "update_output_neighbors",
             "update_signal_neighbors",
+            "whitelist_remove",
             "biome",
             "biome_name",
+            "clear_between",
             "default_state",
+            "dimension_of_world",
             "entity_air_supply",
             "entity_block_position",
             "entity_direction",
@@ -13177,6 +15876,9 @@ fn every_generated_name_is_a_function_on_horizon() {
             "entity_view_vector",
             "equipment",
             "fluid_flow",
+            "has_line_of_sight",
+            "has_played_before",
+            "is_player_fake",
             "item_from_snbt",
             "level",
             "level_block",
@@ -13189,27 +15891,39 @@ fn every_generated_name_is_a_function_on_horizon() {
             "level_is_loaded",
             "level_is_raining",
             "level_is_thundering",
+            "level_name",
             "level_seed",
             "level_weather",
             "lit_block_name",
             "max_players",
             "max_stack_size",
+            "may_build",
+            "motd",
+            "online_mode",
             "player_channels",
             "player_equipment",
             "player_head",
+            "player_permission_value",
             "player_sneaking",
             "player_stat",
             "player_textures",
             "player_view_distance",
+            "primary_group",
             "profile_by_name",
             "profile_by_uuid",
+            "proxy_forwarding",
+            "registry_name",
             "scoreboard_objectives",
             "scoreboard_score",
             "scoreboard_team_members",
             "scoreboard_team_of",
             "scoreboard_teams",
+            "server_port",
             "sneaking",
             "text_allowed",
+            "vehicle_of",
+            "whitelist_add",
+            "world_of_dimension",
             "world_seed",
             }
             local missing = {}
@@ -13243,12 +15957,20 @@ fn generated_server_names_raise_in_a_client_state() {
             "entity_merge_nbt",
             "entity_push",
             "entity_remove_tag",
+            "entity_set_attribute_base",
+            "entity_set_fire",
             "entity_set_head_yaw",
             "entity_set_rotation",
             "entity_set_silent",
             "entity_set_velocity",
+            "entity_swing",
+            "entity_use_item",
+            "expect_fake_player",
             "hide_entity_from",
             "level_play_sound",
+            "level_set_day_time",
+            "level_set_weather",
+            "lightning_bolt",
             "merge_entity_nbt",
             "mob_attack",
             "mob_follow",
@@ -13258,6 +15980,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "mount",
             "move_entity",
             "player_break_block",
+            "recipe_categories_changed",
             "refresh_commands",
             "refresh_player",
             "remove_effect",
@@ -13273,20 +15996,27 @@ fn generated_server_names_raise_in_a_client_state() {
             "scoreboard_team_join",
             "scoreboard_team_leave",
             "set_attribute_base",
+            "set_block_entity",
             "set_block_property_with",
             "set_break_progress",
             "set_compass_target",
             "set_entity_data",
             "set_flight",
+            "set_game_mode",
             "set_item_entity",
+            "set_player_fake",
             "set_profile_property",
             "sleep_ignored",
             "teleport_vehicle",
+            "transfer_recipe_all",
             "update_output_neighbors",
             "update_signal_neighbors",
+            "whitelist_remove",
             "biome",
             "biome_name",
+            "clear_between",
             "default_state",
+            "dimension_of_world",
             "entity_air_supply",
             "entity_block_position",
             "entity_direction",
@@ -13315,6 +16045,9 @@ fn generated_server_names_raise_in_a_client_state() {
             "entity_view_vector",
             "equipment",
             "fluid_flow",
+            "has_line_of_sight",
+            "has_played_before",
+            "is_player_fake",
             "item_from_snbt",
             "level",
             "level_block",
@@ -13327,27 +16060,39 @@ fn generated_server_names_raise_in_a_client_state() {
             "level_is_loaded",
             "level_is_raining",
             "level_is_thundering",
+            "level_name",
             "level_seed",
             "level_weather",
             "lit_block_name",
             "max_players",
             "max_stack_size",
+            "may_build",
+            "motd",
+            "online_mode",
             "player_channels",
             "player_equipment",
             "player_head",
+            "player_permission_value",
             "player_sneaking",
             "player_stat",
             "player_textures",
             "player_view_distance",
+            "primary_group",
             "profile_by_name",
             "profile_by_uuid",
+            "proxy_forwarding",
+            "registry_name",
             "scoreboard_objectives",
             "scoreboard_score",
             "scoreboard_team_members",
             "scoreboard_team_of",
             "scoreboard_teams",
+            "server_port",
             "sneaking",
             "text_allowed",
+            "vehicle_of",
+            "whitelist_add",
+            "world_of_dimension",
             "world_seed",
             }
             for _, name in ipairs(names) do

@@ -12749,9 +12749,9 @@ mod fence_leash_force_tests;
 #[cfg(test)]
 mod golem_defense_tests;
 #[cfg(test)]
-mod hoglin_repeat_attack_tests;
-#[cfg(test)]
 mod guest_swap_tests;
+#[cfg(test)]
+mod hoglin_repeat_attack_tests;
 #[cfg(test)]
 mod inline_feature_parse_tests;
 #[cfg(test)]

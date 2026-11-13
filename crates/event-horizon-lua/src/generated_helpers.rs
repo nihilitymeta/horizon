@@ -82,12 +82,20 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "entity_merge_nbt",
     "entity_push",
     "entity_remove_tag",
+    "entity_set_attribute_base",
+    "entity_set_fire",
     "entity_set_head_yaw",
     "entity_set_rotation",
     "entity_set_silent",
     "entity_set_velocity",
+    "entity_swing",
+    "entity_use_item",
+    "expect_fake_player",
     "hide_entity_from",
     "level_play_sound",
+    "level_set_day_time",
+    "level_set_weather",
+    "lightning_bolt",
     "merge_entity_nbt",
     "mob_attack",
     "mob_follow",
@@ -97,6 +105,7 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "mount",
     "move_entity",
     "player_break_block",
+    "recipe_categories_changed",
     "refresh_commands",
     "refresh_player",
     "remove_effect",
@@ -112,17 +121,22 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "scoreboard_team_join",
     "scoreboard_team_leave",
     "set_attribute_base",
+    "set_block_entity",
     "set_block_property_with",
     "set_break_progress",
     "set_compass_target",
     "set_entity_data",
     "set_flight",
+    "set_game_mode",
     "set_item_entity",
+    "set_player_fake",
     "set_profile_property",
     "sleep_ignored",
     "teleport_vehicle",
+    "transfer_recipe_all",
     "update_output_neighbors",
     "update_signal_neighbors",
+    "whitelist_remove",
 ];
 
 /// The reads this generator emits: `install_reads` sets one
@@ -130,7 +144,9 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
 pub(crate) const GENERATED_READS: &[&str] = &[
     "biome",
     "biome_name",
+    "clear_between",
     "default_state",
+    "dimension_of_world",
     "entity_air_supply",
     "entity_block_position",
     "entity_direction",
@@ -159,6 +175,9 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "entity_view_vector",
     "equipment",
     "fluid_flow",
+    "has_line_of_sight",
+    "has_played_before",
+    "is_player_fake",
     "item_from_snbt",
     "level",
     "level_block",
@@ -171,27 +190,39 @@ pub(crate) const GENERATED_READS: &[&str] = &[
     "level_is_loaded",
     "level_is_raining",
     "level_is_thundering",
+    "level_name",
     "level_seed",
     "level_weather",
     "lit_block_name",
     "max_players",
     "max_stack_size",
+    "may_build",
+    "motd",
+    "online_mode",
     "player_channels",
     "player_equipment",
     "player_head",
+    "player_permission_value",
     "player_sneaking",
     "player_stat",
     "player_textures",
     "player_view_distance",
+    "primary_group",
     "profile_by_name",
     "profile_by_uuid",
+    "proxy_forwarding",
+    "registry_name",
     "scoreboard_objectives",
     "scoreboard_score",
     "scoreboard_team_members",
     "scoreboard_team_of",
     "scoreboard_teams",
+    "server_port",
     "sneaking",
     "text_allowed",
+    "vehicle_of",
+    "whitelist_add",
+    "world_of_dimension",
     "world_seed",
 ];
 
@@ -438,6 +469,36 @@ pub(crate) fn run_generated_action(
             let _ = host.entity_remove_tag(entity, &tag);
             Ok(())
         })(host)),
+        "entity_set_attribute_base" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let entity_id: Value = read_action_arg(args, 1, "entity_set_attribute_base", "entity")?;
+            let entity_id: u32 = entity_id_of("entity_set_attribute_base", "entity", &entity_id)?;
+            let attribute: String =
+                read_action_arg(args, 2, "entity_set_attribute_base", "attribute")?;
+            let base: f64 = read_action_arg(args, 3, "entity_set_attribute_base", "base")?;
+            crate::generated_runtime::check_finite("entity_set_attribute_base", "base", base)?;
+            let Some(entity) = host.entity(entity_id) else {
+                log::debug!("[lua] entity_set_attribute_base: no such entity");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.entity_set_attribute_base(entity, &attribute, base);
+            Ok(())
+        })(host)),
+        "entity_set_fire" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let entity_id: Value = read_action_arg(args, 1, "entity_set_fire", "entity")?;
+            let entity_id: u32 = entity_id_of("entity_set_fire", "entity", &entity_id)?;
+            let n2: i64 = read_action_arg(args, 2, "entity_set_fire", "ticks")?;
+            let ticks: i32 = i32::try_from(n2).unwrap_or(if n2 < 0 { i32::MIN } else { i32::MAX });
+            let Some(entity) = host.entity(entity_id) else {
+                log::debug!("[lua] entity_set_fire: no such entity");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.entity_set_fire(entity, ticks);
+            Ok(())
+        })(host)),
         "entity_set_head_yaw" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let entity_id: Value = read_action_arg(args, 1, "entity_set_head_yaw", "entity")?;
             let entity_id: u32 = entity_id_of("entity_set_head_yaw", "entity", &entity_id)?;
@@ -528,6 +589,73 @@ pub(crate) fn run_generated_action(
             let _ = host.entity_set_velocity(entity, velocity);
             Ok(())
         })(host)),
+        "entity_swing" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let entity_id: Value = read_action_arg(args, 1, "entity_swing", "entity")?;
+            let entity_id: u32 = entity_id_of("entity_swing", "entity", &entity_id)?;
+            let off_hand: bool = match read_action_arg(args, 2, "entity_swing", "off_hand")? {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "entity_swing", "off_hand"
+                    )));
+                }
+            };
+            let Some(entity) = host.entity(entity_id) else {
+                log::debug!("[lua] entity_swing: no such entity");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.entity_swing(entity, off_hand);
+            Ok(())
+        })(host)),
+        "entity_use_item" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let entity_id: Value = read_action_arg(args, 1, "entity_use_item", "entity")?;
+            let entity_id: u32 = entity_id_of("entity_use_item", "entity", &entity_id)?;
+            let off_hand: bool = match read_action_arg(args, 2, "entity_use_item", "off_hand")? {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "entity_use_item", "off_hand"
+                    )));
+                }
+            };
+            let using: bool = match read_action_arg(args, 3, "entity_use_item", "using")? {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "entity_use_item", "using"
+                    )));
+                }
+            };
+            let Some(entity) = host.entity(entity_id) else {
+                log::debug!("[lua] entity_use_item: no such entity");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.entity_use_item(entity, off_hand, using);
+            Ok(())
+        })(host)),
+        "expect_fake_player" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let name: String = read_action_arg(args, 1, "expect_fake_player", "name")?;
+            let fake: bool = match read_action_arg(args, 2, "expect_fake_player", "fake")? {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "expect_fake_player", "fake"
+                    )));
+                }
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.expect_fake_player(&name, fake);
+            Ok(())
+        })(host)),
         "flame_particle" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let at: Table = read_action_arg(args, 1, "flame_particle", "at")?;
             let at_x: f64 =
@@ -606,6 +734,82 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.level_play_sound(level, &sound, at, source, volume, pitch);
+            Ok(())
+        })(host)),
+        "level_set_day_time" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let level_lua: Value = read_action_arg(args, 1, "level_set_day_time", "level")?;
+            let level_dim: String = dimension_of("level_set_day_time", "level", &level_lua)?;
+            let time: i64 = read_action_arg(args, 2, "level_set_day_time", "time")?;
+            let Some(level) = host.level(&level_dim) else {
+                log::debug!("[lua] level_set_day_time: no such level");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.level_set_day_time(level, time);
+            Ok(())
+        })(host)),
+        "level_set_weather" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let level_lua: Value = read_action_arg(args, 1, "level_set_weather", "level")?;
+            let level_dim: String = dimension_of("level_set_weather", "level", &level_lua)?;
+            let n2: i64 = read_action_arg(args, 2, "level_set_weather", "clear_time")?;
+            let clear_time: i32 =
+                i32::try_from(n2).unwrap_or(if n2 < 0 { i32::MIN } else { i32::MAX });
+            let n3: i64 = read_action_arg(args, 3, "level_set_weather", "weather_time")?;
+            let weather_time: i32 =
+                i32::try_from(n3).unwrap_or(if n3 < 0 { i32::MIN } else { i32::MAX });
+            let raining: bool = match read_action_arg(args, 4, "level_set_weather", "raining")? {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "level_set_weather", "raining"
+                    )));
+                }
+            };
+            let thundering: bool =
+                match read_action_arg(args, 5, "level_set_weather", "thundering")? {
+                    Value::Boolean(b) => b,
+                    _ => {
+                        return Err(mlua::Error::runtime(format!(
+                            "{}: {}: expected a boolean",
+                            "level_set_weather", "thundering"
+                        )));
+                    }
+                };
+            let Some(level) = host.level(&level_dim) else {
+                log::debug!("[lua] level_set_weather: no such level");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.level_set_weather(level, clear_time, weather_time, raining, thundering);
+            Ok(())
+        })(host)),
+        "lightning_bolt" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let dimension_lua: Value = read_action_arg(args, 1, "lightning_bolt", "dimension")?;
+            let dimension: String = dimension_of("lightning_bolt", "dimension", &dimension_lua)?;
+            let pos: Table = read_action_arg(args, 2, "lightning_bolt", "pos")?;
+            let pos_x: f64 =
+                crate::generated_runtime::req_finite::<f64>(&pos, "x", "lightning_bolt.pos")?;
+            let pos_y: f64 =
+                crate::generated_runtime::req_finite::<f64>(&pos, "y", "lightning_bolt.pos")?;
+            let pos_z: f64 =
+                crate::generated_runtime::req_finite::<f64>(&pos, "z", "lightning_bolt.pos")?;
+            let pos: [f64; 3] = [pos_x, pos_y, pos_z];
+            let visual_only: bool = match read_action_arg(args, 3, "lightning_bolt", "visual_only")?
+            {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "lightning_bolt", "visual_only"
+                    )));
+                }
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.lightning_bolt(&dimension, pos, visual_only);
             Ok(())
         })(host)),
         "merge_entity_nbt" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
@@ -812,6 +1016,11 @@ pub(crate) fn run_generated_action(
             let _ = host.player_break_block(uuid, pos, into_inventory);
             Ok(())
         })(host)),
+        "recipe_categories_changed" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            // A native refusal is ordinary: later queued actions still run.
+            host.recipe_categories_changed();
+            Ok(())
+        })(host)),
         "refresh_biome_colors" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             // A native refusal is ordinary: later queued actions still run.
             host.refresh_biome_colors();
@@ -1004,6 +1213,23 @@ pub(crate) fn run_generated_action(
             let _ = host.set_attribute_base(uuid, &attribute, base);
             Ok(())
         })(host)),
+        "set_block_entity" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let dimension_lua: Value = read_action_arg(args, 1, "set_block_entity", "dimension")?;
+            let dimension: String = dimension_of("set_block_entity", "dimension", &dimension_lua)?;
+            let pos: Table = read_action_arg(args, 2, "set_block_entity", "pos")?;
+            let pos_x: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "x", "set_block_entity.pos")?;
+            let pos_y: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "y", "set_block_entity.pos")?;
+            let pos_z: i32 =
+                crate::generated_runtime::req_key::<i32>(&pos, "z", "set_block_entity.pos")?;
+            let pos: [i32; 3] = [pos_x, pos_y, pos_z];
+            let nbt: String = read_action_arg(args, 3, "set_block_entity", "nbt")?;
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.set_block_entity(&dimension, pos, &nbt);
+            Ok(())
+        })(host)),
         "set_block_property_with" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let pos: Table = read_action_arg(args, 1, "set_block_property_with", "pos")?;
             let pos_x: i32 =
@@ -1140,6 +1366,19 @@ pub(crate) fn run_generated_action(
             let _ = host.set_flight(uuid, allow, flying);
             Ok(())
         })(host)),
+        "set_game_mode" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let player: Value = read_action_arg(args, 1, "set_game_mode", "player")?;
+            let n2: i64 = read_action_arg(args, 2, "set_game_mode", "mode")?;
+            let mode: i32 = i32::try_from(n2).unwrap_or(if n2 < 0 { i32::MIN } else { i32::MAX });
+            let Some(uuid) = uuid_of(host, &player) else {
+                log::debug!("[lua] set_game_mode: no such player");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.set_game_mode(uuid, mode);
+            Ok(())
+        })(host)),
         "set_item_entity" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let dimension_lua: Value = read_action_arg(args, 1, "set_item_entity", "dimension")?;
             let dimension: String = dimension_of("set_item_entity", "dimension", &dimension_lua)?;
@@ -1160,6 +1399,26 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.set_item_entity(&dimension, id, stack);
+            Ok(())
+        })(host)),
+        "set_player_fake" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let uuid: Value = read_action_arg(args, 1, "set_player_fake", "uuid")?;
+            let fake: bool = match read_action_arg(args, 2, "set_player_fake", "fake")? {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "set_player_fake", "fake"
+                    )));
+                }
+            };
+            let Some(uuid) = uuid_of(host, &uuid) else {
+                log::debug!("[lua] set_player_fake: no such player");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.set_player_fake(uuid, fake);
             Ok(())
         })(host)),
         "set_profile_property" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
@@ -1238,6 +1497,23 @@ pub(crate) fn run_generated_action(
             let _ = host.teleport_vehicle(&dimension, id, pos);
             Ok(())
         })(host)),
+        "transfer_recipe_all" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let n1: i64 = read_action_arg(args, 1, "transfer_recipe_all", "book_id")?;
+            let book_id: i32 =
+                i32::try_from(n1).unwrap_or(if n1 < 0 { i32::MIN } else { i32::MAX });
+            let all: bool = match read_action_arg(args, 2, "transfer_recipe_all", "all")? {
+                Value::Boolean(b) => b,
+                _ => {
+                    return Err(mlua::Error::runtime(format!(
+                        "{}: {}: expected a boolean",
+                        "transfer_recipe_all", "all"
+                    )));
+                }
+            };
+            // A native refusal is ordinary: later queued actions still run.
+            host.transfer_recipe_all(book_id, all);
+            Ok(())
+        })(host)),
         "update_output_neighbors" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
             let dimension_lua: Value =
                 read_action_arg(args, 1, "update_output_neighbors", "dimension")?;
@@ -1272,6 +1548,18 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.update_signal_neighbors(&dimension, pos);
+            Ok(())
+        })(host)),
+        "whitelist_remove" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let uuid: Value = read_action_arg(args, 1, "whitelist_remove", "uuid")?;
+            let name: String = read_action_arg(args, 2, "whitelist_remove", "name")?;
+            let Some(uuid) = uuid_of(host, &uuid) else {
+                log::debug!("[lua] whitelist_remove: no such player");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.whitelist_remove(uuid, &name);
             Ok(())
         })(host)),
         _ => None,
@@ -1323,6 +1611,27 @@ pub(crate) fn generated_read(
                 }),
                 None => Ok(Value::Nil),
             }
+        })(h)),
+        "clear_between" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let dimension_lua: Value = read_arg(lua, &rest, 1, "clear_between", "dimension")?;
+            let dimension: String = dimension_of("clear_between", "dimension", &dimension_lua)?;
+            let from: Table = read_arg(lua, &rest, 2, "clear_between", "from")?;
+            let from_x: f64 =
+                crate::generated_runtime::req_finite::<f64>(&from, "x", "clear_between.from")?;
+            let from_y: f64 =
+                crate::generated_runtime::req_finite::<f64>(&from, "y", "clear_between.from")?;
+            let from_z: f64 =
+                crate::generated_runtime::req_finite::<f64>(&from, "z", "clear_between.from")?;
+            let from: [f64; 3] = [from_x, from_y, from_z];
+            let to: Table = read_arg(lua, &rest, 3, "clear_between", "to")?;
+            let to_x: f64 =
+                crate::generated_runtime::req_finite::<f64>(&to, "x", "clear_between.to")?;
+            let to_y: f64 =
+                crate::generated_runtime::req_finite::<f64>(&to, "y", "clear_between.to")?;
+            let to_z: f64 =
+                crate::generated_runtime::req_finite::<f64>(&to, "z", "clear_between.to")?;
+            let to: [f64; 3] = [to_x, to_y, to_z];
+            Ok(Value::Boolean(h.clear_between(&dimension, from, to)))
         })(h)),
         "client_block_obstruction" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let pos: Table = read_arg(lua, &rest, 1, "client_block_obstruction", "pos")?;
@@ -1384,6 +1693,13 @@ pub(crate) fn generated_read(
             let block: String = read_arg(lua, &rest, 1, "default_state", "block")?;
             match h.default_state(&block) {
                 Some(v) => Ok(Value::String(lua.create_string(h.state_name(v))?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "dimension_of_world" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let world: String = read_arg(lua, &rest, 1, "dimension_of_world", "world")?;
+            match h.dimension_of_world(&world) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
                 None => Ok(Value::Nil),
             }
         })(h)),
@@ -1717,8 +2033,31 @@ pub(crate) fn generated_read(
         "has_control_down" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Boolean(h.has_control_down()))
         })(h)),
+        "has_line_of_sight" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let n1: i64 = read_arg(lua, &rest, 1, "has_line_of_sight", "from_entity")?;
+            let from_entity: u32 =
+                u32::try_from(n1).unwrap_or(if n1 < 0 { u32::MIN } else { u32::MAX });
+            let n2: i64 = read_arg(lua, &rest, 2, "has_line_of_sight", "to_entity")?;
+            let to_entity: u32 =
+                u32::try_from(n2).unwrap_or(if n2 < 0 { u32::MIN } else { u32::MAX });
+            Ok(Value::Boolean(h.has_line_of_sight(from_entity, to_entity)))
+        })(h)),
+        "has_played_before" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let uuid: Value = read_arg(lua, &rest, 1, "has_played_before", "uuid")?;
+            let Some(uuid) = uuid_of(h, &uuid) else {
+                return Ok(Value::Nil);
+            };
+            Ok(Value::Boolean(h.has_played_before(uuid)))
+        })(h)),
         "has_shift_down" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Boolean(h.has_shift_down()))
+        })(h)),
+        "is_player_fake" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let uuid: Value = read_arg(lua, &rest, 1, "is_player_fake", "uuid")?;
+            let Some(uuid) = uuid_of(h, &uuid) else {
+                return Ok(Value::Nil);
+            };
+            Ok(Value::Boolean(h.is_player_fake(uuid)))
         })(h)),
         "item_from_snbt" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let snbt: String = read_arg(lua, &rest, 1, "item_from_snbt", "snbt")?;
@@ -1884,6 +2223,12 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "level_name" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            match h.level_name() {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
         "level_seed" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let level_lua: Value = read_arg(lua, &rest, 1, "level_seed", "level")?;
             let level_dim: String = dimension_of("level_seed", "level", &level_lua)?;
@@ -1938,6 +2283,24 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "may_build" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let player: Value = read_arg(lua, &rest, 1, "may_build", "player")?;
+            let name: String = read_arg(lua, &rest, 2, "may_build", "name")?;
+            let dimension_lua: Value = read_arg(lua, &rest, 3, "may_build", "dimension")?;
+            let dimension: String = dimension_of("may_build", "dimension", &dimension_lua)?;
+            let pos: Table = read_arg(lua, &rest, 4, "may_build", "pos")?;
+            let pos_x: i32 = crate::generated_runtime::req_key::<i32>(&pos, "x", "may_build.pos")?;
+            let pos_y: i32 = crate::generated_runtime::req_key::<i32>(&pos, "y", "may_build.pos")?;
+            let pos_z: i32 = crate::generated_runtime::req_key::<i32>(&pos, "z", "may_build.pos")?;
+            let pos: [i32; 3] = [pos_x, pos_y, pos_z];
+            let action: String = read_arg(lua, &rest, 5, "may_build", "action")?;
+            let Some(uuid) = uuid_of(h, &player) else {
+                return Ok(Value::Nil);
+            };
+            Ok(Value::Boolean(
+                h.may_build(uuid, &name, &dimension, pos, &action),
+            ))
+        })(h)),
         "menu_blur_radius" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Number(f64::from(h.menu_blur_radius())))
         })(h)),
@@ -1952,6 +2315,15 @@ pub(crate) fn generated_read(
         "mod_screen" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             match h.mod_screen() {
                 Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "motd" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            Ok(Value::String(lua.create_string(h.motd())?))
+        })(h)),
+        "online_mode" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            match h.online_mode() {
+                Some(v) => Ok(Value::Boolean(v)),
                 None => Ok(Value::Nil),
             }
         })(h)),
@@ -1985,6 +2357,17 @@ pub(crate) fn generated_read(
                 lua,
                 &h.player_head(uuid),
             )?))
+        })(h)),
+        "player_permission_value" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let player: Value = read_arg(lua, &rest, 1, "player_permission_value", "player")?;
+            let node: String = read_arg(lua, &rest, 2, "player_permission_value", "node")?;
+            let Some(uuid) = uuid_of(h, &player) else {
+                return Ok(Value::Nil);
+            };
+            match h.player_permission_value(uuid, &node) {
+                Some(v) => Ok(Value::Boolean(v)),
+                None => Ok(Value::Nil),
+            }
         })(h)),
         "player_sneaking" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let uuid: Value = read_arg(lua, &rest, 1, "player_sneaking", "uuid")?;
@@ -2038,6 +2421,16 @@ pub(crate) fn generated_read(
         "playing" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Boolean(h.playing()))
         })(h)),
+        "primary_group" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let player: Value = read_arg(lua, &rest, 1, "primary_group", "player")?;
+            let Some(uuid) = uuid_of(h, &player) else {
+                return Ok(Value::Nil);
+            };
+            match h.primary_group(uuid) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
         "profile_by_name" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             let name: String = read_arg(lua, &rest, 1, "profile_by_name", "name")?;
             match h.profile_by_name(&name) {
@@ -2056,6 +2449,21 @@ pub(crate) fn generated_read(
                 return Ok(Value::Nil);
             };
             match h.profile_by_uuid(uuid) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "proxy_forwarding" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            match h.proxy_forwarding() {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "registry_name" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let registry: String = read_arg(lua, &rest, 1, "registry_name", "registry")?;
+            let n2: i64 = read_arg(lua, &rest, 2, "registry_name", "id")?;
+            let id: i32 = i32::try_from(n2).unwrap_or(if n2 < 0 { i32::MIN } else { i32::MAX });
+            match h.registry_name(&registry, id) {
                 Some(v) => Ok(Value::String(lua.create_string(v)?)),
                 None => Ok(Value::Nil),
             }
@@ -2103,6 +2511,12 @@ pub(crate) fn generated_read(
                 None => Ok(Value::Nil),
             }
         })(h)),
+        "server_port" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            match h.server_port() {
+                Some(v) => Ok(Value::Integer(i64::from(v))),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
         "sneaking" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Boolean(h.sneaking()))
         })(h)),
@@ -2117,8 +2531,33 @@ pub(crate) fn generated_read(
             let text: String = read_arg(lua, &rest, 1, "text_width", "text")?;
             Ok(Value::Number(f64::from(h.text_width(&text))))
         })(h)),
+        "vehicle_of" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let n1: i64 = read_arg(lua, &rest, 1, "vehicle_of", "entity")?;
+            let entity: u32 = u32::try_from(n1).unwrap_or(if n1 < 0 { u32::MIN } else { u32::MAX });
+            match h.vehicle_of(entity) {
+                Some(v) => Ok(Value::Integer(i64::from(v))),
+                None => Ok(Value::Nil),
+            }
+        })(h)),
+        "whitelist_add" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let uuid: Value = read_arg(lua, &rest, 1, "whitelist_add", "uuid")?;
+            let name: String = read_arg(lua, &rest, 2, "whitelist_add", "name")?;
+            let Some(uuid) = uuid_of(h, &uuid) else {
+                return Ok(Value::Nil);
+            };
+            Ok(Value::Boolean(h.whitelist_add(uuid, &name)))
+        })(h)),
         "window" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             Ok(Value::Boolean(h.window()))
+        })(h)),
+        "world_of_dimension" => Some((|h: &dyn Host| -> mlua::Result<Value> {
+            let dimension_lua: Value = read_arg(lua, &rest, 1, "world_of_dimension", "dimension")?;
+            let dimension: String =
+                dimension_of("world_of_dimension", "dimension", &dimension_lua)?;
+            match h.world_of_dimension(&dimension) {
+                Some(v) => Ok(Value::String(lua.create_string(v)?)),
+                None => Ok(Value::Nil),
+            }
         })(h)),
         "world_seed" => Some((|h: &dyn Host| -> mlua::Result<Value> {
             match h.world_seed() {

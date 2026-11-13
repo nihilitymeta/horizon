@@ -1097,13 +1097,29 @@ mod tests {
                     "{name} names `{}_component`",
                     f.name
                 );
-                assert!(
-                    super::sets_of(&model)
-                        .iter()
-                        .any(|s| s == &format!("event.{}_component", f.name)),
-                    "{name} lets the script set `event.{}_component`",
-                    f.name
-                );
+                // A read-only `&Text` field has no write-back, so its
+                // component sibling is not settable either.
+                let read_only = model
+                    .dispatch_params
+                    .iter()
+                    .find(|p| p.name == f.name)
+                    .is_some_and(|p| !crate::lua_hooks::mut_ref(&p.ty));
+                let settable = super::sets_of(&model)
+                    .iter()
+                    .any(|s| s == &format!("event.{}_component", f.name));
+                if read_only {
+                    assert!(
+                        !settable,
+                        "{name} must not let the script set read-only `event.{}_component`",
+                        f.name
+                    );
+                } else {
+                    assert!(
+                        settable,
+                        "{name} lets the script set `event.{}_component`",
+                        f.name
+                    );
+                }
             }
         }
         assert!(

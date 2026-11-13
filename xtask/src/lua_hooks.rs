@@ -208,6 +208,22 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
     .to_owned()
 }
 
+/// Whether a parameter type is a `&mut` reference (`&'a mut T`, `& mut T`).
+pub(crate) fn mut_ref(ty: &str) -> bool {
+    // `ty_str` renders `&mut T` and `&'a mut T`.
+    let Some(rest) = ty.trim_start().strip_prefix('&') else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let rest = match rest.strip_prefix('\'') {
+        Some(named) => named
+            .trim_start_matches(|c: char| c.is_alphanumeric() || c == '_')
+            .trim_start(),
+        None => rest,
+    };
+    rest.starts_with("mut ")
+}
+
 /// The write-back tag for a mutable field: `None` transcribes no tag, and
 /// the runtime's catch-all expands it to nothing. `ty` picks the dereference
 /// like the seed does (`&mut Option<scalar>` clears on `nil`, like an
@@ -239,8 +255,10 @@ pub(crate) fn write_tag(conv: &Conv, ty: &str, key: Option<&str>) -> Option<Stri
         // The component-keeping drops write-back, not a plain struct vec.
         Conv::LootDrops => Some("loot_write".into()),
         Conv::Struct => struct_shape(ty, key.unwrap_or("?")).1,
-        Conv::TextVal => Some("w_text".into()),
-        Conv::TextOpt => Some("w_opt_text".into()),
+        // A `&Text` field is read-only (a listener's message): the script
+        // cannot change it, so it carries no write-back.
+        Conv::TextVal => mut_ref(ty).then(|| "w_text".into()),
+        Conv::TextOpt => mut_ref(ty).then(|| "w_opt_text".into()),
         Conv::PreLogin => Some("w_defer".into()),
         _ => None,
     }
@@ -3418,6 +3436,21 @@ fn duo_exotic(
                     "    assert_eq!({field}[0].try_recv().unwrap().unwrap_err().plain(), \"test:duo_b\");"
                 ),
             ],
+        ),
+        // An `Option<Text>` out: the Lua side writes the plain string (the
+        // write-back drops any component), last writer wins.
+        "living_death_message" => (
+            vec![format!("    {read} = \"test:duo_a\"")],
+            vec![format!("    {read} = \"test:duo_b\"")],
+            vec![format!(
+                "    assert_eq!({field}.as_ref().map(|t| t.plain()), Some(\"test:duo_b\".to_owned()));"
+            )],
+            vec![format!(
+                "    assert_eq!({field}.as_ref().map(|t| t.plain()), Some(\"test:duo_a\".to_owned()));"
+            )],
+            vec![format!(
+                "    assert_eq!({field}.as_ref().map(|t| t.plain()), Some(\"test:duo_b\".to_owned()));"
+            )],
         ),
         _ => panic!("no duo edit for collect hook {}", model.name),
     }

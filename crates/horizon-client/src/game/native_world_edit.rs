@@ -185,7 +185,7 @@ impl Game<'_> {
             None => 0,
         }
     }
-        /// The block state `name` names, as a command reads one
+    /// The block state `name` names, as a command reads one
     /// (`minecraft:oak_log[axis=x]`; the properties left out are the
     /// block's defaults): what `native_set_block` and
     /// `native_spawn_falling_block` take. None for a block the game doesn't
@@ -222,7 +222,7 @@ impl Game<'_> {
         }
         name
     }
-/// Whether `dimension` is the authoritative level being ticked: where a server mod's world helpers act.
+    /// Whether `dimension` is the authoritative level being ticked: where a server mod's world helpers act.
     pub(super) fn native_level_open(&self, dimension: &str) -> bool {
         (self.serving.is_some() || self.options.dedicated.is_some()) && dimension == self.dim.id()
     }

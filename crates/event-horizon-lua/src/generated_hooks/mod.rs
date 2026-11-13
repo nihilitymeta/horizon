@@ -82,7 +82,10 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("right_click_block", "generated"),
     ("block_spread", "generated"),
     ("piston_move", "generated"),
-    ("explosion_detonate", "generated"),
+    (
+        "explosion_detonate",
+        "adapter: explosion_detonate: adapter: an optional value needs its table form",
+    ),
     ("fill_bucket", "generated"),
     ("attack_entity", "generated"),
     ("net_from_client", "generated"),
@@ -565,12 +568,23 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "gui_render_post",
         "cannot: gui_render_post: unsupported: HudBatch borrows render state (render thread)",
     ),
+    (
+        "world_hold",
+        "cannot: world_hold: unsupported: WorldHold borrows render state (render thread)",
+    ),
+    (
+        "world_warp",
+        "cannot: world_warp: unsupported: type WorldWarp has no mapping",
+    ),
     ("anvil_update", "generated"),
     ("block_clone_item", "generated"),
     ("block_entity_accepts_fluid", "generated"),
+    ("block_grow", "generated"),
     ("block_place", "generated"),
     ("block_redstone", "generated"),
     ("break_speed", "generated"),
+    ("can_build", "generated"),
+    ("chat_decorate", "generated"),
     ("chat_suggestion_applied", "generated"),
     (
         "chunk_generate",
@@ -593,15 +607,29 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("custom_fluid_drain", "generated"),
     ("custom_payload_from_client", "generated"),
     ("entity_change_block_v2", "generated"),
+    ("entity_change_block_v3", "generated"),
     (
         "entity_data_to",
         "adapter: entity_data_to: adapter: a tuple needs its table form",
     ),
     ("entity_interact_specific", "generated"),
     ("entity_outline", "generated"),
+    (
+        "explosion_entities",
+        "adapter: explosion_entities: adapter: a scalar list needs its table form",
+    ),
     ("fishing_hook_landed", "generated"),
+    (
+        "fishing_medium",
+        "adapter: fishing_medium: adapter: a replace out needs its table form",
+    ),
     ("handshake", "generated"),
+    ("hanging_break_v2", "generated"),
     ("interact_entity_v2", "generated"),
+    (
+        "inventory_changed",
+        "cannot: inventory_changed: unsupported: type crate::mod_api::NativeInventoryKind has no mapping",
+    ),
     ("inventory_click", "generated"),
     ("inventory_drag", "generated"),
     ("item_after_vertical_collision", "generated"),
@@ -611,6 +639,8 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("living_change_target", "generated"),
     ("living_damage_pre", "generated"),
     ("living_damage_post", "generated"),
+    ("living_death_message", "generated"),
+    ("living_experience_drop", "generated"),
     ("living_incoming_damage_v3", "generated"),
     (
         "lod_column",
@@ -626,14 +656,24 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "adapter: layer_definitions: adapter: a tuple needs its table form",
     ),
     ("permission_check", "generated"),
+    ("permission_groups", "generated"),
     ("player_register_channels", "generated"),
+    ("player_chat_v2", "generated"),
     ("player_command_level", "generated"),
     ("player_commands_sent_v2", "generated"),
+    ("player_died_v2", "generated"),
     ("player_fish_v2", "generated"),
     ("player_hurt_by_player", "generated"),
+    (
+        "player_inventory_changed",
+        "adapter: player_inventory_changed: adapter: a slice needs its table form",
+    ),
+    ("player_join_message", "generated"),
     ("player_launch_projectile_v2", "generated"),
+    ("player_leave_message", "generated"),
     ("player_logging_out", "generated"),
     ("player_move", "generated"),
+    ("player_physical_trigger", "generated"),
     ("player_pre_login", "generated"),
     (
         "player_profile",
@@ -643,7 +683,16 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("player_spawn_location", "generated"),
     ("player_teleport", "generated"),
     ("player_tick_pre", "generated"),
+    ("potion_splash_v2", "generated"),
     ("projectile_world_border", "generated"),
+    (
+        "recipe_categories",
+        "adapter: recipe_categories: adapter: a native_recipe_category list needs its table form",
+    ),
+    (
+        "recipe_lookup",
+        "cannot: recipe_lookup: unsupported: type NativeStack has no mapping; recipe_lookup: unsupported: type NativeRecipeLookup has no mapping",
+    ),
     ("recipe_sources", "generated"),
     ("register_goals", "generated"),
     ("resource_pack_status_v2", "generated"),
@@ -666,6 +715,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "server_packets",
         "protocol: server_packets: raw packets need their own design",
     ),
+    ("server_stopped", "generated"),
     ("server_tick_timed", "generated"),
     (
         "sound_play",
@@ -674,6 +724,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("stateful_block_entity", "generated"),
     ("block_entity_from_state", "generated"),
     ("tab_complete_v2", "generated"),
+    ("tnt_primed_v2", "generated"),
     ("toast_add", "generated"),
     (
         "tooltip_render_pre",
@@ -685,10 +736,6 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     (
         "world_submit",
         "cannot: world_submit: unsupported: NativeWorldDraw borrows render state (render thread)",
-    ),
-    (
-        "world_hold",
-        "cannot: world_hold: unsupported: WorldHold borrows render state (render thread)",
     ),
     ("world_primitives", "generated"),
 ];
@@ -737,6 +784,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("block_failed_dispense", HookSide::Server),
     ("block_fall_on", HookSide::Server),
     ("block_form", HookSide::Server),
+    ("block_grow", HookSide::Server),
     ("block_highlight", HookSide::Client),
     ("block_ignite", HookSide::Server),
     ("block_lock_check", HookSide::Server),
@@ -758,10 +806,12 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("camera_pose", HookSide::Client),
     ("camera_shake", HookSide::Client),
     ("campfire_start", HookSide::Server),
+    ("can_build", HookSide::Server),
     ("can_eat", HookSide::Both),
     ("can_player_sleep", HookSide::Server),
     ("can_survive", HookSide::Server),
     ("cauldron_level_changed", HookSide::Server),
+    ("chat_decorate", HookSide::Server),
     ("chat_suggestion_applied", HookSide::Client),
     ("chorus_fruit_teleport", HookSide::Server),
     ("chunk_generate", HookSide::Server),
@@ -822,6 +872,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("entity_breed", HookSide::Server),
     ("entity_change_block", HookSide::Server),
     ("entity_change_block_v2", HookSide::Server),
+    ("entity_change_block_v3", HookSide::Server),
     ("entity_data_to", HookSide::Server),
     ("entity_drop_item", HookSide::Server),
     ("entity_enter_block", HookSide::Server),
@@ -848,12 +899,14 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("experience_orb_pickup", HookSide::Server),
     ("experience_orb_pickup_listened", HookSide::Server),
     ("explosion_detonate", HookSide::Server),
+    ("explosion_entities", HookSide::Server),
     ("explosion_knockback", HookSide::Server),
     ("explosion_prime", HookSide::Server),
     ("fill_bucket", HookSide::Server),
     ("fire_odds", HookSide::Server),
     ("firework_explode", HookSide::Server),
     ("fishing_hook_landed", HookSide::Server),
+    ("fishing_medium", HookSide::Both),
     ("fluid_level_change", HookSide::Server),
     ("food_level_changed", HookSide::Server),
     ("frame", HookSide::Client),
@@ -869,6 +922,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("hand_drawn", HookSide::Client),
     ("handshake", HookSide::Server),
     ("hanging_break", HookSide::Server),
+    ("hanging_break_v2", HookSide::Server),
     ("hanging_place", HookSide::Server),
     ("has_analog_output", HookSide::Server),
     ("health_hud", HookSide::Client),
@@ -884,6 +938,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("interact_entity_v2", HookSide::Server),
     ("interaction_key", HookSide::Client),
     ("inventory_block_start", HookSide::Server),
+    ("inventory_changed", HookSide::Server),
     ("inventory_click", HookSide::Server),
     ("inventory_drag", HookSide::Server),
     ("inventory_move_item", HookSide::Server),
@@ -925,6 +980,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("living_damage_post", HookSide::Server),
     ("living_damage_pre", HookSide::Server),
     ("living_death", HookSide::Server),
+    ("living_death_message", HookSide::Server),
     ("living_drown", HookSide::Server),
     ("living_entity_use_item_finish", HookSide::Server),
     ("living_entity_use_item_start", HookSide::Both),
@@ -932,6 +988,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("living_entity_use_item_tick", HookSide::Both),
     ("living_equipment_change", HookSide::Server),
     ("living_equipment_listened", HookSide::Server),
+    ("living_experience_drop", HookSide::Server),
     ("living_fall", HookSide::Both),
     ("living_get_projectile", HookSide::Both),
     ("living_heal", HookSide::Both),
@@ -993,6 +1050,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("perform_command", HookSide::Server),
     ("perform_console_command", HookSide::Server),
     ("permission_check", HookSide::Server),
+    ("permission_groups", HookSide::Server),
     ("piston_move", HookSide::Server),
     ("place_block", HookSide::Server),
     ("player_advancement_criterion_grant", HookSide::Server),
@@ -1008,6 +1066,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("player_change_main_hand", HookSide::Server),
     ("player_changed_dimension", HookSide::Server),
     ("player_chat", HookSide::Server),
+    ("player_chat_v2", HookSide::Server),
     ("player_client_loaded_world", HookSide::Server),
     ("player_clone", HookSide::Server),
     ("player_command", HookSide::Server),
@@ -1019,6 +1078,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("player_deep_sleep", HookSide::Server),
     ("player_destroy_item", HookSide::Server),
     ("player_died", HookSide::Server),
+    ("player_died_v2", HookSide::Server),
     ("player_edit_book", HookSide::Server),
     ("player_egg_throw", HookSide::Server),
     ("player_elytra_boost", HookSide::Server),
@@ -1031,14 +1091,17 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("player_hurt_by_player", HookSide::Server),
     ("player_input", HookSide::Server),
     ("player_insert_lectern_book", HookSide::Server),
+    ("player_inventory_changed", HookSide::Server),
     ("player_item_cooldown", HookSide::Server),
     ("player_item_frame_change", HookSide::Server),
     ("player_item_held", HookSide::Server),
     ("player_item_mend", HookSide::Server),
+    ("player_join_message", HookSide::Server),
     ("player_jump", HookSide::Server),
     ("player_kicked", HookSide::Server),
     ("player_launch_projectile", HookSide::Server),
     ("player_launch_projectile_v2", HookSide::Server),
+    ("player_leave_message", HookSide::Server),
     ("player_lectern_page_change", HookSide::Server),
     ("player_level_change", HookSide::Server),
     ("player_load_from_file", HookSide::Server),
@@ -1052,6 +1115,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("player_move", HookSide::Server),
     ("player_name_entity", HookSide::Server),
     ("player_open_sign", HookSide::Server),
+    ("player_physical_trigger", HookSide::Server),
     ("player_pick_item", HookSide::Server),
     ("player_pickup_arrow", HookSide::Server),
     ("player_portal", HookSide::Server),
@@ -1098,6 +1162,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("portal_create", HookSide::Server),
     ("potential_spawns", HookSide::Server),
     ("potion_splash", HookSide::Server),
+    ("potion_splash_v2", HookSide::Server),
     ("prepare_anvil", HookSide::Server),
     ("prepare_grindstone", HookSide::Server),
     ("prepare_hopper_transfer", HookSide::Server),
@@ -1111,6 +1176,8 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("raid_state_change", HookSide::Server),
     ("random_tick", HookSide::Server),
     ("recipe_book_categories", HookSide::Client),
+    ("recipe_categories", HookSide::Client),
+    ("recipe_lookup", HookSide::Client),
     ("recipe_sources", HookSide::Server),
     ("recipes_received", HookSide::Client),
     ("register_commands", HookSide::Server),
@@ -1152,6 +1219,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("server_packet", HookSide::Server),
     ("server_packets", HookSide::Server),
     ("server_reload_listener_apply", HookSide::Server),
+    ("server_stopped", HookSide::Server),
     ("server_stopping", HookSide::Server),
     ("server_tick", HookSide::Server),
     ("server_tick_timed", HookSide::Server),
@@ -1176,6 +1244,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("tick_block", HookSide::Server),
     ("time_skip", HookSide::Server),
     ("tnt_primed", HookSide::Server),
+    ("tnt_primed_v2", HookSide::Server),
     ("toast_add", HookSide::Client),
     ("tooltip", HookSide::Client),
     ("tooltip_color", HookSide::Client),
@@ -1213,6 +1282,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("world_primitives", HookSide::Client),
     ("world_saved", HookSide::Server),
     ("world_submit", HookSide::Client),
+    ("world_warp", HookSide::Client),
     ("zoom", HookSide::Client),
 ];
 
@@ -1230,14 +1300,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 5;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 6;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "32c709323a93e4ae";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "555adbae0bd51987";
 
 #[cfg(test)]
 mod test_support;
@@ -1289,7 +1359,6 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "right_click_block",
     "block_spread",
     "piston_move",
-    "explosion_detonate",
     "fill_bucket",
     "attack_entity",
     "net_from_client",
@@ -1640,9 +1709,12 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "anvil_update",
     "block_clone_item",
     "block_entity_accepts_fluid",
+    "block_grow",
     "block_place",
     "block_redstone",
     "break_speed",
+    "can_build",
+    "chat_decorate",
     "chat_suggestion_applied",
     "client_attack",
     "client_hurt",
@@ -1657,10 +1729,12 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "custom_fluid_drain",
     "custom_payload_from_client",
     "entity_change_block_v2",
+    "entity_change_block_v3",
     "entity_interact_specific",
     "entity_outline",
     "fishing_hook_landed",
     "handshake",
+    "hanging_break_v2",
     "interact_entity_v2",
     "inventory_click",
     "inventory_drag",
@@ -1671,6 +1745,8 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "living_change_target",
     "living_damage_pre",
     "living_damage_post",
+    "living_death_message",
+    "living_experience_drop",
     "living_incoming_damage_v3",
     "log_line",
     "menu_input_closed",
@@ -1678,19 +1754,26 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "mob_ai_register",
     "mob_died",
     "permission_check",
+    "permission_groups",
     "player_register_channels",
+    "player_chat_v2",
     "player_command_level",
     "player_commands_sent_v2",
+    "player_died_v2",
     "player_fish_v2",
     "player_hurt_by_player",
+    "player_join_message",
     "player_launch_projectile_v2",
+    "player_leave_message",
     "player_logging_out",
     "player_move",
+    "player_physical_trigger",
     "player_pre_login",
     "player_respawn_position",
     "player_spawn_location",
     "player_teleport",
     "player_tick_pre",
+    "potion_splash_v2",
     "projectile_world_border",
     "recipe_sources",
     "register_goals",
@@ -1698,10 +1781,12 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "right_click_block_v2",
     "screen_mouse_dragged_pre_v2",
     "screen_mouse_scrolled_pre_v2",
+    "server_stopped",
     "server_tick_timed",
     "stateful_block_entity",
     "block_entity_from_state",
     "tab_complete_v2",
+    "tnt_primed_v2",
     "toast_add",
     "trample",
     "vehicle_moved_v2",
@@ -1797,14 +1882,18 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "merchant_offer_traded",
     "client_attack",
     "entity_change_block_v2",
+    "entity_change_block_v3",
     "entity_interact_specific",
     "entity_outline",
+    "hanging_break_v2",
     "interact_entity_v2",
     "item_after_vertical_collision",
     "item_interact_mob",
     "living_change_target",
     "living_damage_pre",
     "living_damage_post",
+    "living_death_message",
+    "living_experience_drop",
     "living_incoming_damage_v3",
     "mob_ai_register",
     "mob_died",
@@ -1858,7 +1947,6 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(right_click_block, game_mut, horizon_client::mod_api::RightClickBlockEvent, (none), [pos: pos, face: pos]);
     gen_cancel!(block_spread, level, horizon_client::mod_api::BlockSpreadEvent<'_>, (none), [dimension: dim, kind: cloned, from: pos_struct, to: pos_struct]);
     gen_cancel!(piston_move, level, horizon_client::mod_api::PistonMoveEvent<'_>, (none), [dimension: dim, piston: pos_struct, direction: pos, push: s_slice(horizon_client::mod_api::BlockPos), destroy: s_slice(horizon_client::mod_api::BlockPos)]);
-    gen_collect!(explosion_detonate, game_mut, horizon_client::mod_api::ExplosionDetonateEvent<'_>, (none), [dimension: cloned, center: vec3, blocks: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_cancel!(fill_bucket, game_mut, horizon_client::mod_api::FillBucketEvent<'_>, (none), [stack: item, pos: pos]);
     gen_cancel!(attack_entity, game_mut, horizon_client::mod_api::AttackEntityEvent<'_>, (field kind), [entity: copy, kind: cloned, pos: vec3]);
     gen_listen!(net_from_client, game_mut, horizon_client::mod_api::NetFromClientEvent<'_>, (none), [player: uuid, channel: cloned, data: s_bytes]);
@@ -2212,9 +2300,12 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(anvil_update, game_mut, horizon_client::mod_api::AnvilUpdateEvent<'_>, (none), [player: player, left: item, right: opt_item, item_name: copy, vanilla_output: opt_item, vanilla_xp_cost: copy, vanilla_material_cost: copy, output: s_opt(horizon_client::mod_api::ItemStack) => w_optmut(horizon_client::mod_api::ItemStack), xp_cost: copy => mut_scalar, material_cost: copy => mut_scalar]);
     gen_replace!(block_clone_item, game_ref, horizon_client::mod_api::BlockCloneItemEvent<'_>, (none), [block: cloned, pos: pos, state: state_game, state_props: state_props_note], stack : item, Option<ItemStack>);
     gen_cancel!(block_entity_accepts_fluid, game_ref, horizon_client::mod_api::BlockEntityAcceptsFluidEvent<'_>, (none), [block: cloned, tank: copy, fluid: cloned]);
+    gen_cancel!(block_grow, level, horizon_client::mod_api::BlockGrowEvent<'_>, (none), [dimension: cloned, pos: pos, from: cloned, to: cloned]);
     gen_cancel!(block_place, game_mut, horizon_client::mod_api::BlockPlaceEvent<'_>, (none), [player: player, stack: item, pos: pos, state: state_game, state_props: state_props_note]);
     gen_listen!(block_redstone, level, horizon_client::mod_api::BlockRedstoneEvent, (none), [dimension: dim, pos: pos_struct, old: copy, new: copy => mut_scalar]);
     gen_listen!(break_speed, game_ref, horizon_client::mod_api::BreakSpeedEvent, (none), [pos: pos, state: state_game, original: copy, speed: copy => mut_scalar, state_props: state_props_note]);
+    gen_cancel!(can_build, game_ref, horizon_client::mod_api::CanBuildEvent<'_>, (none), [player: uuid, name: cloned, dimension: cloned, pos: pos, action: cloned]);
+    gen_replace!(chat_decorate, none, horizon_client::mod_api::ChatDecorateEvent<'_>, (none), [player: uuid, name: cloned, message: cloned], decorated : struct_out(horizon_client::mod_api::Text), Option<horizon_client::mod_api::Text>);
     gen_listen!(chat_suggestion_applied, game_ref, horizon_client::mod_api::ChatSuggestionAppliedEvent<'_>, (none), [original: cloned, start: copy, end: copy, suggestion: cloned, input: cloned]);
     gen_listen!(client_attack, game_mut, horizon_client::mod_api::ClientAttackEvent, (entity target), [target: copy, player: copy]);
     gen_listen!(client_hurt, game_mut, horizon_client::mod_api::ClientHurtEvent, (none), [attacker: copy, player: copy]);
@@ -2229,10 +2320,12 @@ macro_rules! impl_generated_hooks {
     gen_replace!(custom_fluid_drain, game_mut, horizon_client::mod_api::CustomFluidDrainEvent<'_>, (none), [pos: pos, side: s_opt(horizon_client::mod_api::Direction), request: s_ref(horizon_client::mod_api::NativeFluidDrain), action: s_val(horizon_client::mod_api::NativeFluidAction)], out : struct_out(horizon_client::mod_api::NativeFluidStack), Option<horizon_client::mod_api::NativeFluidStack>);
     gen_listen!(custom_payload_from_client, game_mut, horizon_client::mod_api::CustomPayloadFromClientEvent<'_>, (none), [player: uuid, channel: cloned, data: s_bytes]);
     gen_cancel!(entity_change_block_v2, game_mut, horizon_client::mod_api::EntityChangeBlockV2Event<'_>, (field kind), [player: opt_uuid, entity: copy, kind: cloned, pos: pos, from: cloned, to: cloned]);
+    gen_cancel!(entity_change_block_v3, game_mut, horizon_client::mod_api::EntityChangeBlockV3Event<'_>, (field kind), [entity: copy, kind: cloned, pos: pos, from: cloned, to: cloned]);
     gen_cancel!(entity_interact_specific, game_mut, horizon_client::mod_api::EntityInteractSpecificEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item, location: vec3]);
     gen_listen!(entity_outline, game_ref, horizon_client::mod_api::EntityOutlineEvent<'_>, (field kind), [entity_id: copy, kind: cloned, outline: copy_ref => mut_opt_scalar]);
     gen_listen!(fishing_hook_landed, game_mut, horizon_client::mod_api::FishingHookLandedEvent<'_>, (none), [player: uuid, hook: copy, dimension: cloned, block: pos, face: pos]);
     gen_cancel!(handshake, none, horizon_client::mod_api::HandshakeEvent<'_>, (none), [address: s_val(std::net::SocketAddr), host: mut_string => mut_string, intent: copy, reason: s_opt_text => w_opt_text]);
+    gen_cancel!(hanging_break_v2, game_mut, horizon_client::mod_api::HangingBreakV2Event<'_>, (field kind), [player: opt_uuid, dimension: cloned, kind: cloned, pos: pos]);
     gen_cancel!(interact_entity_v2, game_mut, horizon_client::mod_api::InteractEntityV2Event<'_>, (field kind), [entity: copy, kind: cloned, hand: s_val(horizon_client::mod_api::Hand), stack: opt_item]);
     gen_cancel!(inventory_click, game_mut, horizon_client::mod_api::InventoryClickEvent<'_>, (none), [player: player, window: copy, slot: copy, button: copy, mode: copy]);
     gen_cancel!(inventory_drag, game_mut, horizon_client::mod_api::InventoryDragEvent<'_>, (none), [player: player, window: copy, kind: copy, slots: int_seq]);
@@ -2243,6 +2336,8 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(living_change_target, none, horizon_client::mod_api::LivingChangeTargetEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, target: opt_uuid, target_mob: copy]);
     gen_listen!(living_damage_pre, none, horizon_client::mod_api::LivingDamagePreEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, amount: copy => mut_scalar]);
     gen_listen!(living_damage_post, none, horizon_client::mod_api::LivingDamagePostEvent<'_>, (field kind), [entity: copy, kind: cloned, damage_type: cloned, causing: copy, direct: copy, amount: copy]);
+    gen_collect!(living_death_message, none, horizon_client::mod_api::LivingDeathMessageEvent<'_>, (field kind), [entity: copy, kind: cloned, message: s_opt_text => w_opt_text]);
+    gen_listen!(living_experience_drop, game_mut, horizon_client::mod_api::LivingExperienceDropEvent<'_>, (field kind), [entity: copy, kind: cloned, xp: copy => mut_scalar]);
     gen_cancel!(living_incoming_damage_v3, none, horizon_client::mod_api::LivingIncomingDamageV3Event<'_>, (field kind), [victim: copy, victim_uuid: opt_uuid, kind: cloned, attacker: copy, attacker_uuid: opt_uuid, direct: copy, damage_type: cloned, amount: copy => mut_scalar]);
     gen_listen!(log_line, none, horizon_client::mod_api::LogLineEvent<'_>, (none), [level: cloned, thread: cloned, message: cloned, line: cloned]);
     gen_collect!(menu_input_closed, game_mut, horizon_client::mod_api::MenuInputClosedEvent<'_>, (none), [uuid: uuid, window: copy, slots: s_vec(horizon_client::mod_api::Option<ItemStack>) => w_vec(horizon_client::mod_api::Option<ItemStack>)]);
@@ -2250,19 +2345,26 @@ macro_rules! impl_generated_hooks {
     gen_mob_ai_register!(mob_ai_register, none, horizon_client::mod_api::MobAiRegisterEvent<'_>, (mob mob), [mob: mob_view]);
     gen_listen!(mob_died, game_mut, horizon_client::mod_api::MobDiedEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, damage_type: cloned, causing: copy, player: opt_uuid]);
     gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: uuid, node: cloned, default_level: copy], result : value, Option<bool>);
+    gen_collect!(permission_groups, game_ref, horizon_client::mod_api::PermissionGroupsEvent<'_>, (none), [player: uuid, groups: str_seq => mut_strvec]);
     gen_listen!(player_register_channels, game_mut, horizon_client::mod_api::PlayerRegisterChannelsEvent<'_>, (none), [player: player, channels: str_seq, register: copy]);
+    gen_cancel!(player_chat_v2, none, horizon_client::mod_api::PlayerChatV2Event<'_>, (none), [player: uuid, name: cloned, level: copy, message: cloned, replies: s_vec(horizon_client::mod_api::Text) => w_vec(horizon_client::mod_api::Text)]);
     gen_listen!(player_command_level, game_mut, horizon_client::mod_api::PlayerCommandLevelEvent<'_>, (none), [player: player, command: cloned, level: copy => mut_scalar]);
     gen_collect!(player_commands_sent_v2, game_mut, horizon_client::mod_api::PlayerCommandsSentV2Event<'_>, (none), [player: player, names: str_seq => mut_strvec, names_hidden: str_seq => mut_strvec]);
+    gen_listen!(player_died_v2, game_mut, horizon_client::mod_api::PlayerDiedV2Event<'_>, (none), [player: player, message: s_text]);
     gen_cancel!(player_fish_v2, game_mut, horizon_client::mod_api::PlayerFishV2Event<'_>, (none), [player: player, state: copy, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(player_hurt_by_player, none, horizon_client::mod_api::PlayerHurtByPlayerEvent<'_>, (none), [attacker: uuid, attacker_entity: copy, victim: uuid, victim_entity: copy, source: cloned, damage_type: cloned, amount: copy => mut_scalar]);
+    gen_listen!(player_join_message, game_mut, horizon_client::mod_api::PlayerJoinMessageEvent<'_>, (none), [player: player, line: s_opt_text => w_opt_text]);
     gen_cancel!(player_launch_projectile_v2, game_mut, horizon_client::mod_api::PlayerLaunchProjectileV2Event<'_>, (none), [player: player, stack: item]);
+    gen_listen!(player_leave_message, game_mut, horizon_client::mod_api::PlayerLeaveMessageEvent<'_>, (none), [player: player, line: s_opt_text => w_opt_text]);
     gen_listen!(player_logging_out, game_mut, horizon_client::mod_api::PlayerLoggingOutEvent<'_>, (none), [player: player]);
     gen_cancel!(player_move, none, horizon_client::mod_api::PlayerMoveEvent<'_>, (none), [player: uuid, name: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy, pitch: copy, on_ground: copy]);
+    gen_cancel!(player_physical_trigger, level, horizon_client::mod_api::PlayerPhysicalTriggerEvent<'_>, (none), [dimension: dim, player: uuid, pos: pos_struct, block: cloned]);
     gen_collect!(player_pre_login, none, horizon_client::mod_api::PlayerPreLoginEvent<'_>, (none), [player: uuid, name: cloned, address: s_val(std::net::SocketAddr), defer: s_defer => w_defer]);
     gen_listen!(player_respawn_position, game_mut, horizon_client::mod_api::PlayerRespawnPositionEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, pos: s_mut([f64;3]) => w_mut([f64;3]), yaw: copy => mut_scalar, pitch: copy => mut_scalar]);
     gen_listen!(player_spawn_location, game_mut, horizon_client::mod_api::PlayerSpawnLocationEvent<'_>, (none), [player: player, dimension: mut_string => mut_string, position: s_mut([f64;3]) => w_mut([f64;3]), rotation: s_mut([f32;2]) => w_mut([f32;2])]);
     gen_cancel!(player_teleport, none, horizon_client::mod_api::PlayerTeleportEvent<'_>, (none), [player: uuid, name: cloned, cause: cloned, from_dimension: cloned, from: vec3, to_dimension: cloned, to: s_mut([f64;3]) => w_mut([f64;3]), relative: copy => mut_scalar]);
     gen_listen!(player_tick_pre, game_mut, horizon_client::mod_api::PlayerTickPreEvent, (none), []);
+    gen_cancel!(potion_splash_v2, game_mut, horizon_client::mod_api::PotionSplashV2Event<'_>, (none), [item: cloned, pos: vec3]);
     gen_listen!(projectile_world_border, none, horizon_client::mod_api::ProjectileWorldBorderEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: s_mut([f64;3]) => w_mut([f64;3]), velocity: s_mut([f64;3]) => w_mut([f64;3]), collide: copy => mut_scalar]);
     gen_collect!(recipe_sources, game_mut, horizon_client::mod_api::RecipeSourcesEvent<'_>, (none), [player: uuid, menu: cloned, pos: pos, sources: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_mob_ai_register!(register_goals, none, horizon_client::mod_api::RegisterGoalsEvent<'_>, (mob mob), [mob: mob_view]);
@@ -2270,10 +2372,12 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(right_click_block_v2, game_mut, horizon_client::mod_api::RightClickBlockV2Event, (none), [pos: pos, face: pos, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(screen_mouse_dragged_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseDraggedPreV2Event<'_>, (none), [screen: cloned, mouse: pair, button: copy, delta: pair, modifiers: copy]);
     gen_cancel!(screen_mouse_scrolled_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseScrolledPreV2Event<'_>, (none), [screen: cloned, mouse: pair, scroll: pair64, modifiers: copy]);
+    gen_listen!(server_stopped, game_mut, horizon_client::mod_api::ServerStoppedEvent, (none), [dedicated: copy]);
     gen_listen!(server_tick_timed, game_mut, horizon_client::mod_api::ServerTickTimedEvent<'_>, (none), [wall_ms: copy, cpu_ms: copy, spans: s_slice(horizon_client::mod_api::TickSpan)]);
     gen_listen!(stateful_block_entity, game_ref, horizon_client::mod_api::StatefulBlockEntityEvent<'_>, (none), [block: cloned, stateful: copy => mut_scalar]);
     gen_replace!(block_entity_from_state, none, horizon_client::mod_api::BlockEntityFromStateEvent<'_>, (none), [block: cloned, properties: s_ref(horizon_client::mod_api::BlockProperties)], entity : struct_out(crate::generated_runtime::NamedTag), Option<crate::generated_runtime::NamedTag>);
     gen_collect!(tab_complete_v2, game_mut, horizon_client::mod_api::TabCompleteV2Event<'_>, (none), [player: player, label: cloned, arguments: str_seq, range: s_val([usize;2]), suggestions: s_vec(horizon_client::mod_api::Suggestion) => w_vec(horizon_client::mod_api::Suggestion)]);
+    gen_cancel!(tnt_primed_v2, game_mut, horizon_client::mod_api::TntPrimedV2Event<'_>, (none), [player: opt_uuid, dimension: cloned, pos: pos]);
     gen_cancel!(toast_add, game_mut, horizon_client::mod_api::ToastAddEvent<'_>, (none), [kind: cloned, id: cloned]);
     gen_cancel!(trample, none, horizon_client::mod_api::TrampleEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: pos, fall_distance: copy]);
     gen_cancel!(vehicle_moved_v2, game_mut, horizon_client::mod_api::VehicleMovedV2Event<'_>, (field kind), [player: opt_uuid, dimension: cloned, vehicle: copy, kind: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3])]);
@@ -9869,203 +9973,6 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
-    }
-
-    #[test]
-    fn generated_explosion_detonate() {
-        let (m, id, _dir, lua) = loaded_tracked(
-            "gen_explosion_detonate",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.center.x == 2.0, \"center\")\n    assert(event.center.y == 3.0, \"center\")\n    assert(event.center.z == 4.0, \"center\")\n    assert(event.blocks[1].x == 3, \"blocks\")\n    assert(event.blocks[1].y == 4, \"blocks\")\n    assert(event.blocks[1].z == 5, \"blocks\")\n    assert(event.blocks[2].x == 4, \"blocks\")\n    assert(event.blocks[2].y == 5, \"blocks\")\n    assert(event.blocks[2].z == 6, \"blocks\")\n    event.blocks = { { x = 63, y = 64, z = 65 } }\nend)",
-        );
-        let firing_mods = boxed(m);
-        let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
-        dispatch_explosion_detonate(
-            &mut FakeHost::empty(),
-            &firing_mods,
-            "test:dimension",
-            [2.0, 3.0, 4.0],
-            &mut blocks,
-        );
-        assert_eq!(format!("{:?}", blocks), format!("{:?}", vec![[63, 64, 65]]));
-        assert_eq!(witness(&lua), 1, "the handler ran");
-        no_error(&id);
-    }
-
-    #[test]
-    fn generated_explosion_detonate_unregistered_costs_nothing() {
-        let (m, id, dir, lua) = loaded_tracked(
-            "gen_explosion_detonate_cost",
-            "horizon.on(\"tick\", function(event) end)",
-        );
-        let firing_mods = boxed(m);
-        {
-            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
-            reset_entity_reads();
-            reset_host_reads();
-            reset_level_reads();
-            reset_event_tables();
-            dispatch_explosion_detonate(
-                &mut FakeHost::empty(),
-                &firing_mods,
-                "test:dimension",
-                [2.0, 3.0, 4.0],
-                &mut blocks,
-            );
-            assert_eq!(witness(&lua), 0, "no handler ran");
-            assert_eq!(
-                event_tables(),
-                0,
-                "no event table was built with no handler"
-            );
-            assert_eq!(
-                entity_reads(),
-                0,
-                "explosion_detonate read the host with no handler"
-            );
-            assert_eq!(
-                host_reads(),
-                0,
-                "explosion_detonate read the host with no handler"
-            );
-            assert_eq!(
-                level_reads(),
-                0,
-                "explosion_detonate read the level with no handler"
-            );
-            no_error(&id);
-            drop_dir(dir);
-        }
-        let (m, id, dir, lua) = loaded_tracked(
-            "gen_explosion_detonate_cost_live",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
-        );
-        let firing_mods = boxed(m);
-        {
-            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
-            reset_entity_reads();
-            reset_host_reads();
-            reset_level_reads();
-            reset_event_tables();
-            dispatch_explosion_detonate(
-                &mut FakeHost::empty(),
-                &firing_mods,
-                "test:dimension",
-                [2.0, 3.0, 4.0],
-                &mut blocks,
-            );
-            assert_eq!(witness(&lua), 1, "the control handler ran");
-            assert_eq!(
-                event_tables(),
-                1,
-                "explosion_detonate built an event table for a heard dispatch"
-            );
-            assert_eq!(
-                host_reads(),
-                0,
-                "explosion_detonate read the host for a heard dispatch"
-            );
-            assert_eq!(
-                level_reads(),
-                0,
-                "explosion_detonate read the level for a heard dispatch"
-            );
-            no_error(&id);
-            drop_dir(dir);
-        }
-    }
-
-    #[test]
-    fn generated_explosion_detonate_two_mods_append_in_load_order() {
-        // First in load order lands first.
-        let (a, a_id, a_dir, a_lua) = loaded_tracked(
-            "gen_explosion_detonate_duo_a1",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 63, y = 64, z = 65 })\nend)",
-        );
-        let (b, b_id, b_dir, b_lua) = loaded_tracked(
-            "gen_explosion_detonate_duo_b1",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
-        );
-        let firing_mods = duo_boxed(a, b);
-        {
-            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
-            dispatch_explosion_detonate(
-                &mut FakeHost::empty(),
-                &firing_mods,
-                "test:dimension",
-                [2.0, 3.0, 4.0],
-                &mut blocks,
-            );
-            assert_eq!(
-                format!("{:?}", &blocks[blocks.len() - 2..]),
-                format!("{:?}", vec![[63, 64, 65], [64, 65, 66]])
-            );
-        }
-        assert_eq!(witness(&a_lua), 1, "the first handler ran");
-        assert_eq!(witness(&b_lua), 1, "the second handler ran");
-        no_error(&a_id);
-        no_error(&b_id);
-        drop_dir(a_dir);
-        drop_dir(b_dir);
-        // Swapped: the other mod lands first.
-        let (a, a_id, a_dir, a_lua) = loaded_tracked(
-            "gen_explosion_detonate_duo_a2",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 63, y = 64, z = 65 })\nend)",
-        );
-        let (b, b_id, b_dir, b_lua) = loaded_tracked(
-            "gen_explosion_detonate_duo_b2",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
-        );
-        let firing_mods = duo_boxed(b, a);
-        {
-            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
-            dispatch_explosion_detonate(
-                &mut FakeHost::empty(),
-                &firing_mods,
-                "test:dimension",
-                [2.0, 3.0, 4.0],
-                &mut blocks,
-            );
-            assert_eq!(
-                format!("{:?}", &blocks[blocks.len() - 2..]),
-                format!("{:?}", vec![[64, 65, 66], [63, 64, 65]])
-            );
-        }
-        assert_eq!(witness(&a_lua), 1, "the first handler ran");
-        assert_eq!(witness(&b_lua), 1, "the second handler ran");
-        no_error(&a_id);
-        no_error(&b_id);
-        drop_dir(a_dir);
-        drop_dir(b_dir);
-        // An erroring first mod does not hide the second mod's result.
-        let (b, b_id, b_dir, b_lua) = loaded_tracked(
-            "gen_explosion_detonate_duo_b3",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.blocks, { x = 64, y = 65, z = 66 })\nend)",
-        );
-        let (e, e_id, e_dir, e_lua) = loaded_tracked(
-            "gen_explosion_detonate_duo_e3",
-            "horizon.on(\"explosion_detonate\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
-        );
-        let firing_mods = duo_boxed(e, b);
-        {
-            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
-            dispatch_explosion_detonate(
-                &mut FakeHost::empty(),
-                &firing_mods,
-                "test:dimension",
-                [2.0, 3.0, 4.0],
-                &mut blocks,
-            );
-            assert_eq!(
-                format!("{:?}", &blocks[blocks.len() - 1..]),
-                format!("{:?}", vec![[64, 65, 66]])
-            );
-        }
-        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
-        assert_eq!(witness(&b_lua), 1, "the second handler ran");
-        has_error(&e_id);
-        no_error(&b_id);
-        drop_dir(e_dir);
-        drop_dir(b_dir);
     }
 
     #[test]
@@ -59106,6 +59013,133 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_block_grow() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_grow",
+            "horizon.on(\"block_grow\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_grow(
+            &FakeLevel,
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+            "test:from",
+            "test:to",
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_grow_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_block_grow_nocancel",
+            "horizon.on(\"block_grow\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_block_grow(
+            &FakeLevel,
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+            "test:from",
+            "test:to",
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_block_grow_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_grow_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_grow(
+                &FakeLevel,
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "block_grow read the host with no handler"
+            );
+            assert_eq!(host_reads(), 0, "block_grow read the host with no handler");
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_grow read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_block_grow_cost_live",
+            "horizon.on(\"block_grow\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_block_grow(
+                &FakeLevel,
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "block_grow built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "block_grow read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "block_grow read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_block_place() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_block_place",
@@ -59460,6 +59494,293 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+    }
+
+    #[test]
+    fn generated_can_build() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_can_build",
+            "horizon.on(\"can_build\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.action == \"test:action\", \"action\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_can_build(
+            &FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:dimension",
+            [4, 5, 6],
+            "test:action",
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_can_build_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_can_build_nocancel",
+            "horizon.on(\"can_build\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    assert(event.action == \"test:action\", \"action\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_can_build(
+            &FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            "test:dimension",
+            [4, 5, 6],
+            "test:action",
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_can_build_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_build_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_can_build(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                [4, 5, 6],
+                "test:action",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(entity_reads(), 0, "can_build read the host with no handler");
+            assert_eq!(host_reads(), 0, "can_build read the host with no handler");
+            assert_eq!(level_reads(), 0, "can_build read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_can_build_cost_live",
+            "horizon.on(\"can_build\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_can_build(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                [4, 5, 6],
+                "test:action",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "can_build built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "can_build read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "can_build read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_chat_decorate() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_chat_decorate",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.decorated == nil, \"replace seed\")\n    event.decorated = { text = \"test:line0\", component = { text = \"test:line0\" } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut decorated: Option<Text> = None;
+        dispatch_chat_decorate(&firing_mods, 7, "test:name", "test:message", &mut decorated);
+        assert_eq!(
+            decorated,
+            Some(Text::empty().with_component(serde_json::json!({ "text": "test:line0" })))
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_chat_decorate_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chat_decorate_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut decorated: Option<Text> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_chat_decorate(&firing_mods, 7, "test:name", "test:message", &mut decorated);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "chat_decorate read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chat_decorate read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chat_decorate read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_chat_decorate_cost_live",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut decorated: Option<Text> = None;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_chat_decorate(&firing_mods, 7, "test:name", "test:message", &mut decorated);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "chat_decorate built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "chat_decorate read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "chat_decorate read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_chat_decorate_two_mods_first_some_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_chat_decorate_duo_a1",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\n    event.decorated = { text = \"test:line0\", component = { text = \"test:line0\" } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_chat_decorate_duo_b1",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\n    event.decorated = { text = \"test:line1\", component = { text = \"test:line1\" } }\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut decorated: Option<Text> = None;
+            dispatch_chat_decorate(&firing_mods, 7, "test:name", "test:message", &mut decorated);
+            assert_eq!(
+                decorated,
+                Some(Text::empty().with_component(serde_json::json!({ "text": "test:line0" })))
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 0, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_chat_decorate_duo_a2",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\n    event.decorated = { text = \"test:line0\", component = { text = \"test:line0\" } }\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_chat_decorate_duo_b2",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\n    event.decorated = { text = \"test:line1\", component = { text = \"test:line1\" } }\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut decorated: Option<Text> = None;
+            dispatch_chat_decorate(&firing_mods, 7, "test:name", "test:message", &mut decorated);
+            assert_eq!(
+                decorated,
+                Some(Text::empty().with_component(serde_json::json!({ "text": "test:line1" })))
+            );
+        }
+        assert_eq!(witness(&a_lua), 0, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_chat_decorate_duo_b3",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\n    event.decorated = { text = \"test:line1\", component = { text = \"test:line1\" } }\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_chat_decorate_duo_e3",
+            "horizon.on(\"chat_decorate\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut decorated: Option<Text> = None;
+            dispatch_chat_decorate(&firing_mods, 7, "test:name", "test:message", &mut decorated);
+            assert_eq!(
+                decorated,
+                Some(Text::empty().with_component(serde_json::json!({ "text": "test:line1" })))
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -61402,6 +61723,202 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_change_block_v3() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v3",
+            "horizon.on(\"entity_change_block_v3\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut cancel = false;
+            dispatch_entity_change_block_v3(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut cancel = false;
+        dispatch_entity_change_block_v3(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            [3, 4, 5],
+            "test:from",
+            "test:to",
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_change_block_v3_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v3_nocancel",
+            "horizon.on(\"entity_change_block_v3\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.from == \"test:from\", \"from\")\n    assert(event.to == \"test:to\", \"to\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_entity_change_block_v3(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            [3, 4, 5],
+            "test:from",
+            "test:to",
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_change_block_v3_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v3_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_change_block_v3(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_change_block_v3 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block_v3 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block_v3 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v3_cost_kind",
+            "horizon.on(\"entity_change_block_v3\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_change_block_v3(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_change_block_v3 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block_v3 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block_v3 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_change_block_v3_cost_live",
+            "horizon.on(\"entity_change_block_v3\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_change_block_v3(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "entity_change_block_v3 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_change_block_v3 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_change_block_v3 read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_interact_specific() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_interact_specific",
@@ -62039,6 +62556,196 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "handshake read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_hanging_break_v2() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_hanging_break_v2",
+            "horizon.on(\"hanging_break_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut cancel = false;
+            dispatch_hanging_break_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                "minecraft:skeleton",
+                [4, 5, 6],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut cancel = false;
+        dispatch_hanging_break_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            "test:dimension",
+            "minecraft:zombie",
+            [4, 5, 6],
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_hanging_break_v2_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_hanging_break_v2_nocancel",
+            "horizon.on(\"hanging_break_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.pos.x == 4, \"pos\")\n    assert(event.pos.y == 5, \"pos\")\n    assert(event.pos.z == 6, \"pos\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_hanging_break_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            "test:dimension",
+            "minecraft:zombie",
+            [4, 5, 6],
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_hanging_break_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_break_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_hanging_break_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                "test:kind",
+                [4, 5, 6],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hanging_break_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_break_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_break_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_break_v2_cost_kind",
+            "horizon.on(\"hanging_break_v2\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_hanging_break_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                "minecraft:zombie",
+                [4, 5, 6],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "hanging_break_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_break_v2 read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_break_v2 read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_hanging_break_v2_cost_live",
+            "horizon.on(\"hanging_break_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_hanging_break_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                "minecraft:zombie",
+                [4, 5, 6],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "hanging_break_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "hanging_break_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "hanging_break_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -63996,6 +64703,368 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_living_death_message() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_death_message",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\n    event.message = nil; event.message_component = nil\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut message = Some(Text::literal("test:message"));
+            dispatch_living_death_message(&firing_mods, 7, "minecraft:skeleton", &mut message);
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut message = Some(Text::literal("test:message"));
+        dispatch_living_death_message(&firing_mods, 7, "minecraft:zombie", &mut message);
+        assert_eq!(message, None);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_death_message_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_death_message_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut message = Some(Text::literal("test:message"));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_death_message(&firing_mods, 7, "test:kind", &mut message);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_death_message read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_death_message read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_death_message read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_death_message_cost_kind",
+            "horizon.on(\"living_death_message\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut message = Some(Text::literal("test:message"));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_death_message(&firing_mods, 7, "minecraft:zombie", &mut message);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_death_message read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_death_message read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_death_message read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_death_message_cost_live",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut message = Some(Text::literal("test:message"));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_death_message(&firing_mods, 7, "minecraft:zombie", &mut message);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "living_death_message built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_death_message read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_death_message read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_living_death_message_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_living_death_message_duo_a1",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\n    event.message = \"test:duo_a\"\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_living_death_message_duo_b1",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\n    event.message = \"test:duo_b\"\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut message = Some(Text::literal("test:message"));
+            dispatch_living_death_message(&firing_mods, 7, "minecraft:zombie", &mut message);
+            assert_eq!(
+                message.as_ref().map(|t| t.plain()),
+                Some("test:duo_b".to_owned())
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_living_death_message_duo_a2",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\n    event.message = \"test:duo_a\"\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_living_death_message_duo_b2",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\n    event.message = \"test:duo_b\"\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut message = Some(Text::literal("test:message"));
+            dispatch_living_death_message(&firing_mods, 7, "minecraft:zombie", &mut message);
+            assert_eq!(
+                message.as_ref().map(|t| t.plain()),
+                Some("test:duo_a".to_owned())
+            );
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_living_death_message_duo_b3",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\n    event.message = \"test:duo_b\"\nend, \"minecraft:zombie\")",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_living_death_message_duo_e3",
+            "horizon.on(\"living_death_message\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut message = Some(Text::literal("test:message"));
+            dispatch_living_death_message(&firing_mods, 7, "minecraft:zombie", &mut message);
+            assert_eq!(
+                message.as_ref().map(|t| t.plain()),
+                Some("test:duo_b".to_owned())
+            );
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_living_experience_drop() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_living_experience_drop",
+            "horizon.on(\"living_experience_drop\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 7, \"entity\")\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.xp == 9, \"xp\")\n    event.xp = 52\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut xp = 9;
+            dispatch_living_experience_drop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:skeleton",
+                &mut xp,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut xp = 9;
+        dispatch_living_experience_drop(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "minecraft:zombie",
+            &mut xp,
+        );
+        assert_eq!(xp, 52);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_living_experience_drop_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_experience_drop_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut xp = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_experience_drop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut xp,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_experience_drop read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_experience_drop read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_experience_drop read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_experience_drop_cost_kind",
+            "horizon.on(\"living_experience_drop\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut xp = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_experience_drop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut xp,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "living_experience_drop read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_experience_drop read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_experience_drop read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_living_experience_drop_cost_live",
+            "horizon.on(\"living_experience_drop\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut xp = 9;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_living_experience_drop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "minecraft:zombie",
+                &mut xp,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "living_experience_drop built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "living_experience_drop read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "living_experience_drop read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_living_incoming_damage_v3() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_living_incoming_damage_v3",
@@ -65705,6 +66774,173 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_permission_groups() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_permission_groups",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.groups[1] == \"test:seed\", \"groups\")\n    assert(event.groups[2] == \"test:seed2\", \"groups\")\n    event.groups[1] = \"test:edited\"; table.insert(event.groups, \"test:added\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        dispatch_permission_groups(&FakeHost::empty(), &firing_mods, 7, &mut groups);
+        assert_eq!(
+            groups,
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_permission_groups_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_permission_groups_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_permission_groups(&FakeHost::empty(), &firing_mods, 7, &mut groups);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "permission_groups read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "permission_groups read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "permission_groups read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_permission_groups_cost_live",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_permission_groups(&FakeHost::empty(), &firing_mods, 7, &mut groups);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "permission_groups built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "permission_groups read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "permission_groups read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_permission_groups_two_mods_append_in_load_order() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_permission_groups_duo_a1",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.groups, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_permission_groups_duo_b1",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.groups, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_permission_groups(&FakeHost::empty(), &firing_mods, 7, &mut groups);
+            let mut expected_groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_groups.push("test:duo_a".to_owned());
+            expected_groups.push("test:duo_b".to_owned());
+            assert_eq!(groups, expected_groups);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_permission_groups_duo_a2",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.groups, \"test:duo_a\")\nend)",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_permission_groups_duo_b2",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.groups, \"test:duo_b\")\nend)",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_permission_groups(&FakeHost::empty(), &firing_mods, 7, &mut groups);
+            let mut expected_groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_groups.push("test:duo_b".to_owned());
+            expected_groups.push("test:duo_a".to_owned());
+            assert_eq!(groups, expected_groups);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_permission_groups_duo_b3",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\n    table.insert(event.groups, \"test:duo_b\")\nend)",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_permission_groups_duo_e3",
+            "horizon.on(\"permission_groups\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend)",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_permission_groups(&FakeHost::empty(), &firing_mods, 7, &mut groups);
+            let mut expected_groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            expected_groups.push("test:duo_b".to_owned());
+            assert_eq!(groups, expected_groups);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
+    }
+
+    #[test]
     fn generated_player_register_channels() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_register_channels",
@@ -65799,6 +67035,148 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_register_channels read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_chat_v2() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_chat_v2",
+            "horizon.on(\"player_chat_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.level == 9, \"level\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.replies[1].text == \"test:line4\", \"replies\")\n    assert(event.replies[1].component.text == \"test:line4\", \"replies\")\n    assert(event.replies[2].text == \"test:line5\", \"replies\")\n    assert(event.replies[2].component.text == \"test:line5\", \"replies\")\n    event.replies = { { text = \"test:line54\", component = { text = \"test:line54\" } } }\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut replies = vec![Text::literal("test:line4"), Text::literal("test:line5")];
+        let mut cancel = false;
+        dispatch_player_chat_v2(
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            "test:message",
+            &mut replies,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(
+            format!("{:?}", replies),
+            format!(
+                "{:?}",
+                vec![Text::empty().with_component(serde_json::json!({ "text": "test:line54" }))]
+            )
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_chat_v2_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_chat_v2_nocancel",
+            "horizon.on(\"player_chat_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.name == \"test:name\", \"name\")\n    assert(event.level == 9, \"level\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.replies[1].text == \"test:line4\", \"replies\")\n    assert(event.replies[1].component.text == \"test:line4\", \"replies\")\n    assert(event.replies[2].text == \"test:line5\", \"replies\")\n    assert(event.replies[2].component.text == \"test:line5\", \"replies\")\n    event.replies = { { text = \"test:line54\", component = { text = \"test:line54\" } } }\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut replies = vec![Text::literal("test:line4"), Text::literal("test:line5")];
+        let mut cancel = false;
+        dispatch_player_chat_v2(
+            &firing_mods,
+            7,
+            "test:name",
+            9,
+            "test:message",
+            &mut replies,
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_chat_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_chat_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut replies = vec![Text::literal("test:line4"), Text::literal("test:line5")];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_chat_v2(
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:message",
+                &mut replies,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_chat_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_chat_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_chat_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_chat_v2_cost_live",
+            "horizon.on(\"player_chat_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut replies = vec![Text::literal("test:line4"), Text::literal("test:line5")];
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_chat_v2(
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:message",
+                &mut replies,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "player_chat_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_chat_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_chat_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -66144,6 +67522,104 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_died_v2() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_died_v2",
+            "horizon.on(\"player_died_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.message == \"test:message\", \"message\")\n    assert(event.message_component.text == \"test:message\", \"message\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_player_died_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &Text::literal("test:message"),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_died_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_died_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_died_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &Text::literal("test:message"),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_died_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_died_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_died_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_died_v2_cost_live",
+            "horizon.on(\"player_died_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_died_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &Text::literal("test:message"),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "player_died_v2 built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_died_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_died_v2 read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_fish_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_fish_v2",
@@ -66418,6 +67894,108 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_player_join_message() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_join_message",
+            "horizon.on(\"player_join_message\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = nil; event.line_component = nil\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut line = Some(Text::literal("test:line"));
+        dispatch_player_join_message(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut line,
+        );
+        assert_eq!(line, None);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_join_message_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_join_message_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut line = Some(Text::literal("test:line"));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_join_message(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut line,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_join_message read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_join_message read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_join_message read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_join_message_cost_live",
+            "horizon.on(\"player_join_message\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut line = Some(Text::literal("test:line"));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_join_message(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut line,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "player_join_message built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_join_message read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_join_message read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_player_launch_projectile_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_player_launch_projectile_v2",
@@ -66557,6 +68135,108 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_launch_projectile_v2 read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_leave_message() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_leave_message",
+            "horizon.on(\"player_leave_message\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player.uuid == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.player.name == \"test:name\", \"player\")\n    assert(event.line == \"test:line\", \"line\")\n    assert(event.line_component.text == \"test:line\", \"line\")\n    event.line = nil; event.line_component = nil\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut line = Some(Text::literal("test:line"));
+        dispatch_player_leave_message(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            "test:name",
+            &mut line,
+        );
+        assert_eq!(line, None);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_leave_message_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_leave_message_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut line = Some(Text::literal("test:line"));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_leave_message(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut line,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_leave_message read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_leave_message read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_leave_message read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_leave_message_cost_live",
+            "horizon.on(\"player_leave_message\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut line = Some(Text::literal("test:line"));
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_leave_message(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut line,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "player_leave_message built an event table for a heard dispatch"
+            );
+            assert!(
+                host_reads() > 0,
+                "player_leave_message read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_leave_message read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -66777,6 +68457,137 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_move read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_physical_trigger() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_physical_trigger",
+            "horizon.on(\"player_physical_trigger\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_physical_trigger(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            8,
+            BlockPos::new(3, 4, 5),
+            "test:block",
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_physical_trigger_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_physical_trigger_nocancel",
+            "horizon.on(\"player_physical_trigger\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.player == \"00000000-0000-0000-0000-000000000008\", \"player\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_player_physical_trigger(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            8,
+            BlockPos::new(3, 4, 5),
+            "test:block",
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_physical_trigger_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_physical_trigger_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_physical_trigger(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                8,
+                BlockPos::new(3, 4, 5),
+                "test:block",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_physical_trigger read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_physical_trigger read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_physical_trigger read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_physical_trigger_cost_live",
+            "horizon.on(\"player_physical_trigger\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_physical_trigger(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                8,
+                BlockPos::new(3, 4, 5),
+                "test:block",
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "player_physical_trigger built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_physical_trigger read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_physical_trigger read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -67458,6 +69269,129 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_tick_pre read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_potion_splash_v2() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_potion_splash_v2",
+            "horizon.on(\"potion_splash_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.pos.x == 2.0, \"pos\")\n    assert(event.pos.y == 3.0, \"pos\")\n    assert(event.pos.z == 4.0, \"pos\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_potion_splash_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:item",
+            [2.0, 3.0, 4.0],
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_potion_splash_v2_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_potion_splash_v2_nocancel",
+            "horizon.on(\"potion_splash_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.item == \"test:item\", \"item\")\n    assert(event.pos.x == 2.0, \"pos\")\n    assert(event.pos.y == 3.0, \"pos\")\n    assert(event.pos.z == 4.0, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_potion_splash_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:item",
+            [2.0, 3.0, 4.0],
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_potion_splash_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_potion_splash_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_potion_splash_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:item",
+                [2.0, 3.0, 4.0],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "potion_splash_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "potion_splash_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "potion_splash_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_potion_splash_v2_cost_live",
+            "horizon.on(\"potion_splash_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_potion_splash_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:item",
+                [2.0, 3.0, 4.0],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "potion_splash_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "potion_splash_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "potion_splash_v2 read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -68819,6 +70753,87 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_server_stopped() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_server_stopped",
+            "horizon.on(\"server_stopped\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dedicated == true, \"dedicated\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_server_stopped(&mut FakeHost::empty(), &firing_mods, true);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_server_stopped_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_stopped_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_stopped(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_stopped read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_stopped read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_stopped read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_stopped_cost_live",
+            "horizon.on(\"server_stopped\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_stopped(&mut FakeHost::empty(), &firing_mods, true);
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "server_stopped built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_stopped read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_stopped read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_server_tick_timed() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_tick_timed",
@@ -69635,6 +71650,133 @@ mod generated_tests {
         no_error(&b_id);
         drop_dir(e_dir);
         drop_dir(b_dir);
+    }
+
+    #[test]
+    fn generated_tnt_primed_v2() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tnt_primed_v2",
+            "horizon.on(\"tnt_primed_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_tnt_primed_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            "test:dimension",
+            [3, 4, 5],
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tnt_primed_v2_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tnt_primed_v2_nocancel",
+            "horizon.on(\"tnt_primed_v2\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 3, \"pos\")\n    assert(event.pos.y == 4, \"pos\")\n    assert(event.pos.z == 5, \"pos\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_tnt_primed_v2(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            Some(7),
+            "test:dimension",
+            [3, 4, 5],
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tnt_primed_v2_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tnt_primed_v2_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tnt_primed_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "tnt_primed_v2 read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tnt_primed_v2 read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tnt_primed_v2 read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tnt_primed_v2_cost_live",
+            "horizon.on(\"tnt_primed_v2\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tnt_primed_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "tnt_primed_v2 built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tnt_primed_v2 read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tnt_primed_v2 read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
     }
 
     #[test]
@@ -70853,17 +72995,6 @@ mod generated_tests {
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
-        }
-        // explosion_detonate: unregistered, nothing runs.
-        {
-            let mut blocks = vec![[3, 4, 5], [4, 5, 6]];
-            dispatch_explosion_detonate(
-                &mut FakeHost::empty(),
-                &firing_mods,
-                "test:dimension",
-                [2.0, 3.0, 4.0],
-                &mut blocks,
-            );
         }
         // fill_bucket: unregistered, nothing runs.
         {
@@ -74999,6 +77130,20 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // block_grow: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_block_grow(
+                &FakeLevel,
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
         // block_place: unregistered, nothing runs.
         {
             let mut cancel = false;
@@ -75042,6 +77187,26 @@ mod generated_tests {
                 3.5,
                 &mut speed,
             );
+        }
+        // can_build: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_can_build(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                "test:dimension",
+                [4, 5, 6],
+                "test:action",
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // chat_decorate: unregistered, nothing runs.
+        {
+            let mut decorated: Option<Text> = None;
+            dispatch_chat_decorate(&firing_mods, 7, "test:name", "test:message", &mut decorated);
         }
         // chat_suggestion_applied: unregistered, nothing runs.
         {
@@ -75180,6 +77345,21 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // entity_change_block_v3: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_entity_change_block_v3(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                [3, 4, 5],
+                "test:from",
+                "test:to",
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
         // entity_interact_specific: unregistered, nothing runs.
         {
             let mut claimed = false;
@@ -75233,6 +77413,20 @@ mod generated_tests {
                 &mut host,
                 9,
                 &mut reason,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // hanging_break_v2: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_hanging_break_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                "test:kind",
+                [4, 5, 6],
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");
@@ -75400,6 +77594,22 @@ mod generated_tests {
                 6.5,
             );
         }
+        // living_death_message: unregistered, nothing runs.
+        {
+            let mut message = Some(Text::literal("test:message"));
+            dispatch_living_death_message(&firing_mods, 7, "test:kind", &mut message);
+        }
+        // living_experience_drop: unregistered, nothing runs.
+        {
+            let mut xp = 9;
+            dispatch_living_experience_drop(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:kind",
+                &mut xp,
+            );
+        }
         // living_incoming_damage_v3: unregistered, nothing runs.
         {
             let mut amount = 8.5;
@@ -75494,6 +77704,11 @@ mod generated_tests {
                 &mut result,
             );
         }
+        // permission_groups: unregistered, nothing runs.
+        {
+            let mut groups = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            dispatch_permission_groups(&FakeHost::empty(), &firing_mods, 7, &mut groups);
+        }
         // player_register_channels: unregistered, nothing runs.
         {
             dispatch_player_register_channels(
@@ -75504,6 +77719,21 @@ mod generated_tests {
                 &["test:seed".to_owned(), "test:seed2".to_owned()],
                 false,
             );
+        }
+        // player_chat_v2: unregistered, nothing runs.
+        {
+            let mut replies = vec![Text::literal("test:line4"), Text::literal("test:line5")];
+            let mut cancel = false;
+            dispatch_player_chat_v2(
+                &firing_mods,
+                7,
+                "test:name",
+                9,
+                "test:message",
+                &mut replies,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // player_command_level: unregistered, nothing runs.
         {
@@ -75528,6 +77758,16 @@ mod generated_tests {
                 "test:name",
                 &mut names,
                 &mut names_hidden,
+            );
+        }
+        // player_died_v2: unregistered, nothing runs.
+        {
+            dispatch_player_died_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &Text::literal("test:message"),
             );
         }
         // player_fish_v2: unregistered, nothing runs.
@@ -75561,6 +77801,17 @@ mod generated_tests {
             );
             assert!(!canceled, "canceled changed with no handler");
         }
+        // player_join_message: unregistered, nothing runs.
+        {
+            let mut line = Some(Text::literal("test:line"));
+            dispatch_player_join_message(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut line,
+            );
+        }
         // player_launch_projectile_v2: unregistered, nothing runs.
         {
             let mut cancel = false;
@@ -75579,6 +77830,17 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // player_leave_message: unregistered, nothing runs.
+        {
+            let mut line = Some(Text::literal("test:line"));
+            dispatch_player_leave_message(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:name",
+                &mut line,
+            );
+        }
         // player_logging_out: unregistered, nothing runs.
         {
             dispatch_player_logging_out(&mut FakeHost::empty(), &firing_mods, 7, "test:name");
@@ -75596,6 +77858,20 @@ mod generated_tests {
                 5.5,
                 6.5,
                 true,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // player_physical_trigger: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_player_physical_trigger(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                8,
+                BlockPos::new(3, 4, 5),
+                "test:block",
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");
@@ -75665,6 +77941,18 @@ mod generated_tests {
         // player_tick_pre: unregistered, nothing runs.
         {
             dispatch_player_tick_pre(&mut FakeHost::empty(), &firing_mods);
+        }
+        // potion_splash_v2: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_potion_splash_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:item",
+                [2.0, 3.0, 4.0],
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // projectile_world_border: unregistered, nothing runs.
         {
@@ -75751,6 +78039,10 @@ mod generated_tests {
             );
             assert!(!canceled, "canceled changed with no handler");
         }
+        // server_stopped: unregistered, nothing runs.
+        {
+            dispatch_server_stopped(&mut FakeHost::empty(), &firing_mods, true);
+        }
         // server_tick_timed: unregistered, nothing runs.
         {
             dispatch_server_tick_timed(
@@ -75820,6 +78112,19 @@ mod generated_tests {
                 [11, 16],
                 &mut suggestions,
             );
+        }
+        // tnt_primed_v2: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_tnt_primed_v2(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                Some(7),
+                "test:dimension",
+                [3, 4, 5],
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // toast_add: unregistered, nothing runs.
         {

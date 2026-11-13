@@ -6396,12 +6396,7 @@ mod removed_mob_tests {
         )
     }
 
-    fn rec(
-        log: &Log,
-        name: &'static str,
-        remove_in: &'static str,
-        armed: &Flag,
-    ) -> (Rec, Count) {
+    fn rec(log: &Log, name: &'static str, remove_in: &'static str, armed: &Flag) -> (Rec, Count) {
         let stops = Count::new(0);
         (
             Rec {

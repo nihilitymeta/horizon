@@ -4381,12 +4381,27 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             "std::path::Path::new(\"test:path\")".into(),
             "\"test:path\"".into(),
         ),
+        // A read-only `&Text` field seeds like a plain string: no write.
+        Conv::TextVal if !crate::lua_hooks::mut_ref(ty) => plain(
+            format!("&Text::literal(\"test:{field}\")"),
+            format!("\"test:{field}\""),
+        ),
         Conv::TextVal => mut_sample(
             format!("Text::literal(\"test:{field}\")"),
             format!("\"test:{field}\""),
             format!("Text::literal(\"test:{field}:edited\")"),
             format!("\"test:{field}:edited\""),
         ),
+        Conv::TextOpt if !crate::lua_hooks::mut_ref(ty) => {
+            if n.is_multiple_of(2) {
+                plain(
+                    format!("Some(Text::literal(\"test:{field}\"))"),
+                    format!("\"test:{field}\""),
+                )
+            } else {
+                plain("None".into(), "nil".into())
+            }
+        }
         Conv::TextOpt => {
             if n.is_multiple_of(2) {
                 mut_sample(
@@ -4809,7 +4824,13 @@ pub fn replace_sample(read: ReplaceRead, ret: &str, n: usize) -> (String, String
             let inner = replace_inner(ret);
             let s = struct_sample(&inner, "replace", n)
                 .unwrap_or_else(|| panic!("no struct sample for {inner} (ret {ret})"));
-            (s.rust, s.lua)
+            // A script's `Text` answer is the component table, which the
+            // write-back builds with the component (no spans): that is the
+            // Rust value the table answers with.
+            match (inner.as_str(), s.write_rust) {
+                ("Text", Some(written)) => (written, s.lua),
+                _ => (s.rust, s.lua),
+            }
         }
         ReplaceRead::StructVec => {
             let mut inner = replace_inner(ret);

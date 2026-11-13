@@ -579,6 +579,9 @@ fn read_lines(row: &HelperRow, source: &str) -> Vec<String> {
                     row.name
                 ));
             }
+            // An `i64` is read as is: a `try_from` to the same type is a
+            // no-op that clippy rejects.
+            "i64" => out.push(format!("let {local}: i64 = {raw};")),
             ty => {
                 out.push(format!("let n{at}: i64 = {raw};"));
                 out.push(format!(
