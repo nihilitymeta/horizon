@@ -244,6 +244,20 @@ pub(crate) fn int_seq(lua: &Lua, items: &[i32]) -> mlua::Result<Table> {
     lua.create_sequence_from(items.iter().copied())
 }
 
+/// Inventory slots keyed by vanilla slot number: a present stack seeds
+/// its item table at its index, an empty slot stays absent (nil), so
+/// `#stacks` and `ipairs` are meaningless and `pairs` walks the filled
+/// slots.
+pub(crate) fn item_slots_table(lua: &Lua, stacks: &[Option<ItemStack>]) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    for (i, stack) in stacks.iter().enumerate() {
+        if let Some(stack) = stack {
+            t.set(i as i32, item_table_of(lua, stack)?)?;
+        }
+    }
+    Ok(t)
+}
+
 /// A string sequence table back into a vector.
 pub(crate) fn read_string_seq(t: &Table, field: &str) -> mlua::Result<Vec<String>> {
     sequence_values::<String>(t, field)?.collect()
@@ -462,6 +476,14 @@ macro_rules! gen_seed {
         $table.set(
             stringify!($field),
             crate::generated_runtime::string_seq($lua, $event.$field)?,
+        )?
+    };
+    // Inventory slots keyed by vanilla slot number (see
+    // `item_slots_table`).
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : item_slots) => {
+        $table.set(
+            stringify!($field),
+            crate::generated_runtime::item_slots_table($lua, $event.$field)?,
         )?
     };
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : item) => {
@@ -3034,8 +3056,9 @@ use horizon_client::merchant::ItemCost;
 use horizon_client::mod_api::{
     Corner, MerchantOffer, Music, MusicLayer, NativeConfig, NativeConfigFile, NativeConfigKind,
     NativeDataMapType, NativeFluidAction, NativeFluidDrain, NativeFluidStack, NativeFluidTankView,
-    NativeMapDecoration, NativeMapInfo, NativeMinimap, NativeMod, NativeNoteBlockChange,
-    NativeScreen, NativeScreenView, NativeZoom, RecipeBookCategory, SpawnEntry, Suggestion,
+    NativeInventoryKind, NativeMapDecoration, NativeMapInfo, NativeMinimap, NativeMod,
+    NativeNoteBlockChange, NativeScreen, NativeScreenView, NativeZoom, RecipeBookCategory,
+    SpawnEntry, Suggestion,
 };
 
 impl LuaStruct for Corner {
@@ -4987,6 +5010,28 @@ impl LuaStruct for Hand {
             "main" => Hand::Main,
             _ => Hand::Off,
         })
+    }
+}
+
+/// Which of a player's inventories changed, as the lower-case variant
+/// name. Read-only (listen hooks never write back): a write errors,
+/// like the explosion source.
+impl LuaStruct for NativeInventoryKind {
+    fn to_value(lua: &Lua, v: &Self) -> mlua::Result<Value> {
+        str_value(
+            lua,
+            match v {
+                NativeInventoryKind::Player => "player",
+                NativeInventoryKind::Ender => "ender",
+                NativeInventoryKind::Cursor => "cursor",
+                NativeInventoryKind::Crafting => "crafting",
+            },
+        )
+    }
+    fn from_value(_lua: &Lua, _v: Value, field: &str) -> mlua::Result<Self> {
+        Err(mlua::Error::runtime(format!(
+            "{field}: an inventory kind is read-only"
+        )))
     }
 }
 

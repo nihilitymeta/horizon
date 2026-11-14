@@ -776,6 +776,7 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `item_crafted(event)` | a player takes a crafting grid's result. The event holds `player` (their uuid text: `horizon.player(event.player)` reads their table), `recipe` (its id) and `stack` (the result). Every craft wakes the handler: keep the recipes it cares about in Lua. It only listens |
 | `item_dropped(event)` | a player throws an item, with the drop key or from a menu; items scattered at death do not count. The event holds `player` (their uuid text), `item` (the id) and `count`. It only listens |
 | `item_picked_up(event)` | a player is about to pick up `event.count` of `event.item` (an id) from the ground. The event holds `player` (their uuid text). `horizon.cancel()` leaves them there |
+| `inventory_changed(event)` | a player's stack changed in one of their inventories. The event holds `uuid` (their uuid text: `horizon.player(event.uuid)` reads their table) and `kind` (`"player"`, `"ender"`, `"cursor"` or `"crafting"`). It only hears |
 
 ### Players
 
@@ -784,6 +785,7 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `player_logged_in(event)`, `player_logged_out(event)` | a player joins the game, or leaves it by any path. The event holds `player`: the full table while they are on, else `uuid` and the told `name` |
 | `player_respawned(event)` | a player respawns after a death. The event holds `player`, as above |
 | `player_died(event)` | a player dies. The event holds `player` (uuid text) and `cause`, the death message's key such as `death.attack.lava`, or nil. It only hears |
+| `player_inventory_changed(event)` | a server player's inventory changed. The event holds `player` (their uuid text) and `stacks`, the 41 slots in `Inventory` numbering keyed by slot number with empty slots absent: walk it with `pairs`, not `#stacks` or `ipairs`. It only hears |
 | `player_tick(event)` | a living player's server tick has ended. The event is empty. Every player, every tick, with the host actions and the reads: `horizon.players()` is the whole list (the placed guests plus the single-player owner), and `horizon.acting_player()` is the ticking player — that is how a handler learns whose tick fired. Keep it light. It takes no `kind` |
 | `living_incoming_damage(event)` with kind `minecraft:player` | a player is about to take damage. The event holds `entity`, `kind`, `damage_type`, `causing`, `direct` and `amount`. No host and no name: set `event.amount`, or `horizon.cancel()` |
 | `living_fall(event)` with kind `minecraft:player` | a player is about to handle a fall. The event holds `entity`, `kind`, `distance` and `multiplier`. No host: set the fields, or `horizon.cancel()` for no fall damage |

@@ -4,7 +4,7 @@
 
 Every native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). The Side column is the hook's `side` tag (`client`, `server` or `both`). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason. The two declaration-served hooks (`block_entity` and `block_entity_ticks`) are generated and omitted from the event-table list below: they are served from the `horizon.block_entity` declarations, build no event table, and take no `horizon.on` registration.
 
-478 hooks are generated and omitted below. The rest:
+480 hooks are generated and omitted below. The rest:
 
 ## Borrows render state (render thread) (24)
 
@@ -55,18 +55,17 @@ No event-table mapping exists: the argument is borrowed loot state.
 | `loot_condition` | server | NativeLootContext is borrowed loot state |
 | `loot_function` | server | NativeLootContext is borrowed loot state; LootStack is borrowed loot state |
 
-## Borrowed client input (4)
+## Borrowed client input (3)
 
 No event-table mapping exists: the argument cannot enter the Lua state.
 
 | Hook | Side | Reason |
 | --- | --- | --- |
 | `input_key` | client | a borrowed client key event cannot enter the Lua state |
-| `inventory_changed` | server | type crate::mod_api::NativeInventoryKind has no mapping |
 | `recipe_lookup` | client | type NativeStack has no mapping; type NativeRecipeLookup has no mapping |
 | `world_warp` | client | type WorldWarp has no mapping |
 
-## Adapter hooks (18)
+## Adapter hooks (17)
 
 Not event tables yet: a hand-written converter would unblock these.
 
@@ -86,7 +85,6 @@ Not event tables yet: a hand-written converter would unblock these.
 | `items` | both | an item list needs its table form |
 | `layer_definitions` | client | a tuple needs its table form |
 | `neighbor_changed` | server | a block id needs its name |
-| `player_inventory_changed` | server | a slice needs its table form |
 | `player_profile` | server | a property list needs its table form |
 | `recipe_categories` | client | a native_recipe_category list needs its table form |
 | `sound_play` | client | a playback only the game constructs |

@@ -127,6 +127,11 @@ pub enum Conv {
     IntSeq,
     /// `&[String]`: a sequence table.
     StrSeq,
+    /// `&[Option<ItemStack>]`: a table keyed by the vanilla slot number (a
+    /// present stack seeds its item table at its index, an empty slot stays
+    /// absent, so `#stacks` and `ipairs` are meaningless and `pairs` walks
+    /// the filled slots). Listen-only: no write-back.
+    ItemSlots,
     /// `&ItemStack`: `item_table_of`.
     Item,
     /// `Option<&ItemStack>`: nil or `item_table_of`.
@@ -801,6 +806,10 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
                 let ts = struct_ts("Hand");
                 return FieldOutcome::Conv(Conv::Struct, format!("{ts}?"));
             }
+            Some("NativeInventoryKind") => {
+                let ts = struct_ts("NativeInventoryKind");
+                return FieldOutcome::Conv(Conv::Struct, format!("{ts}?"));
+            }
             Some("BlockPos") => {
                 return adapter("an optional pos needs its table form");
             }
@@ -864,7 +873,7 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
         },
         Some("BlockId") => adapter("a block id needs its name"),
         Some("Path" | "PathBuf") => FieldOutcome::Conv(Conv::PathStr, "string".into()),
-        Some("Direction" | "Hand" | "UseAnimation") => {
+        Some("Direction" | "Hand" | "UseAnimation" | "NativeInventoryKind") => {
             let ts = struct_ts(ident.as_deref().unwrap_or("?"));
             FieldOutcome::Conv(Conv::Struct, ts.into())
         }
@@ -1194,7 +1203,8 @@ fn array_or_other_of(
             _ => return adapter("an array needs its table form"),
         }
     }
-    // Slices: only the scalar sequence tables exist.
+    // Slices: only the scalar sequence tables and the slot-keyed item
+    // table exist.
     if let syn::Type::Slice(slice) = inner {
         if is_path(&slice.elem, "i32") {
             return FieldOutcome::Conv(Conv::IntSeq, "{ number }".into());
@@ -1204,6 +1214,12 @@ fn array_or_other_of(
         }
         if is_path(&slice.elem, "u8") {
             return FieldOutcome::Conv(Conv::Bytes, "string".into());
+        }
+        // The player inventory's slots: keyed by vanilla slot number,
+        // absent (nil) for empty slots. Values seed through
+        // `item_table_of`, like every other stack field.
+        if option_inner(&slice.elem).is_some_and(|opt| is_path(opt, "ItemStack")) {
+            return FieldOutcome::Conv(Conv::ItemSlots, "{ [number]: Item }".into());
         }
         if let Some(key) = struct_key_of(inner) {
             let ts = struct_ts_owned(&key);
@@ -1244,6 +1260,7 @@ fn struct_key_of(ty: &syn::Type) -> Option<String> {
         "SocketAddr",
         "Direction",
         "Hand",
+        "NativeInventoryKind",
         "UseAnimation",
         "Corner",
         "NativeFluidAction",
@@ -1405,6 +1422,7 @@ fn struct_ts(key: &str) -> &'static str {
         "Direction" => "\"down\" | \"up\" | \"north\" | \"south\" | \"west\" | \"east\"",
         "Option<Direction>" => "\"down\" | \"up\" | \"north\" | \"south\" | \"west\" | \"east\"?",
         "Hand" => "\"main\" | \"off\"",
+        "NativeInventoryKind" => "\"player\" | \"ender\" | \"cursor\" | \"crafting\"",
         "UseAnimation" => {
             "\"none\" | \"eat\" | \"drink\" | \"block\" | \"bow\" | \"trident\" | \"crossbow\" | \"spyglass\" | \"toot_horn\" | \"brush\" | \"bundle\" | \"spear\""
         }
@@ -1683,6 +1701,16 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
             },
             vec![],
         ),
+        "NativeInventoryKind" => {
+            let names = ["player", "ender", "cursor", "crafting"];
+            let rusts = ["Player", "Ender", "Cursor", "Crafting"];
+            let i = n % 4;
+            fixed(
+                format!("NativeInventoryKind::{}", rusts[i]),
+                format!("\"{}\"", names[i]),
+                vec![],
+            )
+        }
         "Corner" => {
             let names = ["top_left", "top_right", "bottom_left", "bottom_right"];
             let rusts = ["TopLeft", "TopRight", "BottomLeft", "BottomRight"];
@@ -3969,6 +3997,23 @@ pub fn assert_lines(
             ]
         }
         Conv::IntSeq => vec![a(&format!("{e}[1] == {} and {e}[2] == {}", 4 + n, 9 + n))],
+        // Keys are the vanilla slot numbers (0-based with holes), so
+        // `#stacks` and `ipairs` are meaningless: the asserts pin the two
+        // filled slots' item leaves and the hole's nil. The leaves are the
+        // plain `Item` ones of `Conv::Item` (see `sample`).
+        Conv::ItemSlots => vec![
+            a(&format!("{e}[0].id == \"test:{field}\"")),
+            a(&format!("{e}[0].count == {}", 1 + n)),
+            a(&format!("{e}[0].damage == {n}")),
+            a(&format!("{e}[0].extra == nil")),
+            a(&format!("{e}[0].plain == true")),
+            a(&format!("{e}[1] == nil")),
+            a(&format!("{e}[2].id == \"test:{field}\"")),
+            a(&format!("{e}[2].count == {}", 2 + n)),
+            a(&format!("{e}[2].damage == {n}")),
+            a(&format!("{e}[2].extra == nil")),
+            a(&format!("{e}[2].plain == true")),
+        ],
         Conv::StrSeq | Conv::MutStrVec => {
             vec![
                 a(&format!("{e}[1] == \"test:seed\"")),
@@ -4213,6 +4258,22 @@ pub fn table_leaves(
         Conv::StrSeq | Conv::MutStrVec => vec![
             ("[1]".into(), "\"test:seed\"".into()),
             ("[2]".into(), "\"test:seed2\"".into()),
+        ],
+        // The same leaves the asserts emit, as data, so the
+        // distinct-values check cannot drift from the asserts. Slot 1 is
+        // the hole: its nil assert carries the suffix bare.
+        Conv::ItemSlots => vec![
+            ("[0].id".into(), format!("\"test:{field}\"")),
+            ("[0].count".into(), format!("{}", 1 + n)),
+            ("[0].damage".into(), format!("{n}")),
+            ("[0].extra".into(), "nil".into()),
+            ("[0].plain".into(), "true".into()),
+            ("[1]".into(), "nil".into()),
+            ("[2].id".into(), format!("\"test:{field}\"")),
+            ("[2].count".into(), format!("{}", 2 + n)),
+            ("[2].damage".into(), format!("{n}")),
+            ("[2].extra".into(), "nil".into()),
+            ("[2].plain".into(), "true".into()),
         ],
         // Loot's drops leaf like the struct vec of stacks they seed as.
         Conv::LootDrops => table_leaves(&Conv::Struct, field, lua, key, n),
@@ -4643,6 +4704,19 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         Conv::StrSeq => plain(
             "&[\"test:seed\".to_owned(), \"test:seed2\".to_owned()]".into(),
             "{ \"test:seed\", \"test:seed2\" }".into(),
+        ),
+        // Slots 0 and 2 carry stacks (distinct counts, so swapping them
+        // fails); slot 1 is absent. The stacks are the plain `Item` seeds
+        // of `Conv::Item`, so the leaf asserts share one formula.
+        Conv::ItemSlots => plain(
+            format!(
+                "&[Some(ItemStack {{ item: \"test:{field}\".into(), count: {}, damage: {}, extra: None }}), None, Some(ItemStack {{ item: \"test:{field}\".into(), count: {}, damage: {}, extra: None }})]",
+                1 + n,
+                n,
+                2 + n,
+                n,
+            ),
+            "{}".into(),
         ),
         Conv::Item => plain(
             format!(

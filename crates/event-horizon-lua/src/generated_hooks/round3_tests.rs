@@ -7,7 +7,9 @@
 //! `generated_hooks::test_support` (`FakeHost` names id 7 stone and every
 //! other id after itself).
 
-use super::test_support::{FakeHost, FakeLevel, boxed, drop_dir, loaded, no_error};
+use super::test_support::{
+    FakeHost, FakeLevel, boxed, drop_dir, loaded, loaded_tracked, no_error, witness,
+};
 use crate::generated_runtime::{
     INTERNED_CAP, LuaStruct, StrInterner, placement_answer, props_of, read_string_seq,
     split_state_name, struct_vec_from_lua, struct_vec_to_lua, text_from_parts,
@@ -16,15 +18,16 @@ use crate::generated_runtime::{
 use horizon_client::item_data::StackData;
 use horizon_client::mod_api::{
     BlockStateId, Compound, Corner, Direction, Hand, ItemStack, ModContainer, ModEnergyBuffer,
-    NativeConfigKind, NativeFluidAction, NativeScreen, Tag, Text, dispatch_broadcast_message,
-    dispatch_commands, dispatch_console_line, dispatch_custom_block_fluids,
-    dispatch_entity_outline, dispatch_item_after_vertical_collision, dispatch_menu_background,
-    dispatch_menu_input_closed, dispatch_mouse_scrolling, dispatch_net_from_client,
+    NativeConfigKind, NativeFluidAction, NativeInventoryKind, NativeScreen, Tag, Text,
+    dispatch_broadcast_message, dispatch_commands, dispatch_console_line,
+    dispatch_custom_block_fluids, dispatch_entity_outline, dispatch_inventory_changed,
+    dispatch_item_after_vertical_collision, dispatch_menu_background, dispatch_menu_input_closed,
+    dispatch_mouse_scrolling, dispatch_net_from_client, dispatch_player_inventory_changed,
     dispatch_player_login, dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params,
     dispatch_state_for_placement,
 };
 use horizon_world::consumable::UseAnimation;
-use mlua::{Lua, Value};
+use mlua::{Lua, Table, Value};
 use std::time::Duration;
 
 fn lua() -> Lua {
@@ -223,6 +226,112 @@ fn enums_convert_every_variant() {
         text.contains("main") && text.contains("off"),
         "lists valid: {text}"
     );
+}
+
+/// Every inventory kind seeds its lower-case name; the kind never writes
+/// back (both inventory hooks only listen), so a write errors read-only
+/// instead of converting.
+#[test]
+fn inventory_kind_names_each_variant_and_rejects_writes() {
+    let lua = lua();
+    for (name, kind) in [
+        ("player", NativeInventoryKind::Player),
+        ("ender", NativeInventoryKind::Ender),
+        ("cursor", NativeInventoryKind::Cursor),
+        ("crafting", NativeInventoryKind::Crafting),
+    ] {
+        let v = NativeInventoryKind::to_value(&lua, &kind).unwrap();
+        assert_eq!(v.as_string().unwrap().to_str().unwrap(), name);
+    }
+    let err = NativeInventoryKind::from_value(&lua, s(&lua, "player"), "kind").unwrap_err();
+    assert!(
+        err.to_string().contains("read-only"),
+        "a kind write errors: {err}"
+    );
+}
+
+/// `inventory_changed` hears every kind with its lower-case name: the
+/// handler sees the player's uuid text and the exact kind string.
+#[test]
+fn inventory_changed_hears_each_kind() {
+    const LUA: &str = r#"LOG = {}
+horizon.on("inventory_changed", function(event)
+  __witness = (__witness or 0) + 1
+  LOG[#LOG + 1] = event.uuid .. " " .. event.kind
+end)"#;
+    let (m, id, dir, lua) = loaded_tracked("gen_inventory_changed_kinds", LUA);
+    let mods = boxed(m);
+    let uuid = 0x123e4567_e89b_12d3_a456_426614174000u128;
+    for kind in [
+        NativeInventoryKind::Player,
+        NativeInventoryKind::Ender,
+        NativeInventoryKind::Cursor,
+        NativeInventoryKind::Crafting,
+    ] {
+        dispatch_inventory_changed(&mut FakeHost::empty(), &mods, uuid, kind);
+    }
+    assert_eq!(witness(&lua), 4, "one firing per kind");
+    let log: Vec<String> = lua
+        .globals()
+        .get::<Table>("LOG")
+        .unwrap()
+        .sequence_values()
+        .map(|v| v.unwrap())
+        .collect();
+    assert_eq!(
+        log,
+        [
+            "123e4567-e89b-12d3-a456-426614174000 player",
+            "123e4567-e89b-12d3-a456-426614174000 ender",
+            "123e4567-e89b-12d3-a456-426614174000 cursor",
+            "123e4567-e89b-12d3-a456-426614174000 crafting",
+        ]
+    );
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// `player_inventory_changed` seeds the slots keyed by vanilla slot
+/// number: filled slots carry their item tables, empty slots are absent,
+/// so `pairs` (not `#stacks` or `ipairs`) walks the four filled ones.
+#[test]
+fn player_inventory_changed_seeds_slots_by_number() {
+    const LUA: &str = r#"horizon.on("player_inventory_changed", function(event)
+  __witness = (__witness or 0) + 1
+  assert(event.player == "123e4567-e89b-12d3-a456-426614174000", "player")
+  assert(event.stacks[0].id == "minecraft:diamond_sword" and event.stacks[0].count == 1, "hotbar")
+  assert(event.stacks[8].id == "minecraft:torch" and event.stacks[8].count == 64, "hotbar end")
+  assert(event.stacks[36].id == "minecraft:iron_boots" and event.stacks[36].count == 1, "feet")
+  assert(event.stacks[40].id == "minecraft:shield" and event.stacks[40].count == 1, "off hand")
+  assert(event.stacks[1] == nil and event.stacks[9] == nil, "holes are absent")
+  local n = 0
+  for _ in pairs(event.stacks) do n = n + 1 end
+  assert(n == 4, "pairs walks exactly the filled slots")
+end)"#;
+    let (m, id, dir, lua) = loaded_tracked("gen_player_inventory_changed_slots", LUA);
+    let mods = boxed(m);
+    let mut stacks: Vec<Option<ItemStack>> = vec![None; 41];
+    let stack = |item: &str, count: u32| {
+        Some(ItemStack {
+            item: item.into(),
+            count,
+            damage: 0,
+            extra: None,
+        })
+    };
+    stacks[0] = stack("minecraft:diamond_sword", 1);
+    stacks[8] = stack("minecraft:torch", 64);
+    stacks[36] = stack("minecraft:iron_boots", 1);
+    stacks[40] = stack("minecraft:shield", 1);
+    dispatch_player_inventory_changed(
+        &mut FakeHost::empty(),
+        &mods,
+        0x123e4567_e89b_12d3_a456_426614174000u128,
+        &stacks,
+    );
+    assert_eq!(witness(&lua), 1, "the handler ran");
+    no_error(&id);
+    drop_dir(dir);
 }
 
 /// An NBT round trip through the generated write path keeps each number's

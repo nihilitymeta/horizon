@@ -623,10 +623,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("handshake", "generated"),
     ("hanging_break_v2", "generated"),
     ("interact_entity_v2", "generated"),
-    (
-        "inventory_changed",
-        "cannot: inventory_changed: unsupported: type crate::mod_api::NativeInventoryKind has no mapping",
-    ),
+    ("inventory_changed", "generated"),
     ("inventory_click", "generated"),
     ("inventory_drag", "generated"),
     ("item_after_vertical_collision", "generated"),
@@ -661,10 +658,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("player_died_v2", "generated"),
     ("player_fish_v2", "generated"),
     ("player_hurt_by_player", "generated"),
-    (
-        "player_inventory_changed",
-        "adapter: player_inventory_changed: adapter: a slice needs its table form",
-    ),
+    ("player_inventory_changed", "generated"),
     ("player_join_message", "generated"),
     ("player_launch_projectile_v2", "generated"),
     ("player_leave_message", "generated"),
@@ -1297,14 +1291,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 6;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 7;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "3408212d2eaccf35";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "e2d80e4812e05489";
 
 #[cfg(test)]
 mod test_support;
@@ -1734,6 +1728,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "handshake",
     "hanging_break_v2",
     "interact_entity_v2",
+    "inventory_changed",
     "inventory_click",
     "inventory_drag",
     "item_after_vertical_collision",
@@ -1760,6 +1755,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "player_died_v2",
     "player_fish_v2",
     "player_hurt_by_player",
+    "player_inventory_changed",
     "player_join_message",
     "player_launch_projectile_v2",
     "player_leave_message",
@@ -2326,6 +2322,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(handshake, none, horizon_client::mod_api::HandshakeEvent<'_>, (none), [address: s_val(std::net::SocketAddr), host: mut_string => mut_string, intent: copy, reason: s_opt_text => w_opt_text]);
     gen_cancel!(hanging_break_v2, game_mut, horizon_client::mod_api::HangingBreakV2Event<'_>, (field kind), [player: opt_uuid, dimension: cloned, kind: cloned, pos: pos]);
     gen_cancel!(interact_entity_v2, game_mut, horizon_client::mod_api::InteractEntityV2Event<'_>, (field kind), [entity: copy, kind: cloned, hand: s_val(horizon_client::mod_api::Hand), stack: opt_item]);
+    gen_listen!(inventory_changed, game_mut, horizon_client::mod_api::InventoryChangedEvent, (none), [uuid: uuid, kind: s_val(horizon_client::mod_api::NativeInventoryKind)]);
     gen_cancel!(inventory_click, game_mut, horizon_client::mod_api::InventoryClickEvent<'_>, (none), [player: player, window: copy, slot: copy, button: copy, mode: copy]);
     gen_cancel!(inventory_drag, game_mut, horizon_client::mod_api::InventoryDragEvent<'_>, (none), [player: player, window: copy, kind: copy, slots: int_seq]);
     gen_cancel!(item_after_vertical_collision, game_mut, horizon_client::mod_api::ItemAfterVerticalCollisionEvent<'_>, (entity entity), [dimension: cloned, client: copy, entity: copy, state: state_game, block_pos: pos, item_pos: vec3, stack: s_mut(horizon_client::mod_api::ItemStack) => w_mut(horizon_client::mod_api::ItemStack), state_props: state_props_note]);
@@ -2352,6 +2349,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(player_died_v2, game_mut, horizon_client::mod_api::PlayerDiedV2Event<'_>, (none), [player: player, message: s_text]);
     gen_cancel!(player_fish_v2, game_mut, horizon_client::mod_api::PlayerFishV2Event<'_>, (none), [player: player, state: copy, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(player_hurt_by_player, none, horizon_client::mod_api::PlayerHurtByPlayerEvent<'_>, (none), [attacker: uuid, attacker_entity: copy, victim: uuid, victim_entity: copy, source: cloned, damage_type: cloned, amount: copy => mut_scalar]);
+    gen_listen!(player_inventory_changed, game_mut, horizon_client::mod_api::PlayerInventoryChangedEvent<'_>, (none), [player: uuid, stacks: item_slots]);
     gen_listen!(player_join_message, game_mut, horizon_client::mod_api::PlayerJoinMessageEvent<'_>, (none), [player: player, line: s_opt_text => w_opt_text]);
     gen_cancel!(player_launch_projectile_v2, game_mut, horizon_client::mod_api::PlayerLaunchProjectileV2Event<'_>, (none), [player: player, stack: item]);
     gen_listen!(player_leave_message, game_mut, horizon_client::mod_api::PlayerLeaveMessageEvent<'_>, (none), [player: player, line: s_opt_text => w_opt_text]);
@@ -63192,6 +63190,102 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_inventory_changed() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_inventory_changed",
+            "horizon.on(\"inventory_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.uuid == \"00000000-0000-0000-0000-000000000007\", \"uuid\")\n    assert(event.kind == \"ender\", \"kind\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_inventory_changed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            NativeInventoryKind::Ender,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_inventory_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_inventory_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                NativeInventoryKind::Ender,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "inventory_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "inventory_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_inventory_changed_cost_live",
+            "horizon.on(\"inventory_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_inventory_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                NativeInventoryKind::Ender,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "inventory_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "inventory_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "inventory_changed read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_inventory_click() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_inventory_click",
@@ -68089,6 +68183,144 @@ mod generated_tests {
                 level_reads(),
                 0,
                 "player_hurt_by_player read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_player_inventory_changed() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_player_inventory_changed",
+            "horizon.on(\"player_inventory_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.player == \"00000000-0000-0000-0000-000000000007\", \"player\")\n    assert(event.stacks[0].id == \"test:stacks\", \"stacks\")\n    assert(event.stacks[0].count == 2, \"stacks\")\n    assert(event.stacks[0].damage == 1, \"stacks\")\n    assert(event.stacks[0].extra == nil, \"stacks\")\n    assert(event.stacks[0].plain == true, \"stacks\")\n    assert(event.stacks[1] == nil, \"stacks\")\n    assert(event.stacks[2].id == \"test:stacks\", \"stacks\")\n    assert(event.stacks[2].count == 3, \"stacks\")\n    assert(event.stacks[2].damage == 1, \"stacks\")\n    assert(event.stacks[2].extra == nil, \"stacks\")\n    assert(event.stacks[2].plain == true, \"stacks\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_player_inventory_changed(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            7,
+            &[
+                Some(ItemStack {
+                    item: "test:stacks".into(),
+                    count: 2,
+                    damage: 1,
+                    extra: None,
+                }),
+                None,
+                Some(ItemStack {
+                    item: "test:stacks".into(),
+                    count: 3,
+                    damage: 1,
+                    extra: None,
+                }),
+            ],
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_player_inventory_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_inventory_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_inventory_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &[
+                    Some(ItemStack {
+                        item: "test:stacks".into(),
+                        count: 2,
+                        damage: 1,
+                        extra: None,
+                    }),
+                    None,
+                    Some(ItemStack {
+                        item: "test:stacks".into(),
+                        count: 3,
+                        damage: 1,
+                        extra: None,
+                    }),
+                ],
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "player_inventory_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_inventory_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_inventory_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_player_inventory_changed_cost_live",
+            "horizon.on(\"player_inventory_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_player_inventory_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &[
+                    Some(ItemStack {
+                        item: "test:stacks".into(),
+                        count: 2,
+                        damage: 1,
+                        extra: None,
+                    }),
+                    None,
+                    Some(ItemStack {
+                        item: "test:stacks".into(),
+                        count: 3,
+                        damage: 1,
+                        extra: None,
+                    }),
+                ],
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "player_inventory_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "player_inventory_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "player_inventory_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -77659,6 +77891,15 @@ mod generated_tests {
             );
             assert!(!cancel, "cancel changed with no handler");
         }
+        // inventory_changed: unregistered, nothing runs.
+        {
+            dispatch_inventory_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                NativeInventoryKind::Ender,
+            );
+        }
         // inventory_click: unregistered, nothing runs.
         {
             let mut cancel = false;
@@ -78014,6 +78255,29 @@ mod generated_tests {
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
+        }
+        // player_inventory_changed: unregistered, nothing runs.
+        {
+            dispatch_player_inventory_changed(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                7,
+                &[
+                    Some(ItemStack {
+                        item: "test:stacks".into(),
+                        count: 2,
+                        damage: 1,
+                        extra: None,
+                    }),
+                    None,
+                    Some(ItemStack {
+                        item: "test:stacks".into(),
+                        count: 3,
+                        damage: 1,
+                        extra: None,
+                    }),
+                ],
+            );
         }
         // player_join_message: unregistered, nothing runs.
         {

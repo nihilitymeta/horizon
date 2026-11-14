@@ -38,11 +38,11 @@ const ENTITY_GONE: i64 = 99;
 /// or retyped), and update `LUA_HOOK_SURFACE_FINGERPRINT` beside it.
 /// A mod built for another surface fails at load with both numbers, instead
 /// of failing later on a missing hook name.
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 6;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 7;
 /// The committed fingerprint of the surface `LUA_HOOK_SURFACE_VERSION`
 /// describes: `lua-hooks --check` fails when the freshly computed one
 /// differs, so nobody forgets the bump above.
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "3408212d2eaccf35";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "e2d80e4812e05489";
 
 /// The macro's host kind for a model host.
 fn host_ident(host: Host) -> &'static str {
@@ -146,6 +146,7 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         Conv::Vec3f => "vec3",
         Conv::IntSeq => "int_seq",
         Conv::StrSeq => "str_seq",
+        Conv::ItemSlots => "item_slots",
         Conv::Item => "item",
         Conv::OptItem => "opt_item",
         Conv::StateLevel => "state_level",
@@ -4251,7 +4252,7 @@ mod tests {
 
     #[test]
     fn the_surface_starts_at_version_one() {
-        assert_eq!(LUA_HOOK_SURFACE_VERSION, 6);
+        assert_eq!(LUA_HOOK_SURFACE_VERSION, 7);
     }
 
     #[test]
