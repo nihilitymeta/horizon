@@ -122,9 +122,13 @@ pub enum Capability {
     /// weather, and players' game modes (server mods; the Lua helpers are
     /// gated in a following change). No WIT interface.
     WorldSettings,
+    /// Its scripts add players to and remove them from the server's whitelist
+    /// (server mods; the Lua helpers are gated in a following change). No WIT
+    /// interface.
+    ServerAdmin,
 }
 impl Capability {
-    pub const ALL: [Capability; 14] = [
+    pub const ALL: [Capability; 15] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -139,6 +143,7 @@ impl Capability {
         Capability::Recipes,
         Capability::Scripts,
         Capability::WorldSettings,
+        Capability::ServerAdmin,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
@@ -149,6 +154,7 @@ impl Capability {
                 | Capability::World
                 | Capability::Scripts
                 | Capability::WorldSettings
+                | Capability::ServerAdmin
         )
     }
     /// The WIT interface it grants, in `horizon:mods`.
@@ -168,6 +174,7 @@ impl Capability {
             Capability::Recipes => "recipes",
             Capability::Scripts => "scripts",
             Capability::WorldSettings => "world-settings",
+            Capability::ServerAdmin => "server-admin",
         }
     }
     /// May change in any release: a mod uses it only with
@@ -181,6 +188,7 @@ impl Capability {
                 | Capability::Recipes
                 | Capability::Scripts
                 | Capability::WorldSettings
+                | Capability::ServerAdmin
         )
     }
     /// What the player reads before turning the mod on: "May <this>".
@@ -210,6 +218,7 @@ impl Capability {
             Capability::WorldSettings => {
                 "change the world's game rules, the time and the weather, and set players' game modes"
             }
+            Capability::ServerAdmin => "add players to and remove them from the server's whitelist",
         }
     }
     /// The capability a component import needs, `Ok(None)` for one every
@@ -230,7 +239,12 @@ impl Capability {
         }
         Capability::ALL
             .into_iter()
-            .filter(|c| !matches!(*c, Capability::Registries | Capability::WorldSettings))
+            .filter(|c| {
+                !matches!(
+                    *c,
+                    Capability::Registries | Capability::WorldSettings | Capability::ServerAdmin
+                )
+            })
             .find(|c| c.interface() == interface)
             .map(Some)
             .ok_or_else(unknown)
@@ -253,6 +267,7 @@ impl fmt::Display for Capability {
             Capability::Recipes => "recipes",
             Capability::Scripts => "scripts",
             Capability::WorldSettings => "world-settings",
+            Capability::ServerAdmin => "server-admin",
         };
         f.write_str(name)
     }
@@ -651,6 +666,47 @@ capabilities = ["game-read", "hud"]
     }
 
     #[test]
+    fn server_admin_parses_as_an_experimental_server_capability() {
+        let base = "id = \"m\"\nname = \"M\"\nversion = \"1\"\napi = \"0.3\"\nside = \"server\"\n";
+        let m = Manifest::parse(&format!(
+            "{base}capabilities = [\"scripts\", \"server-admin\"]\n\
+             experimental = [\"scripts\", \"server-admin\"]\n"
+        ))
+        .unwrap();
+        assert_eq!(
+            m.capabilities,
+            [Capability::Scripts, Capability::ServerAdmin]
+        );
+        assert_eq!(
+            m.experimental,
+            [Capability::Scripts, Capability::ServerAdmin]
+        );
+        assert!(Capability::ServerAdmin.on_server());
+        assert!(Capability::ServerAdmin.is_experimental());
+        assert_eq!(
+            Capability::ServerAdmin.describe(),
+            "add players to and remove them from the server's whitelist"
+        );
+        // No component import grants it: the Lua helpers read the manifest.
+        assert!(
+            m.check_imports(["horizon:mods/server-admin@0.1.0"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn server_admin_without_the_opt_in_is_refused() {
+        let base = "id = \"m\"\nname = \"M\"\nversion = \"1\"\napi = \"0.3\"\nside = \"server\"\n";
+        let err =
+            Manifest::parse(&format!("{base}capabilities = [\"server-admin\"]\n")).unwrap_err();
+        assert!(
+            err.contains("capability server-admin is experimental and may change in any release"),
+            "{err}"
+        );
+        assert!(err.contains("experimental = [\"server-admin\"]"), "{err}");
+    }
+
+    #[test]
     fn every_capability_round_trips_through_its_manifest_name() {
         let names: Vec<String> = Capability::ALL
             .iter()
@@ -679,12 +735,13 @@ capabilities = ["game-read", "hud"]
                 "recipes",
                 "scripts",
                 "world-settings",
+                "server-admin",
             ]
         );
         assert_eq!(
             Capability::ALL
                 .iter()
-                .filter(|c| **c == Capability::WorldSettings)
+                .filter(|c| **c == Capability::ServerAdmin)
                 .count(),
             1
         );

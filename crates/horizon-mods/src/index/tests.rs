@@ -362,3 +362,19 @@ fn an_index_entry_keeps_world_settings() {
         Some(&Capability::WorldSettings)
     );
 }
+
+#[test]
+fn an_index_entry_keeps_server_admin() {
+    let mut index = sample();
+    index.projects[0].versions[0]
+        .capabilities
+        .push(Capability::ServerAdmin);
+    let text = serde_json::to_string(&index).unwrap();
+    assert!(text.contains("\"server-admin\""), "{text}");
+    let again = Index::parse(&text).unwrap();
+    assert_eq!(again, index);
+    assert_eq!(
+        again.projects[0].versions[0].capabilities.last(),
+        Some(&Capability::ServerAdmin)
+    );
+}
