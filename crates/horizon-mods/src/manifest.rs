@@ -118,13 +118,13 @@ pub enum Capability {
     /// the game on its hook points: behaviour for the mod's blocks and mobs
     /// (docs/lua-bindings.md). No WIT interface.
     Scripts,
-    /// Its scripts change the world's settings: game rules, the time and the
-    /// weather, and players' game modes (server mods; the Lua helpers are
-    /// gated in a following change). No WIT interface.
+    /// Its scripts change the world's settings with `level_set_day_time`,
+    /// `level_set_weather`, `set_game_mode` and `level_set_game_rule` (three
+    /// rules; server mods). No WIT interface.
     WorldSettings,
-    /// Its scripts add players to and remove them from the server's whitelist
-    /// (server mods; the Lua helpers are gated in a following change). No WIT
-    /// interface.
+    /// Its scripts kick players and add them to or remove them from the
+    /// server's whitelist (`kick`, `whitelist_add` and `whitelist_remove`;
+    /// server mods). No WIT interface.
     ServerAdmin,
 }
 impl Capability {
@@ -218,7 +218,9 @@ impl Capability {
             Capability::WorldSettings => {
                 "change the world's game rules, the time and the weather, and set players' game modes"
             }
-            Capability::ServerAdmin => "add players to and remove them from the server's whitelist",
+            Capability::ServerAdmin => {
+                "kick players, and add players to and remove them from the server's whitelist"
+            }
         }
     }
     /// The capability a component import needs, `Ok(None)` for one every
@@ -685,7 +687,7 @@ capabilities = ["game-read", "hud"]
         assert!(Capability::ServerAdmin.is_experimental());
         assert_eq!(
             Capability::ServerAdmin.describe(),
-            "add players to and remove them from the server's whitelist"
+            "kick players, and add players to and remove them from the server's whitelist"
         );
         // No component import grants it: the Lua helpers read the manifest.
         assert!(

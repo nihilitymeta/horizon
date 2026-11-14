@@ -405,6 +405,11 @@ error naming it, and stays set only with `run_command` as `/gamerule`). The time
 `experimental = ["world-settings"]` beside it): a mod without it calls one and the call fails there, with an
 error naming the helper, the mod and the capability, and nothing is changed.
 
+`horizon.whitelist_add` and `horizon.whitelist_remove` need capability `server-admin` the same way
+(`experimental = ["server-admin"]` beside it), and so does `horizon.kick`: a mod without it calls one and the
+call fails there, with an error naming the helper, the mod and the capability, and the whitelist and the player
+are left as they were.
+
 ### Running a command as a player
 
 `horizon.run_command_as(player, line[, callback])` (server state) runs `line` as the player typing it would:
@@ -1114,7 +1119,7 @@ Reads (answer now):
 
 Actions (queued, run after the handler like `give_items`):
 
-* `horizon.kick(player, reason)` disconnects `player` with `reason` (a Lua string, as `horizon.broadcast`) shown whole, as `/kick` does, at the tick's end.
+* `horizon.kick(player, reason)` disconnects `player` with `reason` (a Lua string, as `horizon.broadcast`) shown whole, as `/kick` does, at the tick's end. It needs capability `server-admin` in the mod's manifest (`side = "server"` with `api = "0.3"`, and `experimental = ["server-admin"]` beside it): without it the call fails there, with an error naming the helper, the mod and the capability, and no player is kicked.
 * `horizon.teleport_player(player, dimension, pos, yaw, pitch)` teleports `player` as `/tp` does: `dimension` is one of `minecraft:overworld`, `minecraft:the_nether`, `minecraft:the_end`; `pos` is `{ x = ..., y = ..., z = ... }`; `yaw` and `pitch` are degrees, with `pitch` clamped to −90..90. The position must be finite and inside `/tp`'s bounds (x and z within ±30M, y within ±20M).
 
 `player` is the uuid text a hook event gives, or a player table, exactly as the net-send helpers accept it (`string | ReadPlayer`). Both actions return nothing to the script: the native's `bool` (for a player not on the server, a bad dimension, an out-of-bounds position, or a dead player) is dropped, and a refusal is a silent no-op, never a script error. A non-finite number (NaN or infinity) is a script error naming the argument (`teleport_player.pos.x`, `teleport_player.yaw`, `teleport_player.pitch`).
@@ -1124,6 +1129,11 @@ A player who cannot be resolved (an unknown name, a bad uuid): `player_permissio
 `has_permission` asks every mod's `permission_check` handler first: a permissions mod answers by setting `event.result`, and the first handler that sets it decides. Inside a `permission_check` handler itself, `horizon.has_permission` raises like every read does there (`reads work inside a hook with a host`), since that hook has no host to read from.
 
 ```lua
+-- horizon-mod.toml: the kick below needs the capability.
+-- side = "server"
+-- capabilities = ["scripts", "server-admin"]
+-- experimental = ["scripts", "server-admin"]
+
 -- One command: an operator sends a name to the nether; anyone else is kicked.
 horizon.command("send", 2, function(player, args)
   if not horizon.has_permission(player.uuid, "ruby:send", 2) then

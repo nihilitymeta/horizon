@@ -245,6 +245,26 @@ pub(crate) const NEEDS_WORLD_SETTINGS: &[&str] = &[
     "level_set_game_rule",
 ];
 
+/// The helpers that kick a player or edit the server's whitelist: a mod calls
+/// one only with capability `server-admin` in its manifest (server mods,
+/// experimental; `Capability::ServerAdmin`). `kick` is a hand-written action,
+/// `whitelist_remove` a generated action and `whitelist_add` a generated read;
+/// the action wrapper and the read wrapper both check the flag at the call,
+/// so adding a name here is the whole change. A test checks every name is a
+/// real helper on a server state.
+pub(crate) const NEEDS_SERVER_ADMIN: &[&str] = &["kick", "whitelist_add", "whitelist_remove"];
+
+/// The refusal a helper in `NEEDS_SERVER_ADMIN` raises without capability
+/// `server-admin` in the manifest: one text for the action wrapper and the
+/// read wrapper.
+fn server_admin_refusal(helper: &str, id: &str) -> String {
+    format!(
+        "{helper}: mod {id} needs capability \"server-admin\" (and experimental = \
+         [\"server-admin\"]) in its manifest to kick players or edit the server's whitelist; \
+         nothing was changed"
+    )
+}
+
 /// Whether a writable game rule takes a boolean or an integer: the call
 /// checks the Lua value's kind, so adding an integer rule later is a
 /// one-line change to [`WRITABLE_GAME_RULES`].
@@ -372,7 +392,7 @@ pub(crate) const TIMERS_HANDLER: &str = "horizon_timers";
 /// runner keeps in the slot while the handlers run; outside a call there is
 /// none, and a read is an error.
 const READS_CODE: &str = r#"
-return function(slot, horizon, base)
+return function(slot, horizon, base, allowed)
   local error, pcall, text = base.error, base.pcall, base.text
   local function read(what, ...)
     local f = slot[1]
@@ -1407,7 +1427,18 @@ impl LuaMod {
 /// five spike reads (`profile_by_uuid`, `player_view_distance`,
 /// `player_sneaking`, `player_stat`, `max_stack_size`) are covered by the
 /// same loop, so `GENERATED_READS` is the one source of truth.
-fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
+///
+/// A generated read whose name is in `NEEDS_SERVER_ADMIN` checks the
+/// manifest's capability through `allowed` first (the flag's `Arc`, shared
+/// with the mod's field so a reload updates it), raising the action
+/// wrapper's refusal at the script's line: a read wrapper is the second
+/// install path the gate has to cover.
+fn install_reads(
+    lua: &Lua,
+    api: &Table,
+    id: &str,
+    server_admin: &Arc<AtomicBool>,
+) -> mlua::Result<()> {
     let slot: Table = lua.named_registry_value(HOST_SLOT)?;
     let base: Table = lua.named_registry_value(BASE)?;
     let (head, tail) = READS_CODE
@@ -1424,13 +1455,27 @@ fn install_reads(lua: &Lua, api: &Table) -> mlua::Result<()> {
         .iter()
         .chain(crate::generated_helpers::GENERATED_CLIENT_READS)
     {
-        code.push_str(&format!(
-            "  horizon.{name} = function(...) return read(\"{name}\", ...) end\n"
-        ));
+        if NEEDS_SERVER_ADMIN.contains(name) {
+            let refusal = server_admin_refusal(name, id);
+            code.push_str(&format!(
+                "  horizon.{name} = function(...)\n\
+                 \x20   if not allowed() then error([[{refusal}]], 2) end\n\
+                 \x20   return read(\"{name}\", ...)\n\
+                 \x20 end\n"
+            ));
+        } else {
+            code.push_str(&format!(
+                "  horizon.{name} = function(...) return read(\"{name}\", ...) end\n"
+            ));
+        }
     }
     code.push_str(tail);
     let install: Function = lua.load(code.as_str()).set_name("horizon").eval()?;
-    install.call::<()>((slot, api, base))
+    // `allowed` reads the flag on every call: a reload that rewrites the
+    // manifest changes what these wrappers answer with no reinstall.
+    let flag = server_admin.clone();
+    let allowed = lua.create_function(move |_, ()| Ok(flag.load(Ordering::Relaxed)))?;
+    install.call::<()>((slot, api, base, allowed))
 }
 
 /// Installs the timers (`TIMERS_CODE`) on the `horizon` table: their handler
@@ -1570,6 +1615,14 @@ pub struct LuaMod {
     /// it just ran there, so gaining or losing the capability takes effect
     /// with the scripts, and a failed reload leaves both as they were.
     world_settings: Arc<AtomicBool>,
+    /// Whether the manifest declares capability `server-admin`: the helpers
+    /// that kick a player or edit the whitelist (`NEEDS_SERVER_ADMIN`) are
+    /// refused at the call without it, in the action wrapper and in the read
+    /// wrapper (`whitelist_add`, a generated read). Shared with those
+    /// closures and read on every call, with the same reload rule as
+    /// `world_settings`: a successful reload stores the manifest its scripts
+    /// came from, a failed one leaves the old permission.
+    server_admin: Arc<AtomicBool>,
     /// The versions of the mods it depends on, by id (`horizon.libraries`).
     library_versions: Vec<(String, String)>,
     /// The `.hmod` or folder the scripts came from.
@@ -2128,7 +2181,7 @@ impl LuaMod {
         libraries: &[(String, PathBuf)],
         config_dir: Option<&Path>,
     ) -> Result<Self, String> {
-        let (id, version, world_settings, scripts) = Self::read_scripts(path, side)?;
+        let (id, version, world_settings, server_admin, scripts) = Self::read_scripts(path, side)?;
         let (library_scripts, library_versions) = Self::read_libraries(libraries, side)?;
         let lua = Lua::new();
         lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
@@ -2147,6 +2200,7 @@ impl LuaMod {
             side,
             version,
             world_settings: Arc::new(AtomicBool::new(world_settings)),
+            server_admin: Arc::new(AtomicBool::new(server_admin)),
             library_versions,
             source: path.to_owned(),
             lua,
@@ -2194,13 +2248,14 @@ impl LuaMod {
     }
 
     /// The mod's id, version, whether its manifest declares capability
-    /// `world-settings`, and the scripts of `side` (its folder and
-    /// `scripts/shared/`), read from its `.hmod` or folder. The other side's
-    /// folder is not read: its files do not reach this state.
+    /// `world-settings` and whether it declares `server-admin`, and the
+    /// scripts of `side` (its folder and `scripts/shared/`), read from its
+    /// `.hmod` or folder. The other side's folder is not read: its files do
+    /// not reach this state.
     fn read_scripts(
         path: &Path,
         side: LuaSide,
-    ) -> Result<(String, String, bool, HashMap<String, String>), String> {
+    ) -> Result<(String, String, bool, bool, HashMap<String, String>), String> {
         let at = |e: String| format!("{}: {e}", path.display());
         let package = Package::read(path).map_err(at)?;
         let manifest = package.manifest;
@@ -2222,7 +2277,14 @@ impl LuaMod {
             scripts.insert(name.clone(), code);
         }
         let world_settings = manifest.capabilities.contains(&Capability::WorldSettings);
-        Ok((manifest.id, manifest.version, world_settings, scripts))
+        let server_admin = manifest.capabilities.contains(&Capability::ServerAdmin);
+        Ok((
+            manifest.id,
+            manifest.version,
+            world_settings,
+            server_admin,
+            scripts,
+        ))
     }
 
     /// The libraries' scripts of `side`, the first library's winning a shared
@@ -2240,7 +2302,7 @@ impl LuaMod {
             if !package.manifest.capabilities.contains(&Capability::Scripts) {
                 continue;
             }
-            let (_, _, _, scripts) =
+            let (_, _, _, _, scripts) =
                 Self::read_scripts(path, side).map_err(|e| format!("library {id}: {e}"))?;
             for (name, code) in scripts {
                 out.entry(name).or_insert(code);
@@ -2259,7 +2321,8 @@ impl LuaMod {
     /// mob keeps the definition it was made with either way, until the
     /// mob's AI is set up again.
     pub fn reload(&self) -> Result<(), String> {
-        let (_, _, world_settings, scripts) = Self::read_scripts(&self.source, self.side)?;
+        let (_, _, world_settings, server_admin, scripts) =
+            Self::read_scripts(&self.source, self.side)?;
         let (library_scripts, _) = Self::read_libraries(&self.libraries, self.side)?;
         // Hold the per-state turn for the whole reload: the registry
         // tables, timers and `run` touch the host slot and the queue.
@@ -2343,6 +2406,7 @@ impl LuaMod {
             // written here, after those scripts ran, so a failed reload
             // keeps the old permission beside the restored old scripts.
             self.world_settings.store(world_settings, Ordering::Relaxed);
+            self.server_admin.store(server_admin, Ordering::Relaxed);
             return Ok(());
         };
         // Whatever the failed script registered is dropped with the fresh
@@ -2494,6 +2558,11 @@ impl LuaMod {
         // call without it, naming this mod. Shared with the mod's field, so
         // a reload updates it for the closures already installed.
         let world_settings = self.world_settings.clone();
+        // The manifest's `server-admin` capability, read on every call by the
+        // action wrapper and the read wrapper for a name in
+        // `NEEDS_SERVER_ADMIN`. Shared with the mod's field, as the
+        // world-settings flag is, so a reload updates it in place.
+        let server_admin = self.server_admin.clone();
         let gate_mod = self.id.clone();
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
@@ -2793,6 +2862,7 @@ impl LuaMod {
             let slot = slot.clone();
             let gate_mod = gate_mod.clone();
             let world_settings = world_settings.clone();
+            let server_admin = server_admin.clone();
             api.set(
                 action,
                 lua.create_function(move |lua, args: MultiValue| {
@@ -2808,6 +2878,18 @@ impl LuaMod {
                             "{action}: mod {gate_mod} needs capability \"world-settings\" \
                              (and experimental = [\"world-settings\"]) in its manifest to \
                              change the world's settings; nothing was changed"
+                        )));
+                    }
+                    // Kicking and the whitelist are the server's own, declared
+                    // the same way: without `server-admin` the call fails here,
+                    // at the script's line, queues nothing, and the host's
+                    // method never runs. `whitelist_add` is a read and is
+                    // covered by the read wrapper in `install_reads`.
+                    if !server_admin.load(Ordering::Relaxed)
+                        && NEEDS_SERVER_ADMIN.contains(&action)
+                    {
+                        return Err(mlua::Error::runtime(server_admin_refusal(
+                            action, &gate_mod,
                         )));
                     }
                     // The game-rule allow-list: only `WRITABLE_GAME_RULES`
@@ -2955,7 +3037,7 @@ impl LuaMod {
         }
         // The reads and the timers over the actions: a summon with a host at
         // hand is a read (it answers the id).
-        install_reads(lua, &api)?;
+        install_reads(lua, &api, &self.id, &server_admin)?;
         install_timers(lua, &api, &self.id, self.side)?;
         // `horizon.config()`: the mod's own settings file (`config/<id>.json`
         // on the server, `config/<id>.client.json` on the client) as a table
@@ -4878,6 +4960,29 @@ experimental = ["scripts"]
             Package::write_files(MANIFEST_TEXT, None, files).unwrap(),
         )
         .unwrap();
+        (dir, path)
+    }
+
+    /// `hmod` with capability `server-admin` declared beside `scripts`: the
+    /// kick tests need it, and the shared manifest must keep lacking it for
+    /// the refusal tests.
+    fn hmod_admin(name: &str, files: &[(&str, &[u8])]) -> (PathBuf, PathBuf) {
+        let manifest = MANIFEST_TEXT
+            .replace("api = \"0.2\"", "api = \"0.3\"")
+            .replace("side = \"both\"", "side = \"server\"")
+            .replace(
+                "capabilities = [\"scripts\"]",
+                "capabilities = [\"scripts\", \"server-admin\"]",
+            )
+            .replace(
+                "experimental = [\"scripts\"]",
+                "experimental = [\"scripts\", \"server-admin\"]",
+            );
+        let dir = std::env::temp_dir().join(format!("horizon-lua-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ruby.hmod");
+        std::fs::write(&path, Package::write_files(&manifest, None, files).unwrap()).unwrap();
         (dir, path)
     }
 
@@ -11236,6 +11341,410 @@ experimental = ["scripts"]
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The manifest of a server test mod that does (or does not) declare
+    /// capability `server-admin`, in `capabilities` and `experimental`.
+    fn server_admin_manifest(name: &str, allowed: bool) -> String {
+        let caps = if allowed {
+            "capabilities = [\"scripts\", \"server-admin\"]\n\
+             experimental = [\"scripts\", \"server-admin\"]\n"
+        } else {
+            "capabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\n"
+        };
+        format!(
+            "id = \"{name}\"\nname = \"{name}\"\nversion = \"0.1.0\"\napi = \"0.3\"\n\
+             side = \"server\"\n{caps}"
+        )
+    }
+
+    /// Rewrites a `server_admin_mod`'s package on disk: its manifest with
+    /// or without the capability, and its server `init.lua`.
+    fn rewrite_server_admin_mod(dir: &Path, name: &str, allowed: bool, script: &[u8]) {
+        std::fs::write(
+            dir.join(format!("{name}.hmod")),
+            Package::write_files(
+                &server_admin_manifest(name, allowed),
+                None,
+                &[("scripts/server/init.lua", script)],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// A server mod of its own id that does (or does not) declare capability
+    /// `server-admin`, loaded and given a status row, so a later `error`
+    /// lookup sees it.
+    fn server_admin_mod(name: &str, allowed: bool, script: &[u8]) -> (PathBuf, LuaMod) {
+        let dir = std::env::temp_dir().join(format!("horizon-lua-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{name}.hmod"));
+        std::fs::write(
+            &path,
+            Package::write_files(
+                &server_admin_manifest(name, allowed),
+                None,
+                &[("scripts/server/init.lua", script)],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            side: m.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        (dir, m)
+    }
+
+    /// The player `ServerAdminHost` lists, so a name resolves to a uuid.
+    const GATED_PLAYER: u128 = 0x123e4567_e89b_12d3_a456_426614174000;
+
+    /// A host that records the kick and whitelist calls, and answers
+    /// `whitelist_add` with `added`.
+    #[derive(Default)]
+    struct ServerAdminHost {
+        calls: Mutex<Vec<String>>,
+        added: bool,
+    }
+    impl ServerAdminHost {
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+    impl Host for ServerAdminHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+        fn level_players(&self) -> Vec<horizon_client::mod_api::NativeServerPlayer> {
+            vec![test_events::native_server_player(
+                GATED_PLAYER,
+                "steve".into(),
+                0,
+                "minecraft:overworld".into(),
+                [0.0, 64.0, 0.0],
+                0,
+                20.0,
+                0.0,
+                0.0,
+                0,
+                String::new(),
+            )]
+        }
+        fn kick(&mut self, player: u128, reason: &horizon_client::mod_api::Text) -> bool {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("kick {player:032x} {}", reason.plain()));
+            true
+        }
+        fn whitelist_add(&self, uuid: u128, name: &str) -> bool {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("whitelist_add {uuid:032x} {name}"));
+            self.added
+        }
+        fn whitelist_remove(&mut self, uuid: u128, name: &str) -> bool {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("whitelist_remove {uuid:032x} {name}"));
+            true
+        }
+    }
+
+    #[test]
+    fn every_server_admin_gated_name_is_a_real_helper() {
+        let (dir, m) = server_admin_mod("gate_admin_names", true, b"");
+        let api: Table = m.lua.globals().get(GLOBAL).unwrap();
+        for name in NEEDS_SERVER_ADMIN {
+            assert!(
+                matches!(api.get::<Value>(*name).unwrap(), Value::Function(_)),
+                "{name} is gated for server-admin but is not a helper on a server state"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_without_server_admin_cannot_kick() {
+        let (dir, m) = server_admin_mod(
+            "gate_kick_off",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.kick("steve", "bye now")
+            end)
+            "#,
+        );
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains(
+                "kick: mod gate_kick_off needs capability \"server-admin\" \
+                 (and experimental = [\"server-admin\"]) in its manifest to kick players or \
+                 edit the server's whitelist; nothing was changed"
+            ),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_with_server_admin_kicks_with_the_exact_arguments() {
+        let (dir, m) = server_admin_mod(
+            "gate_kick_on",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.kick("steve", "bye now")
+            end)
+            "#,
+        );
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["kick 123e4567e89b12d3a456426614174000 bye now"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_without_server_admin_cannot_add_to_the_whitelist() {
+        let (dir, m) = server_admin_mod(
+            "gate_whitelist_add_off",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.whitelist_add("123e4567-e89b-12d3-a456-426614174000", "steve")
+            end)
+            "#,
+        );
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains(
+                "whitelist_add: mod gate_whitelist_add_off needs capability \"server-admin\" \
+                 (and experimental = [\"server-admin\"]) in its manifest to kick players or \
+                 edit the server's whitelist; nothing was changed"
+            ),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_with_server_admin_adds_to_the_whitelist_and_gets_the_hosts_answer() {
+        let (dir, m) = server_admin_mod(
+            "gate_whitelist_add_on",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              ADDED = horizon.whitelist_add("123e4567-e89b-12d3-a456-426614174000", "steve")
+            end)
+            "#,
+        );
+        let mut host = ServerAdminHost {
+            added: true,
+            ..Default::default()
+        };
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["whitelist_add 123e4567e89b12d3a456426614174000 steve"]
+        );
+        assert!(m.lua.globals().get::<bool>("ADDED").unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_without_server_admin_cannot_remove_from_the_whitelist() {
+        let (dir, m) = server_admin_mod(
+            "gate_whitelist_remove_off",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.whitelist_remove("123e4567-e89b-12d3-a456-426614174000", "steve")
+            end)
+            "#,
+        );
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains(
+                "whitelist_remove: mod gate_whitelist_remove_off needs capability \
+                 \"server-admin\" (and experimental = [\"server-admin\"]) in its manifest to \
+                 kick players or edit the server's whitelist; nothing was changed"
+            ),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_with_server_admin_removes_from_the_whitelist() {
+        let (dir, m) = server_admin_mod(
+            "gate_whitelist_remove_on",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.whitelist_remove("123e4567-e89b-12d3-a456-426614174000", "steve")
+            end)
+            "#,
+        );
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["whitelist_remove 123e4567e89b12d3a456426614174000 steve"]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The script the server-admin reload tests below run: one kick a tick.
+    const GATE_KICK_SCRIPT: &[u8] = br#"
+        horizon.on("server_tick", function()
+          horizon.kick("steve", "bye now")
+        end)
+    "#;
+
+    #[test]
+    fn a_reload_that_drops_server_admin_refuses_the_call_after_it() {
+        let name = "gate_admin_drop";
+        let (dir, m) = server_admin_mod(name, true, GATE_KICK_SCRIPT);
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["kick 123e4567e89b12d3a456426614174000 bye now"]
+        );
+        // The manifest loses the capability, the script staying as it is.
+        rewrite_server_admin_mod(&dir, name, false, GATE_KICK_SCRIPT);
+        m.reload()
+            .expect("the same script loads without the capability");
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert!(
+            host.calls().is_empty(),
+            "a reload that drops the capability revokes it: {:?}",
+            host.calls()
+        );
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains("kick: mod gate_admin_drop needs capability \"server-admin\""),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_reload_that_gains_server_admin_allows_the_call_after_it() {
+        let name = "gate_admin_gain";
+        let (dir, m) = server_admin_mod(name, false, GATE_KICK_SCRIPT);
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains("kick: mod gate_admin_gain needs capability \"server-admin\""),
+            "{e}"
+        );
+        // The manifest gains the capability, in both lists.
+        rewrite_server_admin_mod(&dir, name, true, GATE_KICK_SCRIPT);
+        m.reload()
+            .expect("the same script loads with the capability");
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["kick 123e4567e89b12d3a456426614174000 bye now"],
+            "a reload that gains the capability grants it"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_reload_keeps_the_server_admin_permission() {
+        let name = "gate_admin_failed_reload";
+        let (dir, m) = server_admin_mod(name, true, GATE_KICK_SCRIPT);
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["kick 123e4567e89b12d3a456426614174000 bye now"]
+        );
+        // The manifest loses the capability, but the new script does not
+        // parse: the old scripts and the old permission both stay.
+        rewrite_server_admin_mod(&dir, name, false, b"horizon.on(");
+        m.reload().expect_err("the broken script fails the reload");
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["kick 123e4567e89b12d3a456426614174000 bye now"],
+            "a failed reload neither grants nor revokes"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_world_settings_and_server_admin_flags_are_independent() {
+        // `world-settings` alone: the day time is set, the kick refused.
+        let (dir, m) = world_settings_mod(
+            "gate_admin_world_only",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              local ok, e = pcall(horizon.kick, "steve", "bye")
+              KICK = ok and "ran" or tostring(e)
+              horizon.level_set_day_time("minecraft:overworld", 3)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(host.calls(), ["level_set_day_time minecraft:overworld 3"]);
+        let refused = m.lua.globals().get::<String>("KICK").unwrap();
+        assert!(
+            refused.contains("kick: mod gate_admin_world_only needs capability \"server-admin\""),
+            "{refused}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // `server-admin` alone: the kick lands, the day time refused.
+        let (dir, m) = server_admin_mod(
+            "gate_admin_only",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              local ok, e = pcall(horizon.level_set_day_time, "minecraft:overworld", 3)
+              TIME = ok and "ran" or tostring(e)
+              horizon.kick("steve", "bye")
+            end)
+            "#,
+        );
+        let mut host = ServerAdminHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(host.calls(), ["kick 123e4567e89b12d3a456426614174000 bye"]);
+        let refused = m.lua.globals().get::<String>("TIME").unwrap();
+        assert!(
+            refused.contains(
+                "level_set_day_time: mod gate_admin_only needs capability \"world-settings\""
+            ),
+            "{refused}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A host with nothing in it: the timer tests only need one to tick.
     fn timer_host() -> MobHost {
         MobHost {
@@ -16444,7 +16953,7 @@ end)"#,
                 true
             }
         }
-        let (dir, path) = hmod(
+        let (dir, path) = hmod_admin(
             "perm_helpers",
             &[(
                 "scripts/server/init.lua",
@@ -16573,7 +17082,7 @@ end)"#,
                 true
             }
         }
-        let (dir, path) = hmod(
+        let (dir, path) = hmod_admin(
             "perm_unknown",
             &[(
                 "scripts/server/init.lua",
@@ -16732,7 +17241,7 @@ end)"#,
                 false
             }
         }
-        let (dir, path) = hmod(
+        let (dir, path) = hmod_admin(
             "perm_refuse",
             &[(
                 "scripts/server/init.lua",
