@@ -27,10 +27,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("level_tick_pre", "generated"),
     ("level_tick_post", "generated"),
     ("block_changed", "generated"),
-    (
-        "neighbor_changed",
-        "adapter: neighbor_changed: adapter: a block id needs its name",
-    ),
+    ("neighbor_changed", "generated"),
     ("random_tick", "generated"),
     ("tick_block", "generated"),
     (
@@ -1291,14 +1288,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 7;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 8;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "e2d80e4812e05489";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "c22c2ab7658627e2";
 
 #[cfg(test)]
 mod test_support;
@@ -1321,6 +1318,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "level_tick_pre",
     "level_tick_post",
     "block_changed",
+    "neighbor_changed",
     "random_tick",
     "tick_block",
     "hud",
@@ -1910,6 +1908,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(level_tick_pre, game_mut, horizon_client::mod_api::LevelTickPreEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(level_tick_post, game_mut, horizon_client::mod_api::LevelTickPostEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(block_changed, level, horizon_client::mod_api::BlockChangedEvent, (none), [dimension: dim, pos: pos_struct, old: state_level, new: state_level, old_props: state_props_note, new_props: state_props_note]);
+    gen_listen!(neighbor_changed, level, horizon_client::mod_api::NeighborChangedEvent, (none), [dimension: dim, pos: pos_struct, state: state_level, changed: block_name, moved: copy, state_props: state_props_note]);
     gen_level_tick!(random_tick, level_write, horizon_client::mod_api::RandomTickEvent, (block state), [dimension: dim, pos: pos_struct, state: block_from_state, state_props: level_props, data: level_data]);
     gen_level_tick!(tick_block, level_write, horizon_client::mod_api::TickBlockEvent, (block state), [dimension: dim, pos: pos_struct, state: block_from_state, state_props: level_props, data: level_data]);
     gen_frame!(hud, game_mut, horizon_client::mod_api::HudEvent<'_>, (none), [batch: hud_batch, corners: corners]);
@@ -3330,6 +3329,110 @@ mod generated_tests {
             assert!(
                 level_reads() > 0,
                 "block_changed read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_neighbor_changed() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_neighbor_changed",
+            "horizon.on(\"neighbor_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.state == \"test:state10\", \"state\")\n    assert(event.changed == \"test:block11\", \"changed\")\n    assert(event.moved == true, \"moved\")\n    assert(next(event.state_props) == nil, \"state_props\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_neighbor_changed(
+            &FakeLevel,
+            &firing_mods,
+            LevelDimension::Overworld,
+            BlockPos::new(2, 3, 4),
+            BlockStateId(10),
+            BlockId(11),
+            true,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_neighbor_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_neighbor_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_neighbor_changed(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockId(11),
+                true,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "neighbor_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "neighbor_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "neighbor_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_neighbor_changed_cost_live",
+            "horizon.on(\"neighbor_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_neighbor_changed(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockId(11),
+                true,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "neighbor_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "neighbor_changed read the host for a heard dispatch"
+            );
+            assert!(
+                level_reads() > 0,
+                "neighbor_changed read the level for a heard dispatch"
             );
             no_error(&id);
             drop_dir(dir);
@@ -73090,6 +73193,18 @@ mod generated_tests {
                 BlockPos::new(2, 3, 4),
                 BlockStateId(10),
                 BlockStateId(11),
+            );
+        }
+        // neighbor_changed: unregistered, nothing runs.
+        {
+            dispatch_neighbor_changed(
+                &FakeLevel,
+                &firing_mods,
+                LevelDimension::Overworld,
+                BlockPos::new(2, 3, 4),
+                BlockStateId(10),
+                BlockId(11),
+                true,
             );
         }
         // random_tick: unregistered, nothing runs.

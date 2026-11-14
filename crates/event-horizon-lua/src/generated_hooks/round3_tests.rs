@@ -17,14 +17,14 @@ use crate::generated_runtime::{
 };
 use horizon_client::item_data::StackData;
 use horizon_client::mod_api::{
-    BlockStateId, Compound, Corner, Direction, Hand, ItemStack, ModContainer, ModEnergyBuffer,
-    NativeConfigKind, NativeFluidAction, NativeInventoryKind, NativeScreen, Tag, Text,
-    dispatch_broadcast_message, dispatch_commands, dispatch_console_line,
+    BlockId, BlockStateId, Compound, Corner, Direction, Hand, ItemStack, ModContainer,
+    ModEnergyBuffer, NativeConfigKind, NativeFluidAction, NativeInventoryKind, NativeScreen, Tag,
+    Text, dispatch_broadcast_message, dispatch_commands, dispatch_console_line,
     dispatch_custom_block_fluids, dispatch_entity_outline, dispatch_inventory_changed,
     dispatch_item_after_vertical_collision, dispatch_menu_background, dispatch_menu_input_closed,
-    dispatch_mouse_scrolling, dispatch_net_from_client, dispatch_player_inventory_changed,
-    dispatch_player_login, dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params,
-    dispatch_state_for_placement,
+    dispatch_mouse_scrolling, dispatch_neighbor_changed, dispatch_net_from_client,
+    dispatch_player_inventory_changed, dispatch_player_login, dispatch_prepare_anvil,
+    dispatch_screen, dispatch_shader_params, dispatch_state_for_placement,
 };
 use horizon_world::consumable::UseAnimation;
 use mlua::{Lua, Table, Value};
@@ -1831,4 +1831,41 @@ fn non_finite_fog_rgb_is_refused() {
     no_error(&id);
     assert_eq!(rgb, [0.0, 0.5, 1.0]);
     drop_dir(dir);
+}
+
+/// `neighbor_changed`'s `changed` names a block id through the level's state
+/// table, beside `state`'s block: two dispatches with different ids, so a
+/// constant cannot pass and a state id cannot stand in for a block id (a
+/// state's block and a block id only agree at the registry's start).
+#[test]
+fn neighbor_changed_names_the_changed_block_and_state() {
+    let (m, id, _dir, lua) = loaded_tracked(
+        "gen_neighbor_changed_names",
+        "horizon.on(\"neighbor_changed\", function(event)\n    __seen = (__seen or 0) + 1\n    assert(event.dimension == \"minecraft:overworld\", \"dimension\")\n    if __seen == 1 then\n        assert(event.changed == \"minecraft:stone\", \"changed 1\")\n        assert(event.state == \"test:state8\", \"state 1\")\n        assert(event.moved == false, \"moved 1\")\n        assert(event.pos.x == 2 and event.pos.y == 5 and event.pos.z == 11, \"pos 1\")\n    else\n        assert(event.changed == \"test:block8\", \"changed 2\")\n        assert(event.state == \"minecraft:stone\", \"state 2\")\n        assert(event.moved == true, \"moved 2\")\n        assert(event.pos.x == 1 and event.pos.y == 6 and event.pos.z == 11, \"pos 2\")\n    end\nend)",
+    );
+    let mods = boxed(m);
+    dispatch_neighbor_changed(
+        &FakeLevel,
+        &mods,
+        horizon_client::mod_api::LevelDimension::Overworld,
+        horizon_client::mod_api::BlockPos::new(2, 5, 11),
+        BlockStateId(8),
+        BlockId(7),
+        false,
+    );
+    dispatch_neighbor_changed(
+        &FakeLevel,
+        &mods,
+        horizon_client::mod_api::LevelDimension::Overworld,
+        horizon_client::mod_api::BlockPos::new(1, 6, 11),
+        BlockStateId(7),
+        BlockId(8),
+        true,
+    );
+    assert_eq!(
+        lua.globals().get::<i64>("__seen").unwrap_or(0),
+        2,
+        "the handler heard both dispatches"
+    );
+    no_error(&id);
 }

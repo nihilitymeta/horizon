@@ -1405,6 +1405,13 @@ pub trait LevelHost {
     /// Every property of `state` with its value (`facing` → `north`), in the
     /// block's order; empty for a block without properties or an unknown state.
     fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)>;
+    /// The block `block` (`Block` rather than a state of it) names,
+    /// `mymod:cable`, through the level's state table; None for an id past
+    /// the last block. No lookup in the world.
+    fn block_name(&self, block: BlockId) -> Option<String> {
+        let _ = block;
+        None
+    }
     /// The saved compound of the mod block entity at `pos`
     /// (`native_mod_block_entity_data`): none for no block entity there or a
     /// vanilla one. A host that has no block entities answers None.

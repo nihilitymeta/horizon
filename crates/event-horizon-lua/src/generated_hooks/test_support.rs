@@ -8,7 +8,7 @@ use crate::lua_mods::{LuaMod, LuaSide};
 use horizon_client::dev_input::mods::{ModStatus, set_status, status};
 use horizon_client::mobs::{Mob, MobType};
 use horizon_client::mod_api::{
-    AttachmentError, Attachments, BlockStateId, Compound, EntityRef, Holder, Hooks, Host,
+    AttachmentError, Attachments, BlockId, BlockStateId, Compound, EntityRef, Holder, Hooks, Host,
     LegacyRandom, LevelHost, LevelRandomHost, LevelTicksHost, LevelWriteHost, ModBlockEntity,
     NativeServerPlayer, NativeWorldEpoch, ParticleOptions, Text,
 };
@@ -303,6 +303,17 @@ fn stone_or_state(state: BlockStateId) -> String {
     }
 }
 
+/// `stone_or_state` for a block id, over the same fakes: id 7 is stone,
+/// every other id names itself (`test:block8`). The hook tests dispatch
+/// block ids the level names, never a `BlockStateId`.
+fn stone_or_block(block: BlockId) -> String {
+    if block == BlockId(7) {
+        "minecraft:stone".to_owned()
+    } else {
+        format!("test:block{}", block.0)
+    }
+}
+
 /// A mob of `kind` for the generated mob-hook tests: a cow with the id
 /// swapped, so K1/K2 differ only in the kind the filter reads. Built with
 /// `new_client`, which tells no global dispatch (the tests dispatch the
@@ -349,6 +360,10 @@ impl LevelHost for FakeLevel {
     fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)> {
         count_level_read();
         LEVEL_PROPS.with(|props| props.borrow().get(&state).cloned().unwrap_or_default())
+    }
+    fn block_name(&self, block: BlockId) -> Option<String> {
+        count_level_read();
+        Some(stone_or_block(block))
     }
 }
 impl LevelRandomHost for FakeLevel {

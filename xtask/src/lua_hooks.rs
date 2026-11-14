@@ -38,11 +38,11 @@ const ENTITY_GONE: i64 = 99;
 /// or retyped), and update `LUA_HOOK_SURFACE_FINGERPRINT` beside it.
 /// A mod built for another surface fails at load with both numbers, instead
 /// of failing later on a missing hook name.
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 7;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 8;
 /// The committed fingerprint of the surface `LUA_HOOK_SURFACE_VERSION`
 /// describes: `lua-hooks --check` fails when the freshly computed one
 /// differs, so nobody forgets the bump above.
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "e2d80e4812e05489";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "c22c2ab7658627e2";
 
 /// The macro's host kind for a model host.
 fn host_ident(host: Host) -> &'static str {
@@ -151,6 +151,7 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         Conv::OptItem => "opt_item",
         Conv::StateLevel => "state_level",
         Conv::StateGame => "state_game",
+        Conv::BlockName => "block_name",
         Conv::BlockAtPos => "block_at_pos",
         Conv::BlockFromState => "block_from_state",
         // Documentary tags only: the bespoke level-tick arm seeds these
@@ -4252,7 +4253,45 @@ mod tests {
 
     #[test]
     fn the_surface_starts_at_version_one() {
-        assert_eq!(LUA_HOOK_SURFACE_VERSION, 7);
+        assert_eq!(LUA_HOOK_SURFACE_VERSION, 8);
+    }
+
+    /// `neighbor_changed`'s `changed: BlockId` names the block through the
+    /// level it runs on (the state table that also names `state`), so the
+    /// hook is generated rather than an adapter. Over the real catalog: the
+    /// seed is only justified for a level host, and every other `BlockId`
+    /// still needs its name (the adapter stays for them).
+    #[test]
+    fn neighbor_changed_names_its_block_through_the_level() {
+        use std::path::Path;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let classes = crate::lua_model::classify(&root).unwrap();
+        let hook = classes
+            .iter()
+            .find(|hc| hc.name == "neighbor_changed")
+            .expect("the catalog lists neighbor_changed");
+        let Class::Generated(model) = &hook.class else {
+            panic!("neighbor_changed is generated, not {:?}", hook.class);
+        };
+        assert_eq!(model.host, Host::Level);
+        let changed = model
+            .fields
+            .iter()
+            .find(|f| f.name == "changed")
+            .expect("neighbor_changed has changed");
+        assert_eq!(changed.conv, Conv::BlockName);
+        assert_eq!(changed.ts, "string");
+        // The state beside it keeps naming a state, with its properties.
+        let state = model
+            .fields
+            .iter()
+            .find(|f| f.name == "state")
+            .expect("neighbor_changed has state");
+        assert_eq!(state.conv, Conv::StateLevel);
+        assert!(
+            model.extras.iter().any(|e| e.name == "state_props"),
+            "the state's properties ride beside it"
+        );
     }
 
     #[test]

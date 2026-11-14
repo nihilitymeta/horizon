@@ -318,6 +318,7 @@ export type MouseScrollingEvent = { scroll: Vec2, accumulated: { x: number, y: n
 export type MovementInputEvent = { forward: number, strafe: number, jump: boolean, sneak: boolean }
 export type MusicEvent = { music: { sound: string, min_delay: number, max_delay: number, replace_current_music: boolean }?, volume: number }
 export type MusicLayersEvent = { layers: { { sound: string, volume: number } } }
+export type NeighborChangedEvent = { dimension: string, pos: Vec3, state: string, changed: string, moved: boolean, state_props: Props }
 export type NetFromClientEvent = { player: string, channel: string, data: string }
 export type NetFromServerEvent = { channel: string, data: string }
 export type NoteBlockChangeEvent = { context: { dimension: string, pos: Vec3, instrument: string, old_note: number }, new_note: number }
@@ -796,6 +797,7 @@ export type HorizonOn =
     ((name: "movement_input", fn: (event: MovementInputEvent) -> ()) -> ()) &
     ((name: "music", fn: (event: MusicEvent) -> ()) -> ()) &
     ((name: "music_layers", fn: (event: MusicLayersEvent) -> ()) -> ()) &
+    ((name: "neighbor_changed", fn: (event: NeighborChangedEvent) -> ()) -> ()) &
     ((name: "net_from_client", fn: (event: NetFromClientEvent) -> ()) -> ()) &
     ((name: "net_from_server", fn: (event: NetFromServerEvent) -> ()) -> ()) &
     ((name: "note_block_change", fn: (event: NoteBlockChangeEvent) -> ()) -> ()) &

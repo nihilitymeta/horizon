@@ -2,7 +2,7 @@ use super::{BlockStateId, Game};
 use horizon_client::mod_api::BlockPos;
 use horizon_world::{
     attachments::{ATTACHMENTS_KEY, attachment_compound},
-    level::Ticks,
+    level::{BlockId, StateTable, Ticks},
 };
 
 fn world_attachments(
@@ -184,6 +184,15 @@ impl horizon_client::mod_api::LevelHost for super::GameLevel<'_> {
             })
             .unwrap_or_default()
     }
+    fn block_name(&self, block: BlockId) -> Option<String> {
+        block_name_in(&self.behaviours.table, block)
+    }
+}
+
+/// The body of [`LevelHost::block_name`](horizon_client::mod_api::LevelHost::block_name):
+/// `None` for an id past the last block, where `StateTable::info` would panic.
+fn block_name_in(table: &StateTable, block: BlockId) -> Option<String> {
+    (usize::from(block.0) < table.block_count()).then(|| table.info(block).name.to_string())
 }
 
 impl horizon_client::mod_api::LevelRandomHost for super::GameLevel<'_> {
@@ -230,6 +239,9 @@ impl<'a, L: std::ops::Deref<Target = super::GameLevel<'a>>> horizon_client::mod_
     }
     fn state_properties(&self, state: BlockStateId) -> Vec<(String, String)> {
         horizon_client::mod_api::LevelHost::state_properties(&*self.level, state)
+    }
+    fn block_name(&self, block: BlockId) -> Option<String> {
+        horizon_client::mod_api::LevelHost::block_name(&*self.level, block)
     }
     fn mod_block_entity_data(&self, pos: [i32; 3]) -> Option<horizon_world::nbt::Compound> {
         horizon_client::mod_api::LevelHost::mod_block_entity_data(&*self.level, pos)
@@ -315,5 +327,49 @@ impl horizon_client::mod_api::LevelWriteHost for LevelTicks<'_, &mut super::Game
     ) -> bool {
         self.level
             .native_send_particles(options, state, at, spread, speed, count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use horizon_world::nbt::Tag;
+    use horizon_world::registry::BlockRegistry;
+
+    /// Two single-state blocks, named in registry order.
+    fn table() -> StateTable {
+        let registry = BlockRegistry::from_nbt(&Tag::compound([
+            ("DataVersion", Tag::Int(horizon_world::DATA_VERSION)),
+            (
+                "states",
+                Tag::List(vec![
+                    Tag::compound([("id", Tag::String("minecraft:stone".into()))]),
+                    Tag::compound([("id", Tag::String("test:cable".into()))]),
+                ]),
+            ),
+            (
+                "defaults",
+                Tag::compound([
+                    ("minecraft:stone", Tag::Int(0)),
+                    ("test:cable", Tag::Int(1)),
+                ]),
+            ),
+        ]))
+        .unwrap();
+        StateTable::new(&registry).unwrap()
+    }
+
+    #[test]
+    fn block_name_names_each_block_and_none_past_the_last() {
+        let table = table();
+        assert_eq!(
+            block_name_in(&table, BlockId(0)),
+            Some("minecraft:stone".to_owned())
+        );
+        assert_eq!(
+            block_name_in(&table, BlockId(1)),
+            Some("test:cable".to_owned())
+        );
+        assert_eq!(block_name_in(&table, BlockId(2)), None);
     }
 }

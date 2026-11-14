@@ -516,6 +516,19 @@ macro_rules! gen_seed {
         $table.set(stringify!($field), id)?;
         $table.set(concat!(stringify!($field), "_props"), props)?
     };
+    // A block id named through the level's state table. It seeds no
+    // `_props` beside itself (a block has no properties). The native doc
+    // guarantees the id is valid in this level's registries for the call,
+    // so the air fallback cannot happen for a real event: it only keeps the
+    // published type a plain string, like `state_level`.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : block_name) => {
+        $table.set(
+            stringify!($field),
+            $level
+                .block_name($event.$field)
+                .unwrap_or_else(|| "minecraft:air".to_owned()),
+        )?
+    };
     // Seed-only notes: the state arms above already seeded these.
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : state_props_note) => {};
     // A `LuaStruct` by value, by shared borrow, by exclusive borrow, optional,

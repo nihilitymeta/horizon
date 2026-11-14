@@ -952,7 +952,7 @@ mod tests {
             "handle refusal names the handle"
         );
         assert!(
-            !reason_of("neighbor_changed").is_empty(),
+            reason_of("items").contains("table form"),
             "adapter refusal is non-empty"
         );
     }

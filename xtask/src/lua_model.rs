@@ -140,6 +140,10 @@ pub enum Conv {
     StateLevel,
     /// `BlockStateId` with a game host: `host.state_name`.
     StateGame,
+    /// `BlockId` with a level host: `level.block_name`, the block's own name
+    /// (`mymod:cable`), through the level's state table. A block has no
+    /// properties, so it seeds no `_props` table beside it.
+    BlockName,
     /// The spike's hand note, kept for its tests: the block at the event's
     /// `pos`, for level hooks with a `pos` but no state of their own.
     BlockAtPos,
@@ -871,7 +875,12 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
             Host::GameMut | Host::GameRef => FieldOutcome::Conv(Conv::StateGame, "string".into()),
             _ => adapter("a block state needs a host to name it"),
         },
-        Some("BlockId") => adapter("a block id needs its name"),
+        Some("BlockId") => match host {
+            Host::Level | Host::LevelMut | Host::LevelWrite | Host::LevelTicks => {
+                FieldOutcome::Conv(Conv::BlockName, "string".into())
+            }
+            _ => adapter("a block id needs its name"),
+        },
         Some("Path" | "PathBuf") => FieldOutcome::Conv(Conv::PathStr, "string".into()),
         Some("Direction" | "Hand" | "UseAnimation" | "NativeInventoryKind") => {
             let ts = struct_ts(ident.as_deref().unwrap_or("?"));
@@ -4746,6 +4755,12 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
             // model samples start at 8 so every state names itself.
             format!("BlockStateId({})", 8 + n),
             format!("\"test:state{}\"", 8 + n),
+        ),
+        // The level's state table names the block (the fakes name id 7
+        // stone); the sample ids also start at 8.
+        Conv::BlockName => plain(
+            format!("BlockId({})", 8 + n),
+            format!("\"test:block{}\"", 8 + n),
         ),
         // Extras never ride a dispatch call (no native parameter); the
         // tests assert the resolved block. The rust side is a placeholder.
