@@ -27,6 +27,7 @@
 
 use crate::lua_mods::uuid_of;
 use horizon_client::mod_api::EquipmentSlot;
+use horizon_client::mod_api::GameRuleValue;
 use horizon_client::mod_api::Host;
 use mlua::{Lua, MultiValue, Table, Value};
 
@@ -54,6 +55,39 @@ fn equipment_slot_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<Equ
         },
         other => Err(mlua::Error::runtime(format!(
             "{field}: expected a name, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+/// One `GameRuleValue` argument's Lua value: a boolean (`Bool`), or a
+/// finite number with no fraction in the `i32` range (`Int`), else a
+/// script error naming the helper and saying the value must be a
+/// boolean or an integer. Shared by the read and queued-action arms
+/// (the latter has no `Lua` at hand for the converter itself).
+fn game_rule_value_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<GameRuleValue> {
+    let field = format!("{helper}.{arg}");
+    match value {
+        Value::Boolean(b) => Ok(GameRuleValue::Bool(*b)),
+        Value::Integer(n) => i32::try_from(*n).map(GameRuleValue::Int).map_err(|_| {
+            mlua::Error::runtime(format!(
+                "{field}: the value must be a boolean or an integer, got {n}"
+            ))
+        }),
+        // A float outside the `i32` range is an error, not a saturating
+        // cast: `i32::MAX` as a float rounds up to `2^31`, so the upper
+        // bound is exclusive (`as i32` would saturate instead of
+        // failing).
+        Value::Number(n)
+            if n.is_finite()
+                && n.fract() == 0.0
+                && *n >= f64::from(i32::MIN)
+                && *n < -(f64::from(i32::MIN)) =>
+        {
+            Ok(GameRuleValue::Int(*n as i32))
+        }
+        other => Err(mlua::Error::runtime(format!(
+            "{field}: the value must be a boolean or an integer, got {}",
             other.type_name()
         ))),
     }
@@ -94,6 +128,7 @@ pub(crate) const GENERATED_ACTIONS: &[&str] = &[
     "hide_entity_from",
     "level_play_sound",
     "level_set_day_time",
+    "level_set_game_rule",
     "level_set_weather",
     "lightning_bolt",
     "merge_entity_nbt",
@@ -751,6 +786,22 @@ pub(crate) fn run_generated_action(
             // A native refusal is ordinary: drop the return
             // value, so later queued actions still run.
             let _ = host.level_set_day_time(level, time);
+            Ok(())
+        })(host)),
+        "level_set_game_rule" => Some((|host: &mut dyn Host| -> mlua::Result<()> {
+            let level_lua: Value = read_action_arg(args, 1, "level_set_game_rule", "level")?;
+            let level_dim: String = dimension_of("level_set_game_rule", "level", &level_lua)?;
+            let rule: String = read_action_arg(args, 2, "level_set_game_rule", "rule")?;
+            let value_lua: Value = read_action_arg(args, 3, "level_set_game_rule", "value")?;
+            let value: GameRuleValue =
+                game_rule_value_of("level_set_game_rule", "value", &value_lua)?;
+            let Some(level) = host.level(&level_dim) else {
+                log::debug!("[lua] level_set_game_rule: no such level");
+                return Ok(());
+            };
+            // A native refusal is ordinary: drop the return
+            // value, so later queued actions still run.
+            let _ = host.level_set_game_rule(level, &rule, value);
             Ok(())
         })(host)),
         "level_set_weather" => Some((|host: &mut dyn Host| -> mlua::Result<()> {

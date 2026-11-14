@@ -4,11 +4,11 @@
 
 Every native host helper (`native-hooks.json` plus the pending `tools/native-hook-fragments/`, 505 in all) lands in exactly one class: `generated` (plain args and a supported return: the generator can emit the `horizon.*` bridge), `already-lua` (a hand-written Lua helper already stands behind it), `adapter` (a hand-written converter would unblock it: the table names the blocking types), `handle` (an opaque draw/mod handle, needing its own design), or `cannot` (no bridge, with the reason). `docs/api/hook-exposure.md` is the same idea for hook points. This page is `lua-helpers`'s human-readable record; `crates/event-horizon-lua/src/generated_helpers.rs` is its bridge for the enabled helpers. Enabled is every `generated` helper except the [`EXCLUDED`] denylist below.
 
-181 generated (171 enabled, 10 excluded), 70 already-lua, 171 adapter, 29 handle, 54 cannot (505 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
+182 generated (172 enabled, 10 excluded), 70 already-lua, 170 adapter, 29 handle, 54 cannot (505 total). Every generated helper not on the denylist reaches Lua; there is no other not-enabled bucket.
 
 ## What the numbers say
 
-122 distinct blocking types, ranked by how many helpers they block (one conversion each).
+121 distinct blocking types, ranked by how many helpers they block (one conversion each).
 
 | Type | Helpers blocked | Conversion |
 | --- | --- | --- |
@@ -51,7 +51,6 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `BlockStates` | 1 | a table of its fields, with the hand-written readers |
 | `ClientResources` | 1 | a table of its fields, with the hand-written readers |
 | `Corner` | 1 | a table of its fields, with the hand-written readers |
-| `GameRuleValue` | 1 | a table of its fields, with the hand-written readers |
 | `Hand` | 1 | a table of its fields, with the hand-written readers |
 | `KeyCode` | 1 | a table of its fields, with the hand-written readers |
 | `Mirror` | 1 | a table of its fields, with the hand-written readers |
@@ -135,7 +134,7 @@ Every native host helper (`native-hooks.json` plus the pending `tools/native-hoo
 | `[i32]` | 1 | an array table, element by element |
 | `[u32]` | 1 | an array table, element by element |
 
-Converting the top 1 (`[i32; 2]`) would unblock 5 Adapter helpers; the top 3 (`[i32; 2], Text, Option<(3 elements)>`) would unblock 15; the top 5 (`[i32; 2], Text, Option<(3 elements)>, Option<(2 elements)>, Option<Compound>`) would unblock 21; the top 8 would unblock 32; the top 10 would unblock 39; the top 15 would unblock 51; the top 20 would unblock 64; converting all 122 together would unblock 171 (every Adapter helper, as each lists only those types).
+Converting the top 1 (`[i32; 2]`) would unblock 5 Adapter helpers; the top 3 (`[i32; 2], Text, Option<(3 elements)>`) would unblock 15; the top 5 (`[i32; 2], Text, Option<(3 elements)>, Option<(2 elements)>, Option<Compound>`) would unblock 21; the top 8 would unblock 32; the top 10 would unblock 39; the top 15 would unblock 51; the top 20 would unblock 64; converting all 121 together would unblock 170 (every Adapter helper, as each lists only those types).
 
 What the generator could not express: a `&mut self` helper returning data (a queued action has no way back; it needs the run_command_as callback design); a `Result` return (no error design yet); a callback/closure parameter (needs that same design); an opaque `&mut` draw/mod handle; and every non-plain type above. Native-name types in the adapter list are all small read conversions of the same kinds.
 
@@ -159,7 +158,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `watch_entity_data` | dev/diagnostic: not for mod scripts |
 | `watch_server_packets` | dev/diagnostic: not for mod scripts |
 
-## Generated, enabled (171)
+## Generated, enabled (172)
 
 | Helper | Side | Receiver | Kind | Lua signature |
 | --- | --- | --- | --- | --- |
@@ -244,6 +243,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `level_play_sound` | server | level | action | `(name: string, name2: string, value: Vec3, value2: number, value3: number, value4: number) -> ()` |
 | `level_seed` | server | level | read | `(name: string) -> number?` |
 | `level_set_day_time` | server | level | action | `(name: string, value: number) -> ()` |
+| `level_set_game_rule` | server | level | action | `(name: string, name2: string, value: (boolean | number)) -> ()` |
 | `level_set_weather` | server | level | action | `(name: string, value: number, value2: number, value3: boolean, value4: boolean) -> ()` |
 | `level_weather` | server | level | read | `(name: string) -> { number }?` |
 | `lightning_bolt` | server | - | action | `(name: string, value: Vec3, value2: boolean) -> ()` |
@@ -421,7 +421,7 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `title_times` | already a hand-written Lua helper |
 | `weather` | already a hand-written Lua helper |
 
-## Adapter: a converter would unblock it (171)
+## Adapter: a converter would unblock it (170)
 
 | Helper | Reason |
 | --- | --- |
@@ -510,7 +510,6 @@ Generated but excluded (the denylist): these all have plain args and a supported
 | `level_markers` | blocks on `Vec<(3 elements)>` |
 | `level_random` | blocks on `Option<LegacyRandom>` |
 | `level_send_particles` | blocks on `ParticleOptions` |
-| `level_set_game_rule` | blocks on `GameRuleValue` |
 | `level_stats` | blocks on `Option<NativeLevelStats>` |
 | `living` | blocks on `Option<LivingRef>` |
 | `living_equipment` | blocks on `LivingRef` |

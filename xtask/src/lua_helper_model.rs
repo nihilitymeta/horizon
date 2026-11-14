@@ -361,9 +361,17 @@ fn is_opt_vec_string(ty: &Type) -> bool {
             if matches!(args.args.first(), Some(syn::GenericArgument::Type(inner)) if is_vec_string(inner)))
 }
 
+/// Whether the type is the plain `GameRuleValue`: a rule's value (a
+/// boolean or an integer). The bridge converts it both ways: as an
+/// argument a Lua boolean or integer (`level_set_game_rule`'s `value`),
+/// as a return the `Option` arm below (`level_game_rule`).
+fn is_game_rule_value(ty: &Type) -> bool {
+    matches!(ty, Type::Path(p) if p.qself.is_none() && p.path.is_ident("GameRuleValue"))
+}
+
 /// Whether the type is an `Option<GameRuleValue>`: the rule's value (a
 /// boolean or an integer), or nil for an unknown rule. Only a return:
-/// the enum as an argument (`level_set_game_rule`) still blocks.
+/// the `Option` as an argument still blocks (Lua has no absent argument).
 fn is_opt_game_rule_value(ty: &Type) -> bool {
     let Type::Path(p) = ty else {
         return false;
@@ -690,10 +698,11 @@ fn collect_blocks(
     // and as a return), the value-or-nil of an optional position in a
     // return, an item table (`ItemStack`, as an argument and back in a
     // return, and its `Option` in a return), an NBT table (`Compound`,
-    // or `&Compound`), an equipment-slot name (`EquipmentSlot`), and an
-    // optional block-state name (`Option<BlockStateId>`, as an argument
-    // and as a return). An optional position as an argument still
-    // blocks: Lua has no absent argument.
+    // or `&Compound`), an equipment-slot name (`EquipmentSlot`), a game
+    // rule value (`GameRuleValue`, as an argument and in an `Option`
+    // return), and an optional block-state name (`Option<BlockStateId>`,
+    // as an argument and as a return). An optional position as an
+    // argument still blocks: Lua has no absent argument.
     if is_entity_ref(ty)
         || is_direction(ty)
         || is_level_ref(ty)
@@ -704,6 +713,7 @@ fn collect_blocks(
         || is_item_stack(ty)
         || (in_return && is_opt_item_stack(ty))
         || (in_return && (is_vec_string(ty) || is_opt_vec_string(ty)))
+        || is_game_rule_value(ty)
         || (in_return && is_opt_game_rule_value(ty))
         || is_compound(ty)
         || is_equipment_slot(ty)
@@ -937,6 +947,9 @@ fn normalize_arg(ty: &Type, name: &str) -> Arg {
         // An equipment-slot name (`EquipmentSlot`): one of its eight
         // lowercase name strings.
         Type::Path(_) if is_equipment_slot(ty) => mark("EquipmentSlot".to_owned(), false, false),
+        // A game rule value (`GameRuleValue`): a Lua boolean or integer
+        // (see `game_rule_value_of` in the bridge).
+        Type::Path(_) if is_game_rule_value(ty) => mark("GameRuleValue".to_owned(), false, false),
         // An optional block-state name (`Option<BlockStateId>`): nil, or
         // a name the host resolves with `state_named`.
         Type::Path(_) if is_opt_block_state_id(ty) => {
@@ -1581,6 +1594,16 @@ pub fn luau_function(row: &HelperRow) -> (String, String) {
                     "{name}: \"mainhand\" | \"offhand\" | \"head\" | \"chest\" | \"legs\" | \"feet\" | \"body\" | \"saddle\""
                 ));
             }
+            // A game rule's value: a Lua boolean (`Bool`) or number (`Int`).
+            "GameRuleValue" => {
+                other += 1;
+                let name = if other == 1 {
+                    "value".to_owned()
+                } else {
+                    format!("value{other}")
+                };
+                params.push(format!("{name}: (boolean | number)"));
+            }
             "ItemStack" => {
                 other += 1;
                 let name = if other == 1 {
@@ -2056,10 +2079,12 @@ mod tests {
 
     /// `Option<GameRuleValue>` is a read's return (a boolean or an integer,
     /// or nil for an unknown rule): `level_game_rule` is Generated(Read).
-    /// The enum as an argument still blocks, so `level_set_game_rule` (no
-    /// game-rule writes) stays an Adapter naming it.
+    /// The plain enum is this helper's argument shape (a Lua boolean or
+    /// integer): `level_set_game_rule` is Generated(Action). Any other
+    /// shape (`Option<GameRuleValue>` as an argument, a borrow, a `Vec`)
+    /// still blocks.
     #[test]
-    fn a_game_rule_value_return_is_a_read_and_an_argument_still_blocks() {
+    fn a_game_rule_value_return_is_a_read_and_a_plain_argument_is_an_action() {
         let read: syn::ItemFn = syn::parse_quote! {
             fn native_rule(&self, level: LevelRef, rule: &str) -> Option<GameRuleValue> { todo!() }
         };
@@ -2071,7 +2096,15 @@ mod tests {
             supported_return(&read).as_deref(),
             Some("Option<GameRuleValue>")
         );
-        assert!(blocks_of(&arg).0.contains(&"GameRuleValue".to_owned()));
+        assert!(blocks_of(&arg).0.is_empty());
+        let opt_arg: syn::ItemFn = syn::parse_quote! {
+            fn native_opt_rule(&mut self, rule: &str, value: Option<GameRuleValue>) {}
+        };
+        assert!(
+            blocks_of(&opt_arg)
+                .0
+                .contains(&"Option<GameRuleValue>".to_owned())
+        );
         let rows = classify_helpers(&root()).unwrap();
         let get = rows.iter().find(|r| r.name == "level_game_rule").unwrap();
         assert!(
@@ -2084,8 +2117,8 @@ mod tests {
             .find(|r| r.name == "level_set_game_rule")
             .unwrap();
         assert!(
-            matches!(&set.class, HelperClass::Adapter(b) if b.contains(&"GameRuleValue".to_owned())),
-            "level_set_game_rule must stay blocked on GameRuleValue, got {:?}",
+            matches!(&set.class, HelperClass::Generated(GenKind::Action)),
+            "level_set_game_rule should be Generated(Action), got {:?}",
             set.class
         );
     }

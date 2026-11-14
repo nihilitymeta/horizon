@@ -237,10 +237,36 @@ const DRAW_API: &[&str] = &[
 /// The generated helpers that change the world's settings: a mod calls one
 /// only with capability `world-settings` in its manifest (server mods,
 /// experimental; `Capability::WorldSettings`). Every name here is a generated
-/// action (`generated_helpers::GENERATED_ACTIONS`), checked by a test;
-/// `level_set_game_rule` joins the list when its helper is exposed.
-pub(crate) const NEEDS_WORLD_SETTINGS: &[&str] =
-    &["level_set_day_time", "level_set_weather", "set_game_mode"];
+/// action (`generated_helpers::GENERATED_ACTIONS`), checked by a test.
+pub(crate) const NEEDS_WORLD_SETTINGS: &[&str] = &[
+    "level_set_day_time",
+    "level_set_weather",
+    "set_game_mode",
+    "level_set_game_rule",
+];
+
+/// Whether a writable game rule takes a boolean or an integer: the call
+/// checks the Lua value's kind, so adding an integer rule later is a
+/// one-line change to [`WRITABLE_GAME_RULES`].
+pub(crate) enum RuleKind {
+    Bool,
+    /// No integer rule is writable yet: kept so adding one is a one-line
+    /// change, with the kind check already applying to it.
+    #[allow(dead_code)]
+    Int,
+}
+
+/// The game rules a script may set through `level_set_game_rule`, each
+/// with the kind of value it takes: every other rule is read-only from
+/// Lua (read it with `level_game_rule`, change it only with `run_command`
+/// as `/gamerule`). Compared after stripping one leading `minecraft:`,
+/// exactly as `horizon_client::gamerules::rule` does, for exact equality:
+/// no case folding, no trimming.
+pub(crate) const WRITABLE_GAME_RULES: &[(&str, RuleKind)] = &[
+    ("keep_inventory", RuleKind::Bool),
+    ("advance_time", RuleKind::Bool),
+    ("advance_weather", RuleKind::Bool),
+];
 
 /// The registry key of the `run_command_as` callbacks awaiting the drain:
 /// `{ fn = item, result = ... }` tables, in the order their commands ran.
@@ -2783,6 +2809,71 @@ impl LuaMod {
                              (and experimental = [\"world-settings\"]) in its manifest to \
                              change the world's settings; nothing was changed"
                         )));
+                    }
+                    // The game-rule allow-list: only `WRITABLE_GAME_RULES`
+                    // may be set from Lua. A rule outside the list fails
+                    // here, at the script's call, before anything queues.
+                    // may be set from Lua, with a value of the rule's
+                    // kind. A rule that is not a string, a rule outside
+                    // the list, or a value of the wrong kind fails here,
+                    // at the script's call, before anything queues, so
+                    // the host's setter never runs. (The drain's argument
+                    // read would coerce a number rule to its decimal text
+                    // and drop a wrong-kind value silently, so this call
+                    // cannot rely on it; the drain stays as the backstop.)
+                    if action == "level_set_game_rule" {
+                        let rule = match args.get(1) {
+                            Some(Value::String(rule)) => rule.to_string_lossy(),
+                            Some(other) => {
+                                return Err(mlua::Error::runtime(format!(
+                                    "level_set_game_rule: rule must be a string, got {}; \
+                                     nothing was changed",
+                                    other.type_name()
+                                )));
+                            }
+                            None => {
+                                return Err(mlua::Error::runtime(
+                                    "level_set_game_rule: rule must be a string, got nothing; \
+                                     nothing was changed",
+                                ));
+                            }
+                        };
+                        let stripped = rule
+                            .strip_prefix("minecraft:")
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| rule.clone());
+                        let Some((_, kind)) = WRITABLE_GAME_RULES
+                            .iter()
+                            .find(|(name, _)| *name == stripped.as_str())
+                        else {
+                            return Err(mlua::Error::runtime(format!(
+                                "level_set_game_rule: rule {stripped} is not writable from Lua \
+                                 (writable: {}); nothing was changed",
+                                WRITABLE_GAME_RULES
+                                    .iter()
+                                    .map(|(name, _)| *name)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )));
+                        };
+                        let value_ok = match (kind, args.get(2)) {
+                            (RuleKind::Bool, Some(Value::Boolean(_))) => true,
+                            (RuleKind::Int, Some(Value::Integer(_))) => true,
+                            (RuleKind::Int, Some(Value::Number(n))) => {
+                                n.is_finite() && n.fract() == 0.0
+                            }
+                            _ => false,
+                        };
+                        if !value_ok {
+                            let takes = match kind {
+                                RuleKind::Bool => "a boolean",
+                                RuleKind::Int => "an integer",
+                            };
+                            return Err(mlua::Error::runtime(format!(
+                                "level_set_game_rule: rule {stripped} takes {takes}; \
+                                 nothing was changed"
+                            )));
+                        }
                     }
                     // A draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) may queue only
                     // `tell` and `broadcast`: a marker call there fails at
@@ -10618,6 +10709,18 @@ experimental = ["scripts"]
                 .push(format!("set_game_mode {player:032x} {mode}"));
             true
         }
+        fn level_set_game_rule(
+            &mut self,
+            level: horizon_client::mod_api::LevelRef,
+            rule: &str,
+            value: horizon_client::mod_api::GameRuleValue,
+        ) -> bool {
+            self.calls.lock().unwrap().push(format!(
+                "level_set_game_rule {} {rule} {value}",
+                level.dimension()
+            ));
+            true
+        }
     }
 
     /// One server tick's end phase, the one a server handler and timer fire in.
@@ -10744,6 +10847,267 @@ experimental = ["scripts"]
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_with_world_settings_sets_writable_game_rules() {
+        let (dir, m) = world_settings_mod(
+            "gate_rules_on",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.level_set_game_rule("minecraft:overworld", "keep_inventory", true)
+              horizon.level_set_game_rule("minecraft:overworld", "minecraft:keep_inventory", true)
+              horizon.level_set_game_rule("minecraft:overworld", "advance_time", true)
+              horizon.level_set_game_rule("minecraft:overworld", "advance_weather", false)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            [
+                "level_set_game_rule minecraft:overworld keep_inventory true",
+                "level_set_game_rule minecraft:overworld minecraft:keep_inventory true",
+                "level_set_game_rule minecraft:overworld advance_time true",
+                "level_set_game_rule minecraft:overworld advance_weather false",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_with_world_settings_cannot_set_a_rule_outside_the_allow_list() {
+        let (dir, m) = world_settings_mod(
+            "gate_rules_denied",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              local function try(rule, value)
+                local ok, err = pcall(horizon.level_set_game_rule, "minecraft:overworld", rule, value)
+                if ok then return "queued" end
+                return tostring(err)
+              end
+              REFUSED_MOB = try("mob_griefing", true)
+              REFUSED_TICK = try("random_tick_speed", 3)
+              REFUSED_PVP = try("minecraft:pvp", false)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        for (global, rule) in [
+            ("REFUSED_MOB", "mob_griefing"),
+            ("REFUSED_TICK", "random_tick_speed"),
+            ("REFUSED_PVP", "pvp"),
+        ] {
+            let refused = m.lua.globals().get::<String>(global).unwrap();
+            assert!(
+                refused.contains(&format!(
+                    "level_set_game_rule: rule {rule} is not writable from Lua \
+                     (writable: keep_inventory, advance_time, advance_weather); nothing was changed"
+                )),
+                "{global}: {refused}"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn near_miss_rule_spellings_are_not_writable_from_lua() {
+        let (dir, m) = world_settings_mod(
+            "gate_rules_near_miss",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              local function try(rule)
+                local ok, err = pcall(horizon.level_set_game_rule, "minecraft:overworld", rule, true)
+                if ok then return "queued" end
+                return tostring(err)
+              end
+              REFUSED_UPPER = try("KEEP_INVENTORY")
+              REFUSED_LEAD = try(" keep_inventory")
+              REFUSED_DOUBLE = try("minecraft:minecraft:keep_inventory")
+              REFUSED_TRAIL = try("keep_inventory ")
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        // The allow-list strips one `minecraft:` and compares exactly: no
+        // case folding, no trimming, so none of these is `keep_inventory`.
+        for (global, rule) in [
+            ("REFUSED_UPPER", "KEEP_INVENTORY"),
+            ("REFUSED_LEAD", " keep_inventory"),
+            ("REFUSED_DOUBLE", "minecraft:keep_inventory"),
+            ("REFUSED_TRAIL", "keep_inventory "),
+        ] {
+            let refused = m.lua.globals().get::<String>(global).unwrap();
+            assert!(
+                refused.contains(&format!(
+                    "level_set_game_rule: rule {rule} is not writable from Lua"
+                )),
+                "{global}: {refused}"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_non_string_game_rule_name_fails_naming_the_helper() {
+        // The rule is read at the call, before anything queues: a rule
+        // that is not a Lua string fails there, and the host's setter
+        // never runs. (The drain's argument read would coerce a number
+        // to its decimal text, so the call cannot rely on it.)
+        for (name, expr) in [
+            ("rule_name_number", "7"),
+            ("rule_name_bool", "true"),
+            ("rule_name_nil", "nil"),
+            ("rule_name_table", "{ keep_inventory = true }"),
+        ] {
+            let script = format!(
+                "horizon.on(\"server_tick\", function()\n  \
+                 local ok, err = pcall(horizon.level_set_game_rule, \
+                 \"minecraft:overworld\", {expr}, true)\n  \
+                 if ok then RESULT = \"queued\" else RESULT = tostring(err) end\n\
+                 end)\n"
+            );
+            let (dir, m) = world_settings_mod(name, true, script.as_bytes());
+            let mut host = GateHost::default();
+            end_tick(&m, &mut host);
+            assert!(host.calls().is_empty(), "{expr}: {:?}", host.calls());
+            let got = m.lua.globals().get::<String>("RESULT").unwrap();
+            assert!(got.contains("level_set_game_rule"), "{expr}: {got}");
+            assert!(got.contains("string"), "{expr}: {got}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_wrong_kind_game_rule_value_fails_naming_the_rule() {
+        // The three writable rules are boolean rules, so a value that is
+        // not a Lua boolean fails at the call, naming the rule, and the
+        // host's setter never runs. Namespaced allow-listed rules still
+        // reach the host with their exact values.
+        for (name, expr) in [
+            ("rule_value_number", "7"),
+            ("rule_value_string", "\"true\""),
+            ("rule_value_nil", "nil"),
+            ("rule_value_table", "{ keep_inventory = true }"),
+        ] {
+            let script = format!(
+                "horizon.on(\"server_tick\", function()\n  \
+                 local ok, err = pcall(horizon.level_set_game_rule, \
+                 \"minecraft:overworld\", \"keep_inventory\", {expr})\n  \
+                 if ok then RESULT = \"queued\" else RESULT = tostring(err) end\n\
+                 end)\n"
+            );
+            let (dir, m) = world_settings_mod(name, true, script.as_bytes());
+            let mut host = GateHost::default();
+            end_tick(&m, &mut host);
+            assert!(host.calls().is_empty(), "{expr}: {:?}", host.calls());
+            let got = m.lua.globals().get::<String>("RESULT").unwrap();
+            assert!(
+                got.contains(
+                    "level_set_game_rule: rule keep_inventory takes a boolean; nothing was changed"
+                ),
+                "{expr}: {got}"
+            );
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+        let (dir, m) = world_settings_mod(
+            "gate_rules_bool_values",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.level_set_game_rule("minecraft:overworld", "minecraft:advance_time", false)
+              horizon.level_set_game_rule("minecraft:overworld", "advance_weather", true)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            [
+                "level_set_game_rule minecraft:overworld minecraft:advance_time false",
+                "level_set_game_rule minecraft:overworld advance_weather true",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_without_world_settings_cannot_set_a_game_rule() {
+        let (dir, m) = world_settings_mod(
+            "gate_rules_off",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              local _, err_allowed = pcall(horizon.level_set_game_rule, "minecraft:overworld", "keep_inventory", true)
+              REFUSED_ALLOWED = tostring(err_allowed)
+              local _, err_other = pcall(horizon.level_set_game_rule, "minecraft:overworld", "mob_griefing", true)
+              REFUSED_OTHER = tostring(err_other)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        // The capability gate runs first: even an allow-listed rule sees
+        // the capability refusal, and a rule outside the list does too.
+        for global in ["REFUSED_ALLOWED", "REFUSED_OTHER"] {
+            let refused = m.lua.globals().get::<String>(global).unwrap();
+            assert!(
+                refused.contains(
+                    "level_set_game_rule: mod gate_rules_off needs capability \"world-settings\""
+                ),
+                "{global}: {refused}"
+            );
+            assert!(
+                !refused.contains("is not writable from Lua"),
+                "{global}: the capability check runs first: {refused}"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mistyped_game_rule_value_fails_naming_the_helper() {
+        // `keep_inventory` is a boolean rule, so any value that is not a
+        // Lua boolean fails at the call, naming the rule, and the host's
+        // setter never runs. (The drain's own converter stays as the
+        // backstop for values this call cannot see.)
+        for (name, expr) in [
+            ("rule_float", "7.5"),
+            ("rule_nan", "0/0"),
+            ("rule_inf", "math.huge"),
+            ("rule_string", "\"true\""),
+            ("rule_nil", "nil"),
+            ("rule_table", "{ keep_inventory = true }"),
+            ("rule_big", "2147483648"),
+        ] {
+            let script = format!(
+                "horizon.on(\"server_tick\", function()\n  \
+                 horizon.level_set_game_rule(\"minecraft:overworld\", \"keep_inventory\", {expr})\n\
+                 end)\n"
+            );
+            let (dir, m) = world_settings_mod(name, true, script.as_bytes());
+            let mut host = GateHost::default();
+            end_tick(&m, &mut host);
+            assert!(host.calls().is_empty(), "{expr}: {:?}", host.calls());
+            let e = hook_error_of(&m);
+            assert!(
+                e.contains(
+                    "level_set_game_rule: rule keep_inventory takes a boolean; nothing was changed"
+                ),
+                "{expr}: {e}"
+            );
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
     }
 
     #[test]

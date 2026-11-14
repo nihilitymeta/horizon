@@ -1189,6 +1189,7 @@ declare horizon: {
     level_play_sound: (name: string, name2: string, value: Vec3, value2: number, value3: number, value4: number) -> (),
     level_seed: (name: string) -> number?,
     level_set_day_time: (name: string, value: number) -> (),
+    level_set_game_rule: (name: string, name2: string, value: (boolean | number)) -> (),
     level_set_weather: (name: string, value: number, value2: number, value3: boolean, value4: boolean) -> (),
     level_weather: (name: string) -> { number }?,
     lightning_bolt: (name: string, value: Vec3, value2: boolean) -> (),

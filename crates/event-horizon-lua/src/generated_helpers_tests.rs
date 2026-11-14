@@ -618,6 +618,17 @@ impl Host for GenHost {
         );
         !self.refuse
     }
+    fn level_set_game_rule(&mut self, level: LevelRef, rule: &str, value: GameRuleValue) -> bool {
+        self.record(
+            "level_set_game_rule",
+            &[
+                level.dimension().to_string(),
+                rule.to_string(),
+                value.to_string(),
+            ],
+        );
+        !self.refuse
+    }
     fn level_set_weather(
         &mut self,
         level: LevelRef,
@@ -9463,6 +9474,98 @@ fn level_set_day_time_is_generated_and_exact() {
 }
 
 #[test]
+fn level_set_game_rule_is_generated_and_exact() {
+    let lua = lua();
+    let mut host = gen_host(false, false);
+    let t = args(
+        &lua,
+        &[
+            mlua::Value::String(lua.create_string("minecraft:overworld").unwrap()),
+            mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+            mlua::Value::Boolean(true),
+        ],
+    );
+    run_generated_action(&lua, &mut host, "a", "level_set_game_rule", &t)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        host.logged(),
+        [
+            "level minecraft:overworld",
+            "level_set_game_rule minecraft:overworld ruby:gen1 true"
+        ]
+    );
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("minecraft:nowhere").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        run_generated_action(&lua, &mut host, "a", "level_set_game_rule", &t)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            host.logged(),
+            ["level minecraft:nowhere"],
+            "an unresolved level calls nothing past the lookup"
+        );
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Integer(3),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_game_rule", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_game_rule.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::String(lua.create_string("").unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_game_rule", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_game_rule.level"), "{text}");
+    }
+    {
+        let mut host = gen_host(false, false);
+        let t = args(
+            &lua,
+            &[
+                mlua::Value::Table(lua.create_table().unwrap()),
+                mlua::Value::String(lua.create_string("ruby:gen1").unwrap()),
+                mlua::Value::Boolean(true),
+            ],
+        );
+        let err = run_generated_action(&lua, &mut host, "a", "level_set_game_rule", &t)
+            .unwrap()
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("level_set_game_rule"), "{text}");
+        assert!(text.contains("level"), "{text}");
+    }
+}
+
+#[test]
 fn level_set_weather_is_generated_and_exact() {
     let lua = lua();
     let mut host = gen_host(false, false);
@@ -15814,6 +15917,7 @@ fn the_generated_lists_are_the_enabled_set_and_nothing_else() {
             "hide_entity_from",
             "level_play_sound",
             "level_set_day_time",
+            "level_set_game_rule",
             "level_set_weather",
             "lightning_bolt",
             "merge_entity_nbt",
@@ -16012,6 +16116,7 @@ fn every_generated_name_is_a_function_on_horizon() {
             "hide_entity_from",
             "level_play_sound",
             "level_set_day_time",
+            "level_set_game_rule",
             "level_set_weather",
             "lightning_bolt",
             "merge_entity_nbt",
@@ -16185,6 +16290,7 @@ fn generated_server_names_raise_in_a_client_state() {
             "hide_entity_from",
             "level_play_sound",
             "level_set_day_time",
+            "level_set_game_rule",
             "level_set_weather",
             "lightning_bolt",
             "merge_entity_nbt",

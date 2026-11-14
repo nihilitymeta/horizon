@@ -370,7 +370,9 @@ fn arg_names(row: &HelperRow) -> Vec<String> {
 /// `Host::entity`); a `LevelRef` as a `Value` for `dimension_of` (the
 /// dimension id string, resolved through `Host::level`); a `Direction`
 /// as a `Value` for `direction_of` (the six lowercase names, as the
-/// hooks' converter errors); a position table as a `Table` read
+/// hooks' converter errors); a game rule value as a `Value` for
+/// `game_rule_value_of` (a boolean, or a finite integer-range number);
+/// a position table as a `Table` read
 /// component-wise (`req_finite` for `[f64; 3]`, `req_key` for `[i32; 3]`
 /// — the same building blocks `LuaStruct` for those types uses, so an
 /// `[i32; 3]` component errors on a fractional or out-of-range value
@@ -478,6 +480,19 @@ fn read_lines(row: &HelperRow, source: &str) -> Vec<String> {
             out.push(format!("let {local}_lua: Value = {raw};"));
             out.push(format!(
                 "let {local}: EquipmentSlot = equipment_slot_of({:?}, {:?}, &{local}_lua)?;",
+                row.name, arg.name
+            ));
+            continue;
+        }
+        // A game rule value: a Lua boolean, or a finite Lua number
+        // with no fraction in the `i32` range, through the shared
+        // `game_rule_value_of` (anything else is a script error
+        // naming the helper and saying the value must be a boolean
+        // or an integer).
+        if arg.rust == "GameRuleValue" {
+            out.push(format!("let {local}_lua: Value = {raw};"));
+            out.push(format!(
+                "let {local}: GameRuleValue = game_rule_value_of({:?}, {:?}, &{local}_lua)?;",
                 row.name, arg.name
             ));
             continue;
@@ -1098,6 +1113,50 @@ fn direction_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<Directio
 "#
 }
 
+/// The `game_rule_value_of` helper the bridge carries while a
+/// `GameRuleValue` argument is emitted: a Lua boolean, or a finite Lua
+/// number with no fraction in the `i32` range, else a script error
+/// naming the helper and saying the value must be a boolean or an
+/// integer. Shared by the read and queued-action arms (the latter has
+/// no `Lua` at hand for the converter itself).
+fn game_rule_value_of_fn() -> &'static str {
+    r#"
+/// One `GameRuleValue` argument's Lua value: a boolean (`Bool`), or a
+/// finite number with no fraction in the `i32` range (`Int`), else a
+/// script error naming the helper and saying the value must be a
+/// boolean or an integer. Shared by the read and queued-action arms
+/// (the latter has no `Lua` at hand for the converter itself).
+fn game_rule_value_of(helper: &str, arg: &str, value: &Value) -> mlua::Result<GameRuleValue> {
+    let field = format!("{helper}.{arg}");
+    match value {
+        Value::Boolean(b) => Ok(GameRuleValue::Bool(*b)),
+        Value::Integer(n) => i32::try_from(*n).map(GameRuleValue::Int).map_err(|_| {
+            mlua::Error::runtime(format!(
+                "{field}: the value must be a boolean or an integer, got {n}"
+            ))
+        }),
+        // A float outside the `i32` range is an error, not a saturating
+        // cast: `i32::MAX` as a float rounds up to `2^31`, so the upper
+        // bound is exclusive (`as i32` would saturate instead of
+        // failing).
+        Value::Number(n)
+            if n.is_finite()
+                && n.fract() == 0.0
+                && *n >= f64::from(i32::MIN)
+                && *n < -(f64::from(i32::MIN)) =>
+        {
+            Ok(GameRuleValue::Int(*n as i32))
+        }
+        other => Err(mlua::Error::runtime(format!(
+            "{field}: the value must be a boolean or an integer, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+"#
+}
+
 /// The `equipment_slot_of` helper the bridge carries while an
 /// `EquipmentSlot` argument is emitted: one of its eight lowercase
 /// name strings, as the hooks name them (a wrong string or a
@@ -1232,6 +1291,15 @@ fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
     {
         out.push_str("use horizon_client::mod_api::EquipmentSlot;\n");
     }
+    // The game rule value type is named by the converter's signature,
+    // so the import rides on the argument (the return spells its full
+    // path, and the synthetic double carries its own type).
+    if rows
+        .iter()
+        .any(|row| row.args.iter().any(|a| a.rust == "GameRuleValue"))
+    {
+        out.push_str("use horizon_client::mod_api::GameRuleValue;\n");
+    }
     // The block-state type is named by the synthetic trait's
     // `Option<BlockStateId>` argument only (the real bridge never
     // names it: it carries `state_name`/`state_named` through the
@@ -1251,6 +1319,12 @@ fn bridge_of(rows: &[HelperRow], backend: &Backend) -> String {
         .any(|row| row.args.iter().any(|a| a.rust == "EquipmentSlot"))
     {
         out.push_str(equipment_slot_of_fn());
+    }
+    if rows
+        .iter()
+        .any(|row| row.args.iter().any(|a| a.rust == "GameRuleValue"))
+    {
+        out.push_str(game_rule_value_of_fn());
     }
     if rows
         .iter()
@@ -2115,6 +2189,12 @@ fn normal_case(row: &HelperRow) -> (Vec<String>, Vec<String>) {
                 literals
                     .push("mlua::Value::String(lua.create_string(\"head\").unwrap())".to_owned());
                 recorded.push("Head".to_owned());
+            }
+            // One canned game rule value: a boolean (the host double
+            // records the value's `Display`, so `true`).
+            "GameRuleValue" => {
+                literals.push("mlua::Value::Boolean(true)".to_owned());
+                recorded.push("true".to_owned());
             }
             "Option<BlockStateId>" => {
                 literals.push(
@@ -3884,6 +3964,7 @@ enum ArgKind {
     ItemStack,
     Compound,
     EquipmentSlot,
+    GameRuleValue,
     OptBlockStateId,
     Str,
     Bool,
@@ -3904,6 +3985,7 @@ const ALL_ARG_KINDS: &[ArgKind] = &[
     ArgKind::ItemStack,
     ArgKind::Compound,
     ArgKind::EquipmentSlot,
+    ArgKind::GameRuleValue,
     ArgKind::OptBlockStateId,
     ArgKind::Str,
     ArgKind::Bool,
@@ -3933,6 +4015,7 @@ fn arg_kind(arg: &super::lua_helper_model::Arg) -> ArgKind {
             "ItemStack" => ArgKind::ItemStack,
             "Compound" | "&Compound" => ArgKind::Compound,
             "EquipmentSlot" => ArgKind::EquipmentSlot,
+            "GameRuleValue" => ArgKind::GameRuleValue,
             "Option<BlockStateId>" => ArgKind::OptBlockStateId,
             "&str" | "String" => ArgKind::Str,
             "bool" => ArgKind::Bool,
