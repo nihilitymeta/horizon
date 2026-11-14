@@ -417,13 +417,23 @@ impl Game<'_> {
         }
     }
     /// `OnDatapackSyncEvent.sendRecipes`: the recipe types the native mods
-    /// want their clients to have, from this load's tables, become what the
-    /// server sends its Horizon clients at a join and after `/reload`. Called
-    /// once a load's tables are built, before any player hears of them.
+    /// want their clients to have, and the types a mod's `data_pack_files`
+    /// recipe file or a recipe filter changed in this load (`changed_types`),
+    /// from this load's tables, become what the server sends its Horizon
+    /// clients at a join and after `/reload`. Called once a load's tables are
+    /// built, before any player hears of them.
     pub(super) fn sync_recipe_content(&mut self) {
         use horizon_client::lan::recipes;
         let mut types = Vec::new();
         self.native_datapack_sync(&mut types);
+        // A Lua mod's `data_pack_files` recipe file, or a recipe filter, changed
+        // this load's recipes: the types of those recipes go too, so a client's
+        // table agrees with the server's without a native mod having asked. A
+        // world's data packs are covered the same way: a client never has them.
+        types.extend(recipes::changed_types(
+            &self.options.resources,
+            &self.pack_files(),
+        ));
         types.sort();
         types.dedup();
         let sources = if types.is_empty() {
@@ -552,3 +562,235 @@ impl Game<'_> {
 #[cfg(test)]
 #[path = "recipe_viewer_tests.rs"]
 mod recipe_viewer_tests;
+
+#[cfg(test)]
+mod recipe_content_tests {
+    use super::*;
+    use horizon_client::lan::recipes::{ContentPart, changed_types, encode_content};
+    use serde_json::json;
+
+    const STICK: &str = r##"{"type":"minecraft:crafting_shaped","key":{"#":"#minecraft:planks"},"pattern":["#","#"],"result":{"id":"minecraft:stick","count":4}}"##;
+    const PLANKS: &str = r##"{"type":"minecraft:crafting_shapeless","ingredients":["minecraft:oak_log"],"result":{"id":"minecraft:oak_planks","count":4}}"##;
+
+    /// A resource root with vanilla's stick and planks recipes.
+    fn scratch_root(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "horizon-recipe-content-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let recipes = dir.join("data/minecraft/recipe");
+        std::fs::create_dir_all(&recipes).unwrap();
+        std::fs::write(recipes.join("stick.json"), STICK).unwrap();
+        std::fs::write(recipes.join("oak_planks.json"), PLANKS).unwrap();
+        dir
+    }
+
+    fn part(payloads: &[Vec<u8>]) -> ContentPart {
+        serde_json::from_slice(payloads.last().expect("one payload")).unwrap()
+    }
+
+    #[test]
+    fn a_pushed_recipe_file_sends_its_type_and_the_file_not_vanillas() {
+        let root = scratch_root("replaced");
+        let replaced = json!({"type": "minecraft:crafting_shaped",
+            "key": {"#": "#minecraft:planks"}, "pattern": ["#", "#"],
+            "result": {"id": "minecraft:stick", "count": 7}});
+        let files = vec![(
+            "recipe/minecraft:stick".to_owned(),
+            vec![replaced.to_string().into_bytes()],
+        )];
+        let overlay = horizon_world::loot::PackOverlay { files: &files };
+        assert_eq!(
+            changed_types(&root, &overlay),
+            ["minecraft:crafting_shaped"]
+        );
+        let sources = horizon_client::crafting::Recipes::sources(&root, &overlay).unwrap();
+        let types = changed_types(&root, &overlay);
+        let sent = part(&encode_content(&types, &sources, false));
+        let (_, stick) = sent
+            .recipes
+            .iter()
+            .find(|(id, _)| id == "minecraft:stick")
+            .expect("the replaced stick recipe is sent");
+        assert_eq!(
+            stick["result"]["count"], 7,
+            "the pushed file, not vanilla's 4"
+        );
+    }
+
+    #[test]
+    fn a_replacement_of_another_type_sends_both_types() {
+        let root = scratch_root("retyped");
+        // Vanilla's shaped stick becomes the server's shapeless one.
+        let retyped = json!({"type": "minecraft:crafting_shapeless",
+            "ingredients": ["#minecraft:planks", "#minecraft:planks"],
+            "result": {"id": "minecraft:stick", "count": 4}});
+        let files = vec![(
+            "recipe/minecraft:stick".to_owned(),
+            vec![retyped.to_string().into_bytes()],
+        )];
+        let overlay = horizon_world::loot::PackOverlay { files: &files };
+        assert_eq!(
+            changed_types(&root, &overlay),
+            ["minecraft:crafting_shaped", "minecraft:crafting_shapeless"]
+        );
+        let sources = horizon_client::crafting::Recipes::sources(&root, &overlay).unwrap();
+        let sent = part(&encode_content(
+            &changed_types(&root, &overlay),
+            &sources,
+            false,
+        ));
+        assert_eq!(
+            sent.last.expect("the types"),
+            ["minecraft:crafting_shaped", "minecraft:crafting_shapeless"]
+        );
+        let (_, stick) = sent
+            .recipes
+            .iter()
+            .find(|(id, _)| id == "minecraft:stick")
+            .expect("the server's stick recipe is sent");
+        assert_eq!(stick["type"], "minecraft:crafting_shapeless");
+    }
+
+    #[test]
+    fn an_added_recipe_is_sent_and_a_filter_removed_one_is_not() {
+        let root = scratch_root("added-removed");
+        let added = json!({"type": "minecraft:crafting_shapeless",
+            "ingredients": ["minecraft:dirt"], "result": {"id": "minecraft:diamond", "count": 1}});
+        let filter = json!({"filters": [{"id": "minecraft:stick", "remove": true}]});
+        let files = vec![
+            (
+                "recipe/mymod:probe_item".to_owned(),
+                vec![added.to_string().into_bytes()],
+            ),
+            (
+                "recipe_filter/mymod:no_stick".to_owned(),
+                vec![filter.to_string().into_bytes()],
+            ),
+        ];
+        let overlay = horizon_world::loot::PackOverlay { files: &files };
+        let types = changed_types(&root, &overlay);
+        assert_eq!(
+            types,
+            ["minecraft:crafting_shaped", "minecraft:crafting_shapeless"]
+        );
+        let sources = horizon_client::crafting::Recipes::sources(&root, &overlay).unwrap();
+        let sent = part(&encode_content(&types, &sources, false));
+        let ids: Vec<&str> = sent.recipes.iter().map(|(id, _)| id.as_str()).collect();
+        assert!(
+            ids.contains(&"mymod:probe_item"),
+            "the added recipe: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"minecraft:stick"),
+            "the removed one: {ids:?}"
+        );
+        assert_eq!(sent.last.as_deref(), Some(types.as_slice()));
+    }
+
+    #[test]
+    fn a_load_that_changes_no_recipe_sends_nothing() {
+        let root = scratch_root("unchanged");
+        // Its own file back: no change, though the overlay is not empty.
+        let files = vec![(
+            "recipe/minecraft:stick".to_owned(),
+            vec![STICK.as_bytes().to_vec()],
+        )];
+        let overlay = horizon_world::loot::PackOverlay { files: &files };
+        assert!(changed_types(&root, &overlay).is_empty());
+        // A file of another kind only: not a recipe, nothing to compare.
+        let files = vec![(
+            "loot_table/minecraft:blocks/stone".to_owned(),
+            vec![b"{}".to_vec()],
+        )];
+        let overlay = horizon_world::loot::PackOverlay { files: &files };
+        let types = changed_types(&root, &overlay);
+        assert!(types.is_empty());
+        let sources = horizon_client::crafting::Recipes::sources(&root, &overlay).unwrap();
+        assert!(encode_content(&types, &sources, false).is_empty());
+    }
+
+    /// A server whose world pack replaces the stick recipe with 7, and the
+    /// window that joins it: the window's own table is the root's, and it
+    /// crafts the server's 7 sticks once the content arrives.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_client_crafts_the_servers_replaced_recipe_after_the_content_arrives() {
+        use crate::game::{Audio, Options, Progress, Settings, execution_role, load_resources};
+        let resources =
+            std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
+        let settings = Settings::default();
+        let loaded = load_resources(
+            resources.clone(),
+            None,
+            &resources,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!(),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = resources.clone();
+        options.execution_role = execution_role::ExecutionRole::IntegratedServer;
+        let mut game = Game::new(
+            &loaded.resources,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&resources),
+            None,
+        )
+        .unwrap();
+        game.build_registries();
+        let dir = std::env::temp_dir().join(format!("horizon-recipe-world-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let pack = dir.join("datapacks/model");
+        let recipes = pack.join("data/minecraft/recipe");
+        std::fs::create_dir_all(&recipes).unwrap();
+        std::fs::write(
+            pack.join("pack.mcmeta"),
+            r#"{"pack":{"description":"fixture"}}"#,
+        )
+        .unwrap();
+        let replaced = json!({"type": "minecraft:crafting_shaped",
+            "key": {"#": "#minecraft:planks"}, "pattern": ["#", "#"],
+            "result": {"id": "minecraft:stick", "count": 7}});
+        std::fs::write(recipes.join("stick.json"), replaced.to_string()).unwrap();
+        std::fs::write(
+            dir.join("datapacks.json"),
+            r#"{"enabled":["file/model"],"disabled":[]}"#,
+        )
+        .unwrap();
+        game.world_root = dir;
+        game.world_tables = game.build_world_tables(false, &[]).unwrap().0;
+        assert!(game.world_tables.is_some(), "the world's pack is loaded");
+        game.sync_recipe_content();
+        let payloads = horizon_client::lan::recipes::content();
+        assert!(!payloads.is_empty(), "the server sends the changed type");
+        let last: ContentPart = serde_json::from_slice(payloads.last().unwrap()).unwrap();
+        assert_eq!(
+            last.last.as_deref(),
+            Some(&["minecraft:crafting_shaped".to_owned()][..])
+        );
+        // The window that joins: no world tables of its own, so its table is
+        // the root's until the server's content comes.
+        game.world_tables = None;
+        let planks = ItemStack::new("minecraft:oak_planks", 1);
+        let grid = [Some(planks.clone()), None, Some(planks), None];
+        let before = game.recipes().craft(&grid, 2).expect("the vanilla stick");
+        assert_eq!(before.count, 4, "the window's own recipe first");
+        for payload in payloads.iter() {
+            game.remote_recipe_content(payload);
+        }
+        let after = game
+            .recipes()
+            .craft(&grid, 2)
+            .expect("the server's stick recipe");
+        assert_eq!((after.item.as_ref(), after.count), ("minecraft:stick", 7));
+    }
+}

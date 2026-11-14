@@ -276,6 +276,12 @@ before it judges. An untouched recipe stays as it was: `minecraft:oak_planks` st
 There is no helper that lists recipes — `recipes_of_type` is blocked in the generator
 ([helper-exposure.md](api/helper-exposure.md)) — so a mod cannot read the current recipes back.
 
+The server tells its Horizon clients which recipe types these files changed: the type of a replaced or added
+recipe file, and the type of a recipe a filter removed. It sends those types' recipes as it sends a native
+mod's `native_datapack_sync` types ([native-mods.md](native-mods.md)), so a client's crafting table, its
+crafting predictions and its recipe book use the server's recipes from the first tick, not its own vanilla
+ones until the server's tables catch up. A load that changed no recipe sends nothing, as a vanilla server does.
+
 ## Hook points
 
 [docs/api/hook-points.md](api/hook-points.md) lists every hook point and host helper of the engine, with its API

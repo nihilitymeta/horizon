@@ -314,8 +314,61 @@ pub fn update_recipes(all: &BTreeMap<String, Box<str>>, sync: &SyncData) -> Vec<
     w.data
 }
 
+/// The recipe types `overlay` gives differently from `root`'s own recipes:
+/// the types of the recipes its files added or replaced, and of those its
+/// recipe filters removed. `root` is a client's table (the resources it has)
+/// and `overlay` a server's changes over it — a mod's `data_pack_files` files
+/// and the world's data packs — so the types here are exactly the ones whose
+/// recipes a client would predict wrongly. A client sent a type takes the
+/// server's recipes of it whole (`remote_recipe_content`), so a replacement
+/// and a removal are both covered; a replacement of a different type sends
+/// both types, so the client's own recipe of the old one goes too.
+pub fn changed_types(root: &Path, overlay: &horizon_world::loot::PackOverlay) -> Vec<String> {
+    // Nothing of the overlay is a recipe or a filter: the server's set is the
+    // client's own and nothing is sent.
+    if overlay.kind("recipe").next().is_none() && overlay.kind("recipe_filter").next().is_none() {
+        return Vec::new();
+    }
+    let read = |overlay: &horizon_world::loot::PackOverlay| {
+        let sources =
+            horizon_client::crafting::Recipes::sources(root, overlay).unwrap_or_else(|e| {
+                log::warn!("Horizon: the recipes are not compared for the clients: {e}");
+                Vec::new()
+            });
+        sources.into_iter().collect::<BTreeMap<String, Value>>()
+    };
+    let server = read(overlay);
+    let own = read(&horizon_world::loot::PackOverlay::NONE);
+    let mut types = BTreeSet::new();
+    let mut add = |v: &Value| {
+        if let Some(t) = v["type"].as_str() {
+            types.insert(t.to_owned());
+        }
+    };
+    for (id, v) in &server {
+        match own.get(id) {
+            Some(o) if o == v => {}
+            // A replacement of another type: the client's own recipe of the old
+            // type has to go too, or its first-match lookup finds it first.
+            Some(o) => {
+                add(v);
+                add(o);
+            }
+            None => add(v),
+        }
+    }
+    // A filter took these out: a client keeping its own type would keep them.
+    for (id, v) in &own {
+        if !server.contains_key(id) {
+            add(v);
+        }
+    }
+    types.into_iter().collect()
+}
+
 /// The Horizon channel a server sends its clients the recipes its native mods
-/// asked for (`native_datapack_sync`), NeoForge's
+/// asked for (`native_datapack_sync`) and the types its mods' `data_pack_files`
+/// recipes or recipe filters changed (`changed_types`), NeoForge's
 /// `OnDatapackSyncEvent.sendRecipes`. Horizon clients only.
 pub const CONTENT_CHANNEL: &str = "horizon:recipe_content";
 /// `ClientboundCustomPayloadPacket`'s cap on a payload, less room for the
