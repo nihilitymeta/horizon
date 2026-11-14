@@ -515,6 +515,33 @@ end)
 
 `horizon.net_send_to_player(player, channel, data)` (server state) sends *data* on *channel* (`mod_id:name`, at most 30 000 bytes, at most 32 messages to one player per tick) to the player's Horizon client; `horizon.send_custom_payload_to_player(player, channel, data)` sends it on a plugin channel (`namespace:path`, outside Horizon's own `horizon:` ones, at most 1 MiB) to any client, a vanilla one included. `horizon.net_send_to_server(channel, data)` (client state) sends *data* on *channel* to the server (the same caps as `net_send_to_player`, 32 a tick), and fails there until the player has joined, and when the server carries no mod messages. *player* is the uuid text a hook event gives (such as `event.player` of `net_from_client`); *channel* is a string; *data* is a Lua string carrying arbitrary bytes, NUL and high bytes included, so what one side sends is what the other side's `event.data` reads in `net_from_client` or `net_from_server`, byte for byte. The natives refuse a bad channel, a past-cap payload or a wrong side: the refusal is reported and the message is not sent, and it does not cancel the rest of the handler's queued actions. All three queue like the other actions and apply after the handler, on either side's hooks and timers alike; a client draw hook may queue the client send, as it may queue `horizon.tell` and `horizon.broadcast`.
 
+### Mod events
+
+A server-side mod can tell the other mods that something happened, by name: `horizon.emit(event, payload)` queues an
+event for the end of the server tick, and any mod listening for that name runs its handler then. Delivery is never
+inline — a listener runs after the handler that emitted, never inside it — so a handler may emit freely without
+recursing.
+
+`event` is the mod's own name for it (`"hive:ready"`, `"wave_started"`), never another mod's: the runtime supplies the
+emitting mod's id, so `horizon.emit("ready", ...)` from mod `hive` is heard as `hive:ready`. A script may also pass the
+prefixed name (`horizon.emit("hive:ready", ...)`); a name with another mod's prefix returns `false` and queues nothing.
+`payload` is a JSON-like table: strings, numbers, booleans, sequences and nested tables, at most 64 KiB once
+serialized. `horizon.emit` returns `true` when the event queued and `false` when it did not: for an over-size payload,
+or one with no JSON form (a function, userdata, a table that holds itself, a table nested past 128 tables, a key JSON
+cannot hold). Nothing is queued in that case, and a script that does not check the answer loses the event.
+
+A listener is registered per event name with `horizon.on_event("<mod>:<name>", fn)`, where `fn` takes the payload and
+the hook's event table (`{event, payload}`): `horizon.on_event("hive:ready", function(payload, event) ... end)`. It is
+sugar over the generated `mod_event` hook (`horizon.on("mod_event", fn)`), which fires once for each queued event with
+`event.event` the full name; a mod may register as many listeners of one name as it likes. A listener that fails
+does not silence the mod's other listeners of that event: they all run, and the first error is reported once. A
+listener's return value carries nowhere: no cancel, no collect. Any mod may listen to any mod's events. A listener that emits queues for the
+same drain; an event a listener emits is one deeper than the event it heard, and one past 32 deep is dropped (logged
+once in that tick) so a listener that keeps re-emitting stops.
+
+An emit needs the hook's (or timer's) host, as a read does: calling it at the top of `init.lua` is an error, and a
+client state's `horizon.emit` and `horizon.on_event` raise the server-only error.
+
 ### World markers
 
 A marker is something a client mod keeps drawn in the world: a box, a line, a beam, text or an icon at a world
@@ -1133,9 +1160,11 @@ A script reads nothing but its own mod (`lua_mods::Budget`, in `event-horizon-lu
 - `require` is the game's own, over the mod's `scripts/` and its libraries.
 
 A hook's handlers run in registration order, as one call. When one of them fails, through an error or the budget,
-the handlers after it do not run for that event. Nothing that the handlers before it asked for reaches the game:
-neither their actions, `cancel()` included, nor their changes to a saved table (`data`, `world_data`,
-`player_data`, `entity_data`). The event goes on as if the mod had not heard it, and the log has the error. So a mod that must not
+the handlers after it do not run for that event. The `mod_event` hook is the exception: its handlers are listeners,
+so a mod's other listeners of the same event still run, and the first error is the one reported (what the listeners
+asked for is still dropped, as below). Nothing that the handlers before it asked for reaches the game: neither
+their actions, `cancel()` included, nor their changes to a saved table (`data`, `world_data`, `player_data`,
+`entity_data`). The event goes on as if the mod had not heard it, and the log has the error. So a mod that must not
 lose work splits the work across hooks, or guards it with `pcall` itself.
 
 A handler's error reads the same in the log, the dev tools' console and the mod's status row: the hook first, then

@@ -642,6 +642,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("menu_links", "generated"),
     ("mob_ai_register", "generated"),
     ("mob_died", "generated"),
+    ("mod_event", "generated"),
     (
         "layer_definitions",
         "adapter: layer_definitions: adapter: a tuple needs its table form",
@@ -1016,6 +1017,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("mob_split", HookSide::Server),
     ("mob_submit", HookSide::Client),
     ("mod_container_viewers", HookSide::Server),
+    ("mod_event", HookSide::Server),
     ("modify_default_components", HookSide::Both),
     ("mods", HookSide::Client),
     ("moisture_change", HookSide::Server),
@@ -1288,14 +1290,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 8;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 9;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "c22c2ab7658627e2";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "16b0454233ff8f3a";
 
 #[cfg(test)]
 mod test_support;
@@ -1744,6 +1746,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "menu_links",
     "mob_ai_register",
     "mob_died",
+    "mod_event",
     "permission_check",
     "permission_groups",
     "player_register_channels",
@@ -2339,6 +2342,7 @@ macro_rules! impl_generated_hooks {
     gen_collect!(menu_links, game_mut, horizon_client::mod_api::MenuLinksEvent<'_>, (none), [player: uuid, menu: cloned, pos: pos, links: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_mob_ai_register!(mob_ai_register, none, horizon_client::mod_api::MobAiRegisterEvent<'_>, (mob mob), [mob: mob_view]);
     gen_listen!(mob_died, game_mut, horizon_client::mod_api::MobDiedEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, damage_type: cloned, causing: copy, player: opt_uuid]);
+    gen_listen!(mod_event, game_mut, horizon_client::mod_api::ModEventEvent<'_>, (none), [event: cloned, payload: s_ref(serde_json::Value)]);
     gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: uuid, node: cloned, default_level: copy], result : value, Option<bool>);
     gen_collect!(permission_groups, game_ref, horizon_client::mod_api::PermissionGroupsEvent<'_>, (none), [player: uuid, groups: str_seq => mut_strvec]);
     gen_listen!(player_register_channels, game_mut, horizon_client::mod_api::PlayerRegisterChannelsEvent<'_>, (none), [player: player, channels: str_seq, register: copy]);
@@ -66979,6 +66983,90 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mod_event() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mod_event",
+            "horizon.on(\"mod_event\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.event == \"test:event\", \"event\")\n    assert(event.payload.testkey == 8, \"payload\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_mod_event(
+            &mut FakeHost::empty(),
+            &firing_mods,
+            "test:event",
+            &serde_json::json!({ "testkey": 8 }),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mod_event_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mod_event_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mod_event(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:event",
+                &serde_json::json!({ "testkey": 8 }),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(entity_reads(), 0, "mod_event read the host with no handler");
+            assert_eq!(host_reads(), 0, "mod_event read the host with no handler");
+            assert_eq!(level_reads(), 0, "mod_event read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mod_event_cost_live",
+            "horizon.on(\"mod_event\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mod_event(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:event",
+                &serde_json::json!({ "testkey": 8 }),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "mod_event built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mod_event read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mod_event read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_permission_check() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_permission_check",
@@ -78260,6 +78348,15 @@ mod generated_tests {
                 "test:damage_type",
                 11,
                 None,
+            );
+        }
+        // mod_event: unregistered, nothing runs.
+        {
+            dispatch_mod_event(
+                &mut FakeHost::empty(),
+                &firing_mods,
+                "test:event",
+                &serde_json::json!({ "testkey": 8 }),
             );
         }
         // permission_check: unregistered, nothing runs.

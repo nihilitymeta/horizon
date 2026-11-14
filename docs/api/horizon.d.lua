@@ -309,6 +309,7 @@ export type MobKilledEvent = { player: string, entity: number, kind: string }
 export type MobSpawnedEvent = { dimension: string, kind: string, pos: Vec3, natural: boolean }
 export type MobSplitEvent = { parent: number, kind: string, size: number, child_size: number, count: number }
 export type ModContainerViewersEvent = { dimension: string, pos: Vec3, viewers: number, previous: number }
+export type ModEventEvent = { event: string, payload: Data }
 export type ModifyDefaultComponentsEvent = { item: string, components: Data }
 export type ModsEvent = { mods: { { id: string, title: string, description: string, keys: {{ key: string, label: string, default: string }} } } }
 export type MoistureChangeEvent = { dimension: string, pos: Vec3, from: number, to: number }
@@ -788,6 +789,7 @@ export type HorizonOn =
     ((name: "mob_spawned", fn: (event: MobSpawnedEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_split", fn: (event: MobSplitEvent) -> (), kind: string?) -> ()) &
     ((name: "mod_container_viewers", fn: (event: ModContainerViewersEvent) -> ()) -> ()) &
+    ((name: "mod_event", fn: (event: ModEventEvent) -> ()) -> ()) &
     ((name: "modify_default_components", fn: (event: ModifyDefaultComponentsEvent) -> ()) -> ()) &
     ((name: "mods", fn: (event: ModsEvent) -> ()) -> ()) &
     ((name: "moisture_change", fn: (event: MoistureChangeEvent) -> ()) -> ()) &
@@ -1060,6 +1062,8 @@ declare horizon: {
     menu_cursor: (who: string | ReadPlayer) -> Item?,
     has_permission: (who: string | ReadPlayer, node: string, default_level: number) -> boolean,
     player_permission: (who: string | ReadPlayer) -> number?,
+    emit: (event: string, payload: Data) -> boolean,
+    on_event: (event: string, fn: (payload: Data, event: ModEventEvent) -> ()) -> (),
     dev: { inspect: (who: ReadPlayer | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean },
     summon: (dimension: string, kind: string, x: number, y: number, z: number) -> number?,
     after: (ticks: number, fn: () -> ()) -> number,

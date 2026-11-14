@@ -476,6 +476,13 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "(who: string | ReadPlayer, node: string, default_level: number) -> boolean",
     ),
     ("player_permission", "(who: string | ReadPlayer) -> number?"),
+    // Mod-to-mod events (server only): the payload the emitting mod queues,
+    // and a listener of one event name (`<mod>:<name>`).
+    ("emit", "(event: string, payload: Data) -> boolean"),
+    (
+        "on_event",
+        "(event: string, fn: (payload: Data, event: ModEventEvent) -> ()) -> ()",
+    ),
     (
         "dev",
         "{ inspect: (who: ReadPlayer | string, what: number | { x: number, y: number, z: number, face: Vec3?, dimension: string? }) -> boolean }",

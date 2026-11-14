@@ -316,7 +316,7 @@ return function(slot, base)
   -- or any other global cannot change how a failure is caught or reported.
   local xpcall, error = base.xpcall, base.error
   local type, ipairs, traceback, text = base.type, base.ipairs, base.traceback, base.text
-  return function(handlers, host, full, ...)
+  return function(handlers, host, keep_going, full, ...)
     -- A hook fired from inside a handler (a summon answered at once tells of
     -- the spawn) runs nested: the outer call's host is kept for it. slot[3]
     -- counts the runners in progress: an action outside any is refused.
@@ -338,9 +338,16 @@ return function(slot, base)
       end
       return e
     end
+    -- A listener (`keep_going`: the `mod_event` hook) keeps the first error
+    -- but runs the handlers after it: one mod's failing listener of an event
+    -- does not silence its other listeners of that event. Every other hook
+    -- stops at its first failure.
     for _, f in ipairs(handlers) do
       local ok, e = xpcall(f, with_trace, ...)
-      if not ok then failed = e break end
+      if not ok and failed == nil then
+        failed = e
+        if not keep_going then break end
+      end
     end
     slot[1] = outer_host
     slot[2] = outer_full
@@ -435,6 +442,18 @@ return function(slot, horizon, base, allowed)
   horizon.on = function(name, f, kind)
     local ok, e = pcall(on, name, f, kind)
     if not ok then error(text(e), 2) end
+  end
+  -- A mod's own event (`horizon.emit(event, payload)`): the queue is the
+  -- server tick's, and the name carries the calling mod's id, which the
+  -- runtime supplies. True when it queued; a payload with no JSON form
+  -- (a function, a cycle, past the size cap) refuses instead of raising.
+  horizon.emit = function(event, payload) return read("emit", event, payload) end
+  -- A listener of one event name (`<mod>:<name>`), as a filter over the
+  -- `mod_event` hook: `fn(payload, event)`.
+  horizon.on_event = function(event, fn)
+    horizon.on("mod_event", function(e)
+      if e.event == event then return fn(e.payload, e) end
+    end)
   end
   -- A summon with a host at hand is made at once and answers the mob's id;
   -- in a level hook it waits for the level's pass (the queued action).
@@ -1381,6 +1400,26 @@ impl LuaMod {
                             Some(level) => Value::Integer(i64::from(level)),
                             None => Value::Nil,
                         }
+                    }
+                    // `horizon.emit(event, payload)`: the queue belongs to the
+                    // server tick, so the call needs the hook's host. A payload
+                    // without a JSON form (a function, userdata, a table that
+                    // holds itself, a key JSON cannot hold) refuses the emit
+                    // instead of raising: the script asked whether it queued.
+                    "emit" => {
+                        let (event, payload): (String, Value) =
+                            FromLuaMulti::from_lua_multi(rest, lua)?;
+                        let Reader::Host(h) = reader else {
+                            return Err(draw_unavailable());
+                        };
+                        let payload = match crate::lua_mods::json::lua_to_json(&payload) {
+                            Ok(payload) => payload,
+                            Err(e) => {
+                                log::debug!("[lua:{}] emit {event}: {e}", self.id);
+                                return Ok(Value::Boolean(false));
+                            }
+                        };
+                        Value::Boolean(h.emit(&self.id, &event, &payload))
                     }
                     other => match crate::generated_helpers::generated_read(lua, h, other, rest) {
                         Some(value) => value?,
@@ -3720,8 +3759,13 @@ impl LuaMod {
             // draw-hook error) instead of queueing a summon for later.
             // Only the summon wrapper reads the slot's second entry.
             let full = matches!(&*reader.borrow(), Reader::Host(_) | Reader::Shared(_));
+            // A mod's listeners of its own events (`mod_event`) all run even
+            // when one fails: the runner keeps the first error and goes on.
+            // Every other hook stops at its first failure.
+            let keep_going = hook == "mod_event";
             let mut args = args.into_lua_multi(lua)?;
             args.push_front(Value::Boolean(full));
+            args.push_front(Value::Boolean(keep_going));
             args.push_front(read);
             args.push_front(Value::Table(handlers));
             // The runner returns a handler's message rather than raising it
@@ -6719,6 +6763,303 @@ experimental = ["scripts"]
             [
                 "died minecraft:cow 7 by minecraft:on_fire causing 0 credited 123e4567-e89b-12d3-a456-426614174000"
             ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host that records `horizon.emit` calls and answers `queued`.
+    struct EmitHost {
+        queued: bool,
+        calls: Mutex<Vec<(String, String, serde_json::Value)>>,
+    }
+    impl EmitHost {
+        fn new() -> Self {
+            Self {
+                queued: true,
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+        fn calls(&self) -> Vec<(String, String, serde_json::Value)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+    impl Host for EmitHost {
+        fn emit(&self, mod_id: &str, event: &str, payload: &serde_json::Value) -> bool {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((mod_id.to_owned(), event.to_owned(), payload.clone()));
+            self.queued
+        }
+    }
+
+    #[test]
+    fn mod_event_emit_is_deferred_and_its_listener_gets_the_payload() {
+        let (dir, path) = hmod(
+            "emit_deferred",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                LOG = {}
+                horizon.on_event(horizon.mod_id .. ":hello", function(payload, event)
+                  LOG[#LOG + 1] = event.event
+                  LOG[#LOG + 1] = payload.nested.at[2]
+                  LOG[#LOG + 1] = tostring(payload.on)
+                  LOG[#LOG + 1] = payload.who
+                end)
+                horizon.on("server_tick", function()
+                  QUEUED = horizon.emit("hello", {
+                    nested = { at = { 4, 9 } }, on = true, who = "ruby", n = 7,
+                  })
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let lua = m.lua.clone();
+        let mut host = EmitHost::new();
+        end_tick(&m, &mut host);
+        // The emit queued (host-side), and the listener has not run: the
+        // emit's own handler is still going.
+        assert!(lua.globals().get::<bool>("QUEUED").unwrap());
+        assert!(
+            lua.globals().get::<Table>("LOG").unwrap().raw_len() == 0,
+            "the listener must not run during the emitting call"
+        );
+        let calls = host.calls();
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        let (mod_id, event, payload) = calls[0].clone();
+        assert_eq!(mod_id, "ruby", "the runtime supplies the emitting mod's id");
+        assert_eq!(event, "hello", "the script names the event, not its id");
+        assert_eq!(
+            payload,
+            serde_json::json!({"nested": {"at": [4, 9]}, "on": true, "who": "ruby", "n": 7}),
+            "the payload crosses as the script wrote it"
+        );
+        // The drain (the server tick's tail) delivers it once, under the
+        // full name the runtime made.
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        horizon_client::mod_api::dispatch_mod_event(&mut host, &mods, "ruby:hello", &payload);
+        let log: Vec<String> = lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(log, ["ruby:hello", "9", "true", "ruby"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn mod_event_reaches_the_mod_listening_by_name_and_no_other() {
+        let (dir_b, path_b) = hmod_as(
+            "me_listener",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                LOG = {}
+                horizon.on_event("me_emitter:hello", function(payload)
+                  LOG[#LOG + 1] = payload.who
+                end)
+                "#,
+            )],
+        );
+        let (dir_c, path_c) = hmod_as(
+            "me_other",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                LOG = {}
+                horizon.on_event("me_emitter:other", function(payload)
+                  LOG[#LOG + 1] = "heard " .. payload.who
+                end)
+                "#,
+            )],
+        );
+        let b = LuaMod::load(&path_b, LuaSide::Server, &[]).unwrap();
+        let c = LuaMod::load(&path_c, LuaSide::Server, &[]).unwrap();
+        let (lua_b, lua_c) = (b.lua.clone(), c.lua.clone());
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(b), Box::new(c)];
+        let mut host = EmitHost::new();
+        let payload = serde_json::json!({"who": "ruby"});
+        horizon_client::mod_api::dispatch_mod_event(&mut host, &mods, "me_emitter:hello", &payload);
+        let log = |lua: &Lua| -> Vec<String> {
+            lua.globals()
+                .get::<Table>("LOG")
+                .unwrap()
+                .sequence_values()
+                .map(|v| v.unwrap())
+                .collect()
+        };
+        assert_eq!(log(&lua_b), ["ruby"], "the listener of that name heard it");
+        assert!(
+            log(&lua_c).is_empty(),
+            "a mod listening to another name hears nothing"
+        );
+        std::fs::remove_dir_all(&dir_b).unwrap();
+        std::fs::remove_dir_all(&dir_c).unwrap();
+    }
+
+    #[test]
+    fn mod_event_a_failing_listener_stops_neither_the_other_nor_the_drain() {
+        let (dir_a, path_a) = hmod_as(
+            "me_failing",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                horizon.on_event("me_emitter:hello", function()
+                  error("boom")
+                end)
+                "#,
+            )],
+        );
+        let (dir_b, path_b) = hmod_as(
+            "me_survivor",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                LOG = {}
+                horizon.on_event("me_emitter:hello", function(payload)
+                  LOG[#LOG + 1] = payload.who
+                end)
+                "#,
+            )],
+        );
+        let a = LuaMod::load(&path_a, LuaSide::Server, &[]).unwrap();
+        let b = LuaMod::load(&path_b, LuaSide::Server, &[]).unwrap();
+        // `load` leaves no status row behind: the error lookup below needs one.
+        for m in [&a, &b] {
+            set_status(ModStatus {
+                id: m.id().into(),
+                side: m.side().as_str().to_owned(),
+                ..Default::default()
+            });
+        }
+        let lua_b = b.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(a), Box::new(b)];
+        let mut host = EmitHost::new();
+        let payload = serde_json::json!({"who": "ruby"});
+        // Two queued events: the first listener fails on each, and the other
+        // mod (and the next event of the same drain) still run.
+        for _ in 0..2 {
+            horizon_client::mod_api::dispatch_mod_event(
+                &mut host,
+                &mods,
+                "me_emitter:hello",
+                &payload,
+            );
+        }
+        let log: Vec<String> = lua_b
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(log, ["ruby", "ruby"], "both deliveries reached it");
+        let failed = horizon_client::dev_input::mods::status()
+            .into_iter()
+            .find(|s| s.id == "me_failing")
+            .and_then(|s| s.error)
+            .expect("the failing listener is reported");
+        assert!(failed.contains("boom"), "{failed}");
+        std::fs::remove_dir_all(&dir_a).unwrap();
+        std::fs::remove_dir_all(&dir_b).unwrap();
+    }
+
+    #[test]
+    fn mod_event_a_failing_listener_does_not_stop_the_same_mods_next_one() {
+        let logs = capture_logs();
+        let (dir, path) = hmod(
+            "me_double",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                LOG = {}
+                horizon.on_event("me_emitter:hello", function()
+                  error("first-boom")
+                end)
+                horizon.on_event("me_emitter:hello", function()
+                  LOG[#LOG + 1] = "heard"
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = EmitHost::new();
+        let payload = serde_json::json!({"who": "ruby"});
+        horizon_client::mod_api::dispatch_mod_event(&mut host, &mods, "me_emitter:hello", &payload);
+        // Both listeners belong to one mod: the first one raised, and the
+        // second still heard its event.
+        let heard: Vec<String> = lua
+            .globals()
+            .get::<Table>("LOG")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(heard, ["heard"]);
+        let reported: Vec<String> = TEST_LOG
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.contains("first-boom"))
+            .cloned()
+            .collect();
+        assert_eq!(reported.len(), 1, "{reported:?}");
+        assert!(reported[0].contains("stack traceback:"), "{}", reported[0]);
+        drop(logs);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn mod_event_a_payload_without_a_json_form_refuses_the_emit() {
+        let (dir, path) = hmod(
+            "emit_refused",
+            &[(
+                "scripts/server/init.lua",
+                br#"
+                RESULT = {}
+                horizon.on("server_tick", function()
+                  local cycle = {}
+                  cycle.self = cycle
+                  local fn = horizon.emit("fn", { f = function() end })
+                  local cyc = horizon.emit("cycle", cycle)
+                  local deep = {}
+                  local at = deep
+                  for i = 1, 200 do
+                    at.next = {}
+                    at = at.next
+                  end
+                  local nested = horizon.emit("deep", deep)
+                  RESULT = { fn, cyc, nested }
+                end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = EmitHost::new();
+        end_tick(&m, &mut host);
+        let refused: Vec<bool> = m
+            .lua
+            .globals()
+            .get::<Table>("RESULT")
+            .unwrap()
+            .sequence_values()
+            .map(|v| v.unwrap())
+            .collect();
+        assert_eq!(
+            refused,
+            [false, false, false],
+            "a function value, a cycle and a table nested past the limit each refuse the emit"
+        );
+        assert!(
+            host.calls().is_empty(),
+            "a refused payload queues nothing: {:?}",
+            host.calls()
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -12740,6 +13081,8 @@ horizon.on("client_start", function(event) CLIENT_COUNTER = CLIENT_COUNTER + 1 e
                 expect_server_only("entity_data", function() return horizon.entity_data(1) end)
                 expect_server_only("summon", function() return horizon.summon("minecraft:overworld", "minecraft:cow", 0, 0, 0) end)
                 expect_server_only("players", function() return horizon.players() end)
+                expect_server_only("emit", function() return horizon.emit("hello", {}) end)
+                expect_server_only("on_event", function() return horizon.on_event("ruby:hello", function() end) end)
                 -- A stubbed error does not break the state.
                 horizon.log("after stubs")
                 assert(horizon.side == "client")

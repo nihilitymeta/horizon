@@ -738,6 +738,9 @@ impl Game<'_> {
         if server {
             self.diagnostics_packets_tick();
         }
+        // The mod-to-mod events this tick emitted (`horizon.emit`), fired once
+        // here so a listener never runs inside the emit's own handler.
+        self.drain_mod_events();
         Ok(())
     }
 

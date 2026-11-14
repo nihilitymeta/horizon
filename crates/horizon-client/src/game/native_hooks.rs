@@ -9796,6 +9796,18 @@ impl Game<'_> {
             damage,
         );
     }
+    /// An event a server-side Lua mod queued with `horizon.emit(event,
+    /// payload)`, delivered once at the end of the tick it emitted in: `event`
+    /// is the emitting mod's own name for it (`<mod>:<name>`, which its script
+    /// never passes) and `payload` its JSON-like table (strings, numbers,
+    /// booleans, sequences and nested tables), decoded fresh for this call so
+    /// no two listeners share a table. Any mod may listen to any mod's event;
+    /// it only hears (a listener's answer carries nowhere). A listener that
+    /// emits queues for the same drain, and an emit past the tick's depth cap
+    /// drops. Server-side. API @API:mod_events@.
+    pub(super) fn native_mod_event(&mut self, event: &str, payload: &serde_json::Value) {
+        mod_api::dispatch_mod_event(self, mod_api::mods(), event, payload);
+    }
 }
 
 impl Game<'_> {

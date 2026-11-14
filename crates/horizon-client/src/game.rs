@@ -259,6 +259,7 @@ mod mob_looting;
 mod mob_sounds;
 mod mod_api_host;
 mod mod_browser;
+mod mod_events;
 mod mods;
 mod mount_menu;
 mod mounts;
@@ -2847,6 +2848,8 @@ struct Game<'a> {
     native_input: native_claimed_items::ModInput,
     /// The native lifecycle bookkeeping.
     native_lifecycle: native_lifecycle::NativeLifecycle,
+    /// Mod-to-mod events waiting for the end of the tick (`game/mod_events.rs`).
+    mod_events: mod_events::Queue,
     /// Native mods' config files this game loaded (game/native_configs.rs).
     native_configs: native_configs::NativeConfigs,
     /// Native mods' messages waiting (`game/native_net.rs`).
@@ -11895,6 +11898,7 @@ impl<'a> Game<'a> {
             native_shaders: Default::default(),
             native_input: Default::default(),
             native_lifecycle: Default::default(),
+            mod_events: Default::default(),
             native_configs: Default::default(),
             native_net: Default::default(),
             native_player_fx: Default::default(),

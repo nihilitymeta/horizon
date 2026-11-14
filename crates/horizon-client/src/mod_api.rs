@@ -120,7 +120,8 @@ pub use horizon_world::{
     },
 };
 pub use serde_json;
-use serde_json::{Map, Value};
+use serde_json::Map;
+pub use serde_json::Value;
 /// The slot range a menu's input slots take (`native_open_menu_with_input`).
 /// API @API:menu_input@.
 pub use std::ops::Range;

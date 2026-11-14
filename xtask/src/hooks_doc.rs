@@ -432,6 +432,10 @@ const LUA_HELPERS: &[(&str, &str)] = &[
         "edit_blocks",
         "`horizon.fill(x1, y1, z1, x2, y2, z2, id[, props])`",
     ),
+    (
+        "emit",
+        "`horizon.emit(event, payload)`, queued for `horizon.on_event` listeners",
+    ),
     ("feedback", "`horizon.feedback(text)`"),
     (
         "give_experience",
