@@ -406,7 +406,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                             self.sapling_advance_tree(pos, state);
                         }
                     } else if b.table.int(state, p.age) != 4 {
-                        self.set_block(pos, b.table.cycle(state, p.age), 2);
+                        self.grow_set(pos, b.table.cycle(state, p.age), 2);
                     }
                 }
                 Class::Sapling => {
@@ -418,7 +418,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                 Class::NetherWart => {
                     let age = b.table.int(state, p.age);
                     if age < 3 && self.rand_int(10) == 0 {
-                        self.set_block(pos, b.table.set_int(state, p.age, age + 1), 2);
+                        self.grow_set(pos, b.table.set_int(state, p.age, age + 1), 2);
                     }
                 }
                 Class::Nylium => {
@@ -471,8 +471,9 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                     let age = b.table.int(state, p.age);
                     if age < 3 && self.rand_int(5) == 0 && self.raw_brightness(above(pos), 0) >= 9 {
                         let next = b.table.set_int(state, p.age, age + 1);
-                        self.set_block(pos, next, 2);
-                        self.game_event(pos, "minecraft:block_change");
+                        if self.grow_set(pos, next, 2) {
+                            self.game_event(pos, "minecraft:block_change");
+                        }
                     }
                 }
                 Class::Vine => self.vine_random_tick(state, pos),
@@ -858,14 +859,16 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
     }
     /// A growth or spread step at `pos` (a crop, a stem, cactus or sugar cane,
     /// bamboo, a mushroom or vine spreading, grass spreading onto dirt): asked of
-    /// the level first (`LevelAccess::block_grow`), which may cancel it.
-    fn grow_set(&mut self, pos: BlockPos, to: BlockStateId, flags: i32) {
+    /// the level first (`LevelAccess::block_grow`), which may cancel it. Returns
+    /// whether the level allowed the step (not whether the block changed).
+    fn grow_set(&mut self, pos: BlockPos, to: BlockStateId, flags: i32) -> bool {
         let from = self.state(pos);
         let mut cancel = false;
         self.level.block_grow(pos, from, to, &mut cancel);
         if !cancel {
             self.set_block(pos, to, flags);
         }
+        !cancel
     }
     /// `grow_set` with `set_block_and_update`.
     fn grow_set_update(&mut self, pos: BlockPos, to: BlockStateId) {

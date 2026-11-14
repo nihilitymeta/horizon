@@ -3,6 +3,7 @@
 //! absent).
 use super::*;
 use crate::{chunk::BlockState, worldgen::generator::GeneratorData, worldgen::live::LiveFeatures};
+use horizon_core::random::RandomSource;
 use std::{collections::HashMap, path::PathBuf, sync::OnceLock};
 
 struct Fixture {
@@ -860,4 +861,192 @@ fn a_cancelled_growth_step_leaves_the_block() {
         older,
         "an allowed step grows as before"
     );
+}
+/// The `LevelAccess::block_grow` double for the growth steps below: records
+/// each step asked about and cancels it when `cancel`.
+struct RecordGrow<'a> {
+    inner: &'a mut Level,
+    cancel: bool,
+    asked: Vec<(BlockPos, BlockStateId, BlockStateId)>,
+}
+impl LevelAccess for RecordGrow<'_> {
+    fn day_time(&self) -> i64 {
+        self.inner.day_time()
+    }
+    fn block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.inner.block_state(pos)
+    }
+    fn set_raw(&mut self, pos: BlockPos, state: BlockStateId) -> Option<BlockStateId> {
+        self.inner.set_raw(pos, state)
+    }
+    fn is_loaded(&self, pos: BlockPos) -> bool {
+        self.inner.is_loaded(pos)
+    }
+    fn random(&mut self) -> &mut LegacyRandom {
+        self.inner.random()
+    }
+    fn game_time(&self) -> i64 {
+        self.inner.game_time()
+    }
+    fn emit(&mut self, event: LevelEvent) {
+        self.inner.emit(event)
+    }
+    fn block_grow(
+        &mut self,
+        pos: BlockPos,
+        from: BlockStateId,
+        to: BlockStateId,
+        cancel: &mut bool,
+    ) {
+        self.asked.push((pos, from, to));
+        *cancel = self.cancel;
+    }
+}
+
+/// One random tick at `pos` in a fresh world seeded `seed`, through the default
+/// hook (`grow` is `None`) or through [`RecordGrow`] with the given cancel.
+struct TickOutcome {
+    asked: Vec<(BlockPos, BlockStateId, BlockStateId)>,
+    state: BlockStateId,
+    rng: u64,
+    events: Vec<LevelEvent>,
+}
+fn tick_outcome(
+    f: &'static Fixture,
+    seed: i64,
+    state: BlockStateId,
+    pos: BlockPos,
+    grow: Option<bool>,
+) -> TickOutcome {
+    let mut w = World::new(f, seed);
+    w.put(pos, state);
+    let asked = match grow {
+        Some(cancel) => {
+            let mut level = RecordGrow {
+                inner: &mut w.level,
+                cancel,
+                asked: Vec::new(),
+            };
+            f.behaviours.random_tick(&mut level, &mut w.ticks, pos);
+            level.asked
+        }
+        None => {
+            f.behaviours.random_tick(&mut w.level, &mut w.ticks, pos);
+            Vec::new()
+        }
+    };
+    TickOutcome {
+        asked,
+        state: w.level.block_state(pos),
+        rng: w.level.random.state(),
+        events: w.level.events,
+    }
+}
+fn block_change_events(outcome: &TickOutcome) -> usize {
+    outcome
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                LevelEvent::GameEvent {
+                    event: "minecraft:block_change",
+                    ..
+                }
+            )
+        })
+        .count()
+}
+
+/// Nether wart ageing is a `block_grow` step: asked with the old and the aged
+/// state, aged when allowed, left alone when cancelled, and the one draw it
+/// makes is the same either way.
+#[test]
+fn a_nether_wart_growth_step_asks_the_level_and_can_be_cancelled() {
+    let Some(f) = fixture() else { return };
+    let pos = BlockPos::new(0, 64, 0);
+    let w = World::new(f, 0);
+    let young = w.id("nether_wart", &[("age", "0")]);
+    let older = w.id("nether_wart", &[("age", "1")]);
+    // Seed 0's first draw is the growth roll: nextInt(10) == 0.
+    let mut expected = LegacyRandom::new(0);
+    assert_eq!(expected.next_int_bound(10).unwrap(), 0);
+    let allowed = tick_outcome(f, 0, young, pos, None);
+    assert_eq!(allowed.state, older, "the default hook ages it");
+    assert_eq!(allowed.rng, expected.state(), "one nextInt(10) draw");
+    assert_eq!(block_change_events(&allowed), 0);
+
+    let asked = tick_outcome(f, 0, young, pos, Some(false));
+    assert_eq!(asked.asked, vec![(pos, young, older)]);
+    assert_eq!(asked.state, older, "an allowed step ages it");
+    assert_eq!(asked.rng, allowed.rng, "a listener adds no draw");
+
+    let cancelled = tick_outcome(f, 0, young, pos, Some(true));
+    assert_eq!(cancelled.asked, vec![(pos, young, older)]);
+    assert_eq!(cancelled.state, young, "a cancelled step grows nothing");
+    assert_eq!(
+        cancelled.rng, allowed.rng,
+        "cancelling changes no random draw"
+    );
+}
+
+/// Sweet berry bush ageing is a `block_grow` step: its block-change game event
+/// belongs to the growth, so a cancelled step emits none.
+#[test]
+fn a_sweet_berry_bush_growth_step_asks_the_level_and_can_be_cancelled() {
+    let Some(f) = fixture() else { return };
+    let pos = BlockPos::new(0, 64, 0);
+    let w = World::new(f, 0);
+    let young = w.id("sweet_berry_bush", &[("age", "0")]);
+    let older = w.id("sweet_berry_bush", &[("age", "1")]);
+    // Seed 0's first draw is the growth roll: nextInt(5) == 0.
+    let mut expected = LegacyRandom::new(0);
+    assert_eq!(expected.next_int_bound(5).unwrap(), 0);
+    let allowed = tick_outcome(f, 0, young, pos, None);
+    assert_eq!(allowed.state, older, "the default hook ages it");
+    assert_eq!(allowed.rng, expected.state(), "one nextInt(5) draw");
+    assert_eq!(block_change_events(&allowed), 1, "growth changes the block");
+
+    let asked = tick_outcome(f, 0, young, pos, Some(false));
+    assert_eq!(asked.asked, vec![(pos, young, older)]);
+    assert_eq!(asked.state, older, "an allowed step ages it");
+    assert_eq!(asked.rng, allowed.rng, "a listener adds no draw");
+    assert_eq!(block_change_events(&asked), 1);
+
+    let cancelled = tick_outcome(f, 0, young, pos, Some(true));
+    assert_eq!(cancelled.asked, vec![(pos, young, older)]);
+    assert_eq!(cancelled.state, young, "a cancelled step grows nothing");
+    assert_eq!(block_change_events(&cancelled), 0, "no event either");
+    assert_eq!(
+        cancelled.rng, allowed.rng,
+        "cancelling changes no random draw"
+    );
+}
+
+/// A hanging mangrove propagule ageing is a `block_grow` step (the standing
+/// one grows a tree and is not this hook).
+#[test]
+fn a_hanging_mangrove_propagule_ageing_asks_the_level_and_can_be_cancelled() {
+    let Some(f) = fixture() else { return };
+    let pos = BlockPos::new(0, 64, 0);
+    let w = World::new(f, 0);
+    let young = w.id("mangrove_propagule", &[("hanging", "true"), ("age", "0")]);
+    let older = w.id("mangrove_propagule", &[("hanging", "true"), ("age", "1")]);
+    let allowed = tick_outcome(f, 0, young, pos, None);
+    assert_eq!(allowed.state, older, "the default hook ages it");
+    assert_eq!(
+        allowed.rng,
+        LegacyRandom::new(0).state(),
+        "ageing draws no random number"
+    );
+
+    let asked = tick_outcome(f, 0, young, pos, Some(false));
+    assert_eq!(asked.asked, vec![(pos, young, older)]);
+    assert_eq!(asked.state, older, "an allowed step ages it");
+    assert_eq!(asked.rng, allowed.rng);
+
+    let cancelled = tick_outcome(f, 0, young, pos, Some(true));
+    assert_eq!(cancelled.asked, vec![(pos, young, older)]);
+    assert_eq!(cancelled.state, young, "a cancelled step grows nothing");
+    assert_eq!(cancelled.rng, allowed.rng);
 }

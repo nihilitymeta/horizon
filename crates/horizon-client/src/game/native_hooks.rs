@@ -1093,7 +1093,10 @@ impl GameLevel<'_> {
     /// there changes from `from` to `to` (block names, state properties
     /// included). Set `cancel` to leave it as it is. Covers crop, stem, cactus,
     /// sugar cane and bamboo growth, grass spreading onto dirt, mushroom and
-    /// vine spread. Server-side. Pending API @API:block_grow@.
+    /// vine spread, nether wart and sweet berry bush ageing, and a hanging
+    /// mangrove propagule ageing. Not covered: sapling trees (and a standing
+    /// mangrove propagule, which grows a tree) and sculk. Server-side. Pending
+    /// API @API:block_grow@.
     pub(super) fn native_block_grow(
         &self,
         dimension: &str,
