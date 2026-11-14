@@ -180,6 +180,7 @@ const CLIENT_API: &[&str] = &[
     "on",
     "after",
     "every",
+    "cancel_timer",
     "ticks",
     "config",
     "save_config",
@@ -394,14 +395,18 @@ end
 /// the state's own tick (the end of a server tick while the world runs, or
 /// each client tick), as a handler of their own; a timer that fails is reported to the log (`report`) and,
 /// if repeating, kept, and the timers after it run: the handler itself does
-/// not fail, so what the other timers asked for and saved stands.
+/// not fail, so what the other timers asked for and saved stands. Both hand
+/// back a handle a script can give `horizon.cancel_timer`.
 const TIMERS_CODE: &str = r#"
 return function(horizon, report, base)
   -- The globals the timers use, from `base` (BASE_CODE), as the runner's are.
   local xpcall, type, text, traceback = base.xpcall, base.type, base.text, base.traceback
   local max, floor, remove = base.max, base.floor, base.remove
   local error = base.error
-  local timers, tick = {}, 0
+  -- `timers` keeps the insertion order the loop runs in; `pending` maps the
+  -- handle of every timer that has not fired as a one-shot or been cancelled
+  -- to its timer, so a cancel finds it without scanning.
+  local timers, pending, tick = {}, {}, 0
   -- A delay is a finite number of ticks: `after` takes zero or more, `every`
   -- one or more. Anything else is a Lua error at the call, so the mod's
   -- scripts fail to load; a NaN or infinite delay would hold a timer that
@@ -412,12 +417,40 @@ return function(horizon, report, base)
     end
     return ticks
   end
+  -- A handle is a positive whole number this state never hands out twice,
+  -- so a stale handle from an `after` that fired can never cancel the timer
+  -- that took its place. The counter lives on `base`, the state's own table:
+  -- `/reload` replaces these closures but keeps the state and a script's
+  -- globals, so a handle a script kept keeps its meaning.
+  local function add(timer)
+    local id = (base.timer_handles or 0) + 1
+    base.timer_handles = id
+    timer.id = id
+    timers[#timers + 1] = timer
+    pending[id] = timer
+    return id
+  end
   horizon.after = function(ticks, fn)
-    timers[#timers + 1] = { due = tick + max(1, floor(delay("after", ticks, 0))), fn = fn }
+    return add({ due = tick + max(1, floor(delay("after", ticks, 0))), fn = fn })
   end
   horizon.every = function(ticks, fn)
     local n = max(1, floor(delay("every", ticks, 1)))
-    timers[#timers + 1] = { due = tick + n, every = n, fn = fn }
+    return add({ due = tick + n, every = n, fn = fn })
+  end
+  -- Cancelling marks the timer dead and drops it from `pending`: a second
+  -- cancel, or one for a timer that already ran its last firing, answers
+  -- false. A dead timer is swept by the loop without advancing the index,
+  -- so the timer that follows it still runs once, this tick if it is due.
+  horizon.cancel_timer = function(handle)
+    if type(handle) ~= "number" then
+      error("horizon.cancel_timer: the handle must be a number", 2)
+    end
+    local t
+    if handle >= 1 and handle == floor(handle) then t = pending[handle] end
+    if t == nil then return false end
+    pending[handle] = nil
+    t.dead = true
+    return true
   end
   horizon.ticks = function() return tick end
   local function run_timers(event)
@@ -428,8 +461,18 @@ return function(horizon, report, base)
     local i = 1
     while i <= #timers do
       local t = timers[i]
-      if t.due <= tick then
-        if t.every then t.due = tick + t.every; i = i + 1 else remove(timers, i) end
+      if t.dead then
+        remove(timers, i)
+      elseif t.due <= tick then
+        if t.every then
+          t.due = tick + t.every
+          i = i + 1
+        else
+          -- A one-shot is done: its handle stops answering a cancel before
+          -- its callback can ask.
+          pending[t.id] = nil
+          remove(timers, i)
+        end
         -- A string error gains the timer's traceback here, where its
         -- frames still run; anything else a script throws gains it too,
         -- with its type named, as the runner does.
@@ -2189,8 +2232,8 @@ impl LuaMod {
         let lua = &self.lua;
         // What the running mod registered, kept aside while the new script
         // runs: the registry tables, the timers (their handler and the
-        // `horizon.after`/`every`/`ticks` closures over their list) and the
-        // maps the `horizon` functions fill.
+        // `horizon.after`/`every`/`cancel_timer`/`ticks` closures over their
+        // list) and the maps the `horizon` functions fill.
         let api: Table = lua
             .globals()
             .get::<Table>(GLOBAL)
@@ -2203,7 +2246,10 @@ impl LuaMod {
             for key in [HANDLERS, KIND_HANDLERS, LOADED, TIMERS_HANDLER] {
                 registry.push((key, lua.named_registry_value::<Value>(key)?));
             }
-            for name in ["after", "every", "ticks"] {
+            // `cancel_timer` closes over the same `pending` table as `after`
+            // and `every`: restoring one without the other would leave a
+            // pending timer uncancellable after a failed reload.
+            for name in ["after", "every", "cancel_timer", "ticks"] {
                 timers.push((name, api.get::<Value>(name)?));
             }
             lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
@@ -10410,6 +10456,451 @@ experimental = ["scripts"]
         )
         .unwrap();
         m.reload().expect("after(0) and every(1) load");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host with nothing in it: the timer tests only need one to tick.
+    fn timer_host() -> MobHost {
+        MobHost {
+            attachments: Default::default(),
+            health: Vec::new(),
+            lines: Mutex::new(Vec::new()),
+            pushes: Vec::new(),
+            carried: wand(),
+            world: Default::default(),
+            player: Default::default(),
+        }
+    }
+
+    /// Ticks server state `m` `n` times: the end phase of a running world,
+    /// the one a server timer fires in.
+    fn server_ticks(m: &LuaMod, host: &mut MobHost, n: usize) {
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        for _ in 0..n {
+            m.server_tick(
+                host,
+                &mut test_events::server_tick_event(
+                    &context,
+                    ServerTickPhase::ServerTickEnd {
+                        world_running: true,
+                    },
+                ),
+            );
+        }
+    }
+
+    fn server_mod(id: &str, script: &[u8]) -> (PathBuf, LuaMod) {
+        let (dir, path) = hmod(id, &[("scripts/server/init.lua", script)]);
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        (dir, m)
+    }
+
+    fn number(m: &LuaMod, name: &str) -> i32 {
+        m.lua.globals().get::<i32>(name).unwrap()
+    }
+
+    fn yes(m: &LuaMod, name: &str) -> bool {
+        m.lua.globals().get::<bool>(name).unwrap()
+    }
+
+    #[test]
+    fn an_after_timer_cancelled_before_its_tick_never_fires() {
+        let (dir, m) = server_mod(
+            "timer-cancel-after",
+            br#"
+            N = 0
+            FIRST = horizon.cancel_timer(horizon.after(3, function() N = N + 1 end))
+            "#,
+        );
+        let mut host = timer_host();
+        server_ticks(&m, &mut host, 4);
+        assert!(
+            yes(&m, "FIRST"),
+            "the first cancel of a pending timer is true"
+        );
+        assert_eq!(number(&m, "N"), 0, "a cancelled after never fires");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_every_timer_cancelled_after_two_firings_fires_no_more() {
+        let (dir, m) = server_mod(
+            "timer-cancel-every",
+            b"N = 0\nH = horizon.every(1, function() N = N + 1 end)",
+        );
+        let mut host = timer_host();
+        server_ticks(&m, &mut host, 2);
+        assert_eq!(number(&m, "N"), 2);
+        m.lua
+            .load("LATER = horizon.cancel_timer(H)")
+            .exec()
+            .unwrap();
+        assert!(yes(&m, "LATER"));
+        server_ticks(&m, &mut host, 3);
+        assert_eq!(number(&m, "N"), 2, "a cancelled every keeps its last count");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_every_timer_cancelled_from_its_own_callback_does_not_fire_again() {
+        let (dir, m) = server_mod(
+            "timer-cancel-self",
+            br#"
+            N = 0
+            H = horizon.every(1, function()
+              N = N + 1
+              horizon.cancel_timer(H)
+            end)
+            "#,
+        );
+        let mut host = timer_host();
+        server_ticks(&m, &mut host, 5);
+        assert_eq!(number(&m, "N"), 1, "the timer cancelled itself at tick 1");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_timer_cancelled_by_another_in_the_same_tick_does_not_fire_and_the_next_still_runs_once() {
+        // The victim is due this same tick, after the canceller in the list;
+        // the third timer follows it. Nothing skips and nothing runs twice.
+        let (dir, m) = server_mod(
+            "timer-cancel-same-tick",
+            br#"
+            LOG = {}
+            horizon.after(1, function() horizon.cancel_timer(TARGET) end)
+            TARGET = horizon.after(1, function() LOG[#LOG + 1] = "victim" end)
+            horizon.after(1, function() LOG[#LOG + 1] = "third" end)
+            "#,
+        );
+        let mut host = timer_host();
+        let log = |m: &LuaMod| -> Vec<String> {
+            m.lua
+                .globals()
+                .get::<Table>("LOG")
+                .unwrap()
+                .sequence_values()
+                .map(|v| v.unwrap())
+                .collect()
+        };
+        server_ticks(&m, &mut host, 1);
+        assert_eq!(log(&m), ["third"]);
+        server_ticks(&m, &mut host, 2);
+        assert_eq!(log(&m), ["third"], "the third runs exactly once");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_second_cancel_and_a_fired_after_answer_false() {
+        let (dir, m) = server_mod(
+            "timer-cancel-twice",
+            br#"
+            FIRED = false
+            H = horizon.after(1, function() FIRED = true end)
+            FIRST = horizon.cancel_timer(H)
+            SECOND = horizon.cancel_timer(H)
+            NEVER = horizon.cancel_timer(999)
+            G = horizon.after(1, function() end)
+            "#,
+        );
+        let mut host = timer_host();
+        assert!(yes(&m, "FIRST"));
+        assert!(
+            !yes(&m, "SECOND"),
+            "a timer already cancelled answers false"
+        );
+        assert!(!yes(&m, "NEVER"), "a handle never issued answers false");
+        server_ticks(&m, &mut host, 1);
+        assert!(!yes(&m, "FIRED"), "the cancelled after did not fire");
+        m.lua
+            .load("AFTER_FIRE = horizon.cancel_timer(G)")
+            .exec()
+            .unwrap();
+        assert!(
+            !yes(&m, "AFTER_FIRE"),
+            "a one-shot that fired answers false"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn timer_handles_are_distinct_positive_integers_never_reused() {
+        let (dir, m) = server_mod(
+            "timer-handles",
+            br#"
+            A = horizon.after(100, function() end)
+            B = horizon.every(100, function() end)
+            C = horizon.after(100, function() end)
+            horizon.cancel_timer(A)
+            D = horizon.after(100, function() end)
+            "#,
+        );
+        let handle = |name: &str| m.lua.globals().get::<i64>(name).unwrap();
+        let (a, b, c, d) = (handle("A"), handle("B"), handle("C"), handle("D"));
+        for (name, h) in [("A", a), ("B", b), ("C", c), ("D", d)] {
+            assert!(h > 0, "{name} = {h} is a positive handle");
+        }
+        assert!(a != b && a != c && b != c, "handles differ: {a}, {b}, {c}");
+        assert_ne!(d, a, "a cancelled timer's handle is not handed out again");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_timer_handle_is_not_handed_out_again_after_a_reload() {
+        // The state and its globals outlive a reload: the old timer is
+        // dropped, but its number must never name a new one.
+        let (dir, path) = hmod(
+            "timer-handles-reload",
+            &[(
+                "scripts/server/init.lua",
+                b"OLD = horizon.after(100, function() end)",
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let old: i64 = m.lua.globals().get("OLD").unwrap();
+        std::fs::write(
+            &path,
+            Package::write_files(
+                MANIFEST_TEXT,
+                None,
+                &[(
+                    "scripts/server/init.lua",
+                    b"NEW = horizon.after(100, function() end)",
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        m.reload().expect("the new script loads");
+        let new: i64 = m.lua.globals().get("NEW").unwrap();
+        assert_ne!(new, old, "the reloaded state never reissues a handle");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_reload_restores_cancel_timer_with_after_and_every() {
+        // `cancel_timer` closes over the same `pending` table as `after` and
+        // `every`. A failed reload puts all three back, so the restored
+        // timers and the restored cancel still see one table; restoring the
+        // two without the third leaves a pending timer uncancellable.
+        let (dir, path) = hmod(
+            "timer-cancel-failed-reload",
+            &[(
+                "scripts/server/init.lua",
+                b"N = 0\nH = horizon.every(1, function() N = N + 1 end)",
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let mut host = timer_host();
+        server_ticks(&m, &mut host, 2);
+        assert_eq!(
+            number(&m, "N"),
+            2,
+            "the timer fired twice before the reload"
+        );
+        std::fs::write(
+            &path,
+            Package::write_files(
+                MANIFEST_TEXT,
+                None,
+                &[("scripts/server/init.lua", b"error('reload fails')")],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let e = m.reload().expect_err("the broken script fails the reload");
+        assert!(e.contains("reload fails"), "the reload error: {e}");
+        // H is still pending in the restored state: its cancel must find it.
+        m.lua.load("OK = horizon.cancel_timer(H)").exec().unwrap();
+        assert!(
+            yes(&m, "OK"),
+            "the restored cancel_timer finds the pending timer"
+        );
+        server_ticks(&m, &mut host, 3);
+        assert_eq!(
+            number(&m, "N"),
+            2,
+            "a timer cancelled after a failed reload never fires again"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_cancel_timers_handle_that_is_not_a_pending_integer_answers_false() {
+        // A number that names no pending timer answers false, as any other
+        // number does; only a non-number is an error.
+        let (dir, m) = server_mod(
+            "timer-cancel-non-handles",
+            br#"
+            local function try(v)
+              local ok, r = pcall(horizon.cancel_timer, v)
+              if not ok then return "error" end
+              return r
+            end
+            H = horizon.after(100, function() end)
+            NAN = try(0/0)
+            INF = try(math.huge)
+            NEG_INF = try(-math.huge)
+            NEG = try(-1)
+            ZERO = try(0)
+            FRAC = try(1.5)
+            STILL = horizon.cancel_timer(H)
+            "#,
+        );
+        for name in ["NAN", "INF", "NEG_INF", "NEG", "ZERO", "FRAC"] {
+            let v = m.lua.globals().get::<Value>(name).unwrap();
+            assert_eq!(
+                v,
+                Value::Boolean(false),
+                "{name} answers false, not an error"
+            );
+        }
+        assert!(yes(&m, "STILL"), "none of them cancelled the pending timer");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_cancel_timers_handle_must_be_a_number() {
+        let (dir, m) = server_mod(
+            "timer-cancel-handle",
+            br#"
+            local function try(v)
+              local ok, err = pcall(horizon.cancel_timer, v)
+              if ok then return "no error" end
+              return tostring(err)
+            end
+            E1 = try(nil)
+            E2 = try("5")
+            E3 = try({})
+            E4 = try(function() end)
+            "#,
+        );
+        for name in ["E1", "E2", "E3", "E4"] {
+            let e = m.lua.globals().get::<String>(name).unwrap();
+            assert!(
+                e.contains("horizon.cancel_timer"),
+                "{name}: the error names horizon.cancel_timer: {e}"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_state_cancels_a_client_timer() {
+        let (dir, path) = hmod(
+            "timer-cancel-client",
+            &[(
+                "scripts/client/init.lua",
+                br#"
+                N = 0
+                KIND = type(horizon.cancel_timer)
+                H = horizon.every(1, function() N = N + 1 end)
+                "#,
+            )],
+        );
+        let m = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let lua = m.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(m)];
+        let mut host = timer_host();
+        for _ in 0..2 {
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        }
+        assert_eq!(lua.globals().get::<i32>("N").unwrap(), 2);
+        lua.load("OK = horizon.cancel_timer(H)").exec().unwrap();
+        assert!(lua.globals().get::<bool>("OK").unwrap());
+        assert_eq!(lua.globals().get::<String>("KIND").unwrap(), "function");
+        for _ in 0..3 {
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        }
+        assert_eq!(lua.globals().get::<i32>("N").unwrap(), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_state_cancels_only_its_own_timer_not_the_server_states_with_the_same_number() {
+        // Both states load from one mod, and each numbers its first timer 1.
+        // The client's cancel of 1 reaches only the client's pending table:
+        // the server's timer with that same number keeps firing on server
+        // ticks, and its own cancel still finds it pending.
+        let (dir, path) = hmod(
+            "timer-cancel-two-states",
+            &[
+                (
+                    "scripts/server/init.lua",
+                    b"SN = 0\nSH = horizon.every(1, function() SN = SN + 1 end)",
+                ),
+                (
+                    "scripts/client/init.lua",
+                    b"CN = 0\nCH = horizon.every(1, function() CN = CN + 1 end)",
+                ),
+            ],
+        );
+        let server = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        let client = LuaMod::load(&path, LuaSide::Client, &[]).unwrap();
+        let server_lua = server.lua.clone();
+        let client_lua = client.lua.clone();
+        let mods: Vec<Box<dyn Hooks>> = vec![Box::new(server), Box::new(client)];
+        let mut host = timer_host();
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        let server_tick = |host: &mut MobHost| {
+            horizon_client::mod_api::dispatch_server_tick(
+                host,
+                &mods,
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            );
+        };
+        let sh: i64 = server_lua.globals().get("SH").unwrap();
+        let ch: i64 = client_lua.globals().get("CH").unwrap();
+        assert_eq!((sh, ch), (1, 1), "each state numbers its first timer 1");
+        for _ in 0..2 {
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+            server_tick(&mut host);
+        }
+        assert_eq!(client_lua.globals().get::<i32>("CN").unwrap(), 2);
+        assert_eq!(server_lua.globals().get::<i32>("SN").unwrap(), 2);
+        client_lua
+            .load("OKC = horizon.cancel_timer(CH)")
+            .exec()
+            .unwrap();
+        assert!(client_lua.globals().get::<bool>("OKC").unwrap());
+        for _ in 0..2 {
+            horizon_client::mod_api::dispatch_client_tick_post(&mut host, &mods);
+        }
+        assert_eq!(
+            client_lua.globals().get::<i32>("CN").unwrap(),
+            2,
+            "the client's timer stopped"
+        );
+        for _ in 0..2 {
+            server_tick(&mut host);
+        }
+        assert_eq!(
+            server_lua.globals().get::<i32>("SN").unwrap(),
+            4,
+            "the server's timer with the same number kept firing"
+        );
+        server_lua
+            .load("ALIVE = horizon.cancel_timer(SH)")
+            .exec()
+            .unwrap();
+        assert!(
+            server_lua.globals().get::<bool>("ALIVE").unwrap(),
+            "the client's cancel of 1 left the server's 1 pending"
+        );
+        for _ in 0..2 {
+            server_tick(&mut host);
+        }
+        assert_eq!(server_lua.globals().get::<i32>("SN").unwrap(), 4);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

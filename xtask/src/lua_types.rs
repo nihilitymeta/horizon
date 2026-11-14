@@ -485,8 +485,9 @@ const FUNCTIONS: &[(&str, &str)] = &[
         "(dimension: string, kind: string, x: number, y: number, z: number) -> number?",
     ),
     // Timers.
-    ("after", "(ticks: number, fn: () -> ()) -> ()"),
-    ("every", "(ticks: number, fn: () -> ()) -> ()"),
+    ("after", "(ticks: number, fn: () -> ()) -> number"),
+    ("every", "(ticks: number, fn: () -> ()) -> number"),
+    ("cancel_timer", "(handle: number) -> boolean"),
     ("ticks", "() -> number"),
     // Actions, applied after the handler.
     ("broadcast", "(text: string) -> ()"),
