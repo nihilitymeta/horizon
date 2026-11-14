@@ -120,6 +120,10 @@ fluids, entity types and menu types (each below) in `creative_tab/`, `mob_effect
 beside them. LAN and dedicated server players play with them when they run the same mods: a client whose mods add
 different content is refused when it joins, with the reason.
 
+A server mod may declare capability `world-settings` (experimental, server-side): the consent for its scripts to
+change the world's game rules, the time and the weather, and set players' game modes, with the Lua helpers gated in
+a following change.
+
 A server that has content mods on also checks them one by one (`horizon_protocol::mod_list`, channel
 `horizon:mod_list`): in the configuration phase it sends the id, version and SHA-256 of each `.hmod` with
 `side = "both"`, the client answers with its own, and a client that differs is refused with the mods named: missing,

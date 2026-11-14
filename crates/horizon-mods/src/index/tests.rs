@@ -346,3 +346,19 @@ fn shader_packs_pass_the_game_s_own_check() {
     assert_eq!(Kind::Shader.extension(), Some("hshader"));
     assert!(open(&Kind::Shader).is_ok());
 }
+
+#[test]
+fn an_index_entry_keeps_world_settings() {
+    let mut index = sample();
+    index.projects[0].versions[0]
+        .capabilities
+        .push(Capability::WorldSettings);
+    let text = serde_json::to_string(&index).unwrap();
+    assert!(text.contains("\"world-settings\""), "{text}");
+    let again = Index::parse(&text).unwrap();
+    assert_eq!(again, index);
+    assert_eq!(
+        again.projects[0].versions[0].capabilities.last(),
+        Some(&Capability::WorldSettings)
+    );
+}

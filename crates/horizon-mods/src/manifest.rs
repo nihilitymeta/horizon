@@ -118,9 +118,13 @@ pub enum Capability {
     /// the game on its hook points: behaviour for the mod's blocks and mobs
     /// (docs/lua-bindings.md). No WIT interface.
     Scripts,
+    /// Its scripts change the world's settings: game rules, the time and the
+    /// weather, and players' game modes (server mods; the Lua helpers are
+    /// gated in a following change). No WIT interface.
+    WorldSettings,
 }
 impl Capability {
-    pub const ALL: [Capability; 13] = [
+    pub const ALL: [Capability; 14] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -134,12 +138,17 @@ impl Capability {
         Capability::World,
         Capability::Recipes,
         Capability::Scripts,
+        Capability::WorldSettings,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
         matches!(
             self,
-            Capability::Storage | Capability::Players | Capability::World | Capability::Scripts
+            Capability::Storage
+                | Capability::Players
+                | Capability::World
+                | Capability::Scripts
+                | Capability::WorldSettings
         )
     }
     /// The WIT interface it grants, in `horizon:mods`.
@@ -158,6 +167,7 @@ impl Capability {
             Capability::World => "world",
             Capability::Recipes => "recipes",
             Capability::Scripts => "scripts",
+            Capability::WorldSettings => "world-settings",
         }
     }
     /// May change in any release: a mod uses it only with
@@ -170,6 +180,7 @@ impl Capability {
                 | Capability::Input
                 | Capability::Recipes
                 | Capability::Scripts
+                | Capability::WorldSettings
         )
     }
     /// What the player reads before turning the mod on: "May <this>".
@@ -196,6 +207,9 @@ impl Capability {
             Capability::Scripts => {
                 "run its own scripts in your worlds: behaviour for its blocks and mobs"
             }
+            Capability::WorldSettings => {
+                "change the world's game rules, the time and the weather, and set players' game modes"
+            }
         }
     }
     /// The capability a component import needs, `Ok(None)` for one every
@@ -216,7 +230,7 @@ impl Capability {
         }
         Capability::ALL
             .into_iter()
-            .filter(|c| *c != Capability::Registries)
+            .filter(|c| !matches!(*c, Capability::Registries | Capability::WorldSettings))
             .find(|c| c.interface() == interface)
             .map(Some)
             .ok_or_else(unknown)
@@ -238,6 +252,7 @@ impl fmt::Display for Capability {
             Capability::World => "world",
             Capability::Recipes => "recipes",
             Capability::Scripts => "scripts",
+            Capability::WorldSettings => "world-settings",
         };
         f.write_str(name)
     }
@@ -592,6 +607,91 @@ capabilities = ["game-read", "hud"]
             "{base}capabilities = [\"hud\"]\nexperimental = [\"hud\"]\n"
         ))
         .unwrap();
+    }
+
+    #[test]
+    fn world_settings_parses_as_an_experimental_server_capability() {
+        let base = "id = \"m\"\nname = \"M\"\nversion = \"1\"\napi = \"0.3\"\nside = \"server\"\n";
+        let m = Manifest::parse(&format!(
+            "{base}capabilities = [\"scripts\", \"world-settings\"]\n\
+             experimental = [\"scripts\", \"world-settings\"]\n"
+        ))
+        .unwrap();
+        assert_eq!(
+            m.capabilities,
+            [Capability::Scripts, Capability::WorldSettings]
+        );
+        assert_eq!(
+            m.experimental,
+            [Capability::Scripts, Capability::WorldSettings]
+        );
+        assert!(Capability::WorldSettings.on_server());
+        assert!(Capability::WorldSettings.is_experimental());
+        assert_eq!(
+            Capability::WorldSettings.describe(),
+            "change the world's game rules, the time and the weather, and set players' game modes"
+        );
+        // No component import grants it: the Lua helpers read the manifest.
+        assert!(
+            m.check_imports(["horizon:mods/world-settings@0.1.0"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn world_settings_without_the_opt_in_is_refused() {
+        let base = "id = \"m\"\nname = \"M\"\nversion = \"1\"\napi = \"0.3\"\nside = \"server\"\n";
+        let err =
+            Manifest::parse(&format!("{base}capabilities = [\"world-settings\"]\n")).unwrap_err();
+        assert!(
+            err.contains("capability world-settings is experimental and may change in any release"),
+            "{err}"
+        );
+        assert!(err.contains("experimental = [\"world-settings\"]"), "{err}");
+    }
+
+    #[test]
+    fn every_capability_round_trips_through_its_manifest_name() {
+        let names: Vec<String> = Capability::ALL
+            .iter()
+            .map(|c| {
+                serde_json::to_value(c)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "game-read",
+                "chat",
+                "hud",
+                "storage",
+                "command",
+                "registries",
+                "ui",
+                "render",
+                "input",
+                "players",
+                "world",
+                "recipes",
+                "scripts",
+                "world-settings",
+            ]
+        );
+        assert_eq!(
+            Capability::ALL
+                .iter()
+                .filter(|c| **c == Capability::WorldSettings)
+                .count(),
+            1
+        );
+        for c in Capability::ALL {
+            let name = serde_json::to_value(c).unwrap();
+            assert_eq!(serde_json::from_value::<Capability>(name).unwrap(), c);
+        }
     }
 }
 
