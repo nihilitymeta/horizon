@@ -113,7 +113,7 @@ blocks and goals as classes with callbacks.
 
 ## Declaring content: `scripts/registry.lua`
 
-A scripted mod can declare its entity types, blocks, items, mob effects, creative tabs and menu types in
+A scripted mod can declare its entity types, blocks, items, mob effects, fluids, creative tabs and menu types in
 `scripts/registry.lua`, instead of files. It can also write any other data or asset JSON there, such as loot
 tables, recipes, tags, lang files and models. Textures stay files. The mod needs capability `registries` as well as
 `scripts`.
@@ -160,7 +160,7 @@ registered is an error, as is anything that the file would have been refused for
 | Member | Description |
 |---|---|
 | `registry.id`, `registry.namespaces` | the mod's id, and the namespaces it owns |
-| `registry.entity_type(name, def)`, `.block`, `.item`, `.mob_effect`, `.creative_tab`, `.menu` | Declares `data/<id>/horizon/<kind>/<name>.json`. *def* is the file's JSON as a table ([mods.md](mods.md)); *name* may hold `/` |
+| `registry.entity_type(name, def)`, `.block`, `.item`, `.mob_effect`, `.fluid`, `.creative_tab`, `.menu` | Declares `data/<id>/horizon/<kind>/<name>.json`. *def* is the file's JSON as a table ([mods.md](mods.md)); *name* may hold `/` |
 | `registry.data(name, value)` | Writes `data/<ns>/<name>.json`. The namespace comes from the name, or is the mod's id: `"loot_table/entities/crawler"`, `"minecraft:tags/block/mineable/hoe"` |
 | `registry.asset(name, value)` | Writes `assets/<ns>/<name>.json`: `"lang/en_us"`, `"models/block/hive"`, `"blockstates/hive"` |
 | `registry.file(path, value)` | Writes any content path. *value* is a table, written as JSON, or a string, written as it is |
@@ -207,6 +207,30 @@ registry.data("loot_table/entities/crawler", {
   pools = { { rolls = 1, entries = { { type = "minecraft:item", name = "minecraft:slime_ball" } } } },
 })
 ```
+
+A fluid is declared like the other kinds, `registry.fluid("honey", def)` writing
+`data/<id>/horizon/fluid/<name>.json` ([mods.md](mods.md#content-mods-api-02)):
+
+<!-- crates/horizon-mods/src/content.rs holds a copy of this example in a test; keep them in step -->
+```lua
+-- scripts/registry.lua
+registry.block("honey", { template = "minecraft:water" })
+registry.item("honey_bucket", { template = "minecraft:water_bucket" })
+registry.fluid("honey", {
+  template = "minecraft:water", -- or minecraft:lava
+  still = "ruby:block/honey_still",
+  flowing = "ruby:block/honey_flow",
+  block = "ruby:honey", -- the mod's block that holds it; a bucket needs one
+  bucket = "ruby:honey_bucket", -- the mod's item; without one it can't be picked up
+})
+```
+
+Its block flows and spreads by the fluid's own `tick_rate`, `level_decrease_per_block` and `slope_find_distance`,
+the player and mobs move in it as in water and are pushed and drowned by its own numbers, and its `bucket` pours it.
+It looks like its template, water or lava, until the renderer has a model for it
+([#6301](https://github.com/horizon-rust/horizon/issues/6301) step 6): `still`, `flowing`,
+`overlay`, `tint`, `light_level`, `density`, `viscosity` and `temperature` are accepted and not used yet
+(`supports_boating` and `can_hydrate` neither).
 
 ## Recipes
 

@@ -1,7 +1,7 @@
 //! A content mod's `assets/` and `data/` (API 0.2, docs/modpacks.md): the
 //! files it adds to the game's resource tree, and the blocks, items, mob
-//! effects, entity types and menu types it declares in
-//! `data/<id>/horizon/{block,item,mob_effect,entity_type,menu}/`.
+//! effects, fluids, entity types and menu types it declares in
+//! `data/<id>/horizon/{block,item,mob_effect,fluid,creative_tab,entity_type,menu}/`.
 //!
 //! Content is data, not code: nothing here runs in the sandbox (a scripted
 //! mod's `scripts/registry.lua`, feature `lua`, runs in a state of its own
@@ -2224,6 +2224,146 @@ experimental = ["scripts"]
         assert!(
             e.contains("assets/ruby/lang/en_us.json") && e.contains("use one"),
             "{e}"
+        );
+    }
+
+    /// A fluid the script declares reads and checks like one in a file: its
+    /// numbers reach the content, and the loader's refusal names the file the
+    /// script produced.
+    #[cfg(feature = "lua")]
+    #[test]
+    fn a_registered_fluid_passes_the_fluids_own_checks() {
+        const MANIFEST_SCRIPTED: &str = r#"
+id = "ruby"
+name = "Ruby"
+version = "0.1.0"
+api = "0.2"
+side = "both"
+capabilities = ["registries", "scripts"]
+experimental = ["scripts"]
+"#;
+        let content = folder(
+            "registry-fluid",
+            MANIFEST_SCRIPTED,
+            &[
+                ("scripts/server/init.lua", b""),
+                (
+                    "scripts/registry.lua",
+                    br#"
+                    registry.block("honey", { template = "minecraft:water" })
+                    registry.item("honey_bucket", { template = "minecraft:water_bucket" })
+                    registry.fluid("honey", {
+                      template = "minecraft:water", -- or minecraft:lava
+                      still = "ruby:block/honey_still",
+                      flowing = "ruby:block/honey_flow",
+                      tick_rate = 20,
+                      can_swim = false,
+                      block = "ruby:honey",
+                      bucket = "ruby:honey_bucket",
+                    })
+                    "#,
+                ),
+            ],
+        )
+        .unwrap();
+        assert_eq!(content.fluids.len(), 1);
+        let honey = &content.fluids[0];
+        assert_eq!(
+            (
+                honey.id.as_str(),
+                honey.flowing_id(),
+                honey.template.as_str(),
+                honey.tick_rate,
+                honey.can_swim,
+                honey.block.as_deref(),
+                honey.bucket.as_deref(),
+            ),
+            (
+                "ruby:honey",
+                "ruby:flowing_honey".to_owned(),
+                "minecraft:water",
+                Some(20),
+                Some(false),
+                Some("ruby:honey"),
+                Some("ruby:honey_bucket"),
+            )
+        );
+        let e = folder(
+            "registry-fluid-bad",
+            MANIFEST_SCRIPTED,
+            &[
+                ("scripts/server/init.lua", b""),
+                (
+                    "scripts/registry.lua",
+                    br#"registry.fluid("honey", { template = "minecraft:honey", still = "ruby:block/a", flowing = "ruby:block/b" })"#,
+                ),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("data/ruby/horizon/fluid/honey.json") && e.contains("not one of"),
+            "{e}"
+        );
+    }
+
+    /// The example `docs/lua-bindings.md` shows for `registry.fluid` is taken
+    /// as written: a reader who copies it gets the fluid, not a refusal. The
+    /// script below is a verbatim copy of the docs' block; the docs say so
+    /// beside it, so an editor of either knows to keep them in step.
+    /// Runs under `--features lua`, like the test above.
+    #[cfg(feature = "lua")]
+    #[test]
+    fn the_documented_fluid_example_is_accepted_as_written() {
+        const MANIFEST_SCRIPTED: &str = r#"
+id = "ruby"
+name = "Ruby"
+version = "0.1.0"
+api = "0.2"
+side = "both"
+capabilities = ["registries", "scripts"]
+experimental = ["scripts"]
+"#;
+        // docs/lua-bindings.md, "A fluid is declared like the other kinds".
+        const DOCUMENTED: &str = r#"
+-- scripts/registry.lua
+registry.block("honey", { template = "minecraft:water" })
+registry.item("honey_bucket", { template = "minecraft:water_bucket" })
+registry.fluid("honey", {
+  template = "minecraft:water", -- or minecraft:lava
+  still = "ruby:block/honey_still",
+  flowing = "ruby:block/honey_flow",
+  block = "ruby:honey", -- the mod's block that holds it; a bucket needs one
+  bucket = "ruby:honey_bucket", -- the mod's item; without one it can't be picked up
+})
+"#;
+        let content = folder(
+            "registry-fluid-documented",
+            MANIFEST_SCRIPTED,
+            &[
+                ("scripts/server/init.lua", b""),
+                ("scripts/registry.lua", DOCUMENTED.as_bytes()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(content.fluids.len(), 1);
+        let honey = &content.fluids[0];
+        assert_eq!(
+            (
+                honey.id.as_str(),
+                honey.template.as_str(),
+                honey.still.as_str(),
+                honey.flowing.as_str(),
+                honey.block.as_deref(),
+                honey.bucket.as_deref(),
+            ),
+            (
+                "ruby:honey",
+                "minecraft:water",
+                "ruby:block/honey_still",
+                "ruby:block/honey_flow",
+                Some("ruby:honey"),
+                Some("ruby:honey_bucket"),
+            )
         );
     }
 

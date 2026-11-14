@@ -38,10 +38,11 @@ pub const MEMORY: usize = 64 << 20;
 const MAX_DEPTH: usize = 64;
 
 /// The declaration kinds under `data/<id>/horizon/`, as `registry.<kind>(name, def)`.
-const KINDS: [&str; 6] = [
+const KINDS: [&str; 7] = [
     "block",
     "item",
     "mob_effect",
+    "fluid",
     "creative_tab",
     "entity_type",
     "menu",
@@ -555,6 +556,30 @@ mod tests {
         assert_eq!(
             json("assets/ruby/models/block/hive.json")["parent"],
             "minecraft:block/cube_all"
+        );
+    }
+
+    #[test]
+    fn a_fluid_is_declared_in_its_own_folder_with_the_defs_json() {
+        let files = run_ruby(
+            r#"
+            registry.fluid("honey", { template = "minecraft:water", still = "ruby:block/honey_still", flowing = "ruby:block/honey_flow", tick_rate = 20, bucket = "ruby:honey_bucket" })
+            "#,
+        )
+        .unwrap();
+        let paths: Vec<&String> = files.keys().collect();
+        assert_eq!(paths, ["data/ruby/horizon/fluid/honey.json"]);
+        let honey: serde_json::Value =
+            serde_json::from_slice(&files["data/ruby/horizon/fluid/honey.json"]).unwrap();
+        assert_eq!(
+            honey,
+            serde_json::json!({
+                "template": "minecraft:water",
+                "still": "ruby:block/honey_still",
+                "flowing": "ruby:block/honey_flow",
+                "tick_rate": 20,
+                "bucket": "ruby:honey_bucket",
+            })
         );
     }
 

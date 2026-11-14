@@ -1296,6 +1296,7 @@ declare registry: {
     block: (name: string, def: Data) -> (),
     item: (name: string, def: Data) -> (),
     mob_effect: (name: string, def: Data) -> (),
+    fluid: (name: string, def: Data) -> (),
     creative_tab: (name: string, def: Data) -> (),
     menu: (name: string, def: Data) -> (),
     data: (path: string, value: Data) -> (),
