@@ -392,10 +392,16 @@ but that player.
 `server_tick`, a mob or block tick, a death. Inside a player's own hook, such as a click, a command or a pickup,
 nothing runs, and the log says so at debug level. Queue the call there with
 `horizon.after(1, function() horizon.run_command(...) end)`. `run_command` is the way to reach what the API has no
-function for yet: `/tp` of a player, and setting a game rule, which `level_set_game_rule` deliberately does not
-expose (owner decision, #61). A rule's value reads as `level_game_rule` (a boolean, a number, or nil for an unknown
+function for yet: `/tp` of a player, and setting a game rule, which `level_set_game_rule` does not expose yet
+(#61). A rule's value reads as `level_game_rule` (a boolean, a number, or nil for an unknown
 rule), and the time, the weather and a player's game mode have `level_set_day_time`, `level_set_weather` and
 `set_game_mode` ([helper-exposure.md](api/helper-exposure.md)).
+
+`level_set_day_time`, `level_set_weather` and `set_game_mode` need capability `world-settings` in the mod's
+manifest (`side = "server"` with `api = "0.3"`, and `experimental = ["world-settings"]` beside it): a mod
+without it calls one and the call fails there, with an error naming the helper, the mod and the capability,
+and nothing is changed. `level_set_game_rule` is not exposed yet; it joins the same list in a following
+change.
 
 ### Running a command as a player
 

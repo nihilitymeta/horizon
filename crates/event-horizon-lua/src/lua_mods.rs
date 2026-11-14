@@ -33,7 +33,7 @@ use horizon_mods::{Capability, Content, Package};
 use mlua::{Function, Lua, MultiValue, Table, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 #[path = "turn.rs"]
@@ -234,6 +234,14 @@ const DRAW_API: &[&str] = &[
     "tell",
     "broadcast",
 ];
+/// The generated helpers that change the world's settings: a mod calls one
+/// only with capability `world-settings` in its manifest (server mods,
+/// experimental; `Capability::WorldSettings`). Every name here is a generated
+/// action (`generated_helpers::GENERATED_ACTIONS`), checked by a test;
+/// `level_set_game_rule` joins the list when its helper is exposed.
+pub(crate) const NEEDS_WORLD_SETTINGS: &[&str] =
+    &["level_set_day_time", "level_set_weather", "set_game_mode"];
+
 /// The registry key of the `run_command_as` callbacks awaiting the drain:
 /// `{ fn = item, result = ... }` tables, in the order their commands ran.
 /// `run_action` appends as commands run; `finish_callbacks` takes the batch
@@ -1529,6 +1537,13 @@ pub struct LuaMod {
     side: LuaSide,
     /// The mod's version, from its manifest (`horizon.mod_version`).
     version: String,
+    /// Whether the manifest declares capability `world-settings`: the
+    /// generated helpers that change the world's settings (`NEEDS_WORLD_SETTINGS`)
+    /// are refused at the call without it. Shared with the gate closures,
+    /// which read it at every call: a successful reload writes the manifest
+    /// it just ran there, so gaining or losing the capability takes effect
+    /// with the scripts, and a failed reload leaves both as they were.
+    world_settings: Arc<AtomicBool>,
     /// The versions of the mods it depends on, by id (`horizon.libraries`).
     library_versions: Vec<(String, String)>,
     /// The `.hmod` or folder the scripts came from.
@@ -2087,7 +2102,7 @@ impl LuaMod {
         libraries: &[(String, PathBuf)],
         config_dir: Option<&Path>,
     ) -> Result<Self, String> {
-        let (id, version, scripts) = Self::read_scripts(path, side)?;
+        let (id, version, world_settings, scripts) = Self::read_scripts(path, side)?;
         let (library_scripts, library_versions) = Self::read_libraries(libraries, side)?;
         let lua = Lua::new();
         lua.set_memory_limit(MEMORY).map_err(|e| e.to_string())?;
@@ -2105,6 +2120,7 @@ impl LuaMod {
             id,
             side,
             version,
+            world_settings: Arc::new(AtomicBool::new(world_settings)),
             library_versions,
             source: path.to_owned(),
             lua,
@@ -2151,13 +2167,14 @@ impl LuaMod {
         }
     }
 
-    /// The mod's id, version and the scripts of `side` (its folder and
+    /// The mod's id, version, whether its manifest declares capability
+    /// `world-settings`, and the scripts of `side` (its folder and
     /// `scripts/shared/`), read from its `.hmod` or folder. The other side's
     /// folder is not read: its files do not reach this state.
     fn read_scripts(
         path: &Path,
         side: LuaSide,
-    ) -> Result<(String, String, HashMap<String, String>), String> {
+    ) -> Result<(String, String, bool, HashMap<String, String>), String> {
         let at = |e: String| format!("{}: {e}", path.display());
         let package = Package::read(path).map_err(at)?;
         let manifest = package.manifest;
@@ -2178,7 +2195,8 @@ impl LuaMod {
             let code = String::from_utf8(bytes).map_err(|_| at(format!("{name}: not UTF-8")))?;
             scripts.insert(name.clone(), code);
         }
-        Ok((manifest.id, manifest.version, scripts))
+        let world_settings = manifest.capabilities.contains(&Capability::WorldSettings);
+        Ok((manifest.id, manifest.version, world_settings, scripts))
     }
 
     /// The libraries' scripts of `side`, the first library's winning a shared
@@ -2196,7 +2214,7 @@ impl LuaMod {
             if !package.manifest.capabilities.contains(&Capability::Scripts) {
                 continue;
             }
-            let (_, _, scripts) =
+            let (_, _, _, scripts) =
                 Self::read_scripts(path, side).map_err(|e| format!("library {id}: {e}"))?;
             for (name, code) in scripts {
                 out.entry(name).or_insert(code);
@@ -2215,7 +2233,7 @@ impl LuaMod {
     /// mob keeps the definition it was made with either way, until the
     /// mob's AI is set up again.
     pub fn reload(&self) -> Result<(), String> {
-        let (_, _, scripts) = Self::read_scripts(&self.source, self.side)?;
+        let (_, _, world_settings, scripts) = Self::read_scripts(&self.source, self.side)?;
         let (library_scripts, _) = Self::read_libraries(&self.libraries, self.side)?;
         // Hold the per-state turn for the whole reload: the registry
         // tables, timers and `run` touch the host slot and the queue.
@@ -2295,6 +2313,10 @@ impl LuaMod {
                     .lock()
                     .unwrap_or_else(|p| p.into_inner()) = true;
             }
+            // The manifest the new scripts came from now governs the gate:
+            // written here, after those scripts ran, so a failed reload
+            // keeps the old permission beside the restored old scripts.
+            self.world_settings.store(world_settings, Ordering::Relaxed);
             return Ok(());
         };
         // Whatever the failed script registered is dropped with the fresh
@@ -2441,6 +2463,12 @@ impl LuaMod {
         let library_scripts = self.library_scripts.clone();
         let side = self.side;
         let gate_owner = self.id.clone();
+        // The manifest's `world-settings` capability, for the helpers below
+        // that need it: a name in `NEEDS_WORLD_SETTINGS` is refused at the
+        // call without it, naming this mod. Shared with the mod's field, so
+        // a reload updates it for the closures already installed.
+        let world_settings = self.world_settings.clone();
+        let gate_mod = self.id.clone();
         lua.set_named_registry_value(HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(KIND_HANDLERS, lua.create_table()?)?;
         lua.set_named_registry_value(QUEUE, lua.create_table()?)?;
@@ -2737,9 +2765,25 @@ impl LuaMod {
                 .copied(),
         ) {
             let slot = slot.clone();
+            let gate_mod = gate_mod.clone();
+            let world_settings = world_settings.clone();
             api.set(
                 action,
                 lua.create_function(move |lua, args: MultiValue| {
+                    // Changing the world's settings is a permission the
+                    // manifest declares, not one a script has: without
+                    // capability `world-settings` the call fails here, at
+                    // the script's line, and queues nothing, so the host's
+                    // setter never runs.
+                    if !world_settings.load(Ordering::Relaxed)
+                        && NEEDS_WORLD_SETTINGS.contains(&action)
+                    {
+                        return Err(mlua::Error::runtime(format!(
+                            "{action}: mod {gate_mod} needs capability \"world-settings\" \
+                             (and experimental = [\"world-settings\"]) in its manifest to \
+                             change the world's settings; nothing was changed"
+                        )));
+                    }
                     // A draw hook (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) may queue only
                     // `tell` and `broadcast`: a marker call there fails at
                     // the call (`run_action` cannot tell a draw firing from
@@ -10456,6 +10500,375 @@ experimental = ["scripts"]
         )
         .unwrap();
         m.reload().expect("after(0) and every(1) load");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The manifest of a server test mod that does (or does not) declare
+    /// capability `world-settings`, in `capabilities` and `experimental`.
+    fn world_settings_manifest(name: &str, allowed: bool) -> String {
+        let caps = if allowed {
+            "capabilities = [\"scripts\", \"world-settings\"]\n\
+             experimental = [\"scripts\", \"world-settings\"]\n"
+        } else {
+            "capabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\n"
+        };
+        format!(
+            "id = \"{name}\"\nname = \"{name}\"\nversion = \"0.1.0\"\napi = \"0.3\"\n\
+             side = \"server\"\n{caps}"
+        )
+    }
+
+    /// Rewrites a `world_settings_mod`'s package on disk: its manifest with
+    /// or without the capability, and its server `init.lua`.
+    fn rewrite_world_settings_mod(dir: &Path, name: &str, allowed: bool, script: &[u8]) {
+        std::fs::write(
+            dir.join(format!("{name}.hmod")),
+            Package::write_files(
+                &world_settings_manifest(name, allowed),
+                None,
+                &[("scripts/server/init.lua", script)],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// A server mod of its own id that does (or does not) declare capability
+    /// `world-settings`, loaded and given a status row, so a later `error`
+    /// lookup sees it.
+    fn world_settings_mod(name: &str, allowed: bool, script: &[u8]) -> (PathBuf, LuaMod) {
+        let dir = std::env::temp_dir().join(format!("horizon-lua-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{name}.hmod"));
+        let manifest = world_settings_manifest(name, allowed);
+        std::fs::write(
+            &path,
+            Package::write_files(&manifest, None, &[("scripts/server/init.lua", script)]).unwrap(),
+        )
+        .unwrap();
+        let m = LuaMod::load(&path, LuaSide::Server, &[]).unwrap();
+        set_status(ModStatus {
+            id: m.id().into(),
+            side: m.side().as_str().to_owned(),
+            ..Default::default()
+        });
+        (dir, m)
+    }
+
+    /// A host that records the world-settings setters and the one read, and
+    /// answers a level lookup.
+    #[derive(Default)]
+    struct GateHost {
+        calls: Mutex<Vec<String>>,
+    }
+    impl GateHost {
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+    impl Host for GateHost {
+        fn dimension(&self) -> &'static str {
+            "minecraft:overworld"
+        }
+        fn level(&self, dimension: &str) -> Option<horizon_client::mod_api::LevelRef> {
+            (dimension == "minecraft:overworld").then(|| {
+                horizon_client::mod_api::LevelRef::new(
+                    horizon_client::mod_api::NativeWorldEpoch::new(1),
+                    "minecraft:overworld",
+                )
+            })
+        }
+        fn level_name(&self) -> Option<String> {
+            self.calls.lock().unwrap().push("level_name".to_owned());
+            Some("ruby:gate".to_owned())
+        }
+        fn broadcast(&self, _: horizon_client::mod_api::Text) {
+            self.calls.lock().unwrap().push("broadcast".to_owned());
+        }
+        fn level_set_day_time(
+            &mut self,
+            level: horizon_client::mod_api::LevelRef,
+            time: i64,
+        ) -> bool {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("level_set_day_time {} {time}", level.dimension()));
+            true
+        }
+        fn level_set_weather(
+            &mut self,
+            level: horizon_client::mod_api::LevelRef,
+            clear_time: i32,
+            weather_time: i32,
+            raining: bool,
+            thundering: bool,
+        ) -> bool {
+            self.calls.lock().unwrap().push(format!(
+                "level_set_weather {} {clear_time} {weather_time} {raining} {thundering}",
+                level.dimension()
+            ));
+            true
+        }
+        fn set_game_mode(&mut self, player: u128, mode: i32) -> bool {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("set_game_mode {player:032x} {mode}"));
+            true
+        }
+    }
+
+    /// One server tick's end phase, the one a server handler and timer fire in.
+    fn end_tick(m: &LuaMod, host: &mut dyn Host) {
+        let context = test_events::native_lifecycle_context(
+            horizon_client::mod_api::NativeAuthority::IntegratedServer,
+            horizon_client::mod_api::NativeWorldEpoch::new(1),
+            horizon_client::mod_api::NativeTickId::new(1),
+        );
+        m.server_tick(
+            host,
+            &mut test_events::server_tick_event(
+                &context,
+                ServerTickPhase::ServerTickEnd {
+                    world_running: true,
+                },
+            ),
+        );
+    }
+
+    #[test]
+    fn every_world_settings_gated_name_is_a_generated_action() {
+        for name in NEEDS_WORLD_SETTINGS {
+            assert!(
+                crate::generated_helpers::GENERATED_ACTIONS.contains(name),
+                "{name} is gated for world-settings but is not a generated action"
+            );
+        }
+    }
+
+    #[test]
+    fn a_mod_without_world_settings_cannot_set_the_day_time() {
+        let (dir, m) = world_settings_mod(
+            "gate_day_time_off",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.level_set_day_time("minecraft:overworld", 3)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains(
+                "level_set_day_time: mod gate_day_time_off needs capability \"world-settings\" \
+                 (and experimental = [\"world-settings\"]) in its manifest to change the \
+                 world's settings; nothing was changed"
+            ),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_without_world_settings_cannot_set_the_weather() {
+        let (dir, m) = world_settings_mod(
+            "gate_weather_off",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.level_set_weather("minecraft:overworld", 6000, 1200, true, false)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains(
+                "level_set_weather: mod gate_weather_off needs capability \"world-settings\""
+            ),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_without_world_settings_cannot_set_a_game_mode() {
+        let (dir, m) = world_settings_mod(
+            "gate_game_mode_off",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.set_game_mode("123e4567-e89b-12d3-a456-426614174000", 1)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains("set_game_mode: mod gate_game_mode_off needs capability \"world-settings\""),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_mod_with_world_settings_sets_the_time_weather_and_game_mode() {
+        let (dir, m) = world_settings_mod(
+            "gate_on",
+            true,
+            br#"
+            horizon.on("server_tick", function()
+              horizon.level_set_day_time("minecraft:overworld", 3)
+              horizon.level_set_weather("minecraft:overworld", 6000, 1200, true, false)
+              horizon.set_game_mode("123e4567-e89b-12d3-a456-426614174000", 1)
+            end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            [
+                "level_set_day_time minecraft:overworld 3",
+                "level_set_weather minecraft:overworld 6000 1200 true false",
+                "set_game_mode 123e4567e89b12d3a456426614174000 1",
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_world_settings_call_leaves_the_reads_the_actions_and_the_timers_working() {
+        let (dir, m) = world_settings_mod(
+            "gate_contained",
+            false,
+            br#"
+            horizon.on("server_tick", function()
+              local ok, err = pcall(horizon.level_set_day_time, "minecraft:overworld", 3)
+              REFUSED = ok and "ran" or tostring(err)
+              NAME = horizon.level_name()
+              horizon.broadcast("still here")
+            end)
+            horizon.every(1, function() TIMERS = (TIMERS or 0) + 1 end)
+            "#,
+        );
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(host.calls(), ["level_name", "broadcast"]);
+        assert_eq!(m.lua.globals().get::<String>("NAME").unwrap(), "ruby:gate");
+        // Caught by the script, the refusal carries its text and the
+        // traceback of the call that was refused.
+        let refused = m.lua.globals().get::<String>("REFUSED").unwrap();
+        assert!(
+            refused.contains(
+                "level_set_day_time: mod gate_contained needs capability \"world-settings\" \
+                 (and experimental = [\"world-settings\"]) in its manifest to change the \
+                 world's settings; nothing was changed"
+            ),
+            "{refused}"
+        );
+        assert!(
+            refused.contains("in function 'horizon.level_set_day_time'"),
+            "the traceback names the call: {refused}"
+        );
+        assert_eq!(m.lua.globals().get::<i32>("TIMERS").unwrap(), 1);
+        assert!(
+            horizon_client::dev_input::mods::status()
+                .into_iter()
+                .find(|s| s.id == m.id())
+                .and_then(|s| s.error)
+                .is_none(),
+            "a refused call the script caught is not the hook's error"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The script the reload tests below run: one world-settings call a tick.
+    const GATE_TIME_SCRIPT: &[u8] = br#"
+        horizon.on("server_tick", function()
+          horizon.level_set_day_time("minecraft:overworld", 3)
+        end)
+    "#;
+
+    #[test]
+    fn a_reload_that_drops_world_settings_refuses_the_call_after_it() {
+        let name = "gate_drop";
+        let (dir, m) = world_settings_mod(name, true, GATE_TIME_SCRIPT);
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(host.calls(), ["level_set_day_time minecraft:overworld 3"]);
+        // The manifest loses the capability, the script staying as it is.
+        rewrite_world_settings_mod(&dir, name, false, GATE_TIME_SCRIPT);
+        m.reload()
+            .expect("the same script loads without the capability");
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(
+            host.calls().is_empty(),
+            "a reload that drops the capability revokes it: {:?}",
+            host.calls()
+        );
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains("level_set_day_time: mod gate_drop needs capability \"world-settings\""),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_reload_that_gains_world_settings_allows_the_call_after_it() {
+        let name = "gate_gain";
+        let (dir, m) = world_settings_mod(name, false, GATE_TIME_SCRIPT);
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert!(host.calls().is_empty(), "{:?}", host.calls());
+        let e = hook_error_of(&m);
+        assert!(
+            e.contains("level_set_day_time: mod gate_gain needs capability \"world-settings\""),
+            "{e}"
+        );
+        // The manifest gains the capability, in both lists.
+        rewrite_world_settings_mod(&dir, name, true, GATE_TIME_SCRIPT);
+        m.reload()
+            .expect("the same script loads with the capability");
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["level_set_day_time minecraft:overworld 3"],
+            "a reload that gains the capability grants it"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_reload_keeps_the_world_settings_permission() {
+        let name = "gate_failed_reload";
+        let (dir, m) = world_settings_mod(name, true, GATE_TIME_SCRIPT);
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(host.calls(), ["level_set_day_time minecraft:overworld 3"]);
+        // The manifest loses the capability, but the new script does not
+        // parse: the old scripts and the old permission both stay.
+        rewrite_world_settings_mod(&dir, name, false, b"horizon.on(");
+        m.reload().expect_err("the broken script fails the reload");
+        let mut host = GateHost::default();
+        end_tick(&m, &mut host);
+        assert_eq!(
+            host.calls(),
+            ["level_set_day_time minecraft:overworld 3"],
+            "a failed reload neither grants nor revokes"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
