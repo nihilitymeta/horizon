@@ -208,6 +208,50 @@ registry.data("loot_table/entities/crawler", {
 })
 ```
 
+## Recipes
+
+A mod changes the game's recipes from the `data_pack_files` hook, which runs as the server assembles its data
+tables: the files a mod pushes join that load. The path is the pack's own,
+`<kind>/<namespace>:<path>` without `.json`, and a file of the world's own data packs at the same path still
+overrides a mod's ([Hooks](#hooks)).
+
+- **Replace** a vanilla recipe by pushing `recipe/<namespace>:<path>` with the vanilla recipe's id:
+  `recipe/minecraft:stick` overwrites the stick recipe in place, and a pushed result of 7 makes 7 sticks where
+  vanilla makes 4.
+- **Remove** one by pushing `recipe_filter/<namespace>:<name>` holding `{"filters": [...]}`:
+  `{"filters": [{"id": "minecraft:stone_pickaxe", "remove": true}]}` leaves `minecraft:stone_pickaxe` an unknown
+  recipe. A filter can also match by `type`, `input` or `output` and swap inputs or outputs;
+  [Recipe filters](native-mods.md#recipe-filters) lists the keys.
+- **Add** one under a new id in the mod's own namespace, such as `recipe/mymod:probe_item`, and the grid crafts it
+  like any recipe.
+
+```lua
+-- scripts/server/init.lua
+horizon.on("data_pack_files", function(event)
+  local files = {
+    { path = "recipe/minecraft:stick", data = [[
+{"type": "minecraft:crafting_shaped", "key": {"#": "#minecraft:planks"},
+ "pattern": ["#", "#"], "result": {"id": "minecraft:stick", "count": 7}}
+]] },
+    { path = "recipe_filter/mymod:no_stone_pickaxe",
+      data = [[{"filters": [{"id": "minecraft:stone_pickaxe", "remove": true}]}]] },
+    { path = "recipe/mymod:probe_item", data = [[
+{"type": "minecraft:crafting_shapeless", "ingredients": ["minecraft:dirt"],
+ "result": {"id": "minecraft:diamond", "count": 1}}
+]] },
+  }
+  for _, file in ipairs(files) do
+    event.files[#event.files + 1] = file
+  end
+end)
+```
+
+The hook runs when a world opens and again on every `/reload`, after the mod's scripts ran again
+([Reloading](#reloading)), so a mod pushes its files on each load; the modkit's `tools/recipes-check.sh` reloads
+before it judges. An untouched recipe stays as it was: `minecraft:oak_planks` still crafts its vanilla four from one log.
+There is no helper that lists recipes — `recipes_of_type` is blocked in the generator
+([helper-exposure.md](api/helper-exposure.md)) — so a mod cannot read the current recipes back.
+
 ## Hook points
 
 [docs/api/hook-points.md](api/hook-points.md) lists every hook point and host helper of the engine, with its API
