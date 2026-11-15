@@ -1770,6 +1770,7 @@ mod ignite_hook_tests {
             log_line: |_, _, _, _| {},
             handshake: |_, _, _, _, _| {},
             server_status: |_, _, _, _, _, _, _, _, _, _| {},
+            config_changed: |_, _, _, _| {},
         });
     }
 

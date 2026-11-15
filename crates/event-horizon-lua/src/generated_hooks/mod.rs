@@ -589,6 +589,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("client_player_network_logging_in", "generated"),
     ("client_tick_pre", "generated"),
     ("client_tick_post", "generated"),
+    ("config_changed", "generated"),
     ("console_line", "generated"),
     (
         "container_accepts",
@@ -830,6 +831,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("compute_fog_color", HookSide::Client),
     ("compute_fov", HookSide::Client),
     ("compute_fov_modifier", HookSide::Client),
+    ("config_changed", HookSide::Both),
     ("config_loading", HookSide::Both),
     ("config_reloading", HookSide::Both),
     ("config_unloading", HookSide::Server),
@@ -1298,14 +1300,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 15;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 16;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "1deb671cbd795823";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "b7da9d711229325a";
 
 #[cfg(test)]
 mod test_support;
@@ -1721,6 +1723,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "client_player_network_logging_in",
     "client_tick_pre",
     "client_tick_post",
+    "config_changed",
     "console_line",
     "creative_slot_v2",
     "custom_block_fluids",
@@ -2323,6 +2326,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(client_player_network_logging_in, game_mut, horizon_client::mod_api::ClientPlayerNetworkLoggingInEvent, (none), []);
     gen_listen!(client_tick_pre, game_mut, horizon_client::mod_api::ClientTickPreEvent, (none), []);
     gen_listen!(client_tick_post, game_mut, horizon_client::mod_api::ClientTickPostEvent, (none), []);
+    gen_listen!(config_changed, none, horizon_client::mod_api::ConfigChangedEvent<'_>, (none), [mod_id: cloned, key: cloned, old: s_ref(serde_json::Value), new: s_ref(serde_json::Value)]);
     gen_cancel!(console_line, game_mut, horizon_client::mod_api::ConsoleLineEvent<'_>, (none), [source: cloned, line: cloned, replies: s_vec(horizon_client::mod_api::Text) => w_vec(horizon_client::mod_api::Text)]);
     gen_cancel!(creative_slot_v2, game_mut, horizon_client::mod_api::CreativeSlotV2Event<'_>, (none), [player: player, slot: copy, stack: opt_item]);
     gen_listen!(custom_block_fluids, game_ref, horizon_client::mod_api::CustomBlockFluidsEvent<'_>, (none), [block: cloned, custom: copy => mut_scalar]);
@@ -60665,6 +60669,105 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_config_changed() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_config_changed",
+            "horizon.on(\"config_changed\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.mod_id == \"test:mod_id\", \"mod_id\")\n    assert(event.key == \"test:key\", \"key\")\n    assert(event.old.testkey == 9, \"old\")\n    assert(event.new.testkey == 10, \"new\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        dispatch_config_changed(
+            &firing_mods,
+            "test:mod_id",
+            "test:key",
+            &serde_json::json!({ "testkey": 9 }),
+            &serde_json::json!({ "testkey": 10 }),
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_config_changed_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_config_changed_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_config_changed(
+                &firing_mods,
+                "test:mod_id",
+                "test:key",
+                &serde_json::json!({ "testkey": 9 }),
+                &serde_json::json!({ "testkey": 10 }),
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "config_changed read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "config_changed read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "config_changed read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_config_changed_cost_live",
+            "horizon.on(\"config_changed\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_config_changed(
+                &firing_mods,
+                "test:mod_id",
+                "test:key",
+                &serde_json::json!({ "testkey": 9 }),
+                &serde_json::json!({ "testkey": 10 }),
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "config_changed built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "config_changed read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "config_changed read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_console_line() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_console_line",
@@ -78599,6 +78702,16 @@ mod generated_tests {
         // client_tick_post: unregistered, nothing runs.
         {
             dispatch_client_tick_post(&mut FakeHost::empty(), &firing_mods);
+        }
+        // config_changed: unregistered, nothing runs.
+        {
+            dispatch_config_changed(
+                &firing_mods,
+                "test:mod_id",
+                "test:key",
+                &serde_json::json!({ "testkey": 9 }),
+                &serde_json::json!({ "testkey": 10 }),
+            );
         }
         // console_line: unregistered, nothing runs.
         {

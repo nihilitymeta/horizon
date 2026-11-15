@@ -50,6 +50,7 @@ pub struct NativeClientHooks {
         &mut String,
         &mut bool,
     ),
+    pub config_changed: fn(&str, &str, &serde_json::Value, &serde_json::Value),
 }
 
 static HOOKS: OnceLock<NativeClientHooks> = OnceLock::new();
@@ -425,6 +426,31 @@ pub(crate) fn server_status_installed() -> bool {
     HOOKS.get().is_some()
 }
 
+/// A mod's setting `key`, declared in its `settings.json` by `mod_id`, was saved with a new value:
+/// `old` and `new` are what its `horizon.config()` gave before and gives after, as JSON (null for
+/// an absent value). Told once per write that changes the stored value, to every mod.
+/// API @API:config_changed@.
+pub fn native_config_changed(
+    mod_id: &str,
+    key: &str,
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+) {
+    config_changed(mod_id, key, old, new);
+}
+
+/// Tells the `config_changed` hook, when a hook table is installed.
+pub(crate) fn config_changed(
+    mod_id: &str,
+    key: &str,
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+) {
+    if let Some(hooks) = HOOKS.get() {
+        (hooks.config_changed)(mod_id, key, old, new);
+    }
+}
+
 #[cfg_attr(
     not(test),
     expect(
@@ -517,6 +543,7 @@ pub(crate) mod test_hooks {
             log_line: |_, _, _, _| {},
             handshake: |_, _, _, _, _| {},
             server_status: |_, _, _, _, _, _, _, _, _, _| {},
+            config_changed: |_, _, _, _| {},
         });
     }
     /// The ids of every mob `mob_ai_register` was told of so far.
@@ -553,6 +580,7 @@ pub(crate) mod test_hooks {
             log_line: |_, _, _, _| {},
             handshake: |_, _, _, _, _| {},
             server_status: |_, _, _, _, _, _, _, _, _, _| {},
+            config_changed: |_, _, _, _| {},
         });
     }
 
@@ -594,6 +622,7 @@ pub(crate) mod test_hooks {
             log_line: |_, _, _, _| {},
             handshake: |_, _, _, _, _| {},
             server_status: listener,
+            config_changed: |_, _, _, _| {},
         });
     }
 

@@ -50,6 +50,7 @@ fn to_console(error: bool, line: String) {
 pub mod goals;
 pub mod json;
 pub mod nbt;
+pub mod settings;
 
 /// Wall-clock time one handler or one goal function may take before Luau's
 /// interrupt stops it with an error: the server thread runs them, so an
@@ -1715,6 +1716,9 @@ pub struct LuaMod {
     /// `config/<id>.json` of the game folder, the client state
     /// `config/<id>.client.json`; none when the folder is not known (a test).
     config_path: Option<PathBuf>,
+    /// The mod's settings schema (`settings.json` at its root), when it has one:
+    /// `horizon.config()` fills its defaults and `set_setting` writes through it.
+    settings: Option<Arc<settings::Settings>>,
     /// Reloads done, for the status.
     reloads: AtomicU32,
     /// The `RELOAD_ALL` generation served last.
@@ -2229,11 +2233,10 @@ impl LuaMod {
         let world_attachment = mod_attachment_named(&id, "world");
         let player_attachment = mod_attachment_named(&id, "player");
         let entity_attachment = mod_attachment_named(&id, "data");
-        let config_file = match side {
-            LuaSide::Server => format!("{id}.json"),
-            LuaSide::Client => format!("{id}.client.json"),
-        };
-        let config_path = config_dir.map(|d| d.join(config_file));
+        let config_path = config_dir.map(|d| d.join(settings::file_name(&id, side)));
+        let schema = settings::read(path, &id).map(|entries| {
+            settings::Settings::new(&id, entries, config_dir.map(Path::to_path_buf))
+        });
         let m = LuaMod {
             id,
             side,
@@ -2259,6 +2262,7 @@ impl LuaMod {
             player_attachment,
             entity_attachment,
             config_path,
+            settings: schema.map(Arc::new),
             reloads: AtomicU32::new(0),
             reload_seen: AtomicU32::new(reload_generation()),
             turn: turn::ReentrantTurn::new(),
@@ -3084,6 +3088,8 @@ impl LuaMod {
         // No host needed: at load too.
         let config_path = self.config_path.clone();
         let id = self.id.clone();
+        let schema = self.settings.clone();
+        let side = self.side;
         api.set(
             "config",
             lua.create_function(move |lua, ()| {
@@ -3093,7 +3099,11 @@ impl LuaMod {
                 let text = match std::fs::read_to_string(path) {
                     Ok(text) => text,
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                        return Ok(Value::Table(lua.create_table()?));
+                        let Some(schema) = &schema else {
+                            return Ok(Value::Table(lua.create_table()?));
+                        };
+                        let defaults = schema.resolve(side, serde_json::json!({}));
+                        return json::json_to_lua(lua, &defaults);
                     }
                     Err(e) => {
                         return Err(mlua::Error::runtime(format!("{}: {e}", path.display())));
@@ -3101,6 +3111,10 @@ impl LuaMod {
                 };
                 let json: serde_json::Value = serde_json::from_str(&text)
                     .map_err(|e| mlua::Error::runtime(format!("{}: {e}", path.display())))?;
+                let json = match &schema {
+                    Some(schema) => schema.resolve(side, json),
+                    None => json,
+                };
                 match json::json_to_lua(lua, &json)? {
                     Value::Table(t) => Ok(Value::Table(t)),
                     _ => Err(mlua::Error::runtime(format!(

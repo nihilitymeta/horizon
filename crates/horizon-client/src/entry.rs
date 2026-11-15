@@ -333,6 +333,9 @@ pub fn main_with(mods: crate::mod_api::Mods) {
                 cancel,
             );
         },
+        config_changed: |mod_id, key, old, new| {
+            crate::mod_api::dispatch_config_changed(crate::mod_api::mods(), mod_id, key, old, new);
+        },
     })
     .is_err()
     {

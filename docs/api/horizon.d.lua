@@ -144,6 +144,7 @@ export type ComponentTypesEvent = { types: { string } }
 export type CompostItemEvent = { pos: Vec3, item: string }
 export type ComputeFogColorEvent = { partial: number, camera: Vec3, fog_type: "atmospheric" | "water" | "lava" | "powder_snow", rgb: Vec3 }
 export type ComputeFovEvent = { partial: number, camera: Vec3, degrees: number }
+export type ConfigChangedEvent = { mod_id: string, key: string, old: Data, new: Data }
 export type ConsoleLineEvent = { source: string, line: string, replies: { { text: string, component: Component? } } }
 export type ConsumeEffectEvent = { kind: string, data: Data }
 export type ContainerOpenedEvent = { player: PlayerRef, kind: string, pos: Vec3? }
@@ -628,6 +629,7 @@ export type HorizonOn =
     ((name: "compost_item", fn: (event: CompostItemEvent) -> ()) -> ()) &
     ((name: "compute_fog_color", fn: (event: ComputeFogColorEvent) -> ()) -> ()) &
     ((name: "compute_fov", fn: (event: ComputeFovEvent) -> ()) -> ()) &
+    ((name: "config_changed", fn: (event: ConfigChangedEvent) -> ()) -> ()) &
     ((name: "console_line", fn: (event: ConsoleLineEvent) -> ()) -> ()) &
     ((name: "consume_effect", fn: (event: ConsumeEffectEvent) -> ()) -> ()) &
     ((name: "container_opened", fn: (event: ContainerOpenedEvent) -> ()) -> ()) &

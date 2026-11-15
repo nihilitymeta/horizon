@@ -725,7 +725,7 @@ Timers count ticks of the state's own side: server ticks in a server state and c
 | `horizon.world_data()` | Gets the mod's saved table on the world |
 | `horizon.player_data(player)` | Gets the mod's saved table on a player, by name or UUID; nil for a player the server does not hold, such as a player on the hub or the acting one |
 | `horizon.entity_data(id)` | Gets the mod's saved table on an entity, by id. Nil on a server when the entity is not in the level, or on an attachment error. On a client copy the id is not checked: an unknown id reads as an empty table, recorded for writeback, but the attachment is not synced, so a write stays on the client copy — a table is no proof the entity exists there. Written back after the call, exactly like `horizon.world_data()` |
-| `horizon.config()` | Gets the mod's settings, `config/<id>.json` in the game folder for the server state and `config/<id>.client.json` for the client state, as a table; empty when there is no file yet. Every mod's settings share that folder, as on NeoForge |
+| `horizon.config()` | Gets the mod's settings, `config/<id>.json` in the game folder for the server state and `config/<id>.client.json` for the client state, as a table; empty when there is no file yet. Every mod's settings share that folder, as on NeoForge. With a `settings.json` schema the declared defaults are filled in ([Settings schema](#settings-schema)) |
 | `horizon.save_config(t)` | Writes a table to the mod's settings file, as JSON that a person can edit |
 
 Timers run at the end of a tick of the state's own side while the world runs, as a `server_tick` handler in a
@@ -741,6 +741,45 @@ per-mob state, keyed by what the mob hooks name as `entity`.
 
 `horizon.config` and `horizon.save_config` work at load, in `init.lua`, with no host. A mod reads its settings, fills
 in the defaults and saves them, so the file is there to edit after the first run.
+
+### Settings schema
+
+A mod may declare its settings in `settings.json`, at the root of its folder. The file is read at load, without
+running Lua. A packaged `.hmod` does not have its file read yet, so a schema needs a mod folder.
+
+```json
+{"settings": [
+  {"key": "volume", "type": "int", "default": 5, "min": 0, "max": 10, "group": "audio", "order": "a"},
+  {"key": "mode", "type": "choice", "default": "fast", "choices": [{"value": "fast"}, {"value": "slow"}]},
+  {"key": "hud.scale", "type": "float", "default": 1.0, "side": "client", "hidden": false}
+]}
+```
+
+- `key` is unique in the file and uses only `a-z`, `0-9`, `_`, `.` and `-`.
+- `type` is `bool`, `int` (whole numbers only), `float`, `string` or `choice`. A choice has a non-empty `choices` list of `{"value": "..."}`.
+- `default` is required and must fit the setting: its range, or one of its choices.
+- `min` and `max` are optional numbers, for `int` and `float` only; `min` may not be above `max`.
+- `group` and `order` are optional strings, for the screen that shows the settings; `hidden` is an optional bool (default false).
+- `side` is `server` (the default) or `client`. The values go in `config/<id>.json` or `config/<id>.client.json`, the files `horizon.config()` already reads for each side.
+
+A bad entry (an unknown type, a missing key or default, a default that does not fit, a duplicate key) is skipped and
+logged once, with the mod id and the key; the others load. A file that is not JSON, or has no `settings` list, means
+no schema, with one logged error. A schema never stops a mod from loading.
+
+For a mod with a schema, `horizon.config()` gives the saved table of its side with the declared defaults filled in
+for missing keys. A stored value of the wrong type, outside its range or not one of its choices gives the default
+instead, logged once per key; the file keeps that value until it is set again. Keys the schema does not name come
+back as saved. A mod without `settings.json` gets its saved table as it always was.
+
+Writing a setting is the engine's: `set_setting` (`LuaMod::set_setting`, in Rust) writes that one key into its
+side's file, keeping the other keys, and refuses a value that does not fit. `reset_setting` removes the key, so the
+default applies again. Writing the value a setting already has changes nothing. Nothing in the game calls them yet:
+the Options page that shows the settings and calls them is not built, so for now a person edits the file.
+
+The `config_changed` hook is told `{mod_id, key, old, new}` once per write that changes the stored value. `mod_id` is
+the mod that declares the setting, and `old` and `new` are what `horizon.config()` gave before the write and gives
+after it (null for an absent value). They are equal when a key is written at its default. The hook is wired, but
+until the Options page calls `set_setting`, a running game does not fire it.
 
 ### Blocks
 
@@ -858,6 +897,7 @@ A handler that runs longer than 250 ms is stopped ([Limits and errors](#limits-a
 | `place_block(event)` | a player has placed a block. The event holds `stack` (the stack placed), `pos`, `state` (the id) and `state_props`. It only listens; to stop a placement, take the click in `use_item_on` |
 | `neighbor_changed(event)` | a neighbour update is about to reach a block, on the server. The event holds `dimension`, `pos` (`{x, y, z}`), `state` (the id of the block receiving it, with `state_props`), `changed` (the name of the block that changed, such as `minecraft:stone`) and `moved` (true when a piston moved that block). It only listens. Every block update wakes it for each neighbour it reaches: keep it light |
 | `tree_grow(event)` | a sapling or a mangrove propagule is about to grow a tree, from its random tick or bone meal (a bone-mealed azalea included). The event holds `dimension`, `pos` (`{x, y, z}`), `block` (the sapling's block, such as `minecraft:oak_sapling` or `minecraft:mangrove_propagule`), `feature` (the configured feature picked, such as `minecraft:oak`) and `mega` (true for a 2x2 square of saplings growing the mega feature). `horizon.cancel()` refuses the growth: the sapling or the four stay where they are, and no other feature is tried. Not a hanging mangrove propagule merely ageing, a tree placed by worldgen, a huge mushroom or nether fungus, or a chorus plant |
+| `config_changed(event)` | a setting of a mod's `settings.json` was saved with a new value, through `set_setting` ([Settings schema](#settings-schema)). The event holds `mod_id` (the mod that declares it), `key`, `old` and `new`, the values `horizon.config()` gave before and gives after. Told to every mod, once per write that changes the stored value. It only listens |
 
 `right_click_block` runs once for each hand, the main hand and then the off hand, as the game tries both (NeoForge's
 `RightClickBlock` fires for each hand too). The event names no hand and no stack: `horizon.acting_player().held`
@@ -1270,7 +1310,7 @@ table when its step lands, with the tests and the game check that show it.
 | Custom projectiles and other entities that are not mobs | A thrown mod item already flies as its template does (a snowball's `template` in `registry.item`). The planned shape is an entity type of the mod's own over a projectile template (`registry.entity_type("spore", { template = "minecraft:snowball", ... })`), with `projectile_impact` by that kind, and `horizon.shoot(dimension, kind, x, y, z, vx, vy, vz)` to launch one. Vehicles, displays and markers stay the engine's own |
 | Screens | Content mods have menu types (`data/<id>/horizon/menu/`), but a screen that draws them is native only (`native_screen`). Scripts get no screens: titles, subtitles, the action bar, chat lines and commands are their user interface. A later content-menu helper would show a content mod's menu |
 | Client-side scripts | A client state exists when `scripts/client/` does and runs the client hooks (those tagged `client` or `both` in [docs/api/hook-points.md](api/hook-points.md)). A server state runs the server hooks. A mod that registers the other side's hook is refused at load with an error that names the folder to use. Saved data (`horizon.world_data()`, `horizon.player_data`) is server state; the client reads server data only through messages (client-to-server messages are planned, saved data on the client is planned) |
-| Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. There is no options screen and no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
+| Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. A mod may declare its settings in `settings.json` ([Settings schema](#settings-schema)): the defaults are filled in and the `config_changed` hook is told of each change. The options page that shows them is not built yet, so a person edits the file for now. There is no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
 
 ## Working on a script
 
