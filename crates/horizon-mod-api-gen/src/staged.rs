@@ -34,6 +34,7 @@ const MOB_TURN: &[&str] = &[
     "living_breathe",
     "living_drown",
     "living_fall",
+    "entity_ignite",
     "register_goals",
     "living_incoming_damage",
     "living_incoming_damage_v2",
@@ -201,6 +202,15 @@ mod tests {
         let moves = "impl Hooks for Example {\n    fn trample(&self) {}\n}\n";
         std::fs::write(lib.join("lib.rs"), moves).unwrap();
         assert_eq!(mob_turn(&dir), Some("hooked"), "a hook a mob's move calls");
+        // A mob in lava, fire or sunlight waits on its ignition hook, so a trait
+        // package that implements it keeps the turn serial too.
+        let ignites = "impl Hooks for Example {\n    fn entity_ignite(&self) {}\n}\n";
+        std::fs::write(lib.join("lib.rs"), ignites).unwrap();
+        assert_eq!(
+            mob_turn(&dir),
+            Some("hooked"),
+            "a hook a mob's ignition calls"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -44,6 +44,9 @@ use crate::powder_snow::particle_velocity as powder_snow_particle_velocity;
 /// The inside-block effects of fire and lava (`InsideBlockEffectType`
 /// FIRE_IGNITE and LAVA_IGNITE): ignite, then hurt. Both are collected
 /// before either applies, so a fire hurt's teleport still leaves the lava's.
+/// Each ignition goes through the `entity_ignite` hook with the value vanilla
+/// would set, and applies what the listener left (the fire block's ramp keeps
+/// its draw where vanilla makes it).
 fn block_contact_damage(
     m: &mut Mob,
     fire: f32,
@@ -53,16 +56,25 @@ fn block_contact_damage(
 ) {
     if fire > 0.0 && !m.kind.flags.fire_immune {
         let multiplier = m.burning_time();
-        m.fire_ticks = crate::motion::environment::ignite_contact(
+        let ticks = crate::motion::environment::ignite_contact(
             m.fire_ticks,
             false,
             &mut m.random,
             multiplier,
         );
+        if let Some(ticks) =
+            crate::native_client_hooks::ignite_choice(m.id, &m.kind.id, "fire_block", ticks)
+        {
+            m.fire_ticks = ticks;
+        }
         hurt(m, w, events, fire, Damage::of(DamageKind::InFire));
     }
     if lava && !m.kind.flags.fire_immune {
-        m.ignite_for_ticks(300);
+        if let Some(ticks) =
+            crate::native_client_hooks::ignite_choice(m.id, &m.kind.id, "lava", 300)
+        {
+            m.ignite_for_ticks(ticks);
+        }
         hurt(m, w, events, 4.0, Damage::of(DamageKind::Lava));
     }
 }
@@ -1900,7 +1912,8 @@ fn push_entities(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     }
 }
 /// `Mob.aiStep` -> `Mob.burnUndead`: undead burn in daylight. It runs with
-/// or without AI (`NoAI` only skips `serverAiStep`).
+/// or without AI (`NoAI` only skips `serverAiStep`), and the ignition goes
+/// through the `entity_ignite` hook with cause `sun`.
 fn burn_undead(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     if m.kind.flags.burns_in_day && m.alive() && sun_burn_tick(m, w) {
         // The head is the sun-protection slot, or the body for the species
@@ -1912,8 +1925,10 @@ fn burn_undead(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
         };
         if protected {
             events.push(MobEvent::SunProtectionWear { mob: m.id });
-        } else {
-            m.ignite_for_ticks(160);
+        } else if let Some(ticks) =
+            crate::native_client_hooks::ignite_choice(m.id, &m.kind.id, "sun", 160)
+        {
+            m.ignite_for_ticks(ticks);
         }
     }
 }
@@ -6567,6 +6582,351 @@ mod removed_mob_tests {
         });
         if !ran {
             eprintln!("skipped: no vanilla data");
+        }
+    }
+}
+
+#[cfg(test)]
+mod ignite_hook_tests {
+    use super::*;
+    use crate::mobs::world::with_built_test_world;
+    use crate::native_client_hooks::test_hooks::{in_own_process, install_ignite};
+    use horizon_world::registry::BlockRegistry;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    /// What the installed listener does: leave the ticks alone, set 40, or
+    /// cancel.
+    const LEAVE: i32 = 0;
+    const SHORTEN: i32 = 40;
+    const CANCEL: i32 = -1;
+    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
+    /// Every call the listener got: entity, kind, cause, requested.
+    static CALLS: Mutex<Vec<(u32, String, String, i32)>> = Mutex::new(Vec::new());
+
+    fn listener(
+        entity: u32,
+        kind: &str,
+        cause: &str,
+        requested: i32,
+        ticks: &mut i32,
+        cancel: &mut bool,
+    ) {
+        CALLS.lock().unwrap_or_else(|e| e.into_inner()).push((
+            entity,
+            kind.to_owned(),
+            cause.to_owned(),
+            requested,
+        ));
+        match MODE.load(Ordering::Relaxed) {
+            LEAVE => {}
+            SHORTEN => *ticks = 40,
+            CANCEL => *cancel = true,
+            other => panic!("unexpected mode {other}"),
+        }
+    }
+
+    fn calls() -> Vec<(u32, String, String, i32)> {
+        CALLS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn clear_calls() {
+        CALLS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+
+    /// A stone floor with `block` at (0, 64, 0), as `burn_and_rose_tests` builds it.
+    fn built_block(block: &'static str) -> impl FnOnce(&mut crate::world::World, &BlockRegistry) {
+        move |world, registry| {
+            let stone = registry.default_state("minecraft:stone").unwrap();
+            let state = registry.default_state(block).unwrap();
+            for cx in -1..1 {
+                for cz in -1..1 {
+                    world
+                        .chunks
+                        .insert((cx, cz), Arc::new(crate::chunk::Chunk::empty(cx, cz)));
+                }
+            }
+            for x in -4..4 {
+                for z in -4..4 {
+                    world.set(x, 63, z, stone).unwrap();
+                }
+            }
+            world.set(0, 64, 0, state).unwrap();
+        }
+    }
+
+    fn pig(types: &crate::mobs::MobTypes) -> Mob {
+        let kind = Arc::new(types.types["minecraft:pig"].clone());
+        let mut m = Mob::new(1, kind, Vec3::new(0.5, 64.0, 0.5), 0.0);
+        register(&mut m);
+        m.no_ai = true;
+        m.random = horizon_core::random::EntityRandom::own(LegacyRandom::new(3));
+        m
+    }
+
+    /// `Entity.applyEffectsFromBlocks`' fire contact as the code had it before
+    /// the hook: the ramp, then the hit.
+    fn vanilla_contact(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
+        let multiplier = m.burning_time();
+        m.fire_ticks = crate::motion::environment::ignite_contact(
+            m.fire_ticks,
+            false,
+            &mut m.random,
+            multiplier,
+        );
+        hurt(m, w, events, 1.0, Damage::of(DamageKind::InFire));
+    }
+
+    /// One `base_tick` of a fresh pig on `block`: its fire timer, health and the
+    /// calls the listener got.
+    fn tick_in(
+        block: &'static str,
+        mode: i32,
+    ) -> Option<((i32, f32), Vec<(u32, String, String, i32)>)> {
+        MODE.store(mode, Ordering::Relaxed);
+        clear_calls();
+        let mut out = None;
+        let ran = with_built_test_world(&[], built_block(block), |w, types| {
+            let mut m = pig(types);
+            let mut events = Vec::new();
+            base_tick(&mut m, w, &mut events);
+            out = Some(((m.fire_ticks, m.health), calls()));
+        });
+        if ran { out } else { None }
+    }
+
+    #[test]
+    fn a_pig_in_lava_ignites_through_the_hook() {
+        in_own_process(
+            "mobs::ai::ignite_hook_tests::a_pig_in_lava_ignites_through_the_hook",
+            a_pig_in_lava_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn a_pig_in_lava_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        // A cancel leaves the timer where it was, and the lava still hurts.
+        let Some((cancelled, cancel_calls)) = tick_in("minecraft:lava", CANCEL) else {
+            return;
+        };
+        assert_eq!(cancelled, (0, 6.0));
+        assert_eq!(
+            cancel_calls,
+            [(1, "minecraft:pig".to_owned(), "lava".to_owned(), 300)],
+            "one attempt, told once, with the mob's id and kind"
+        );
+        // The listener's 40 ticks replace the 300 lava asks for.
+        assert_eq!(tick_in("minecraft:lava", SHORTEN).unwrap().0, (40, 6.0));
+        // A listener that leaves the ticks alone leaves the vanilla 300.
+        assert_eq!(tick_in("minecraft:lava", LEAVE).unwrap().0, (300, 6.0));
+    }
+
+    #[test]
+    fn a_pig_in_fire_ignites_through_the_hook() {
+        in_own_process(
+            "mobs::ai::ignite_hook_tests::a_pig_in_fire_ignites_through_the_hook",
+            a_pig_in_fire_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn a_pig_in_fire_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        // A cancel leaves a cold pig cold, and the fire still hurts.
+        let Some((cancelled, cancel_calls)) = tick_in("minecraft:fire", CANCEL) else {
+            return;
+        };
+        assert_eq!(cancelled, (0, 9.0));
+        assert_eq!(
+            cancel_calls,
+            [(1, "minecraft:pig".to_owned(), "fire_block".to_owned(), 160)],
+            "the ramp's own value is what the listener is asked about"
+        );
+        assert_eq!(tick_in("minecraft:fire", SHORTEN).unwrap().0, (40, 9.0));
+        assert_eq!(tick_in("minecraft:fire", LEAVE).unwrap().0, (160, 9.0));
+    }
+
+    /// A grouped turn tells no ignition: the site keeps vanilla's ticks, which
+    /// is why a mod that hooks it keeps the mob phase serial (`MOB_TURN`).
+    #[test]
+    fn a_grouped_mob_turn_ignites_without_telling() {
+        in_own_process(
+            "mobs::ai::ignite_hook_tests::a_grouped_mob_turn_ignites_without_telling",
+            a_grouped_mob_turn_ignites_without_telling_in_own_process,
+        );
+    }
+
+    fn a_grouped_mob_turn_ignites_without_telling_in_own_process() {
+        install_ignite(listener);
+        MODE.store(SHORTEN, Ordering::Relaxed);
+        clear_calls();
+        let mut out = None;
+        let ran = with_built_test_world(&[], built_block("minecraft:lava"), |w, types| {
+            let mut m = pig(types);
+            let mut events = Vec::new();
+            let (_was_on_fire, kept) =
+                crate::native_client_hooks::deferring_turn(|| base_tick(&mut m, w, &mut events));
+            out = Some((m.fire_ticks, kept.len(), calls().len()));
+        });
+        if !ran {
+            return;
+        }
+        assert_eq!(out.unwrap(), (300, 0, 0));
+    }
+
+    /// With no table installed the fire contact keeps the old path's ramp and
+    /// draws: a negative step stays negative (vanilla's) and the hurt's two
+    /// pitch draws are the mob's own, so the next long is the old path's.
+    #[test]
+    fn no_listener_keeps_the_mobs_fire_contact_as_it_was() {
+        let mut out = None;
+        let ran = with_built_test_world(&[], built_block("minecraft:fire"), |w, types| {
+            let mut hooked = pig(types);
+            hooked.fire_ticks = -5;
+            let mut events = Vec::new();
+            block_contact_damage(&mut hooked, 1.0, false, w, &mut events);
+            let mut vanilla = pig(types);
+            vanilla.fire_ticks = -5;
+            let mut vanilla_events = Vec::new();
+            vanilla_contact(&mut vanilla, w, &mut vanilla_events);
+            out = Some((
+                (hooked.fire_ticks, hooked.random.next_long()),
+                (vanilla.fire_ticks, vanilla.random.next_long()),
+            ));
+        });
+        if !ran {
+            return;
+        }
+        let (hooked, vanilla) = out.unwrap();
+        assert_eq!(hooked.0, -4, "the ramp's next negative step");
+        assert_eq!(hooked, vanilla);
+    }
+
+    /// A pig in lava and rain is ignited and put out in the same tick, as
+    /// vanilla does it: the old path's result, fire timer and random included.
+    #[test]
+    fn a_wet_pig_in_lava_is_put_out_as_before() {
+        let Some(root) = std::env::var_os("HORIZON_TEST_RESOURCES").map(std::path::PathBuf::from)
+        else {
+            eprintln!("skipping: no HORIZON_TEST_RESOURCES");
+            return;
+        };
+        let biomes = crate::biome::Biomes::load(&root).unwrap();
+        let plains = u32::from(biomes.id("minecraft:plains"));
+        let mut out = None;
+        let ran = crate::mobs::world::with_resource_test_world(
+            &root,
+            &[],
+            true,
+            true,
+            |world, registry| {
+                let mut chunk = crate::chunk::Chunk::empty(0, 0);
+                for section in &mut chunk.sections {
+                    for i in 0..64 {
+                        Arc::make_mut(section).biomes.set(i, plains);
+                    }
+                }
+                world.chunks.insert((0, 0), Arc::new(chunk));
+                let lava = registry.default_state("minecraft:lava").unwrap();
+                for x in 6..=8 {
+                    for z in 0..=4 {
+                        world.set(x, 64, z, lava).unwrap();
+                    }
+                }
+            },
+            |w, types| {
+                let mut rain = w.clone();
+                rain.raining = true;
+                // A pig in the lava, in the rain: the contact ignites it and the
+                // rain puts it out in the same tick.
+                let mut hooked = pig(types);
+                hooked.position = Vec3::new(7.5, 64.2, 2.5);
+                assert!(in_rain(&hooked, &rain), "rain reaches it");
+                let mut events = Vec::new();
+                let was_on_fire = hooked.fire_ticks > 0;
+                block_contact_damage(&mut hooked, 0.0, true, &rain, &mut events);
+                extinguish_if_wet(&mut hooked, &rain, was_on_fire, &mut events);
+                // The path the code had before the hook.
+                let mut vanilla = pig(types);
+                vanilla.position = Vec3::new(7.5, 64.2, 2.5);
+                let mut vanilla_events = Vec::new();
+                vanilla.ignite_for_ticks(300);
+                hurt(
+                    &mut vanilla,
+                    &rain,
+                    &mut vanilla_events,
+                    4.0,
+                    Damage::of(DamageKind::Lava),
+                );
+                extinguish_if_wet(&mut vanilla, &rain, false, &mut vanilla_events);
+                out = Some((
+                    (hooked.fire_ticks, hooked.health, hooked.random.next_long()),
+                    (
+                        vanilla.fire_ticks,
+                        vanilla.health,
+                        vanilla.random.next_long(),
+                    ),
+                ));
+            },
+        );
+        if !ran {
+            return;
+        }
+        let (hooked, vanilla) = out.unwrap();
+        assert_eq!(hooked, vanilla);
+        assert_eq!(hooked.0, 0, "the rain puts the lava's 300 out");
+        assert_eq!(hooked.1, 6.0, "the lava's hit still lands");
+    }
+
+    /// `Mob.aiStep` -> `burn_undead`: the sunlight's 160 goes through the hook
+    /// with cause `sun`, and a cancel keeps an undead cold.
+    #[test]
+    fn a_burning_zombie_in_daylight_ignites_through_the_hook() {
+        in_own_process(
+            "mobs::ai::ignite_hook_tests::a_burning_zombie_in_daylight_ignites_through_the_hook",
+            a_burning_zombie_in_daylight_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn a_burning_zombie_in_daylight_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        let mut out = Vec::new();
+        let ran = with_built_test_world(&[], built_block("minecraft:air"), |w, types| {
+            let mut day = w.clone();
+            day.monsters_burn = true;
+            for mode in [CANCEL, SHORTEN, LEAVE] {
+                MODE.store(mode, Ordering::Relaxed);
+                clear_calls();
+                let kind = Arc::new(types.types["minecraft:zombie"].clone());
+                let mut m = Mob::new(1, kind, Vec3::new(3.5, 64.0, 3.5), 0.0);
+                register(&mut m);
+                m.no_ai = true;
+                let mut events = Vec::new();
+                // The sun check is a one-in-thirty roll: the mob's own random
+                // decides which call burns it.
+                for _ in 0..500 {
+                    burn_undead(&mut m, &day, &mut events);
+                    if m.fire_ticks != 0 {
+                        break;
+                    }
+                }
+                out.push((m.fire_ticks, calls()));
+            }
+        });
+        if !ran {
+            return;
+        }
+        assert_eq!(out[0].0, 0, "a cancel keeps it cold");
+        assert_eq!(out[1].0, 40);
+        assert_eq!(out[2].0, 160);
+        for (_, calls) in &out {
+            assert!(!calls.is_empty(), "the sun asked the listener");
+            assert!(
+                calls
+                    .iter()
+                    .all(|call| call == &(1, "minecraft:zombie".to_owned(), "sun".to_owned(), 160)),
+                "{calls:?}"
+            );
         }
     }
 }

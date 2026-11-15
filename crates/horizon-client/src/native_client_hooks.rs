@@ -264,6 +264,29 @@ pub(crate) fn ignite(
     true
 }
 
+/// The ticks a site applies for an ignition whose vanilla request is
+/// `requested`: `Some(requested)` when no listener was told or a listener left
+/// the value alone, so the site applies vanilla's own value (a negative ramp
+/// step included); `Some(ticks)` for a listener's changed value, clamped to
+/// `0..=72000` as `Entity.igniteForTicks` clamps it; and `None` when the site
+/// must leave the timer as it was, which is a listener's cancel or a chosen 0.
+/// A grouped mob turn tells no hook ([`ignite`] returns false) and gets
+/// `requested`.
+pub(crate) fn ignite_choice(entity: u32, kind: &str, cause: &str, requested: i32) -> Option<i32> {
+    let mut chosen = requested;
+    let mut cancel = false;
+    if !ignite(entity, kind, cause, requested, &mut chosen, &mut cancel) {
+        return Some(requested);
+    }
+    if cancel || chosen == 0 {
+        return None;
+    }
+    if chosen == requested {
+        return Some(requested);
+    }
+    Some(chosen.clamp(0, 72_000))
+}
+
 pub(crate) fn mob_ai_register(mob: &mut Mob) {
     if let Some(hooks) = HOOKS.get() {
         (hooks.mob_ai_register)(mob);

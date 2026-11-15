@@ -2375,8 +2375,15 @@ impl ArmorStand {
             }
             self.fire_ticks -= 1;
         }
-        if lava {
-            self.fire_ticks = self.fire_ticks.max(300);
+        if lava
+            && let Some(ticks) = crate::native_client_hooks::ignite_choice(
+                self.id,
+                "minecraft:armor_stand",
+                "lava",
+                300,
+            )
+        {
+            self.fire_ticks = self.fire_ticks.max(ticks);
         }
         let fire = crate::motion::environment::fire_contact(world, registry, self.bounds()) > 0.0;
         // The fire block reaches a stand through `applyEffectsFromBlocks`,
@@ -2384,8 +2391,13 @@ impl ArmorStand {
         if fire && !self.invisible && !self.marker && !self.no_gravity {
             if self.fire_ticks > 0 {
                 self.health -= 0.15;
-            } else {
-                self.fire_ticks = 100;
+            } else if let Some(ticks) = crate::native_client_hooks::ignite_choice(
+                self.id,
+                "minecraft:armor_stand",
+                "fire_block",
+                100,
+            ) {
+                self.fire_ticks = ticks;
             }
         }
         self.health > 0.5
@@ -5439,5 +5451,173 @@ mod orb_lava_shape_tests {
             }),
             1
         );
+    }
+}
+
+#[cfg(test)]
+mod armor_stand_ignite_tests {
+    use super::*;
+    use crate::native_client_hooks::test_hooks::{in_own_process, install_ignite};
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    /// What the installed listener does: leave the ticks alone, set 40, or
+    /// cancel.
+    const LEAVE: i32 = 0;
+    const SHORTEN: i32 = 40;
+    const CANCEL: i32 = -1;
+    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
+    /// Every call the listener got: entity, kind, cause, requested.
+    static CALLS: Mutex<Vec<(u32, String, String, i32)>> = Mutex::new(Vec::new());
+
+    fn listener(
+        entity: u32,
+        kind: &str,
+        cause: &str,
+        requested: i32,
+        ticks: &mut i32,
+        cancel: &mut bool,
+    ) {
+        CALLS.lock().unwrap_or_else(|e| e.into_inner()).push((
+            entity,
+            kind.to_owned(),
+            cause.to_owned(),
+            requested,
+        ));
+        match MODE.load(Ordering::Relaxed) {
+            LEAVE => {}
+            SHORTEN => *ticks = 40,
+            CANCEL => *cancel = true,
+            other => panic!("unexpected mode {other}"),
+        }
+    }
+
+    fn calls() -> Vec<(u32, String, String, i32)> {
+        CALLS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// A stand at (20.5, 4.0, 20.5) in a scene whose block there is `block`.
+    /// False without the prepared resources, so the test skips.
+    fn with_stand(
+        block: &str,
+        f: impl FnOnce(&World, &BlockFacts, &horizon_world::registry::BlockRegistry),
+    ) -> bool {
+        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.local/horizon-client")
+                    .join(horizon_core::VANILLA_VERSION)
+            });
+        if !root.join("items.json").exists() {
+            eprintln!("skipping armor stand ignition test: prepared resources unavailable");
+            return false;
+        }
+        let assets = crate::assets::Assets::load(&root).unwrap();
+        let render = assets.reload(&root).unwrap();
+        let facts = BlockFacts::load(&root, assets.registry).unwrap();
+        let mut world = World::test_scene(&assets, &render, 3).unwrap();
+        let state = assets.registry.default_state(block).unwrap();
+        world.set(20, 4, 20, state).unwrap();
+        f(&world, &facts, assets.registry);
+        true
+    }
+
+    fn fresh_stand() -> ArmorStand {
+        ArmorStand::new(2, Vec3::new(20.5, 4.0, 20.5), 0.0)
+    }
+
+    #[test]
+    fn an_armor_stand_in_lava_ignites_through_the_hook() {
+        in_own_process(
+            "entities::armor_stand_ignite_tests::an_armor_stand_in_lava_ignites_through_the_hook",
+            an_armor_stand_in_lava_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn an_armor_stand_in_lava_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        let mut out = Vec::new();
+        let ran = with_stand("minecraft:lava", |world, facts, registry| {
+            for mode in [CANCEL, SHORTEN, LEAVE] {
+                MODE.store(mode, Ordering::Relaxed);
+                CALLS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                let mut stand = fresh_stand();
+                assert!(stand.environment_tick(world, facts, registry));
+                out.push((stand.fire_ticks, calls()));
+            }
+        });
+        if !ran {
+            return;
+        }
+        // A cancel leaves the cold stand cold; a listener's 40 replaces 300,
+        // and one that leaves the ticks alone leaves the vanilla 300.
+        assert_eq!(out[0].0, 0);
+        assert_eq!(out[1].0, 40);
+        assert_eq!(out[2].0, 300);
+        for (_, calls) in &out {
+            assert_eq!(
+                calls,
+                &[(
+                    2,
+                    "minecraft:armor_stand".to_owned(),
+                    "lava".to_owned(),
+                    300
+                )],
+                "one ignition, one call"
+            );
+        }
+    }
+
+    #[test]
+    fn an_armor_stand_in_fire_ignites_through_the_hook() {
+        in_own_process(
+            "entities::armor_stand_ignite_tests::an_armor_stand_in_fire_ignites_through_the_hook",
+            an_armor_stand_in_fire_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn an_armor_stand_in_fire_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        let mut out = Vec::new();
+        let ran = with_stand("minecraft:fire", |world, facts, registry| {
+            for mode in [CANCEL, SHORTEN, LEAVE] {
+                MODE.store(mode, Ordering::Relaxed);
+                CALLS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+                let mut stand = fresh_stand();
+                assert!(stand.environment_tick(world, facts, registry));
+                out.push((stand.fire_ticks, calls()));
+            }
+            // A stand already burning only takes the 0.15: it is no ignition.
+            MODE.store(LEAVE, Ordering::Relaxed);
+            CALLS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            let mut burning = fresh_stand();
+            burning.fire_ticks = 21;
+            assert!(burning.environment_tick(world, facts, registry));
+            assert_eq!(burning.fire_ticks, 20);
+            assert_eq!(burning.health, 20.0 - 0.15);
+            assert!(
+                calls().is_empty(),
+                "an already burning stand is no ignition"
+            );
+        });
+        if !ran {
+            return;
+        }
+        assert_eq!(out[0].0, 0);
+        assert_eq!(out[1].0, 40);
+        assert_eq!(out[2].0, 100);
+        for (_, calls) in &out {
+            assert_eq!(
+                calls,
+                &[(
+                    2,
+                    "minecraft:armor_stand".to_owned(),
+                    "fire_block".to_owned(),
+                    100
+                )],
+                "one ignition, one call"
+            );
+        }
     }
 }
