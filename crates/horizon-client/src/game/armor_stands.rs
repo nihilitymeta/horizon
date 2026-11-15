@@ -1323,12 +1323,11 @@ impl Game<'_> {
             } else {
                 // igniteForSeconds(5.0f): at least 100 ticks, and
                 // Entity.igniteForTicks calls clearFreeze.
-                let a = &mut self.armor_stands[i];
-                a.fire_ticks = a.fire_ticks.max(100);
-                if let Some(horizon_world::nbt::Tag::Compound(map)) = self.persist.raw.get_mut(&id)
-                {
-                    map.remove(&"TicksFrozen".into());
-                }
+                let _ = self.ignite_entity_for(
+                    super::combat::IgniteTarget::ArmorStand(id),
+                    100,
+                    super::combat::IgniteCause::FireBlock,
+                );
             }
             return false;
         }

@@ -1302,13 +1302,17 @@ impl Game<'_> {
                     .filter_map(|&p| self.fire_damage_at(p))
                     .collect();
                 if !fires.is_empty() {
-                    let fire = &mut self.boats[i].fire_ticks;
-                    if *fire < 0 {
-                        *fire += 1;
+                    let id = self.boats[i].id;
+                    if self.boats[i].fire_ticks < 0 {
+                        self.boats[i].fire_ticks += 1;
                     }
-                    if *fire >= 0 {
+                    if self.boats[i].fire_ticks >= 0 {
                         // igniteForSeconds(8)
-                        *fire = (*fire).max(160);
+                        let _ = self.ignite_entity_for(
+                            super::combat::IgniteTarget::Boat(id),
+                            160,
+                            super::combat::IgniteCause::FireBlock,
+                        );
                     }
                     for &damage in &fires {
                         if self.burn_boat(i, damage) {

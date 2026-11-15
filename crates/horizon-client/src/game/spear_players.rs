@@ -254,11 +254,12 @@ impl Game<'_> {
                     g.knock_back_player(f64::from(strength), xd, zd, SPEAR_SOURCE);
                 }
             }
-            if hurt
-                && s.ignite > 0.0
-                && let Some(p) = g.player.as_mut()
-            {
-                let _ = p.ignite_for_ticks((s.ignite * 20.0) as i32);
+            if hurt && s.ignite > 0.0 {
+                let _ = g.ignite_entity_for(
+                    super::combat::IgniteTarget::Player,
+                    (s.ignite * 20.0) as i32,
+                    super::combat::IgniteCause::FireAspect,
+                );
             }
             let dismounted = s.dismounts && g.riding.is_some();
             if dismounted {

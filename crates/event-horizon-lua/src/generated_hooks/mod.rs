@@ -606,6 +606,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "entity_data_to",
         "adapter: entity_data_to: adapter: a tuple needs its table form",
     ),
+    ("entity_ignite", "generated"),
     ("entity_interact_specific", "generated"),
     ("entity_outline", "generated"),
     (
@@ -866,6 +867,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("entity_drop_item", HookSide::Server),
     ("entity_enter_block", HookSide::Server),
     ("entity_enter_love_mode", HookSide::Server),
+    ("entity_ignite", HookSide::Server),
     ("entity_interact_specific", HookSide::Server),
     ("entity_join_level", HookSide::Server),
     ("entity_leave_level", HookSide::Server),
@@ -1290,14 +1292,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 9;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 10;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "16b0454233ff8f3a";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "3a10a1b696339811";
 
 #[cfg(test)]
 mod test_support;
@@ -1722,6 +1724,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "custom_payload_from_client",
     "entity_change_block_v2",
     "entity_change_block_v3",
+    "entity_ignite",
     "entity_interact_specific",
     "entity_outline",
     "fishing_hook_landed",
@@ -1878,6 +1881,7 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "client_attack",
     "entity_change_block_v2",
     "entity_change_block_v3",
+    "entity_ignite",
     "entity_interact_specific",
     "entity_outline",
     "hanging_break_v2",
@@ -2318,6 +2322,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(custom_payload_from_client, game_mut, horizon_client::mod_api::CustomPayloadFromClientEvent<'_>, (none), [player: uuid, channel: cloned, data: s_bytes]);
     gen_cancel!(entity_change_block_v2, game_mut, horizon_client::mod_api::EntityChangeBlockV2Event<'_>, (field kind), [player: opt_uuid, entity: copy, kind: cloned, pos: pos, from: cloned, to: cloned]);
     gen_cancel!(entity_change_block_v3, game_mut, horizon_client::mod_api::EntityChangeBlockV3Event<'_>, (field kind), [entity: copy, kind: cloned, pos: pos, from: cloned, to: cloned]);
+    gen_cancel!(entity_ignite, game_ref, horizon_client::mod_api::EntityIgniteEvent<'_>, (entity entity), [entity: copy, cause: cloned, ticks: copy]);
     gen_cancel!(entity_interact_specific, game_mut, horizon_client::mod_api::EntityInteractSpecificEvent<'_>, (field kind), [entity: copy, kind: cloned, stack: opt_item, location: vec3]);
     gen_listen!(entity_outline, game_ref, horizon_client::mod_api::EntityOutlineEvent<'_>, (field kind), [entity_id: copy, kind: cloned, outline: copy_ref => mut_opt_scalar]);
     gen_listen!(fishing_hook_landed, game_mut, horizon_client::mod_api::FishingHookLandedEvent<'_>, (none), [player: uuid, hook: copy, dimension: cloned, block: pos, face: pos]);
@@ -62226,6 +62231,207 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_entity_ignite() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_ignite",
+            "horizon.on(\"entity_ignite\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.ticks == 9, \"ticks\")\n    horizon.cancel()\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut canceled = false;
+            dispatch_entity_ignite(
+                &FakeHost::empty(),
+                &firing_mods,
+                13,
+                "test:cause",
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        // gone event: the handler stays quiet.
+        {
+            let mut canceled = false;
+            dispatch_entity_ignite(
+                &FakeHost::empty(),
+                &firing_mods,
+                99,
+                "test:cause",
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "gone event must not fire the handler");
+        }
+        no_error(&id);
+        let mut canceled = false;
+        dispatch_entity_ignite(
+            &FakeHost::empty(),
+            &firing_mods,
+            11,
+            "test:cause",
+            9,
+            &mut canceled,
+        );
+        assert!(canceled, "canceled not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_ignite_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_entity_ignite_nocancel",
+            "horizon.on(\"entity_ignite\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.entity == 11, \"kind\")\n    assert(event.cause == \"test:cause\", \"cause\")\n    assert(event.ticks == 9, \"ticks\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        let mut canceled = false;
+        dispatch_entity_ignite(
+            &FakeHost::empty(),
+            &firing_mods,
+            11,
+            "test:cause",
+            9,
+            &mut canceled,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!canceled, "canceled set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_entity_ignite_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_ignite_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_ignite(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:cause",
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "entity_ignite read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "entity_ignite read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_ignite read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_ignite_cost_kind",
+            "horizon.on(\"entity_ignite\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_ignite(
+                &FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:cause",
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                2,
+                "entity_ignite read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                2,
+                "entity_ignite read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_ignite read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_entity_ignite_cost_live",
+            "horizon.on(\"entity_ignite\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut canceled = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_entity_ignite(
+                &FakeHost::empty(),
+                &firing_mods,
+                11,
+                "test:cause",
+                9,
+                &mut canceled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "entity_ignite built an event table for a heard dispatch"
+            );
+            assert!(
+                entity_reads() > 0,
+                "entity_ignite resolved its kind through the host"
+            );
+            assert!(
+                host_reads() > 0,
+                "entity_ignite read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "entity_ignite read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_entity_interact_specific() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_entity_interact_specific",
@@ -78008,6 +78214,19 @@ mod generated_tests {
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");
+        }
+        // entity_ignite: unregistered, nothing runs.
+        {
+            let mut canceled = false;
+            dispatch_entity_ignite(
+                &FakeHost::empty(),
+                &firing_mods,
+                7,
+                "test:cause",
+                9,
+                &mut canceled,
+            );
+            assert!(!canceled, "canceled changed with no handler");
         }
         // entity_interact_specific: unregistered, nothing runs.
         {

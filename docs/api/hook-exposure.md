@@ -4,7 +4,7 @@
 
 Every native hook lands in exactly one class: `generated` (a zero-hand-work event table under the native name), `adapter` (a hand-written converter would unblock it), `handle` or `protocol` (a live handle or raw packets, each needing its own design), `tick` (the level-tick host the Lua runtime does not implement), or `cannot` (no event-table mapping exists, with the reason). The Side column is the hook's `side` tag (`client`, `server` or `both`). `HOOK_CLASSIFICATION` in `crates/event-horizon-lua/src/generated_hooks/mod.rs` is the machine-readable record; this page is its human-readable form, so a hook is never silently missing from Lua: it is either generated or listed here with its reason. The two declaration-served hooks (`block_entity` and `block_entity_ticks`) are generated and omitted from the event-table list below: they are served from the `horizon.block_entity` declarations, build no event table, and take no `horizon.on` registration.
 
-482 hooks are generated and omitted below. The rest:
+483 hooks are generated and omitted below. The rest:
 
 ## Borrows render state (render thread) (24)
 

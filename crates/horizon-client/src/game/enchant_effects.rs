@@ -292,10 +292,16 @@ impl Game<'_> {
             }
         }
         if ignite > 0.0
-            && let Some(m) = self.mobs.get_mut(mob)
-            && !m.kind.flags.fire_immune
+            && self
+                .mobs
+                .iter()
+                .any(|m| m.id == victim && !m.kind.flags.fire_immune)
         {
-            m.ignite_for_ticks((ignite * 20.0) as i32);
+            let _ = self.ignite_entity_for(
+                super::combat::IgniteTarget::Mob(victim),
+                (ignite * 20.0) as i32,
+                super::combat::IgniteCause::FireAspect,
+            );
         }
         for (effect, level) in mob_effects {
             self.apply_mob_effect(mob, &effect, level);

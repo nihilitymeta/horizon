@@ -440,11 +440,12 @@ impl Game<'_> {
             }
             // Entity.igniteForSeconds on the victim: the fire timer only
             // rises, and a fire-immune victim (no player is by type) is spared.
-            if hurt
-                && s.ignite > 0.0
-                && let Some(p) = g.player.as_mut()
-            {
-                let _ = p.ignite_for_ticks((s.ignite * 20.0) as i32);
+            if hurt && s.ignite > 0.0 {
+                let _ = g.ignite_entity_for(
+                    super::combat::IgniteTarget::Player,
+                    (s.ignite * 20.0) as i32,
+                    super::combat::IgniteCause::FireAspect,
+                );
             }
             // The victim's thorns, dealt to the attacker below.
             let thorns = if hurt { g.thorns_damage() } else { Vec::new() };
@@ -644,10 +645,12 @@ impl Game<'_> {
             if g.mob_hits_player(sweep.damage, sweep.from, "minecraft:player_attack") {
                 g.knock_back_player(f64::from(0.4_f32), xd, zd, PVP_SOURCE);
                 // EnchantmentHelper.doPostAttackEffects, after the knockback.
-                if sweep.ignite > 0.0
-                    && let Some(p) = g.player.as_mut()
-                {
-                    let _ = p.ignite_for_ticks((sweep.ignite * 20.0) as i32);
+                if sweep.ignite > 0.0 {
+                    let _ = g.ignite_entity_for(
+                        super::combat::IgniteTarget::Player,
+                        (sweep.ignite * 20.0) as i32,
+                        super::combat::IgniteCause::FireAspect,
+                    );
                 }
                 // The swept player's thorns, dealt to the attacker below.
                 return g.thorns_damage();

@@ -179,6 +179,7 @@ export type EntityChangeBlockV3Event = { entity: number, kind: string, pos: Vec3
 export type EntityDropItemEvent = { entity: number, item: string, count: number, pos: Vec3 }
 export type EntityEnterBlockEvent = { entity: number, kind: string, pos: Vec3, block: string }
 export type EntityEnterLoveModeEvent = { entity: number, kind: string, player: string? }
+export type EntityIgniteEvent = { entity: number, cause: string, ticks: number }
 export type EntityInteractSpecificEvent = { entity: number, kind: string, stack: Item?, location: Vec3 }
 export type EntityJoinLevelEvent = { dimension: string, entity: number, kind: string, pos: Vec3, loaded_from_disk: boolean }
 export type EntityLeaveLevelEvent = { dimension: string, entity: number, kind: string }
@@ -659,6 +660,7 @@ export type HorizonOn =
     ((name: "entity_drop_item", fn: (event: EntityDropItemEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_enter_block", fn: (event: EntityEnterBlockEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_enter_love_mode", fn: (event: EntityEnterLoveModeEvent) -> (), kind: string?) -> ()) &
+    ((name: "entity_ignite", fn: (event: EntityIgniteEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_interact_specific", fn: (event: EntityInteractSpecificEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_join_level", fn: (event: EntityJoinLevelEvent) -> (), kind: string?) -> ()) &
     ((name: "entity_leave_level", fn: (event: EntityLeaveLevelEvent) -> (), kind: string?) -> ()) &

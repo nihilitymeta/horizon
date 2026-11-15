@@ -666,12 +666,17 @@ impl Game<'_> {
                 _ => {}
             }
             // Entity.thunderHit: burning (8 seconds) and 5 lightning damage.
+            let id = m.id;
             m.fire_ticks += 1;
             if m.fire_ticks == 0 {
-                m.ignite_for_ticks(160);
+                let _ = self.ignite_entity_for(
+                    super::combat::IgniteTarget::Mob(id),
+                    160,
+                    super::combat::IgniteCause::Lightning,
+                );
             }
 
-            m.damage(5.0, damage);
+            self.mobs[i].damage(5.0, damage);
         }
         if !events.is_empty() {
             let _ = self.handle_mob_events(events);
@@ -726,13 +731,19 @@ impl Game<'_> {
             if let Some(p) = g.player.as_ref().map(|p| p.position)
                 && meets([p.x, p.y, p.z], 0.3, 1.8)
             {
+                let mut ignite = false;
                 if let Some(p) = g.player.as_mut() {
                     p.fire_ticks += 1;
-                    if p.fire_ticks == 0
-                        && let Err(error) = p.ignite_for_ticks(160)
-                    {
-                        g.error = Some(error);
-                    }
+                    ignite = p.fire_ticks == 0;
+                }
+                if ignite
+                    && let Err(error) = g.ignite_entity_for(
+                        super::combat::IgniteTarget::Player,
+                        160,
+                        super::combat::IgniteCause::Lightning,
+                    )
+                {
+                    g.error = Some(error);
                 }
                 g.hurt_player_by("minecraft:lightning_bolt", 5.0);
             }

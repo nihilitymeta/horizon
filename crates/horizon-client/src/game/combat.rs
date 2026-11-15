@@ -246,26 +246,134 @@ impl CombatTracker {
         }
     }
 }
+/// The causes `native_entity_ignite` tags: the closed set a listener sees.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum IgniteCause {
+    /// Fire Aspect, and the other attack enchantments' `minecraft:ignite`.
+    FireAspect,
+    /// A burning arrow setting its target alight.
+    FlameArrow,
+    /// A blaze's or a fire charge's small fireball.
+    Projectile,
+    /// A lightning bolt's fire.
+    Lightning,
+    /// Standing in fire or on a burning block.
+    FireBlock,
+    /// A cause the game has but this set does not name (a burning zombie's
+    /// blow).
+    Other,
+}
+
+impl IgniteCause {
+    /// The tag `native_entity_ignite` hands a listener.
+    fn tag(self) -> &'static str {
+        match self {
+            Self::FireAspect => "fire_aspect",
+            Self::FlameArrow => "flame_arrow",
+            Self::Projectile => "projectile",
+            Self::Lightning => "lightning",
+            Self::FireBlock => "fire_block",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// The entity a game cause sets alight, as the game finds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum IgniteTarget {
+    /// The game's own player.
+    Player,
+    Mob(u32),
+    ArmorStand(u32),
+    Boat(u32),
+}
+
 impl Game<'_> {
+    /// `Entity.igniteForTicks` behind one gate: every game-level cause that
+    /// sets an entity alight asks `native_entity_ignite` first, and ignites
+    /// only when no listener cancelled it. `ticks` are the fire ticks the
+    /// cause asks for. Returns whether the entity caught fire. Pending API
+    /// @API:entity_ignite@.
+    pub(super) fn ignite_entity_for(
+        &mut self,
+        target: IgniteTarget,
+        ticks: i32,
+        cause: IgniteCause,
+    ) -> horizon_client::Result<bool> {
+        let entity = match target {
+            IgniteTarget::Player => self.player.as_ref().map_or(0, |p| p.entity_id as u32),
+            IgniteTarget::Mob(id) | IgniteTarget::ArmorStand(id) | IgniteTarget::Boat(id) => id,
+        };
+        // A target the level no longer has is nobody's ignition: tell no one.
+        let present = match target {
+            IgniteTarget::Player => self.player.is_some(),
+            IgniteTarget::Mob(id) => self.mobs.iter().any(|m| m.id == id),
+            IgniteTarget::ArmorStand(id) => self.armor_stands.iter().any(|s| s.id == id),
+            IgniteTarget::Boat(id) => self.boats.iter().any(|b| b.id == id),
+        };
+        if !present {
+            return Ok(false);
+        }
+        let mut canceled = false;
+        self.native_entity_ignite(entity, cause.tag(), ticks, &mut canceled);
+        if canceled {
+            return Ok(false);
+        }
+        let ignited = match target {
+            IgniteTarget::Player => {
+                let Some(p) = self.player.as_mut() else {
+                    return Ok(false);
+                };
+                p.ignite_for_ticks(ticks)?;
+                true
+            }
+            IgniteTarget::Mob(id) => {
+                let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) else {
+                    return Ok(false);
+                };
+                m.ignite_for_ticks(ticks);
+                true
+            }
+            IgniteTarget::ArmorStand(id) => {
+                // ArmorStand's shorter body: the longer fire wins, then
+                // `Entity.igniteForTicks`'s `clearFreeze`.
+                let Some(a) = self.armor_stands.iter_mut().find(|s| s.id == id) else {
+                    return Ok(false);
+                };
+                a.fire_ticks = a.fire_ticks.max(ticks);
+                if let Some(horizon_world::nbt::Tag::Compound(map)) = self.persist.raw.get_mut(&id)
+                {
+                    map.remove(&"TicksFrozen".into());
+                }
+                true
+            }
+            IgniteTarget::Boat(id) => {
+                let Some(b) = self.boats.iter_mut().find(|b| b.id == id) else {
+                    return Ok(false);
+                };
+                b.fire_ticks = b.fire_ticks.max(ticks);
+                true
+            }
+        };
+        Ok(ignited)
+    }
+
     /// `Entity.igniteForSeconds`: `seconds * 20` ticks of fire, scaled by the
-    /// target's burning-time attribute.
+    /// target's burning-time attribute, through the ignite hook.
     pub(super) fn ignite_entity(
         &mut self,
         target: Who,
         seconds: i32,
+        cause: IgniteCause,
     ) -> horizon_client::Result<()> {
         match target {
             Who::Player => {
-                if !self.creative
-                    && let Some(p) = self.player.as_mut()
-                {
-                    p.ignite_for_ticks(seconds * 20)?;
+                if !self.creative {
+                    self.ignite_entity_for(IgniteTarget::Player, seconds * 20, cause)?;
                 }
             }
             Who::Mob(id) => {
-                if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
-                    m.ignite_for_ticks(seconds * 20);
-                }
+                self.ignite_entity_for(IgniteTarget::Mob(id), seconds * 20, cause)?;
             }
         }
         Ok(())
@@ -1071,5 +1179,179 @@ mod guest_hit_tests {
             assert_eq!(noted, [5]);
             assert_eq!(game.combat.melee_mob, None, "the hit used it up");
         }
+    }
+}
+
+#[cfg(test)]
+mod ignite_hook_tests {
+    use super::{IgniteCause, IgniteTarget};
+    use horizon_client::mobs::Mob;
+    use horizon_core::geometry::Vec3;
+
+    /// A server's game on the prepared resources with the chunk at the origin
+    /// loaded, as `tnt`'s tests make one; None without them.
+    fn server_game() -> Option<crate::game::Game<'static>> {
+        use crate::game::*;
+        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.local/horizon-client")
+                    .join(horizon_core::VANILLA_VERSION)
+            });
+        if !root.join("movement-properties.nbt").exists() {
+            return None;
+        }
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!(),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let res: &'static _ = Box::leak(Box::new(loaded.resources));
+        let mut game = Game::new(
+            res,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        game.options.dedicated = Some(Vec::new());
+        game.world.chunks.insert(
+            (0, 0),
+            std::sync::Arc::new(horizon_client::chunk::Chunk::empty(0, 0)),
+        );
+        game.streaming.forced.insert((0, 0));
+        Some(game)
+    }
+
+    /// An unlit pig of `id` alone in `game`.
+    fn pig(game: &crate::game::Game<'_>, id: u32) -> Mob {
+        let kind = game.res.mob_types().get("minecraft:pig").unwrap().clone();
+        Mob::new(id, kind, Vec3::new(1.5, 64.0, 1.5), 0.0)
+    }
+
+    /// Every cause names the tag `native_entity_ignite` documents, and no two
+    /// the same.
+    #[test]
+    fn every_cause_names_its_tag() {
+        let tags: Vec<&str> = [
+            IgniteCause::FireAspect,
+            IgniteCause::FlameArrow,
+            IgniteCause::Projectile,
+            IgniteCause::Lightning,
+            IgniteCause::FireBlock,
+            IgniteCause::Other,
+        ]
+        .into_iter()
+        .map(IgniteCause::tag)
+        .collect();
+        assert_eq!(
+            tags,
+            [
+                "fire_aspect",
+                "flame_arrow",
+                "projectile",
+                "lightning",
+                "fire_block",
+                "other"
+            ]
+        );
+        // `MobEvent::ZombieIgnite` (a burning zombie's blow) is no enchantment.
+        assert_eq!(IgniteCause::Other.tag(), "other");
+    }
+
+    /// With no listener the gate is vanilla's: the ticks the cause asked for,
+    /// the longer fire winning as `Entity.igniteForTicks` does.
+    #[test]
+    fn no_listener_ignites_for_the_ticks_the_cause_asked_for() {
+        let Some(mut game) = server_game() else {
+            return;
+        };
+        game.mobs.push(pig(&game, 7));
+        assert!(
+            game.ignite_entity_for(IgniteTarget::Mob(7), 40, IgniteCause::FireAspect)
+                .unwrap()
+        );
+        assert_eq!(game.mobs[0].fire_ticks, 40);
+        // A shorter request keeps the longer fire.
+        assert!(
+            game.ignite_entity_for(IgniteTarget::Mob(7), 20, IgniteCause::FireAspect)
+                .unwrap()
+        );
+        assert_eq!(game.mobs[0].fire_ticks, 40);
+        // An entity that is not there is not told and not set alight.
+        assert!(
+            !game
+                .ignite_entity_for(IgniteTarget::Mob(8), 40, IgniteCause::FireAspect)
+                .unwrap()
+        );
+    }
+
+    /// A listener that cancels one cause keeps the mob cold for it and lets
+    /// another cause through, as the hook's `canceled` says.
+    #[test]
+    fn a_listener_may_veto_one_cause() {
+        crate::mod_api::in_own_process(
+            "game::combat::ignite_hook_tests::a_listener_may_veto_one_cause",
+            a_listener_may_veto_one_cause_in_own_process,
+        );
+    }
+
+    fn a_listener_may_veto_one_cause_in_own_process() {
+        use crate::mod_api::{EntityIgniteEvent, Flow, Hooks};
+
+        struct Veto;
+        impl Hooks for Veto {
+            fn entity_ignite(
+                &self,
+                _host: &dyn crate::mod_api::Host,
+                event: &mut EntityIgniteEvent<'_>,
+            ) -> Flow {
+                assert_eq!(event.entity, 7, "the mob's id");
+                match event.cause {
+                    "fire_aspect" => {
+                        assert_eq!(event.ticks, 40);
+                        Flow::Cancel
+                    }
+                    "lightning" => {
+                        assert_eq!(event.ticks, 160);
+                        Flow::Continue
+                    }
+                    other => panic!("unexpected cause {other}"),
+                }
+            }
+        }
+
+        let Some(mut game) = server_game() else {
+            return;
+        };
+        let _ =
+            crate::mod_api::MODS.set(std::sync::Arc::from(vec![Box::new(Veto) as Box<dyn Hooks>]));
+        game.mobs.push(pig(&game, 7));
+        assert!(
+            !game
+                .ignite_entity_for(IgniteTarget::Mob(7), 40, IgniteCause::FireAspect)
+                .unwrap()
+        );
+        assert_eq!(game.mobs[0].fire_ticks, 0, "a vetoed ignite leaves it cold");
+        assert!(
+            game.ignite_entity_for(IgniteTarget::Mob(7), 160, IgniteCause::Lightning)
+                .unwrap()
+        );
+        assert_eq!(game.mobs[0].fire_ticks, 160, "the cause let through burns");
     }
 }

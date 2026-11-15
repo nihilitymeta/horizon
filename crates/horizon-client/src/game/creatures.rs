@@ -3283,9 +3283,11 @@ impl Game<'_> {
                         t.add_effect(effect, ticks, amplifier);
                     }
                 }
-                MobEvent::Ignite(target, seconds) => self.ignite_entity(target, seconds)?,
+                MobEvent::Ignite(target, seconds) => {
+                    self.ignite_entity(target, seconds, super::combat::IgniteCause::FireAspect)?
+                }
                 MobEvent::ZombieIgnite(target, seconds) if self.combat.hit_landed => {
-                    self.ignite_entity(target, seconds)?
+                    self.ignite_entity(target, seconds, super::combat::IgniteCause::Other)?
                 }
                 MobEvent::ZombieIgnite(..) => {}
                 MobEvent::Breed {
@@ -5330,7 +5332,7 @@ impl Game<'_> {
                 let mut dodged = false;
                 // AbstractArrow.onHitEntity: a burning arrow sets its target alight.
                 if p.arrow.as_ref().is_some_and(|a| a.on_fire()) {
-                    self.handle_mob_events(vec![MobEvent::Ignite(who, 5)])?;
+                    self.ignite_entity(who, 5, super::combat::IgniteCause::FlameArrow)?;
                 }
                 let hurt = match who {
                     Who::Player => {
@@ -5697,9 +5699,11 @@ impl Game<'_> {
                             // SmallFireball.onHitEntity: remember the fire, ignite,
                             // and restore it when the hurt is refused (a raised shield).
                             let remaining = self.player.as_ref().map(|p| p.fire_ticks);
-                            if let Some(p) = self.player.as_mut() {
-                                p.ignite_for_ticks(100)?;
-                            }
+                            self.ignite_entity_for(
+                                super::combat::IgniteTarget::Player,
+                                100,
+                                super::combat::IgniteCause::Projectile,
+                            )?;
                             let hurt = self.mob_hits_player(
                                 5.0,
                                 [p.previous.x, p.previous.y, p.previous.z],
@@ -5714,14 +5718,24 @@ impl Game<'_> {
                         }
                     }
                     Who::Mob(id) => {
+                        // SmallFireball.onHitEntity: the fire is remembered and put
+                        // back when the hurt is refused. A fire-immune mob skips it.
+                        let remaining = self.mobs.iter().find(|m| m.id == id).map(|m| m.fire_ticks);
+                        if self
+                            .mobs
+                            .iter()
+                            .any(|m| m.id == id && !m.kind.flags.fire_immune)
+                        {
+                            self.ignite_entity_for(
+                                super::combat::IgniteTarget::Mob(id),
+                                100,
+                                super::combat::IgniteCause::Projectile,
+                            )?;
+                        }
                         let hurt = self.mobs.iter_mut().find(|m| m.id == id).is_some_and(|m| {
-                            let remaining = m.fire_ticks;
-                            if !m.kind.flags.fire_immune {
-                                m.ignite_for_ticks(100);
-                            }
                             let hurt =
                                 m.damage_projectile(5.0, source, aim, [p.velocity.x, p.velocity.z]);
-                            if !hurt {
+                            if !hurt && let Some(remaining) = remaining {
                                 m.fire_ticks = remaining;
                             }
                             hurt
