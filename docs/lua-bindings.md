@@ -899,6 +899,12 @@ that is the same when done twice, such as lighting a lamp rather than toggling i
 | `player_exp_change(event)` | a player's experience is about to grow by *amount* from an orb, after Mending's share. The event holds `player` and `amount`; set `event.amount` to change the points added |
 | `player_container_open(event)` | a player opens a menu. The event holds `player`, `dimension`, `menu` (its type, such as `minecraft:generic_9x3`, `minecraft:furnace` or `minecraft:crafting`), and `pos` (the position of its block, or nil) |
 
+### The server list
+
+| Hook | Called when |
+|---|---|
+| `server_status(event)` | a client pings the server for its place in the server list, after the answer's values are worked out and before they are encoded. The event holds `address` (the peer's), `client_protocol` (the protocol its handshake stated), `description` (the MOTD text), `max_players`, `online`, `sample` (the listed player names, at most 12, in the order the answer lists them), `version_name`, `protocol` (the protocol the answer names) and `favicon` (a `data:image/png;base64,...` URI, empty for none). Set any of them, add or remove names, or `horizon.cancel()` to close the ping unanswered (the client then shows the server as unconnectable). There is no host: queued actions are dropped. A name you add is listed with the offline-player id of that name, and the names that stay keep their ids. The legacy `0xFE` ping is not heard, and neither is a status request after a handshake a handler cancelled with `horizon.cancel()` |
+
 ### Draw hooks
 
 | Hook | Called when |
@@ -998,14 +1004,14 @@ before v1, for the same drags and wheel turns — hear the v2 hook, not both: a 
 
 ### Hooks Lua does not hear
 
-Lua hears 460 of the 516 hook points as event tables (`GENERATED_HOOK_NAMES`). The tables above spell out the hooks this page describes;
+Lua hears 485 of the 543 hook points as event tables (`GENERATED_HOOK_NAMES`). The tables above spell out the hooks this page describes;
 every other generated name is still an event table whose shape is its `HorizonOn` overload in
 [horizon.d.lua](api/horizon.d.lua). [hook-exposure.md](api/hook-exposure.md) lists only the hooks that are not
 generated, for one reason each: borrows of render state (26 hooks, among them the draw calls outside `hud`
 and `screen_render_post`), of the generating chunk (2), of borrowed loot state (2), and of client input (1);
 hooks that need a
 converter the generator does not have (14 adapters), a live handle of their own design (6), or raw packets (3); and the
-level-tick host the runtime does not implement (2). Five of the 460 generated hooks take no `horizon.on`
+level-tick host the runtime does not implement (2). Five of the 485 generated hooks take no `horizon.on`
 registration: the two declaration-served hooks, `block_entity` and `block_entity_ticks`, which are served from the
 `horizon.block_entity` declarations, and the three listened queries, `entity_tick_listened`,
 `living_equipment_listened` and `hears_projectile_impacts`, which the game answers from the sibling hooks'

@@ -1362,6 +1362,7 @@ mod tests {
             log_line: |_, _, _, _| {},
             living_death_message: |_, _, _| {},
             handshake: |_, _, _, _, _| {},
+            server_status: |_, _, _, _, _, _, _, _, _, _| {},
             mob_ai_register: |_| {},
         });
         assert!(installed.is_ok());

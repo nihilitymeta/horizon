@@ -593,29 +593,123 @@ impl Shared {
     }
     /// [`Self::status_json`] stating `protocol`: an older client's own, when it may join.
     pub fn status_json_for(&self, protocol: i32) -> String {
-        use crate::server::json::Json;
+        self.status_values(protocol).json()
+    }
+    /// [`Self::status_json_for`] for the status request of the peer `address`, heard by the
+    /// `server_status` hook: `client_protocol` is the protocol its handshake stated and `protocol`
+    /// what the answer lists (the client's own when this server lets it join, this server's
+    /// otherwise). `None`: a mod cancelled, so the connection is closed unanswered, as it is for a
+    /// handshake a mod cancels.
+    pub fn status_json_for_peer(
+        &self,
+        client_protocol: i32,
+        protocol: i32,
+        address: SocketAddr,
+    ) -> Option<String> {
+        let mut status = self.status_values(protocol);
+        let mut cancel = false;
+        status.told(client_protocol, address, &mut cancel);
+        if cancel {
+            return None;
+        }
+        Some(status.json())
+    }
+    /// The values a status answer carries, before they are encoded: the sample is already
+    /// shuffled (vanilla's draws, in the same order whether or not a hook listens).
+    fn status_values(&self, protocol: i32) -> StatusValues {
         let motd = self.motd.lock().unwrap().clone();
         let online: Vec<(u128, String)> = self.online.lock().unwrap().clone();
         let count = self.online();
-        let mut players = vec![
-            (
-                "max".to_owned(),
-                Json::Number(self.max_players().to_string()),
-            ),
-            ("online".to_owned(), Json::Number(count.to_string())),
-        ];
+        let mut sample = Vec::new();
         if !self.hide_online_players() && !online.is_empty() {
             let size = online.len().min(12);
             let offset = self.next_random(online.len() - size + 1);
-            let mut sample: Vec<(u128, String)> = online[offset..offset + size].to_vec();
+            sample = online[offset..offset + size].to_vec();
             for i in (1..sample.len()).rev() {
                 let j = self.next_random(i + 1);
                 sample.swap(i, j);
             }
+        }
+        let favicon = self
+            .config
+            .favicon
+            .as_ref()
+            .map(|icon| format!("data:image/png;base64,{}", base64(icon)))
+            .unwrap_or_default();
+        StatusValues {
+            description: motd,
+            max_players: i32::try_from(self.max_players()).unwrap_or(i32::MAX),
+            online: i32::try_from(count).unwrap_or(i32::MAX),
+            sample,
+            version_name: GAME_VERSION.to_owned(),
+            protocol,
+            favicon,
+            secure_chat: self.config.enforces_secure_chat(),
+        }
+    }
+}
+
+/// A status answer's values, before they are encoded as JSON: what the `server_status` hook
+/// reads and may change.
+struct StatusValues {
+    description: String,
+    max_players: i32,
+    online: i32,
+    /// The listed players as profile id and name, in listing order; empty: no list at all.
+    sample: Vec<(u128, String)>,
+    version_name: String,
+    protocol: i32,
+    /// The favicon as its data URI; empty: none.
+    favicon: String,
+    secure_chat: bool,
+}
+
+impl StatusValues {
+    /// Tell the `server_status` hook, when a native hook table is installed: the sample goes to it
+    /// as names. The ids stay with the names that remain, and a name it adds is listed with the
+    /// offline-player id of that name (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`, MD5,
+    /// version 3, the id an offline server gives that name), so it stays the same for the name.
+    fn told(&mut self, client_protocol: i32, address: SocketAddr, cancel: &mut bool) {
+        if !crate::native_client_hooks::server_status_installed() {
+            return;
+        }
+        let mut sample: Vec<String> = self.sample.iter().map(|(_, name)| name.clone()).collect();
+        crate::native_client_hooks::server_status(
+            address,
+            client_protocol,
+            &mut self.description,
+            &mut self.max_players,
+            &mut self.online,
+            &mut sample,
+            &mut self.version_name,
+            &mut self.protocol,
+            &mut self.favicon,
+            cancel,
+        );
+        let mut listed = std::mem::take(&mut self.sample);
+        self.sample = sample
+            .into_iter()
+            .map(
+                |name| match listed.iter().position(|(_, known)| *known == name) {
+                    Some(i) => listed.remove(i),
+                    None => (horizon_protocol::crypto::offline_uuid(&name), name),
+                },
+            )
+            .collect();
+    }
+
+    /// The status response's JSON.
+    fn json(self) -> String {
+        use crate::server::json::Json;
+        let mut players = vec![
+            ("max".to_owned(), Json::Number(self.max_players.to_string())),
+            ("online".to_owned(), Json::Number(self.online.to_string())),
+        ];
+        if !self.sample.is_empty() {
             players.push((
                 "sample".to_owned(),
                 Json::Array(
-                    sample
+                    self.sample
                         .into_iter()
                         .map(|(u, n)| {
                             Json::Object(vec![
@@ -628,23 +722,23 @@ impl Shared {
             ));
         }
         let mut status = vec![
-            ("description".to_owned(), Json::String(motd)),
+            ("description".to_owned(), Json::String(self.description)),
             ("players".to_owned(), Json::Object(players)),
             (
                 "version".to_owned(),
                 Json::Object(vec![
-                    ("name".to_owned(), Json::String(GAME_VERSION.to_owned())),
-                    ("protocol".to_owned(), Json::Number(protocol.to_string())),
+                    ("name".to_owned(), Json::String(self.version_name)),
+                    (
+                        "protocol".to_owned(),
+                        Json::Number(self.protocol.to_string()),
+                    ),
                 ]),
             ),
         ];
-        if let Some(icon) = &self.config.favicon {
-            status.push((
-                "favicon".to_owned(),
-                Json::String(format!("data:image/png;base64,{}", base64(icon))),
-            ));
+        if !self.favicon.is_empty() {
+            status.push(("favicon".to_owned(), Json::String(self.favicon)));
         }
-        if self.config.enforces_secure_chat() {
+        if self.secure_chat {
             status.push(("enforcesSecureChat".to_owned(), Json::Bool(true)));
         }
         Json::Object(status).compact()
@@ -1240,6 +1334,181 @@ mod tests {
         assert!(!hidden.contains("Player"));
     }
 
+    /// The status answer with no hook table installed is the pre-hook one, byte for byte (this
+    /// golden was taken from the code before the `server_status` hook). In its own process: the
+    /// first hook table installed is the process's.
+    #[test]
+    fn status_json_is_unchanged_with_no_hook_installed() {
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "lan::tests::status_json_is_unchanged_with_no_hook_installed",
+            || {
+                let lan = golden_status_server();
+                assert_eq!(
+                    lan.shared.status_json_for(777),
+                    "{\"description\":\"Golden MOTD\",\"players\":{\"max\":8,\"online\":1,\"sample\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Player\"}]},\"version\":{\"name\":\"26.3\",\"protocol\":777}}"
+                );
+                assert_eq!(lan.shared.status_json(), lan.shared.status_json_for(777));
+                let peer = lan
+                    .shared
+                    .status_json_for_peer(777, 777, MEMORY_ADDRESS)
+                    .expect("no hook table: the answer is sent");
+                assert_eq!(peer, lan.shared.status_json_for(777));
+            },
+        );
+    }
+
+    /// A listener changes every field the hook hands it; the JSON carries the new values, the id of a
+    /// name that remains stays with it, and an added name gets the offline-player id of that name.
+    #[test]
+    fn a_server_status_listener_edits_the_answer() {
+        const PEER: std::net::SocketAddr = std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
+            std::net::Ipv4Addr::LOCALHOST,
+            25565,
+        ));
+        fn listener(
+            address: std::net::SocketAddr,
+            client_protocol: i32,
+            description: &mut String,
+            max_players: &mut i32,
+            online: &mut i32,
+            sample: &mut Vec<String>,
+            version_name: &mut String,
+            protocol: &mut i32,
+            favicon: &mut String,
+            _cancel: &mut bool,
+        ) {
+            assert_eq!(address, PEER, "the peer's address");
+            assert_eq!(client_protocol, 764, "the client's own protocol");
+            assert_eq!(*protocol, 777, "the answer's protocol before the edit");
+            assert_eq!(
+                sample.as_slice(),
+                ["Player"],
+                "the listed names, with no id"
+            );
+            *description = "Edited MOTD".into();
+            *max_players = 42;
+            *online = 7;
+            *version_name = "Edited 1.0".into();
+            *protocol = 999;
+            *favicon = "data:image/png;base64,AAA".into();
+            sample.push("Added".into());
+        }
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "lan::tests::a_server_status_listener_edits_the_answer",
+            || {
+                crate::native_client_hooks::test_hooks::install_server_status(listener);
+                let lan = golden_status_server();
+                let json = lan
+                    .shared
+                    .status_json_for_peer(764, 777, PEER)
+                    .expect("a listener that does not cancel sends the answer");
+                let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+                assert_eq!(value["description"], "Edited MOTD");
+                assert_eq!(value["players"]["max"], 42);
+                assert_eq!(value["players"]["online"], 7);
+                assert_eq!(value["version"]["name"], "Edited 1.0");
+                assert_eq!(value["version"]["protocol"], 999);
+                assert_eq!(value["favicon"], "data:image/png;base64,AAA");
+                let sample = value["players"]["sample"].as_array().unwrap();
+                assert_eq!(sample.len(), 2);
+                assert_eq!(sample[0]["name"], "Player");
+                assert_eq!(sample[0]["id"], "00000000-0000-0000-0000-000000000001");
+                assert_eq!(sample[1]["name"], "Added");
+                assert_eq!(
+                    sample[1]["id"],
+                    uuid_string(horizon_protocol::crypto::offline_uuid("Added"))
+                );
+            },
+        );
+    }
+
+    /// A listener that cancels closes the status request unanswered, so no JSON is built.
+    #[test]
+    fn a_server_status_listener_can_cancel_the_ping() {
+        fn listener(
+            _address: std::net::SocketAddr,
+            _client_protocol: i32,
+            _description: &mut String,
+            _max_players: &mut i32,
+            _online: &mut i32,
+            _sample: &mut Vec<String>,
+            _version_name: &mut String,
+            _protocol: &mut i32,
+            _favicon: &mut String,
+            cancel: &mut bool,
+        ) {
+            *cancel = true;
+        }
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "lan::tests::a_server_status_listener_can_cancel_the_ping",
+            || {
+                crate::native_client_hooks::test_hooks::install_server_status(listener);
+                let lan = golden_status_server();
+                assert_eq!(
+                    lan.shared.status_json_for_peer(777, 777, MEMORY_ADDRESS),
+                    None
+                );
+            },
+        );
+    }
+
+    /// The shuffle draws the same numbers in the same order whether or not a listener is installed.
+    #[test]
+    fn the_status_shuffle_draws_the_same_with_and_without_a_listener() {
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "lan::tests::the_status_shuffle_draws_the_same_with_and_without_a_listener",
+            || {
+                let lan = Lan::start_with(
+                    Arc::new(data::SyncData::empty()),
+                    NetConfig {
+                        announce: false,
+                        listen: false,
+                        ..NetConfig::loopback(0, "Draws".into(), 8)
+                    },
+                )
+                .unwrap();
+                for (i, name) in ["A", "B", "C", "D"].iter().enumerate() {
+                    assert!(
+                        lan.shared
+                            .try_admit(MEMORY_ADDRESS, 10 + i as u128, name)
+                            .is_none()
+                    );
+                }
+                let start = *lan.shared.random.lock().unwrap();
+                let without = lan
+                    .shared
+                    .status_json_for_peer(777, 777, MEMORY_ADDRESS)
+                    .unwrap();
+                let drawn_without = *lan.shared.random.lock().unwrap();
+                assert_ne!(start, drawn_without, "the shuffle drew");
+                *lan.shared.random.lock().unwrap() = start;
+                crate::native_client_hooks::test_hooks::install_server_status(
+                    |_, _, _, _, _, _, _, _, _, _| {},
+                );
+                let with = lan
+                    .shared
+                    .status_json_for_peer(777, 777, MEMORY_ADDRESS)
+                    .unwrap();
+                assert_eq!(*lan.shared.random.lock().unwrap(), drawn_without);
+                assert_eq!(with, without);
+            },
+        );
+    }
+
+    /// A server in the fixed state the status goldens use: MOTD "Golden MOTD", 8 players, one on.
+    fn golden_status_server() -> Lan {
+        let lan = Lan::start_with(
+            Arc::new(data::SyncData::empty()),
+            NetConfig {
+                announce: false,
+                listen: false,
+                ..NetConfig::loopback(0, "Golden MOTD".into(), 8)
+            },
+        )
+        .unwrap();
+        assert!(lan.shared.try_admit(MEMORY_ADDRESS, 1, "Player").is_none());
+        lan
+    }
     /// A WebSocket client's first bytes: the upgrade, with `extra` headers, then `packets`
     /// framed as Minecraft frames them and sent in client frames.
     fn websocket_opening(extra: &str, packets: &[Vec<u8>]) -> Vec<u8> {

@@ -1769,6 +1769,7 @@ mod ignite_hook_tests {
             living_death_message: |_, _, _| {},
             log_line: |_, _, _, _| {},
             handshake: |_, _, _, _, _| {},
+            server_status: |_, _, _, _, _, _, _, _, _, _| {},
         });
     }
 

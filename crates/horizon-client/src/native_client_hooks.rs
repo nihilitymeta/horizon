@@ -38,6 +38,18 @@ pub struct NativeClientHooks {
         &mut bool,
         &mut Option<horizon_client_core::text::Text>,
     ),
+    pub server_status: fn(
+        std::net::SocketAddr,
+        i32,
+        &mut String,
+        &mut i32,
+        &mut i32,
+        &mut Vec<String>,
+        &mut String,
+        &mut i32,
+        &mut String,
+        &mut bool,
+    ),
 }
 
 static HOOKS: OnceLock<NativeClientHooks> = OnceLock::new();
@@ -407,6 +419,47 @@ pub(crate) fn handshake(
     }
 }
 
+/// Whether a hook table is installed, so [`server_status`] would be told: the cheap check before
+/// a caller builds its call.
+pub(crate) fn server_status_installed() -> bool {
+    HOOKS.get().is_some()
+}
+
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::too_many_arguments,
+        reason = "the status answer's fields, one each, as the hook names them"
+    )
+)]
+pub(crate) fn server_status(
+    address: std::net::SocketAddr,
+    client_protocol: i32,
+    description: &mut String,
+    max_players: &mut i32,
+    online: &mut i32,
+    sample: &mut Vec<String>,
+    version_name: &mut String,
+    protocol: &mut i32,
+    favicon: &mut String,
+    cancel: &mut bool,
+) {
+    if let Some(hooks) = HOOKS.get() {
+        (hooks.server_status)(
+            address,
+            client_protocol,
+            description,
+            max_players,
+            online,
+            sample,
+            version_name,
+            protocol,
+            favicon,
+            cancel,
+        );
+    }
+}
+
 pub(crate) fn sound_play(
     sound: &crate::sound_engine::SoundPlayback<'_>,
     volume: &mut f32,
@@ -463,6 +516,7 @@ pub(crate) mod test_hooks {
             living_death_message: |_, _, _| {},
             log_line: |_, _, _, _| {},
             handshake: |_, _, _, _, _| {},
+            server_status: |_, _, _, _, _, _, _, _, _, _| {},
         });
     }
     /// The ids of every mob `mob_ai_register` was told of so far.
@@ -498,6 +552,48 @@ pub(crate) mod test_hooks {
             living_death_message: |_, _, _| {},
             log_line: |_, _, _, _| {},
             handshake: |_, _, _, _, _| {},
+            server_status: |_, _, _, _, _, _, _, _, _, _| {},
+        });
+    }
+
+    /// Installs a table whose only working hook is `server_status`: like [`install_ignite`], a test
+    /// that needs it runs in its own process.
+    pub(crate) fn install_server_status(
+        listener: fn(
+            std::net::SocketAddr,
+            i32,
+            &mut String,
+            &mut i32,
+            &mut i32,
+            &mut Vec<String>,
+            &mut String,
+            &mut i32,
+            &mut String,
+            &mut bool,
+        ),
+    ) {
+        let _ = super::install(NativeClientHooks {
+            menu_slot_rules: |_, _, _, _, _| {},
+            sound_play: |_, _, _, _| {},
+            player_chat: |_, _, _, _, _| {},
+            player_chat_v2: |_, _, _, _, _, _| {},
+            chat_decorate: |_, _, _, _| {},
+            living_heal: |_, _, _| {},
+            living_breathe: |_, _, _, _, _| {},
+            living_drown: |_, _, _, _, _, _| {},
+            living_fall: |_, _, _, _, _| {},
+            entity_ignite: |_, _, _, _, _, _| {},
+            living_jump: |_, _| {},
+            register_goals: |_| {},
+            player_pre_login: |_, _, _, _| {},
+            player_profile: |_, _, _| {},
+            ingredient: |_, _, _| {},
+            ingredient_test: |_, _, _, _| {},
+            mob_ai_register: |_| {},
+            living_death_message: |_, _, _| {},
+            log_line: |_, _, _, _| {},
+            handshake: |_, _, _, _, _| {},
+            server_status: listener,
         });
     }
 

@@ -706,6 +706,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "server_packets",
         "protocol: server_packets: raw packets need their own design",
     ),
+    ("server_status", "generated"),
     ("server_stopped", "generated"),
     ("server_tick_timed", "generated"),
     (
@@ -1213,6 +1214,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("server_packet", HookSide::Server),
     ("server_packets", HookSide::Server),
     ("server_reload_listener_apply", HookSide::Server),
+    ("server_status", HookSide::Server),
     ("server_stopped", HookSide::Server),
     ("server_stopping", HookSide::Server),
     ("server_tick", HookSide::Server),
@@ -1294,14 +1296,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 13;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 14;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "65aad688fbe1d727";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "9a5840c8c2e11957";
 
 #[cfg(test)]
 mod test_support;
@@ -1782,6 +1784,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "right_click_block_v2",
     "screen_mouse_dragged_pre_v2",
     "screen_mouse_scrolled_pre_v2",
+    "server_status",
     "server_stopped",
     "server_tick_timed",
     "stateful_block_entity",
@@ -2382,6 +2385,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(right_click_block_v2, game_mut, horizon_client::mod_api::RightClickBlockV2Event, (none), [pos: pos, face: pos, hand: s_val(horizon_client::mod_api::Hand)]);
     gen_cancel!(screen_mouse_dragged_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseDraggedPreV2Event<'_>, (none), [screen: cloned, mouse: pair, button: copy, delta: pair, modifiers: copy]);
     gen_cancel!(screen_mouse_scrolled_pre_v2, game_mut, horizon_client::mod_api::ScreenMouseScrolledPreV2Event<'_>, (none), [screen: cloned, mouse: pair, scroll: pair64, modifiers: copy]);
+    gen_cancel!(server_status, none, horizon_client::mod_api::ServerStatusEvent<'_>, (none), [address: s_val(std::net::SocketAddr), client_protocol: copy, description: mut_string => mut_string, max_players: copy => mut_scalar, online: copy => mut_scalar, sample: str_seq => mut_strvec, version_name: mut_string => mut_string, protocol: copy => mut_scalar, favicon: mut_string => mut_string]);
     gen_listen!(server_stopped, game_mut, horizon_client::mod_api::ServerStoppedEvent, (none), [dedicated: copy]);
     gen_listen!(server_tick_timed, game_mut, horizon_client::mod_api::ServerTickTimedEvent<'_>, (none), [wall_ms: copy, cpu_ms: copy, spans: s_slice(horizon_client::mod_api::TickSpan)]);
     gen_listen!(stateful_block_entity, game_ref, horizon_client::mod_api::StatefulBlockEntityEvent<'_>, (none), [block: cloned, stateful: copy => mut_scalar]);
@@ -71769,6 +71773,195 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_server_status() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_server_status",
+            "horizon.on(\"server_status\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.client_protocol == 8, \"client_protocol\")\n    assert(event.description == \"test:description\", \"description\")\n    event.description = \"test:description:edited\"\n    assert(event.max_players == 10, \"max_players\")\n    event.max_players = 53\n    assert(event.online == 11, \"online\")\n    event.online = 54\n    assert(event.sample[1] == \"test:seed\", \"sample\")\n    assert(event.sample[2] == \"test:seed2\", \"sample\")\n    event.sample[1] = \"test:edited\"; table.insert(event.sample, \"test:added\")\n    assert(event.version_name == \"test:version_name\", \"version_name\")\n    event.version_name = \"test:version_name:edited\"\n    assert(event.protocol == 14, \"protocol\")\n    event.protocol = 57\n    assert(event.favicon == \"test:favicon\", \"favicon\")\n    event.favicon = \"test:favicon:edited\"\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut description = "test:description".to_owned();
+        let mut max_players = 10;
+        let mut online = 11;
+        let mut sample = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        let mut version_name = "test:version_name".to_owned();
+        let mut protocol = 14;
+        let mut favicon = "test:favicon".to_owned();
+        let mut cancel = false;
+        dispatch_server_status(
+            &firing_mods,
+            "127.0.0.1:25565".parse().unwrap(),
+            8,
+            &mut description,
+            &mut max_players,
+            &mut online,
+            &mut sample,
+            &mut version_name,
+            &mut protocol,
+            &mut favicon,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(description, "test:description:edited".to_owned());
+        assert_eq!(max_players, 53);
+        assert_eq!(online, 54);
+        assert_eq!(
+            sample,
+            vec![
+                "test:edited".to_owned(),
+                "test:seed2".to_owned(),
+                "test:added".to_owned()
+            ]
+        );
+        assert_eq!(version_name, "test:version_name:edited".to_owned());
+        assert_eq!(protocol, 57);
+        assert_eq!(favicon, "test:favicon:edited".to_owned());
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_server_status_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_server_status_nocancel",
+            "horizon.on(\"server_status\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.address == \"127.0.0.1:25565\", \"address\")\n    assert(event.client_protocol == 8, \"client_protocol\")\n    assert(event.description == \"test:description\", \"description\")\n    event.description = \"test:description:edited\"\n    assert(event.max_players == 10, \"max_players\")\n    event.max_players = 53\n    assert(event.online == 11, \"online\")\n    event.online = 54\n    assert(event.sample[1] == \"test:seed\", \"sample\")\n    assert(event.sample[2] == \"test:seed2\", \"sample\")\n    event.sample[1] = \"test:edited\"; table.insert(event.sample, \"test:added\")\n    assert(event.version_name == \"test:version_name\", \"version_name\")\n    event.version_name = \"test:version_name:edited\"\n    assert(event.protocol == 14, \"protocol\")\n    event.protocol = 57\n    assert(event.favicon == \"test:favicon\", \"favicon\")\n    event.favicon = \"test:favicon:edited\"\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut description = "test:description".to_owned();
+        let mut max_players = 10;
+        let mut online = 11;
+        let mut sample = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+        let mut version_name = "test:version_name".to_owned();
+        let mut protocol = 14;
+        let mut favicon = "test:favicon".to_owned();
+        let mut cancel = false;
+        dispatch_server_status(
+            &firing_mods,
+            "127.0.0.1:25565".parse().unwrap(),
+            8,
+            &mut description,
+            &mut max_players,
+            &mut online,
+            &mut sample,
+            &mut version_name,
+            &mut protocol,
+            &mut favicon,
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_server_status_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_status_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut description = "test:description".to_owned();
+            let mut max_players = 10;
+            let mut online = 11;
+            let mut sample = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut version_name = "test:version_name".to_owned();
+            let mut protocol = 14;
+            let mut favicon = "test:favicon".to_owned();
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_status(
+                &firing_mods,
+                "127.0.0.1:25565".parse().unwrap(),
+                8,
+                &mut description,
+                &mut max_players,
+                &mut online,
+                &mut sample,
+                &mut version_name,
+                &mut protocol,
+                &mut favicon,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "server_status read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_status read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_status read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_server_status_cost_live",
+            "horizon.on(\"server_status\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut description = "test:description".to_owned();
+            let mut max_players = 10;
+            let mut online = 11;
+            let mut sample = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut version_name = "test:version_name".to_owned();
+            let mut protocol = 14;
+            let mut favicon = "test:favicon".to_owned();
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_server_status(
+                &firing_mods,
+                "127.0.0.1:25565".parse().unwrap(),
+                8,
+                &mut description,
+                &mut max_players,
+                &mut online,
+                &mut sample,
+                &mut version_name,
+                &mut protocol,
+                &mut favicon,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "server_status built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "server_status read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "server_status read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_server_stopped() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_server_stopped",
@@ -79150,6 +79343,31 @@ mod generated_tests {
                 &mut canceled,
             );
             assert!(!canceled, "canceled changed with no handler");
+        }
+        // server_status: unregistered, nothing runs.
+        {
+            let mut description = "test:description".to_owned();
+            let mut max_players = 10;
+            let mut online = 11;
+            let mut sample = vec!["test:seed".to_owned(), "test:seed2".to_owned()];
+            let mut version_name = "test:version_name".to_owned();
+            let mut protocol = 14;
+            let mut favicon = "test:favicon".to_owned();
+            let mut cancel = false;
+            dispatch_server_status(
+                &firing_mods,
+                "127.0.0.1:25565".parse().unwrap(),
+                8,
+                &mut description,
+                &mut max_players,
+                &mut online,
+                &mut sample,
+                &mut version_name,
+                &mut protocol,
+                &mut favicon,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
         }
         // server_stopped: unregistered, nothing runs.
         {

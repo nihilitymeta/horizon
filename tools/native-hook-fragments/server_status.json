@@ -1,0 +1,18 @@
+{
+  "hooks": [
+    {
+      "name": "server_status",
+      "target": "horizon_client_lib::lan::conn::native_server_status",
+      "neoforge": "none (NeoForge has no server-status event; Paper's ServerListPingEvent)",
+      "side": "server",
+      "cancellable": true,
+      "mod_api": {
+        "contract": "cancel",
+        "out": "cancel"
+      }
+    }
+  ],
+  "rust_summary": "a status request's answer, on the connection's thread, its fields rewritable and the ping refusable (`native_server_status`).",
+  "doc_summary": "`native_server_status(address, client_protocol, description, max_players, online, sample, version_name, protocol, favicon, cancel)` hears each server list status request on the connection's own thread, after the answer's values are worked out and before they are encoded: rewrite the MOTD, the counts, the listed player names, the version and the favicon, or set `cancel` to close the ping unanswered. Not the legacy `0xFE` ping. Bundles need \"hooks\": @API:server_status@.",
+  "comments": ["crates/horizon-client/src/lan/conn.rs"]
+}

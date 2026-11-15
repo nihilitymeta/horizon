@@ -490,6 +490,7 @@ export type SculkBloomEvent = { dimension: string, pos: Vec3 }
 export type ServerAboutToStartEvent = { dedicated: boolean }
 export type ServerDataLoadedEvent = { reload: boolean }
 export type ServerReloadListenerApplyEvent = { listener: { id: string, folder: string }, files: { { path: string, data: Data } } }
+export type ServerStatusEvent = { address: string, client_protocol: number, description: string, max_players: number, online: number, sample: { string }, version_name: string, protocol: number, favicon: string }
 export type ServerStoppedEvent = { dedicated: boolean }
 export type ServerStoppingEvent = { dedicated: boolean }
 export type ServerTickEvent = { authority: string, epoch: number, tick: number, phase: string, world_running: boolean }
@@ -972,6 +973,7 @@ export type HorizonOn =
     ((name: "server_about_to_start", fn: (event: ServerAboutToStartEvent) -> ()) -> ()) &
     ((name: "server_data_loaded", fn: (event: ServerDataLoadedEvent) -> ()) -> ()) &
     ((name: "server_reload_listener_apply", fn: (event: ServerReloadListenerApplyEvent) -> ()) -> ()) &
+    ((name: "server_status", fn: (event: ServerStatusEvent) -> ()) -> ()) &
     ((name: "server_stopped", fn: (event: ServerStoppedEvent) -> ()) -> ()) &
     ((name: "server_stopping", fn: (event: ServerStoppingEvent) -> ()) -> ()) &
     ((name: "server_tick", fn: (event: ServerTickEvent) -> ()) -> ()) &

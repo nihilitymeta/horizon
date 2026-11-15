@@ -309,6 +309,30 @@ pub fn main_with(mods: crate::mod_api::Mods) {
                 cancel,
             );
         },
+        server_status: |address,
+                        client_protocol,
+                        description,
+                        max_players,
+                        online,
+                        sample,
+                        version_name,
+                        protocol,
+                        favicon,
+                        cancel| {
+            crate::mod_api::dispatch_server_status(
+                crate::mod_api::mods(),
+                address,
+                client_protocol,
+                description,
+                max_players,
+                online,
+                sample,
+                version_name,
+                protocol,
+                favicon,
+                cancel,
+            );
+        },
     })
     .is_err()
     {

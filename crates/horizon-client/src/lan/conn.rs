@@ -679,6 +679,46 @@ pub fn native_handshake(
     crate::native_client_hooks::handshake(address, host, intent, cancel, reason);
 }
 
+/// A status request (`ServerStatusPacketListenerImpl.handleStatusRequest`) reached the server, on the
+/// connection's own thread, after the answer's values are worked out and before they are encoded as JSON:
+/// `address` is the peer's (behind a proxy, the proxy's) and `client_protocol` the protocol its handshake
+/// stated; `description` is the server list's MOTD text, `max_players` and `online` the player limit and the
+/// players on, `sample` the player names the answer lists (at most 12, shuffled as vanilla shuffles them;
+/// empty: no list), `version_name` and `protocol` the version the answer names, and `favicon` its icon as a
+/// `data:image/png;base64,...` URI (empty: none). A mod may change them all: the ids of the names that remain
+/// stay with them, and a name it adds is listed with the offline-player id of that name
+/// (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`), so it is stable for the name. Set `cancel` to refuse
+/// the ping: the connection is closed unanswered. Once for each status request, and not for the legacy server
+/// list ping (`0xFE`); the status request after a handshake a mod cancelled never reaches here. There is no
+/// `Game` on this thread: no helper works, and the hook must not block for long (the connection waits for it).
+/// API @API:server_status@.
+#[inline(never)]
+pub fn native_server_status(
+    address: std::net::SocketAddr,
+    client_protocol: i32,
+    description: &mut String,
+    max_players: &mut i32,
+    online: &mut i32,
+    sample: &mut Vec<String>,
+    version_name: &mut String,
+    protocol: &mut i32,
+    favicon: &mut String,
+    cancel: &mut bool,
+) {
+    crate::native_client_hooks::server_status(
+        address,
+        client_protocol,
+        description,
+        max_players,
+        online,
+        sample,
+        version_name,
+        protocol,
+        favicon,
+        cancel,
+    );
+}
+
 fn serve_connection(
     mut c: Connection,
     address: std::net::SocketAddr,
@@ -726,7 +766,7 @@ fn serve_connection(
         // ServerHandshakePacketListenerImpl: a server that does not reply
         // to status requests closes the connection.
         handshake::STATUS if !shared.enable_status() => Ok(()),
-        handshake::STATUS => serve_status(&mut c, &shared, intention.protocol),
+        handshake::STATUS => serve_status(&mut c, &shared, intention.protocol, address),
         handshake::TRANSFER if !shared.accepts_transfers() => {
             login_disconnect(
                 &mut c,
@@ -774,7 +814,12 @@ fn older_client(
     .then_some(version)
 }
 
-fn serve_status(c: &mut Connection, shared: &Shared, protocol: i32) -> Result<(), String> {
+fn serve_status(
+    c: &mut Connection,
+    shared: &Shared,
+    protocol: i32,
+    address: std::net::SocketAddr,
+) -> Result<(), String> {
     let e = |e: horizon_protocol::Error| e.to_string();
     let mut requested = false;
     loop {
@@ -785,9 +830,14 @@ fn serve_status(c: &mut Connection, shared: &Shared, protocol: i32) -> Result<()
             status::Serverbound::StatusRequest(_) => {
                 requested = true;
                 // A client this server lets join is told its own protocol, so its list shows it joinable.
-                let json = match older_client(shared, protocol) {
-                    Some(_) => shared.status_json_for(protocol),
-                    None => shared.status_json(),
+                let listed = if older_client(shared, protocol).is_some() {
+                    protocol
+                } else {
+                    PROTOCOL_VERSION
+                };
+                // A mod may refuse the answer: the connection is then closed unanswered.
+                let Some(json) = shared.status_json_for_peer(protocol, listed, address) else {
+                    return Ok(());
                 };
                 c.send(
                     &status::Clientbound::StatusResponse(status::StatusResponse { json }).encode(),
