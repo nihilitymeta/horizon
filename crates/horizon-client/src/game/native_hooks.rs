@@ -9096,38 +9096,46 @@ impl Game<'_> {
             canceled,
         );
     }
-    /// A game cause is about to set the entity `entity` alight for `ticks` fire
-    /// ticks (`Entity.igniteForTicks`, through `Entity.igniteForSeconds`).
-    /// `cause` is one of a closed set: `fire_aspect` (Fire Aspect and the other
-    /// attack enchantments), `flame_arrow` (a burning arrow setting its target
-    /// alight), `projectile` (a blaze's or a fire charge's small fireball),
-    /// `lightning` (a bolt's 8 seconds), `fire_block` (a boat in fire or on a
-    /// burning block, or an armor stand set alight by fire or campfire
-    /// damage), or `other` (a burning zombie's blow, which is no enchantment).
-    /// `ticks` starts as the fire ticks the cause asks for and a mod may
-    /// change it: the entity then burns for the ticks it left (0 to 72000, an
-    /// hour; anything else is clamped), and 0 leaves it cold. `original_ticks`
-    /// keeps the requested value, and is read-only: a write to it is ignored.
-    /// Set `canceled` and the entity does not catch fire: the ignition is
-    /// skipped as if that cause had not applied, while the cause's own damage
-    /// goes on; a cancel wins over a changed `ticks`. Lava and fire contact on
-    /// a player or a mob run inside the motion code, which has no game at
-    /// hand, and are not told yet; neither is an armor stand merely standing
-    /// in fire, whose own tick sets the fire; neither is an arrow set alight
-    /// before it joins the level (which has no ID to name). Server-side.
+    /// A cause is about to set the entity `entity` of type `kind`
+    /// (`minecraft:player`, `minecraft:zombie`, `minecraft:armor_stand`) alight
+    /// for `ticks` fire ticks (`Entity.igniteForTicks`, through
+    /// `Entity.igniteForSeconds`). `cause` is one of a closed set:
+    /// `fire_aspect` (Fire Aspect and the other attack enchantments),
+    /// `flame_arrow` (a burning arrow setting its target alight),
+    /// `projectile` (a blaze's or a fire charge's small fireball), `lightning`
+    /// (a bolt's 8 seconds), `lava` (standing in lava or in a lava cauldron),
+    /// `fire_block` (standing in fire, a boat in fire or on a burning block, or
+    /// an armor stand set alight by fire or campfire damage), `sun` (sunlight
+    /// burning an undead), or `other` (a burning zombie's blow, which is no
+    /// enchantment). `ticks` starts as the fire ticks the cause asks for and a
+    /// mod may change it: the entity then burns for the ticks it left (0 to
+    /// 72000, an hour; anything else is clamped), and 0 leaves it cold.
+    /// `original_ticks` keeps the requested value, and is read-only: a write to
+    /// it is ignored. Set `canceled` and the entity does not catch fire: the
+    /// ignition is skipped as if that cause had not applied, while the cause's
+    /// own damage goes on; a cancel wins over a changed `ticks`. Told for each
+    /// of those causes the game itself applies, and for the player standing in
+    /// lava, in a fire block or in a lava cauldron, every tick of the attempt,
+    /// on the server's copy only: only a server's copy ignites, so only it is
+    /// told, and a client's predicted tick (the window's own player) never is.
+    /// Not yet told, and coming in later steps: a mob in lava, fire or
+    /// sunlight; an arrow or another projectile in fire or lava; a dropped
+    /// item in fire or lava; an armor stand merely standing in fire, whose own
+    /// tick sets the fire; and an arrow set alight before it joins the level
+    /// (which has no ID to name). Server-side.
     /// Pending API @API:entity_ignite@.
     pub(super) fn native_entity_ignite(
-        &self,
         entity: u32,
+        kind: &str,
         cause: &str,
         original_ticks: i32,
         ticks: &mut i32,
         canceled: &mut bool,
     ) {
         mod_api::dispatch_entity_ignite(
-            self,
             mod_api::mods(),
             entity,
+            kind,
             cause,
             original_ticks,
             ticks,

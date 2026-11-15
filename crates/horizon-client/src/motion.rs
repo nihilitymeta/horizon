@@ -1915,7 +1915,7 @@ impl MotionWorld<'_, '_, '_> {
     /// 4), as ordinary lava does to the player.
     fn lava_cauldron_inside(&mut self) -> Result<()> {
         self.player.ticks_frozen = 0;
-        self.player.ignite_for_ticks(300)?;
+        self.ignite_player_for(300, "lava")?;
         self.environment_hurt("minecraft:lava", 4.0)
     }
     /// `LayeredCauldronBlock.entityInside`: on a server, a burning player

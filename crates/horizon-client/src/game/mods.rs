@@ -1352,6 +1352,7 @@ mod tests {
             living_breathe: |_, _, _, _, _| {},
             living_drown: |_, _, _, _, _, _| {},
             living_fall: |_, _, _, _, _| {},
+            entity_ignite: |_, _, _, _, _, _| {},
             living_jump: |_, _| {},
             register_goals: |mob| dispatch_register_goals(&MODS, mob),
             player_pre_login: |_, _, _, _| {},

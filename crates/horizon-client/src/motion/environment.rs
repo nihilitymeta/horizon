@@ -119,10 +119,82 @@ impl MotionWorld<'_, '_, '_> {
             }
         }
         if self.player.is_in_lava() {
-            self.player.ignite_for_ticks(300)?;
+            self.ignite_player_for(300, "lava")?;
             self.environment_hurt("minecraft:lava", 4.0)?;
         }
         Ok(())
+    }
+    /// `Entity.igniteForTicks` for the player through the `entity_ignite`
+    /// hook: `ticks` is the fire the cause asks for and what a listener leaves
+    /// replaces it, as `Entity.igniteForTicks` takes it (a changed value is
+    /// clamped to `0..=72000`), while a cancel or 0 leaves the player's timer
+    /// as it was. Told on the server's copy only: the window's predicted tick
+    /// and an anticheat replay are not ignitions.
+    pub(super) fn ignite_player_for(&mut self, ticks: i32, cause: &str) -> Result<()> {
+        if self.player.client_side || self.player.replaying {
+            return self.player.ignite_for_ticks(ticks);
+        }
+        let mut chosen = ticks;
+        let mut cancel = false;
+        let told = crate::native_client_hooks::ignite(
+            self.player.entity_id as u32,
+            "minecraft:player",
+            cause,
+            ticks,
+            &mut chosen,
+            &mut cancel,
+        );
+        if !told {
+            return self.player.ignite_for_ticks(ticks);
+        }
+        if cancel {
+            return Ok(());
+        }
+        let chosen = if chosen == ticks {
+            ticks
+        } else {
+            chosen.clamp(0, 72_000)
+        };
+        if chosen == 0 {
+            return Ok(());
+        }
+        self.player.ignite_for_ticks(chosen)
+    }
+    /// `Entity.setRemainingFireTicks` for the fire block's ramp through the
+    /// `entity_ignite` hook: the hook is asked with the ticks `ignite_contact`
+    /// made (its random draw was already taken, so the draw order is
+    /// vanilla's), and a listener's ticks replace the set. A listener that
+    /// leaves the value alone keeps vanilla's, negative ramp steps included.
+    pub(super) fn burn_player_for(&mut self, ticks: i32, cause: &str) {
+        if self.player.client_side || self.player.replaying {
+            self.player.set_remaining_fire_ticks(ticks);
+            return;
+        }
+        let mut chosen = ticks;
+        let mut cancel = false;
+        let told = crate::native_client_hooks::ignite(
+            self.player.entity_id as u32,
+            "minecraft:player",
+            cause,
+            ticks,
+            &mut chosen,
+            &mut cancel,
+        );
+        if !told {
+            self.player.set_remaining_fire_ticks(ticks);
+            return;
+        }
+        if cancel {
+            return;
+        }
+        let chosen = if chosen == ticks {
+            ticks
+        } else {
+            chosen.clamp(0, 72_000)
+        };
+        if chosen != 0 {
+            self.player.set_remaining_fire_ticks(chosen);
+        }
     }
     /// What a server's `LivingEntity.baseTick` adds for a player it hosts:
     /// the void (`Entity.checkBelowWorld`, 4 a tick, which creative players
@@ -159,7 +231,7 @@ impl MotionWorld<'_, '_, '_> {
                     &mut self.scene.random,
                     multiplier,
                 );
-                self.player.set_remaining_fire_ticks(ticks);
+                self.burn_player_for(ticks, "fire_block");
             }
             self.environment_hurt("minecraft:in_fire", damage)?;
         } else if self.player.fire_ticks <= 0 {
@@ -459,5 +531,232 @@ mod below_world_tests {
             16.0,
             "Overworld: below -128"
         );
+    }
+}
+
+#[cfg(test)]
+mod ignite_hook_tests {
+    use super::*;
+    use crate::native_client_hooks::test_hooks::install_ignite;
+    use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+
+    /// What the installed listener does: leave the ticks alone, set 40, or
+    /// cancel.
+    const LEAVE: i32 = 0;
+    const SHORTEN: i32 = 40;
+    const CANCEL: i32 = -1;
+    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn listener(
+        entity: u32,
+        kind: &str,
+        cause: &str,
+        requested: i32,
+        ticks: &mut i32,
+        cancel: &mut bool,
+    ) {
+        assert_eq!(entity, 7, "the player's own id");
+        assert_eq!(kind, "minecraft:player");
+        match cause {
+            "lava" => assert_eq!(requested, 300),
+            "fire_block" => assert_eq!(requested, -19, "a new player's fire ramp"),
+            other => panic!("unexpected cause {other}"),
+        }
+        CALLS.fetch_add(1, Ordering::Relaxed);
+        match MODE.load(Ordering::Relaxed) {
+            LEAVE => {}
+            SHORTEN => *ticks = 40,
+            CANCEL => *cancel = true,
+            other => panic!("unexpected mode {other}"),
+        }
+    }
+
+    /// Runs `f` on a player at (20.5, 4.0, 20.5) inside `block` (None for no
+    /// block). False without the prepared resources, so the test skips.
+    fn with_player(
+        block: Option<&str>,
+        client_side: bool,
+        f: impl FnOnce(&mut MotionWorld<'_, '_, '_>) -> Result<()>,
+    ) -> bool {
+        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.local/horizon-client")
+                    .join(horizon_core::VANILLA_VERSION)
+            });
+        if !root.join("movement-properties.nbt").exists() {
+            eprintln!("skipping ignition hook test: prepared resources unavailable");
+            return false;
+        }
+        let assets = Assets::load(&root).unwrap();
+        let render = assets.reload(&root).unwrap();
+        let binding = crate::collisions::load(&root, assets.registry).unwrap();
+        let resources = MotionResources::load(&root, &assets).unwrap();
+        let mut scene = World::test_scene(&assets, &render, 3).unwrap();
+        if let Some(block) = block {
+            let state = assets.registry.default_state(block).unwrap();
+            for x in 19..=21 {
+                for y in 3..=7 {
+                    for z in 19..=21 {
+                        scene.set(x, y, z, state).unwrap();
+                    }
+                }
+            }
+        }
+        let mut player = PlayerMotion::new(&resources, Vec3::new(20.5, 4.0, 20.5)).unwrap();
+        player.entity_id = 7;
+        player.client_side = client_side;
+        let mut world = MotionWorld {
+            entities: &[],
+            player: &mut player,
+            scene: &mut scene,
+            assets: &assets,
+            collision_binding: &binding,
+            resources: &resources,
+            health: &resources.health,
+        };
+        f(&mut world).unwrap();
+        true
+    }
+
+    /// One player-in-lava tick of `tick_environment_damage`, its fire timer and
+    /// health after it.
+    fn lava_tick(mode: i32, client_side: bool) -> Option<(i32, f32, usize)> {
+        MODE.store(mode, Ordering::Relaxed);
+        CALLS.store(0, Ordering::Relaxed);
+        let mut after = (0, 0.0);
+        with_player(Some("minecraft:lava"), client_side, |w| {
+            w.fluid_base_tick()?;
+            w.tick_environment_damage()?;
+            after = (w.player.fire_ticks, w.player.health.health());
+            Ok(())
+        })
+        .then(|| (after.0, after.1, CALLS.load(Ordering::Relaxed)))
+    }
+
+    /// One player-in-fire tick of `apply_fire_contact`, its fire timer and
+    /// health after it.
+    fn fire_tick(mode: i32, client_side: bool) -> Option<(i32, f32, usize)> {
+        MODE.store(mode, Ordering::Relaxed);
+        CALLS.store(0, Ordering::Relaxed);
+        let mut after = (0, 0.0);
+        with_player(Some("minecraft:fire"), client_side, |w| {
+            w.apply_fire_contact()?;
+            after = (w.player.fire_ticks, w.player.health.health());
+            Ok(())
+        })
+        .then(|| (after.0, after.1, CALLS.load(Ordering::Relaxed)))
+    }
+
+    #[test]
+    fn a_player_in_lava_ignites_through_the_hook() {
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "motion::environment::ignite_hook_tests::a_player_in_lava_ignites_through_the_hook",
+            a_player_in_lava_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn a_player_in_lava_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        let Some(cancelled) = lava_tick(CANCEL, false) else {
+            return;
+        };
+        // A cancel keeps the timer where it was, and the lava still hurts.
+        assert_eq!(cancelled, (-20, 16.0, 1));
+        // The listener's 40 ticks replace the 300 lava asks for.
+        assert_eq!(lava_tick(SHORTEN, false), Some((40, 16.0, 1)));
+        // A listener that leaves the ticks alone leaves 300.
+        assert_eq!(lava_tick(LEAVE, false), Some((300, 16.0, 1)));
+        // The window's predicted tick never asks: it burns for the vanilla 300.
+        assert_eq!(lava_tick(SHORTEN, true), Some((300, 20.0, 0)));
+    }
+
+    #[test]
+    fn a_player_in_fire_ignites_through_the_hook() {
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "motion::environment::ignite_hook_tests::a_player_in_fire_ignites_through_the_hook",
+            a_player_in_fire_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn a_player_in_fire_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        let Some(cancelled) = fire_tick(CANCEL, false) else {
+            return;
+        };
+        // A cancel keeps the fire timer where it was, and the fire still hurts.
+        assert_eq!(cancelled, (-20, 19.0, 1));
+        // The listener's 40 ticks replace the ramp's -19.
+        assert_eq!(fire_tick(SHORTEN, false), Some((40, 19.0, 1)));
+        // A listener that leaves the ticks alone leaves the ramp's next step.
+        assert_eq!(fire_tick(LEAVE, false), Some((-19, 19.0, 1)));
+        // The window's predicted tick never asks: it keeps the vanilla ramp.
+        assert_eq!(fire_tick(SHORTEN, true), Some((-19, 20.0, 0)));
+    }
+
+    /// With no table installed, a fire block's ramp and the level random's next
+    /// draw are exactly vanilla's.
+    #[test]
+    fn no_listener_keeps_vanillas_fire_ignition_ramp() {
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "motion::environment::ignite_hook_tests::no_listener_keeps_vanillas_fire_ignition_ramp",
+            no_listener_keeps_vanillas_fire_ignition_ramp_in_own_process,
+        );
+    }
+
+    fn no_listener_keeps_vanillas_fire_ignition_ramp_in_own_process() {
+        let mut reference = horizon_core::random::LegacyRandom::new(3);
+        let expected = ignite_contact(200, true, &mut reference, 1.0);
+        let next = reference.next_int_bound(2).unwrap();
+        let mut after = (0, 0);
+        if !with_player(Some("minecraft:fire"), false, |w| {
+            w.scene.random.set_seed(3);
+            w.player.fire_ticks = 200;
+            w.apply_fire_contact()?;
+            after = (
+                w.player.fire_ticks,
+                w.scene.random.next_int_bound(2).unwrap(),
+            );
+            Ok(())
+        }) {
+            return;
+        }
+        assert_eq!(after, (expected, next));
+    }
+
+    #[test]
+    fn a_lava_cauldron_ignites_through_the_hook() {
+        crate::native_client_hooks::test_hooks::in_own_process(
+            "motion::environment::ignite_hook_tests::a_lava_cauldron_ignites_through_the_hook",
+            a_lava_cauldron_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn a_lava_cauldron_ignites_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        MODE.store(CANCEL, Ordering::Relaxed);
+        let mut cancelled = (0, 0.0);
+        if !with_player(None, false, |w| {
+            w.lava_cauldron_inside()?;
+            cancelled = (w.player.fire_ticks, w.player.health.health());
+            Ok(())
+        }) {
+            return;
+        }
+        assert_eq!(
+            cancelled,
+            (-20, 16.0),
+            "a cancel leaves the fire timer, the lava still hurts"
+        );
+        MODE.store(LEAVE, Ordering::Relaxed);
+        let mut told = (0, 0.0);
+        with_player(None, false, |w| {
+            w.lava_cauldron_inside()?;
+            told = (w.player.fire_ticks, w.player.health.health());
+            Ok(())
+        });
+        assert_eq!(told, (300, 16.0));
     }
 }

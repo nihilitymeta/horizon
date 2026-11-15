@@ -16,6 +16,7 @@ pub struct NativeClientHooks {
     pub living_breathe: fn(u32, &str, &mut bool, &mut i32, &mut i32),
     pub living_drown: fn(u32, &str, &mut bool, &mut f32, i32, &mut bool),
     pub living_fall: fn(u32, &str, &mut f64, &mut f32, &mut bool),
+    pub entity_ignite: fn(u32, &str, &str, i32, &mut i32, &mut bool),
     pub living_jump: fn(u32, &str),
     pub register_goals: fn(&mut crate::mobs::Mob),
     pub player_pre_login: fn(
@@ -240,6 +241,29 @@ pub(crate) fn living_fall(
     }
 }
 
+/// A cause is about to set `entity` of type `kind` alight for `requested` fire
+/// ticks: `cause` names it, `ticks` is what the listener leaves and `cancel`
+/// whether it stopped the ignition. Returns whether a hook table was told, so
+/// a caller whose request is vanilla's already can skip the listener's clamp;
+/// a grouped mob turn keeps nothing here (the hook tells none of its own).
+pub(crate) fn ignite(
+    entity: u32,
+    kind: &str,
+    cause: &str,
+    requested: i32,
+    ticks: &mut i32,
+    cancel: &mut bool,
+) -> bool {
+    if deferring() {
+        return false;
+    }
+    let Some(hooks) = HOOKS.get() else {
+        return false;
+    };
+    (hooks.entity_ignite)(entity, kind, cause, requested, ticks, cancel);
+    true
+}
+
 pub(crate) fn mob_ai_register(mob: &mut Mob) {
     if let Some(hooks) = HOOKS.get() {
         (hooks.mob_ai_register)(mob);
@@ -378,6 +402,7 @@ pub(crate) mod test_hooks {
             living_breathe: |_, _, _, _, _| {},
             living_drown: |_, _, _, _, _, _| {},
             living_fall: |_, _, _, _, _| {},
+            entity_ignite: |_, _, _, _, _, _| {},
             living_jump: |_, _| {},
             register_goals: |_| {},
             player_pre_login: |_, _, _, _| {},
@@ -401,6 +426,62 @@ pub(crate) mod test_hooks {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+
+    /// Installs a table whose only working hook is `entity_ignite`: a test that
+    /// needs its own listener runs in its own process, since the first table
+    /// installed is the process's.
+    pub(crate) fn install_ignite(ignite: fn(u32, &str, &str, i32, &mut i32, &mut bool)) {
+        let _ = super::install(NativeClientHooks {
+            menu_slot_rules: |_, _, _, _, _| {},
+            sound_play: |_, _, _, _| {},
+            player_chat: |_, _, _, _, _| {},
+            player_chat_v2: |_, _, _, _, _, _| {},
+            chat_decorate: |_, _, _, _| {},
+            living_heal: |_, _, _| {},
+            living_breathe: |_, _, _, _, _| {},
+            living_drown: |_, _, _, _, _, _| {},
+            living_fall: |_, _, _, _, _| {},
+            entity_ignite: ignite,
+            living_jump: |_, _| {},
+            register_goals: |_| {},
+            player_pre_login: |_, _, _, _| {},
+            player_profile: |_, _, _| {},
+            ingredient: |_, _, _| {},
+            ingredient_test: |_, _, _, _| {},
+            mob_ai_register: |_| {},
+            living_death_message: |_, _, _| {},
+            log_line: |_, _, _, _| {},
+            handshake: |_, _, _, _, _| {},
+        });
+    }
+
+    /// Runs `body` in a fresh process of this test binary: the first hook table
+    /// installed is the process's, so a test with a listener of its own cannot
+    /// share a process with another that installed one. The parent starts the
+    /// binary again for just this test (`--exact`, `--include-ignored`) and
+    /// requires that exactly one test ran and passed; the child sees
+    /// `OWN_PROCESS` and runs `body` itself. (`mod_api::in_own_process` does the
+    /// same for the gameplay crate, where the listener a test wants is a mod.)
+    pub(crate) fn in_own_process(name: &str, body: impl FnOnce()) {
+        const OWN_PROCESS: &str = "HORIZON_TEST_OWN_PROCESS";
+        if std::env::var_os(OWN_PROCESS).is_some_and(|v| v == name) {
+            return body();
+        }
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([name, "--exact", "--include-ignored", "--test-threads=1"])
+            .env(OWN_PROCESS, name)
+            .output()
+            .unwrap();
+        let report = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            out.status.success() && report.contains("test result: ok. 1 passed;"),
+            "{name} failed in its own process:\n{report}"
+        );
     }
 }
 
@@ -431,5 +512,86 @@ mod tests {
         let unwound = std::panic::catch_unwind(|| deferring_turn(|| panic!("turn failed")));
         assert!(unwound.is_err());
         assert!(!deferring(), "a failed turn stops keeping");
+    }
+
+    /// A listener's cancel reaches the caller, with the ticks it wrote.
+    #[test]
+    fn a_cancelling_listener_is_told() {
+        test_hooks::in_own_process(
+            "native_client_hooks::tests::a_cancelling_listener_is_told",
+            a_cancelling_listener_is_told_in_own_process,
+        );
+    }
+
+    fn a_cancelling_listener_is_told_in_own_process() {
+        test_hooks::install_ignite(|entity, kind, cause, requested, ticks, cancel| {
+            assert_eq!(
+                (entity, kind, cause, requested),
+                (7, "minecraft:player", "lava", 300)
+            );
+            *ticks = 40;
+            *cancel = true;
+        });
+        let mut ticks = 300;
+        let mut cancel = false;
+        assert!(ignite(
+            7,
+            "minecraft:player",
+            "lava",
+            300,
+            &mut ticks,
+            &mut cancel
+        ));
+        assert!(cancel);
+        assert_eq!(ticks, 40, "the listener's write is handed back");
+    }
+
+    /// With no table installed the request is left exactly as it was.
+    #[test]
+    fn no_table_leaves_the_ignition_alone() {
+        test_hooks::in_own_process(
+            "native_client_hooks::tests::no_table_leaves_the_ignition_alone",
+            no_table_leaves_the_ignition_alone_in_own_process,
+        );
+    }
+
+    fn no_table_leaves_the_ignition_alone_in_own_process() {
+        let mut ticks = 300;
+        let mut cancel = false;
+        assert!(!ignite(
+            7,
+            "minecraft:player",
+            "lava",
+            300,
+            &mut ticks,
+            &mut cancel
+        ));
+        assert_eq!((ticks, cancel), (300, false));
+    }
+
+    /// A grouped mob turn tells no ignition: the table is not called.
+    #[test]
+    fn a_grouped_turn_does_not_tell_the_ignition() {
+        test_hooks::in_own_process(
+            "native_client_hooks::tests::a_grouped_turn_does_not_tell_the_ignition",
+            a_grouped_turn_does_not_tell_the_ignition_in_own_process,
+        );
+    }
+
+    fn a_grouped_turn_does_not_tell_the_ignition_in_own_process() {
+        test_hooks::install_ignite(|_, _, _, _, _, _| panic!("a grouped turn tells no ignition"));
+        let mut ticks = 300;
+        let mut cancel = false;
+        let ((), _) = deferring_turn(|| {
+            assert!(!ignite(
+                7,
+                "minecraft:player",
+                "lava",
+                300,
+                &mut ticks,
+                &mut cancel
+            ));
+        });
+        assert_eq!((ticks, cancel), (300, false));
     }
 }

@@ -235,6 +235,21 @@ pub fn main_with(mods: crate::mod_api::Mods) {
                 cancel,
             );
         },
+        entity_ignite: |entity, kind, cause, original_ticks, ticks, cancel| {
+            // The window's own player is a client's guess; only the server's copy ignites.
+            if crate::mod_api::caller_side() == Some(crate::mod_api::ModSide::Client) {
+                return;
+            }
+            crate::mod_api::dispatch_entity_ignite(
+                crate::mod_api::mods(),
+                entity,
+                kind,
+                cause,
+                original_ticks,
+                ticks,
+                cancel,
+            );
+        },
         living_jump: |entity, kind| {
             crate::mod_api::dispatch_living_jump(crate::mod_api::mods(), entity, kind);
         },

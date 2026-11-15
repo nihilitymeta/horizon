@@ -19,6 +19,7 @@ use horizon_client::{
     text::Text,
 };
 use horizon_core::random::RandomSource;
+use std::borrow::Cow;
 
 /// `EntityEvent.DROWN_PARTICLES`: broadcast with the drowning damage.
 pub(super) const DROWN_EVENT: i8 = 67;
@@ -257,8 +258,20 @@ pub(super) enum IgniteCause {
     Projectile,
     /// A lightning bolt's fire.
     Lightning,
+    /// Standing in lava or in a lava cauldron.
+    #[allow(
+        dead_code,
+        reason = "the mobs' lava sites of issue 67 name it; a player's names `lava` stringwise"
+    )]
+    Lava,
     /// Standing in fire or on a burning block.
     FireBlock,
+    /// Sunlight burning an undead.
+    #[allow(
+        dead_code,
+        reason = "the mobs' sunlight site of issue 67 names it; nothing else does yet"
+    )]
+    Sun,
     /// A cause the game has but this set does not name (a burning zombie's
     /// blow).
     Other,
@@ -272,7 +285,9 @@ impl IgniteCause {
             Self::FlameArrow => "flame_arrow",
             Self::Projectile => "projectile",
             Self::Lightning => "lightning",
+            Self::Lava => "lava",
             Self::FireBlock => "fire_block",
+            Self::Sun => "sun",
             Self::Other => "other",
         }
     }
@@ -302,23 +317,31 @@ impl Game<'_> {
         ticks: i32,
         cause: IgniteCause,
     ) -> horizon_client::Result<bool> {
-        let entity = match target {
-            IgniteTarget::Player => self.player.as_ref().map_or(0, |p| p.entity_id as u32),
-            IgniteTarget::Mob(id) | IgniteTarget::ArmorStand(id) | IgniteTarget::Boat(id) => id,
+        // The entity's type, for the hook's filter: a target the level no
+        // longer has is nobody's ignition, and is told no one.
+        let (entity, kind) = match target {
+            IgniteTarget::Player => match self.player.as_ref() {
+                Some(p) => (p.entity_id as u32, Cow::Borrowed("minecraft:player")),
+                None => return Ok(false),
+            },
+            IgniteTarget::Mob(id) => match self.mobs.iter().find(|m| m.id == id) {
+                Some(m) => (id, Cow::Borrowed(m.kind.id.as_str())),
+                None => return Ok(false),
+            },
+            IgniteTarget::ArmorStand(id) => {
+                if !self.armor_stands.iter().any(|s| s.id == id) {
+                    return Ok(false);
+                }
+                (id, Cow::Borrowed("minecraft:armor_stand"))
+            }
+            IgniteTarget::Boat(id) => match self.boats.iter().find(|b| b.id == id) {
+                Some(b) => (id, Cow::Owned(b.entity_type())),
+                None => return Ok(false),
+            },
         };
-        // A target the level no longer has is nobody's ignition: tell no one.
-        let present = match target {
-            IgniteTarget::Player => self.player.is_some(),
-            IgniteTarget::Mob(id) => self.mobs.iter().any(|m| m.id == id),
-            IgniteTarget::ArmorStand(id) => self.armor_stands.iter().any(|s| s.id == id),
-            IgniteTarget::Boat(id) => self.boats.iter().any(|b| b.id == id),
-        };
-        if !present {
-            return Ok(false);
-        }
         let mut canceled = false;
         let mut ticks = ticks;
-        self.native_entity_ignite(entity, cause.tag(), ticks, &mut ticks, &mut canceled);
+        Self::native_entity_ignite(entity, &kind, cause.tag(), ticks, &mut ticks, &mut canceled);
         // A listener may shorten or lengthen the fire: clamp what it wrote to
         // the redstone hooks' rule, and 0 leaves the entity cold.
         let ticks = ticks.clamp(0, 72_000);
@@ -1259,7 +1282,9 @@ mod ignite_hook_tests {
             IgniteCause::FlameArrow,
             IgniteCause::Projectile,
             IgniteCause::Lightning,
+            IgniteCause::Lava,
             IgniteCause::FireBlock,
+            IgniteCause::Sun,
             IgniteCause::Other,
         ]
         .into_iter()
@@ -1272,7 +1297,9 @@ mod ignite_hook_tests {
                 "flame_arrow",
                 "projectile",
                 "lightning",
+                "lava",
                 "fire_block",
+                "sun",
                 "other"
             ]
         );
@@ -1323,11 +1350,7 @@ mod ignite_hook_tests {
 
         struct Shorten;
         impl Hooks for Shorten {
-            fn entity_ignite(
-                &self,
-                _host: &dyn crate::mod_api::Host,
-                event: &mut EntityIgniteEvent<'_>,
-            ) -> Flow {
+            fn entity_ignite(&self, event: &mut EntityIgniteEvent<'_>) -> Flow {
                 let original = event.original_ticks;
                 match event.cause {
                     // 160 requested, 40 left.
@@ -1395,11 +1418,7 @@ mod ignite_hook_tests {
 
         struct VetoAfterChange;
         impl Hooks for VetoAfterChange {
-            fn entity_ignite(
-                &self,
-                _host: &dyn crate::mod_api::Host,
-                event: &mut EntityIgniteEvent<'_>,
-            ) -> Flow {
+            fn entity_ignite(&self, event: &mut EntityIgniteEvent<'_>) -> Flow {
                 assert_eq!(event.cause, "lightning");
                 assert_eq!(event.ticks, 160);
                 assert_eq!(event.original_ticks, 160);
@@ -1438,12 +1457,9 @@ mod ignite_hook_tests {
 
         struct Veto;
         impl Hooks for Veto {
-            fn entity_ignite(
-                &self,
-                _host: &dyn crate::mod_api::Host,
-                event: &mut EntityIgniteEvent<'_>,
-            ) -> Flow {
+            fn entity_ignite(&self, event: &mut EntityIgniteEvent<'_>) -> Flow {
                 assert_eq!(event.entity, 7, "the mob's id");
+                assert_eq!(event.kind, "minecraft:pig", "the mob's type");
                 match event.cause {
                     "fire_aspect" => {
                         assert_eq!(event.ticks, 40);
