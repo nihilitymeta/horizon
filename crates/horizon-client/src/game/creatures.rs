@@ -2226,6 +2226,18 @@ impl Game<'_> {
         }
         dropped
     }
+    /// A perched dragon shrugs an arrow off and sets it alight for a second
+    /// (`igniteForSeconds(1)`): the arrow has its id here, so the fire goes
+    /// through the `entity_ignite` hook with the cause no enchantment names
+    /// (`other`), and the longer fire wins as `Entity.igniteForTicks` has it.
+    fn relight_shrugged_arrow(&mut self, arrow: &mut Projectile) {
+        let (id, kind) = (arrow.id, arrow.entity_type());
+        if let Some(ticks) = crate::native_client_hooks::ignite_choice(id, kind, "other", 20)
+            && let Some(a) = arrow.arrow.as_mut()
+        {
+            a.ignite_for_ticks(ticks);
+        }
+    }
     /// Adds a projectile, giving it an id from the entity counter
     /// (`Entity.id`, the same counter as the rest) when it has none.
     pub(super) fn add_projectile(&mut self, mut p: horizon_client::projectiles::Projectile) {
@@ -2989,7 +3001,21 @@ impl Game<'_> {
                     mut arrow,
                 } => {
                     self.mob_bow_ammo(mob, &weapon, &mut arrow);
+                    // `WitherSkeleton.getArrow` lit the arrow before it had an
+                    // id: told once `launch_mob_projectile` gives it one.
+                    let wither_skeleton = self
+                        .mobs
+                        .iter()
+                        .find(|m| m.id == mob)
+                        .is_some_and(horizon_client::mobs::undead::lights_its_arrows);
                     self.launch_mob_projectile(arrow);
+                    if wither_skeleton {
+                        self.ignite_spawned_projectile(
+                            self.next_entity,
+                            "other",
+                            horizon_client::mobs::undead::WITHER_SKELETON_ARROW_FIRE,
+                        );
+                    }
                 }
                 MobEvent::CrossbowShot { ammo, mut arrow } => {
                     if &*ammo.item == "minecraft:firework_rocket" {
@@ -5305,9 +5331,7 @@ impl Game<'_> {
                     super::dragon::Hurt::Landed { .. } => EntityHit::Hurt,
                     super::dragon::Hurt::Refused => EntityHit::Refused,
                     super::dragon::Hurt::Shrugged => {
-                        if let Some(a) = arrow.arrow.as_mut() {
-                            a.ignite_for_seconds(1.0);
-                        }
+                        self.relight_shrugged_arrow(&mut arrow);
                         EntityHit::Refused
                     }
                 };
@@ -9677,6 +9701,316 @@ mod mob_finalize_tests {
                 ("minecraft:turtle".into(), "other".into(), None),
                 ("minecraft:pig".into(), "reinforcement".into(), None),
             ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod ignite_spawned_projectile_tests {
+    use super::*;
+    use horizon_client::mobs::undead::ignite_for_wither_skeleton;
+    use horizon_client::native_client_hooks::{NativeClientHooks, install};
+    use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+
+    /// What the listener does: leave the ticks alone, set 40, or cancel.
+    const LEAVE: i32 = 0;
+    const SHORTEN: i32 = 40;
+    const CANCEL: i32 = -1;
+    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
+    static TOLD: AtomicU32 = AtomicU32::new(0);
+
+    /// The client library's table with only `entity_ignite` working (the table
+    /// is the process's first, so each test runs in its own process): the
+    /// wither skeleton's arrow and the dragon's relight ask `other` for 2000
+    /// and 20 ticks, a Flame bow asks `flame_arrow` for 2000, and each must
+    /// name the arrow's own id and type.
+    fn listener(
+        entity: u32,
+        kind: &str,
+        cause: &str,
+        requested: i32,
+        ticks: &mut i32,
+        cancel: &mut bool,
+    ) {
+        assert_eq!(kind, "minecraft:arrow");
+        match (cause, requested) {
+            ("flame_arrow", 2000) => {}
+            ("other", 2000) => {}
+            ("other", 20) => {}
+            other => panic!("unexpected ignition {other:?}"),
+        }
+        assert!(entity > 0, "the arrow's own id, not 0");
+        TOLD.store(entity, Ordering::Relaxed);
+        match MODE.load(Ordering::Relaxed) {
+            LEAVE => {}
+            SHORTEN => *ticks = 40,
+            CANCEL => *cancel = true,
+            other => panic!("unexpected mode {other}"),
+        }
+    }
+
+    fn install_ignite() {
+        let _ = install(NativeClientHooks {
+            menu_slot_rules: |_, _, _, _, _| {},
+            sound_play: |_, _, _, _| {},
+            player_chat: |_, _, _, _, _| {},
+            player_chat_v2: |_, _, _, _, _, _| {},
+            chat_decorate: |_, _, _, _| {},
+            living_heal: |_, _, _| {},
+            living_breathe: |_, _, _, _, _| {},
+            living_drown: |_, _, _, _, _, _| {},
+            living_fall: |_, _, _, _, _| {},
+            entity_ignite: listener,
+            living_jump: |_, _| {},
+            register_goals: |_| {},
+            player_pre_login: |_, _, _, _| {},
+            player_profile: |_, _, _| {},
+            ingredient: |_, _, _| {},
+            ingredient_test: |_, _, _, _| {},
+            mob_ai_register: |_| {},
+            living_death_message: |_, _, _| {},
+            log_line: |_, _, _, _| {},
+            handshake: |_, _, _, _, _| {},
+        });
+    }
+
+    /// The prepared resources, or None: a clone without them skips the test, as
+    /// chunk A's hook tests do.
+    fn resources() -> Option<std::path::PathBuf> {
+        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.local/horizon-client")
+                    .join(horizon_core::VANILLA_VERSION)
+            });
+        root.join("movement-properties.nbt")
+            .exists()
+            .then_some(root)
+    }
+
+    /// A server's game on the prepared resources with the chunk at the origin
+    /// loaded, as `combat`'s ignite tests make one.
+    fn server_game(root: &std::path::Path) -> Game<'static> {
+        use crate::game::{Audio, Options, Progress, Settings, load_resources};
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.to_path_buf(),
+            None,
+            root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!(),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.to_path_buf();
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let res: &'static _ = Box::leak(Box::new(loaded.resources));
+        let mut game = Game::new(
+            res,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(root),
+            None,
+        )
+        .unwrap();
+        game.options.dedicated = Some(Vec::new());
+        game.world.chunks.insert(
+            (0, 0),
+            std::sync::Arc::new(horizon_client::chunk::Chunk::empty(0, 0)),
+        );
+        game.streaming.forced.insert((0, 0));
+        game
+    }
+
+    fn arrow(id: u32) -> Projectile {
+        let mut p = Projectile::new(
+            ProjectileKind::Arrow {
+                base_damage: 2.0,
+                critical: false,
+                effect: None,
+            },
+            Vec3::new(1.5, 64.0, 1.5),
+            None,
+        );
+        p.id = id;
+        p
+    }
+
+    /// A wither skeleton in `game` (id 1) with the arrow `p` shot, lit as
+    /// `WitherSkeleton.getArrow` lights it; the goal hands the arrow over
+    /// through the mob event.
+    fn wither_shot(game: &mut Game<'_>, mut p: Projectile) {
+        let kind = game
+            .res
+            .mob_types()
+            .get("minecraft:wither_skeleton")
+            .unwrap()
+            .clone();
+        let mob = Mob::new(1, kind, Vec3::new(1.5, 64.0, 1.5), 0.0);
+        ignite_for_wither_skeleton(&mob, &mut p);
+        game.mobs.push(mob);
+        game.handle_mob_events(vec![MobEvent::BowShot {
+            mob: 1,
+            weapon: ItemStack::new("minecraft:bow", 1),
+            arrow: p,
+        }])
+        .unwrap();
+    }
+
+    fn last_arrow_fire(game: &Game<'_>) -> i32 {
+        game.creatures
+            .projectiles
+            .last()
+            .expect("the shot arrow")
+            .arrow
+            .as_ref()
+            .expect("an arrow")
+            .fire_ticks
+    }
+
+    #[test]
+    fn a_wither_skeletons_arrow_is_told_once_it_has_its_id() {
+        crate::mod_api::in_own_process(
+            "game::creatures::ignite_spawned_projectile_tests::a_wither_skeletons_arrow_is_told_once_it_has_its_id",
+            a_wither_skeletons_arrow_is_told_once_it_has_its_id_in_own_process,
+        );
+    }
+
+    fn a_wither_skeletons_arrow_is_told_once_it_has_its_id_in_own_process() {
+        let Some(root) = resources() else {
+            return;
+        };
+        let mut game = server_game(&root);
+        // With no listener the arrow leaves burning for 2000 ticks, and one
+        // already burning longer keeps the longer fire.
+        wither_shot(&mut game, arrow(0));
+        assert_eq!(last_arrow_fire(&game), 2000);
+        let mut longer = arrow(0);
+        if let Some(a) = longer.arrow.as_mut() {
+            a.ignite_for_seconds(200.0);
+        }
+        game.mobs.clear();
+        wither_shot(&mut game, longer);
+        assert_eq!(
+            last_arrow_fire(&game),
+            4000,
+            "the longer fire wins as before"
+        );
+        // A listener hears the cause no enchantment names with the arrow's own
+        // id: a cancel leaves it cold, a changed value replaces the fire.
+        install_ignite();
+        MODE.store(CANCEL, Ordering::Relaxed);
+        game.mobs.clear();
+        wither_shot(&mut game, arrow(0));
+        let shot = game.creatures.projectiles.last().unwrap();
+        assert_eq!(
+            shot.arrow.as_ref().unwrap().fire_ticks,
+            0,
+            "a cancel leaves it cold"
+        );
+        assert_eq!(TOLD.load(Ordering::Relaxed), shot.id, "the arrow's own id");
+        MODE.store(SHORTEN, Ordering::Relaxed);
+        game.mobs.clear();
+        wither_shot(&mut game, arrow(0));
+        assert_eq!(last_arrow_fire(&game), 40);
+    }
+
+    #[test]
+    fn a_shrugged_arrows_relight_is_told() {
+        crate::mod_api::in_own_process(
+            "game::creatures::ignite_spawned_projectile_tests::a_shrugged_arrows_relight_is_told",
+            a_shrugged_arrows_relight_is_told_in_own_process,
+        );
+    }
+
+    fn a_shrugged_arrows_relight_is_told_in_own_process() {
+        let Some(root) = resources() else {
+            return;
+        };
+        let mut game = server_game(&root);
+        // With no listener the dragon's second of fire is `igniteForSeconds(1)`.
+        let mut p = arrow(9);
+        game.relight_shrugged_arrow(&mut p);
+        assert_eq!(p.arrow.as_ref().unwrap().fire_ticks, 20);
+        // The listener hears `other` with 20 requested and the arrow's id, and
+        // a cancel leaves the arrow cold.
+        install_ignite();
+        MODE.store(CANCEL, Ordering::Relaxed);
+        let mut p = arrow(9);
+        game.relight_shrugged_arrow(&mut p);
+        assert_eq!(TOLD.load(Ordering::Relaxed), 9, "the arrow's own id");
+        assert_eq!(
+            p.arrow.as_ref().unwrap().fire_ticks,
+            0,
+            "a cancel leaves it cold"
+        );
+        MODE.store(SHORTEN, Ordering::Relaxed);
+        game.relight_shrugged_arrow(&mut p);
+        assert_eq!(p.arrow.as_ref().unwrap().fire_ticks, 40);
+    }
+
+    #[test]
+    fn a_flame_crossbow_arms_its_arrow_through_the_ignite_hook() {
+        crate::mod_api::in_own_process(
+            "game::creatures::ignite_spawned_projectile_tests::a_flame_crossbow_arms_its_arrow_through_the_ignite_hook",
+            a_flame_crossbow_arms_its_arrow_through_the_ignite_hook_in_own_process,
+        );
+    }
+
+    fn a_flame_crossbow_arms_its_arrow_through_the_ignite_hook_in_own_process() {
+        let Some(root) = resources() else {
+            return;
+        };
+        let mut game = server_game(&root);
+        game.creative = true;
+        // A creative player at the origin, as the crossbow's own tests make one.
+        game.player = Some(
+            horizon_client::motion::PlayerMotion::new(game.motion, Vec3::new(10.5, 64.0, -3.25))
+                .unwrap(),
+        );
+        // A Flame crossbow with one arrow loaded, shot: the arrow it makes.
+        let shoot = |game: &mut Game<'_>| -> Projectile {
+            let mut crossbow = ItemStack::new("minecraft:crossbow", 1);
+            crossbow.enchant("minecraft:flame", 1);
+            crossbow.data_mut().charged = vec![ItemStack::new("minecraft:arrow", 1)];
+            *game.held_mut() = Some(crossbow);
+            let before = game.creatures.projectiles.len();
+            game.shoot_crossbow();
+            game.creatures.projectiles[before].clone()
+        };
+        // With no listener the arrow burns for Flame's 100 seconds.
+        assert_eq!(
+            shoot(&mut game).arrow.as_ref().unwrap().fire_ticks,
+            2000,
+            "Flame is vanilla's when nobody listens"
+        );
+        // A listener is told with the arrow's id the level gave it: a cancel
+        // leaves it cold and a changed value replaces the fire.
+        install_ignite();
+        MODE.store(CANCEL, Ordering::Relaxed);
+        let cancelled = shoot(&mut game);
+        assert_eq!(
+            cancelled.arrow.as_ref().unwrap().fire_ticks,
+            0,
+            "a cancel leaves the arrow cold"
+        );
+        assert_eq!(
+            TOLD.load(Ordering::Relaxed),
+            cancelled.id,
+            "the table names the arrow's own id"
+        );
+        MODE.store(SHORTEN, Ordering::Relaxed);
+        assert_eq!(
+            shoot(&mut game).arrow.as_ref().unwrap().fire_ticks,
+            40,
+            "a changed value replaces the fire"
         );
     }
 }

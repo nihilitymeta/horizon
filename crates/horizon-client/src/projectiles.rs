@@ -684,8 +684,11 @@ impl Projectile {
             if self.fire_ticks < 0 {
                 self.fire_ticks += 1;
             }
-            if self.fire_ticks >= 0 {
-                self.ignite_for_ticks(160);
+            if self.fire_ticks >= 0
+                && let Some(ticks) =
+                    self.ignition(client_side, "fire_block", self.fire_ticks.max(160))
+            {
+                self.fire_ticks = ticks;
             }
         }
         if w.in_water(self.bounds()) {
@@ -707,9 +710,22 @@ impl Projectile {
             // Entity.setSharedFlagOnFire runs before the fireball's own ignition.
             self.synced_fire = self.fire_ticks > 0 || self.has_visual_fire;
         }
-        if self.kind.is_item_fireball() {
-            self.ignite_for_ticks(20);
+        if self.kind.is_item_fireball()
+            && let Some(ticks) = self.ignition(client_side, "other", self.fire_ticks.max(20))
+        {
+            self.fire_ticks = ticks;
         }
+    }
+    /// The fire a block effect or an item fireball renews goes through the
+    /// `entity_ignite` hook: `requested` is the timer vanilla would leave, and a
+    /// listener's ticks replace it, or a cancel or 0 leaves the timer as it
+    /// was (`None`). The client's predicted copy is never told: only a server
+    /// ignites.
+    fn ignition(&self, client_side: bool, cause: &str, requested: i32) -> Option<i32> {
+        if client_side {
+            return Some(requested);
+        }
+        crate::native_client_hooks::ignite_choice(self.id, self.entity_type(), cause, requested)
     }
     /// `Entity.checkInsideBlocks`: the blocks under the box, deflated by 1e-7
     /// so a box sitting exactly on a block boundary is not inside it.
@@ -2991,3 +3007,148 @@ mod render_light_tests {
     }
 }
 crate::impl_joined!(Projectile);
+
+#[cfg(test)]
+mod ignite_hook_tests {
+    use super::*;
+    use crate::native_client_hooks::test_hooks::{in_own_process, install_ignite};
+    use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+
+    const LEAVE: i32 = 0;
+    const SHORTEN: i32 = 40;
+    const CANCEL: i32 = -1;
+    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn listener(
+        entity: u32,
+        kind: &str,
+        cause: &str,
+        requested: i32,
+        ticks: &mut i32,
+        cancel: &mut bool,
+    ) {
+        assert_eq!(entity, 7, "the projectile's own id");
+        match (kind, cause) {
+            ("minecraft:snowball", "fire_block") => {
+                assert_eq!(requested, 160, "the fire block asks for 160")
+            }
+            ("minecraft:small_fireball", "other") => {
+                assert_eq!(requested, 20, "an item fireball renews 20")
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        CALLS.fetch_add(1, Ordering::Relaxed);
+        match MODE.load(Ordering::Relaxed) {
+            LEAVE => {}
+            SHORTEN => *ticks = 40,
+            CANCEL => *cancel = true,
+            other => panic!("unexpected mode {other}"),
+        }
+    }
+
+    /// A level with a fire block everywhere (`fire`) or nowhere, and no water.
+    struct Level {
+        fire: bool,
+    }
+    impl ProjectileWorld for Level {
+        fn clip(&self, _: Vec3, _: Vec3) -> Option<(Vec3, [i32; 3], [i32; 3])> {
+            None
+        }
+        fn in_water(&self, _: Aabb) -> bool {
+            false
+        }
+        fn targets(&self) -> &[(Who, Aabb)] {
+            &[]
+        }
+        fn ignites(&self, _: [i32; 3]) -> bool {
+            self.fire
+        }
+    }
+
+    fn shot(kind: ProjectileKind) -> Projectile {
+        let mut p = Projectile::new(kind, Vec3::new(0.5, 64.0, 0.5), None);
+        p.id = 7;
+        p
+    }
+
+    /// One tick of a snowball in a fire block (`fire`) or of a small fireball
+    /// (`none`): its fire timer and how often the listener was told.
+    fn ticked(mode: i32, fire: bool, kind: ProjectileKind, client_side: bool) -> (i32, usize) {
+        MODE.store(mode, Ordering::Relaxed);
+        CALLS.store(0, Ordering::Relaxed);
+        let mut p = shot(kind);
+        p.fire_tick(&Level { fire }, client_side);
+        (p.fire_ticks, CALLS.load(Ordering::Relaxed))
+    }
+
+    #[test]
+    fn a_projectile_and_an_item_fireball_ignite_through_the_hook() {
+        in_own_process(
+            "projectiles::ignite_hook_tests::a_projectile_and_an_item_fireball_ignite_through_the_hook",
+            a_projectile_and_an_item_fireball_ignite_through_the_hook_in_own_process,
+        );
+    }
+
+    fn a_projectile_and_an_item_fireball_ignite_through_the_hook_in_own_process() {
+        install_ignite(listener);
+        // A snowball in a fire block: a cancel leaves it cold, 40 sticks until
+        // the tick's own countdown (39), and untouched the fire block's 160
+        // counts down to 159.
+        assert_eq!(
+            ticked(CANCEL, true, ProjectileKind::Snowball, false),
+            (0, 1)
+        );
+        assert_eq!(
+            ticked(SHORTEN, true, ProjectileKind::Snowball, false),
+            (39, 1)
+        );
+        assert_eq!(
+            ticked(LEAVE, true, ProjectileKind::Snowball, false),
+            (159, 1)
+        );
+        // The window's predicted copy ignites from the block as vanilla's does,
+        // and is never told.
+        assert_eq!(
+            ticked(SHORTEN, true, ProjectileKind::Snowball, true),
+            (159, 0)
+        );
+        // An item fireball renews its own 20 ticks: cancelled, cold; changed,
+        // the listener's 40; untouched, vanilla's 20.
+        assert_eq!(
+            ticked(CANCEL, false, ProjectileKind::SmallFireball, false),
+            (0, 1)
+        );
+        assert_eq!(
+            ticked(SHORTEN, false, ProjectileKind::SmallFireball, false),
+            (40, 1)
+        );
+        assert_eq!(
+            ticked(LEAVE, false, ProjectileKind::SmallFireball, false),
+            (20, 1)
+        );
+    }
+
+    /// With no table installed the fire and the next draw of the projectile's
+    /// own random are exactly vanilla's.
+    #[test]
+    fn no_listener_keeps_a_projectiles_fire() {
+        in_own_process(
+            "projectiles::ignite_hook_tests::no_listener_keeps_a_projectiles_fire",
+            no_listener_keeps_a_projectiles_fire_in_own_process,
+        );
+    }
+
+    fn no_listener_keeps_a_projectiles_fire_in_own_process() {
+        // The fire block's ignition and the fireball's renewal draw no random:
+        // the timers are the whole of what a tick changes here.
+        for (fire, kind, tick) in [
+            (true, ProjectileKind::Snowball, 159),
+            (false, ProjectileKind::SmallFireball, 20),
+        ] {
+            let mut p = shot(kind);
+            p.fire_tick(&Level { fire }, false);
+            assert_eq!(p.fire_ticks, tick, "{}", p.entity_type());
+        }
+    }
+}

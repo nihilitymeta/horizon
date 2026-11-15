@@ -996,12 +996,31 @@ impl Game<'_> {
     /// `EnchantmentHelper.onProjectileSpawned`, which `AbstractArrow`'s
     /// constructor runs for every arrow fired from a weapon, bow or crossbow:
     /// the weapon's `projectile_spawned` ignite effects (Flame) spawn the arrow
-    /// burning.
-    pub(super) fn ignite_spawned_arrow(&mut self, weapon: &ItemStack, arrow: &mut Projectile) {
-        if let Some(seconds) = self.projectile_spawned_ignite(weapon)
-            && let Some(a) = arrow.arrow.as_mut()
-        {
-            a.ignite_for_seconds(seconds);
+    /// burning. Returns the fire ticks the arrow was given, for the hook to
+    /// hear once the level holds the arrow ([`Self::ignite_spawned_projectile`]),
+    /// since an arrow has no id to name until then.
+    pub(super) fn ignite_spawned_arrow(
+        &mut self,
+        weapon: &ItemStack,
+        arrow: &mut Projectile,
+    ) -> Option<i32> {
+        let seconds = self.projectile_spawned_ignite(weapon)?;
+        arrow.arrow.as_mut()?.ignite_for_seconds(seconds);
+        // `Entity.igniteForSeconds` rounds `seconds * 20` down.
+        Some((seconds * 20.0).floor() as i32)
+    }
+    /// Tell the `entity_ignite` hook of the fire a projectile was given before
+    /// it had an id — a bow's Flame arrow, a wither skeleton's arrow — now that
+    /// the level holds it under `id`, so the table names a real entity:
+    /// [`crate::native_client_hooks::spawn_ignite`] applies what the listener
+    /// left. With no listener the fire is vanilla's.
+    pub(super) fn ignite_spawned_projectile(&mut self, id: u32, cause: &str, requested: i32) {
+        let Some(p) = self.creatures.projectiles.iter_mut().find(|p| p.id == id) else {
+            return;
+        };
+        let kind = p.entity_type();
+        if let Some(a) = p.arrow.as_mut() {
+            crate::native_client_hooks::spawn_ignite(a, id, kind, cause, requested);
         }
     }
     /// The `projectile_spawned` ignite effects of `weapon` (Flame): the seconds

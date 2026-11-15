@@ -271,8 +271,9 @@ pub(crate) fn ignite(
 /// `0..=72000` as `Entity.igniteForTicks` clamps it; and `None` when the site
 /// must leave the timer as it was, which is a listener's cancel or a chosen 0.
 /// A grouped mob turn tells no hook ([`ignite`] returns false) and gets
-/// `requested`.
-pub(crate) fn ignite_choice(entity: u32, kind: &str, cause: &str, requested: i32) -> Option<i32> {
+/// `requested`. Public for the game's own projectile sites, which reach the
+/// table through this crate.
+pub fn ignite_choice(entity: u32, kind: &str, cause: &str, requested: i32) -> Option<i32> {
     let mut chosen = requested;
     let mut cancel = false;
     if !ignite(entity, kind, cause, requested, &mut chosen, &mut cancel) {
@@ -285,6 +286,27 @@ pub(crate) fn ignite_choice(entity: u32, kind: &str, cause: &str, requested: i32
         return Some(requested);
     }
     Some(chosen.clamp(0, 72_000))
+}
+
+/// A fire a projectile was given before it had an id — a bow's Flame arrow
+/// (`EnchantmentHelper.onProjectileSpawned`), a wither skeleton's arrow
+/// (`WitherSkeleton.getArrow`) — told once the projectile is in the level, so
+/// the table names a real entity. `requested` is the fire the projectile
+/// carries: a cancel or a chosen 0 clears it, a changed value replaces it
+/// (clamped to `0..=72000` as `Entity.igniteForTicks` clamps it), and an
+/// untouched value keeps vanilla's. Public for the game's own spawn sites.
+pub fn spawn_ignite(
+    arrow: &mut crate::arrows::ArrowState,
+    entity: u32,
+    kind: &str,
+    cause: &str,
+    requested: i32,
+) {
+    match ignite_choice(entity, kind, cause, requested) {
+        None => arrow.clear_fire(),
+        Some(ticks) if ticks != requested => arrow.fire_ticks = ticks,
+        Some(_) => {}
+    }
 }
 
 pub(crate) fn mob_ai_register(mob: &mut Mob) {

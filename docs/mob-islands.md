@@ -118,7 +118,8 @@ groups (`LoopLookup`).
 ## Native mods and the profiler
 
 What a mod can run in a mob's turn: `native_living_change_target`, `native_living_heal`,
-`native_living_breathe`, `native_living_drown`, `native_living_fall`, `native_living_death_message`,
+`native_living_breathe`, `native_living_drown`, `native_living_fall`, `native_entity_ignite`
+(a mob catching fire in a fire block or in lava, or burning in sunlight), `native_living_death_message`,
 `native_register_goals` (its goals), the incoming damage hooks, `native_living_damage_pre`,
 `native_living_knockback`, `native_trample` (a mob falling on farmland), `native_block_step_on`,
 `native_block_entity_inside` and `native_block_fall_on` (a content mod's blocks), a content mod

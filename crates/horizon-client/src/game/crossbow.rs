@@ -289,7 +289,7 @@ impl Game<'_> {
         }
     }
     /// `CrossbowItem.performShooting`.
-    fn shoot_crossbow(&mut self) {
+    pub(super) fn shoot_crossbow(&mut self) {
         let Some(eye) = self.eye_position() else {
             return;
         };
@@ -371,9 +371,13 @@ impl Game<'_> {
                     a.pierce = pierce;
                 }
                 // Flame: the arrow is spawned burning (EnchantmentHelper.onProjectileSpawned).
-                self.ignite_spawned_arrow(&weapon, &mut arrow);
+                let flame = self.ignite_spawned_arrow(&weapon, &mut arrow);
                 arrow.shoot_own(dir.to_array(), power, 1.0);
                 self.add_projectile(arrow);
+                // Flame is told once the arrow has the id the table names.
+                if let Some(ticks) = flame {
+                    self.ignite_spawned_projectile(self.next_entity, "flame_arrow", ticks);
+                }
                 let (player, name, projectile) = (
                     horizon_client::lan::playerdata::ints_uuid(self.acting_player_uuid()),
                     self.acting_player_name().to_owned(),

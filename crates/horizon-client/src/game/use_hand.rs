@@ -651,7 +651,7 @@ impl Game<'_> {
             a.fired_from_weapon = weapon;
         }
         // Flame: the arrow is spawned burning (EnchantmentHelper.onProjectileSpawned).
-        self.ignite_spawned_arrow(stack, &mut arrow);
+        let flame = self.ignite_spawned_arrow(stack, &mut arrow);
         let (velocity, on_ground) = self.player.as_ref().map_or((Vec3::ZERO, true), |pl| {
             (self.known_player_movement(), pl.ground.on_ground)
         });
@@ -665,6 +665,10 @@ impl Game<'_> {
             on_ground,
         );
         self.add_projectile(arrow);
+        // Flame is told once the arrow has the id the table names.
+        if let Some(ticks) = flame {
+            self.ignite_spawned_projectile(self.next_entity, "flame_arrow", ticks);
+        }
         let (player, name, projectile) = (
             horizon_client::lan::playerdata::ints_uuid(self.acting_player_uuid()),
             self.acting_player_name().to_owned(),

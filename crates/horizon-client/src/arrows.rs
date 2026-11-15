@@ -1157,8 +1157,14 @@ impl Ticker<'_, '_, '_, '_> {
             return;
         }
         let scene = self.scene;
-        let (fire_ticks, extinguished) =
-            scene.apply_block_effects(from, to, self.st.fire_ticks, |state, p, precise| {
+        // The client's predicted copy of a server's arrow is never told: only
+        // the server ignites it.
+        let (client, id, kind) = (self.client, self.p.id, self.p.entity_type());
+        let (fire_ticks, extinguished) = scene.apply_block_effects_told(
+            from,
+            to,
+            self.st.fire_ticks,
+            |state, p, precise| {
                 let name = &*scene.facts.get(state).name;
                 crate::block_contact::emit(crate::block_contact::Event::Inside(
                     crate::block_contact::Contact {
@@ -1172,7 +1178,14 @@ impl Ticker<'_, '_, '_, '_> {
                 if name == "minecraft:bubble_column" && precise {
                     self.bubble_column(state, p);
                 }
-            });
+            },
+            |cause, wanted| {
+                if client {
+                    return Some(wanted);
+                }
+                crate::native_client_hooks::ignite_choice(id, kind, cause, wanted)
+            },
+        );
         self.st.fire_ticks = fire_ticks;
         if extinguished {
             // Entity.playEntityOnFireExtinguishedSound: keep the entity RNG order.
@@ -1260,8 +1273,23 @@ impl ArrowScene<'_, '_> {
         &self,
         from: Vec3,
         to: Vec3,
+        fire_ticks: i32,
+        visit: impl FnMut(BlockStateId, BlockPos, bool),
+    ) -> (i32, bool) {
+        self.apply_block_effects_told(from, to, fire_ticks, visit, |_, ticks| Some(ticks))
+    }
+    /// [`Self::apply_block_effects`] with each fire or lava ignition told to
+    /// `ignite` before it lands: `ignite(cause, ticks)` is asked with the timer
+    /// the effect would leave (`fire_block`, `lava`) and hands back the timer
+    /// to keep, or `None` to leave the timer as it was. The caller names the
+    /// entity ([`crate::native_client_hooks::ignite_choice`]).
+    pub fn apply_block_effects_told(
+        &self,
+        from: Vec3,
+        to: Vec3,
         mut fire_ticks: i32,
         mut visit: impl FnMut(BlockStateId, BlockPos, bool),
+        mut ignite: impl FnMut(&str, i32) -> Option<i32>,
     ) -> (i32, bool) {
         let previous_fire = fire_ticks;
         let mut visited = HashSet::new();
@@ -1278,11 +1306,17 @@ impl ArrowScene<'_, '_> {
                     if fire_ticks < 0 {
                         fire_ticks += 1;
                     }
-                    if fire_ticks >= 0 {
-                        fire_ticks = fire_ticks.max(160);
+                    if fire_ticks >= 0
+                        && let Some(ticks) = ignite("fire_block", fire_ticks.max(160))
+                    {
+                        fire_ticks = ticks;
                     }
                 }
-                Effect::LavaIgnite => fire_ticks = fire_ticks.max(300),
+                Effect::LavaIgnite => {
+                    if let Some(ticks) = ignite("lava", fire_ticks.max(300)) {
+                        fire_ticks = ticks;
+                    }
+                }
                 Effect::Extinguish => fire_ticks = fire_ticks.min(0),
             }
         }
@@ -1650,3 +1684,218 @@ impl WaterSplashWorld for Ticker<'_, '_, '_, '_> {
 #[cfg(test)]
 #[path = "arrows_client_tests.rs"]
 mod client_tests;
+
+#[cfg(test)]
+mod ignite_hook_tests {
+    use super::*;
+    use crate::native_client_hooks::test_hooks::{in_own_process, install_ignite};
+    use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+
+    /// What the installed listener does: leave the ticks alone, set 40, or
+    /// cancel.
+    const LEAVE: i32 = 0;
+    const SHORTEN: i32 = 40;
+    const CANCEL: i32 = -1;
+    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn listener(
+        entity: u32,
+        kind: &str,
+        cause: &str,
+        requested: i32,
+        ticks: &mut i32,
+        cancel: &mut bool,
+    ) {
+        assert_eq!(entity, 7, "the arrow's own id");
+        assert_eq!(kind, "minecraft:arrow");
+        match cause {
+            "fire_block" => assert_eq!(requested, 160, "the fire block asks for 160"),
+            "lava" => assert_eq!(requested, 300, "lava asks for 300"),
+            other => panic!("unexpected cause {other}"),
+        }
+        CALLS.fetch_add(1, Ordering::Relaxed);
+        match MODE.load(Ordering::Relaxed) {
+            LEAVE => {}
+            SHORTEN => *ticks = 40,
+            CANCEL => *cancel = true,
+            other => panic!("unexpected mode {other}"),
+        }
+    }
+
+    /// The prepared resources, or None: a clone without them skips the test, as
+    /// chunk A's hook tests do.
+    fn resources_root() -> Option<std::path::PathBuf> {
+        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.local/horizon-client")
+                    .join(horizon_core::VANILLA_VERSION)
+            });
+        let ok = root.join("movement-properties.nbt").exists();
+        if !ok {
+            eprintln!("skipping ignition hook test: prepared resources unavailable");
+        }
+        ok.then_some(root)
+    }
+
+    /// A level whose block from y 4 to 6 around the arrow is `block` (fire,
+    /// lava), over the loaded block data.
+    struct Level {
+        world: World,
+        registry: &'static horizon_world::registry::BlockRegistry,
+        binding: BlockCollisionRegistry<'static>,
+        facts: BlockFacts,
+        fluids: FluidResources,
+    }
+
+    fn level(root: &std::path::Path, block: &str) -> Level {
+        let assets = crate::assets::Assets::load(root).unwrap();
+        let render = assets.reload(root).unwrap();
+        let binding = crate::collisions::load(root, assets.registry).unwrap();
+        let facts = BlockFacts::load(root, assets.registry).unwrap();
+        let fluids = crate::motion::MotionResources::load(root, &assets)
+            .unwrap()
+            .fluids;
+        let mut world = World::test_scene(&assets, &render, 3).unwrap();
+        let state = assets.registry.default_state(block).unwrap();
+        for y in 4..=6 {
+            for x in 19..=21 {
+                for z in 19..=21 {
+                    world.set(x, y, z, state).unwrap();
+                }
+            }
+        }
+        Level {
+            world,
+            registry: assets.registry,
+            binding,
+            facts,
+            fluids,
+        }
+    }
+
+    /// Arrow id 7 flown one tick in `level` on the server (`client` false) or as
+    /// the window's predicted copy: its fire timer after the tick and how often
+    /// the listener was told.
+    fn ticked(level: &Level, client: bool, mode: i32) -> (i32, usize) {
+        MODE.store(mode, Ordering::Relaxed);
+        CALLS.store(0, Ordering::Relaxed);
+        let raining = |_: BlockPos| false;
+        let scene = ArrowScene {
+            world: &level.world,
+            registry: level.registry,
+            facts: &level.facts,
+            collision: &level.binding,
+            fluids: &level.fluids,
+            raining: &raining,
+            mob_griefing: true,
+            tnt_explodes: true,
+            owners: &(),
+        };
+        let mut p = Projectile::new(
+            ProjectileKind::Arrow {
+                base_damage: 2.0,
+                critical: false,
+                effect: None,
+            },
+            Vec3::new(20.5, 5.0, 20.5),
+            None,
+        );
+        p.id = 7;
+        p.velocity = Vec3::new(0.05, 0.0, 0.0);
+        if client {
+            tick_client(&mut p, &scene);
+        } else {
+            tick(&mut p, &scene, &[]);
+        }
+        (
+            p.arrow.as_ref().unwrap().fire_ticks,
+            CALLS.load(Ordering::Relaxed),
+        )
+    }
+
+    #[test]
+    fn an_arrow_in_fire_and_lava_ignites_through_the_hook() {
+        in_own_process(
+            "arrows::ignite_hook_tests::an_arrow_in_fire_and_lava_ignites_through_the_hook",
+            an_arrow_in_fire_and_lava_ignites_through_the_hook_in_own_process,
+        );
+    }
+
+    fn an_arrow_in_fire_and_lava_ignites_through_the_hook_in_own_process() {
+        let Some(root) = resources_root() else {
+            return;
+        };
+        install_ignite(listener);
+        let fire = level(&root, "minecraft:fire");
+        // A cancel leaves the arrow cold, told once for the attempt.
+        assert_eq!(ticked(&fire, false, CANCEL), (0, 1));
+        // The listener's 40 ticks replace the 160 the fire block asks for; the
+        // tick's own countdown then leaves 39.
+        assert_eq!(ticked(&fire, false, SHORTEN), (39, 1));
+        // Untouched, the fire block's 160 counts down to 159.
+        assert_eq!(ticked(&fire, false, LEAVE), (159, 1));
+        // The window's predicted copy of an arrow ignites nothing it tells: it
+        // keeps the vanilla timer and clears its own fire.
+        assert_eq!(ticked(&fire, true, SHORTEN), (0, 0));
+        let lava = level(&root, "minecraft:lava");
+        // Lava asks for 300: cancelled, 40, or vanilla's 300 less the countdown.
+        assert_eq!(ticked(&lava, false, CANCEL), (0, 1));
+        assert_eq!(ticked(&lava, false, SHORTEN), (39, 1));
+        assert_eq!(ticked(&lava, false, LEAVE), (299, 1));
+    }
+
+    /// With no table installed the arrow's fire and the next draw of its own
+    /// random are exactly vanilla's.
+    #[test]
+    fn no_listener_keeps_an_arrows_fire_and_its_random() {
+        in_own_process(
+            "arrows::ignite_hook_tests::no_listener_keeps_an_arrows_fire_and_its_random",
+            no_listener_keeps_an_arrows_fire_and_its_random_in_own_process,
+        );
+    }
+
+    fn no_listener_keeps_an_arrows_fire_and_its_random_in_own_process() {
+        let Some(root) = resources_root() else {
+            return;
+        };
+        let next = LegacyRandom::new(3).next_long();
+        for (block, fire) in [("minecraft:fire", 159), ("minecraft:lava", 299)] {
+            let level = level(&root, block);
+            MODE.store(SHORTEN, Ordering::Relaxed);
+            CALLS.store(0, Ordering::Relaxed);
+            // The same tick, against a reference random that no ignition drew from.
+            let raining = |_: BlockPos| false;
+            let scene = ArrowScene {
+                world: &level.world,
+                registry: level.registry,
+                facts: &level.facts,
+                collision: &level.binding,
+                fluids: &level.fluids,
+                raining: &raining,
+                mob_griefing: true,
+                tnt_explodes: true,
+                owners: &(),
+            };
+            let mut p = Projectile::new(
+                ProjectileKind::Arrow {
+                    base_damage: 2.0,
+                    critical: false,
+                    effect: None,
+                },
+                Vec3::new(20.5, 5.0, 20.5),
+                None,
+            );
+            p.id = 7;
+            p.velocity = Vec3::new(0.05, 0.0, 0.0);
+            tick(&mut p, &scene, &[]);
+            let a = p.arrow.as_mut().unwrap();
+            assert_eq!(a.fire_ticks, fire, "{block}");
+            a.random.set_seed(3);
+            assert_eq!(a.random.next_long(), next, "{block} drew nothing");
+            assert_eq!(CALLS.load(Ordering::Relaxed), 0, "no table tells no one");
+        }
+    }
+}

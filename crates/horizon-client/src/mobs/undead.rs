@@ -942,14 +942,21 @@ pub fn perform_ranged_attack(m: &mut Mob, who: Who, cx: &mut Cx, power: f32) {
         pitch,
     ));
 }
+/// `WitherSkeleton.getArrow`'s `igniteForSeconds(100)`: 2000 fire ticks. The
+/// arrow it lights is told once the level holds it (`ignite_spawned_projectile`).
+pub const WITHER_SKELETON_ARROW_FIRE: i32 = 2000;
+/// Whether `m`'s bow leaves its arrows burning (`WitherSkeleton.getArrow`).
+pub fn lights_its_arrows(m: &Mob) -> bool {
+    m.species() == Species::WitherSkeleton
+}
 /// `WitherSkeleton.getArrow`: the arrow the parent made is then
 /// `igniteForSeconds(100)` — 2000 fire ticks — so it burns on its way and sets
 /// alight what it hits. The species' own tipped effect rides on the same arrow.
 pub fn ignite_for_wither_skeleton(m: &Mob, p: &mut Projectile) {
-    if m.species() == Species::WitherSkeleton
+    if lights_its_arrows(m)
         && let Some(a) = p.arrow.as_mut()
     {
-        a.ignite_for_seconds(100.0);
+        a.ignite_for_ticks(WITHER_SKELETON_ARROW_FIRE);
     }
 }
 /// Drowned.DrownedGoToWaterGoal.
