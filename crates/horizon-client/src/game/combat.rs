@@ -291,8 +291,10 @@ pub(super) enum IgniteTarget {
 impl Game<'_> {
     /// `Entity.igniteForTicks` behind one gate: every game-level cause that
     /// sets an entity alight asks `native_entity_ignite` first, and ignites
-    /// only when no listener cancelled it. `ticks` are the fire ticks the
-    /// cause asks for. Returns whether the entity caught fire. Pending API
+    /// for the ticks the listener left, or not at all when it cancelled or
+    /// left none. `ticks` are the fire ticks the cause asks for; a changed
+    /// value is clamped to `0..=72000` (an hour), as the redstone hooks clamp
+    /// their signals. Returns whether the entity caught fire. Pending API
     /// @API:entity_ignite@.
     pub(super) fn ignite_entity_for(
         &mut self,
@@ -315,8 +317,12 @@ impl Game<'_> {
             return Ok(false);
         }
         let mut canceled = false;
-        self.native_entity_ignite(entity, cause.tag(), ticks, &mut canceled);
-        if canceled {
+        let mut ticks = ticks;
+        self.native_entity_ignite(entity, cause.tag(), ticks, &mut ticks, &mut canceled);
+        // A listener may shorten or lengthen the fire: clamp what it wrote to
+        // the redstone hooks' rule, and 0 leaves the entity cold.
+        let ticks = ticks.clamp(0, 72_000);
+        if canceled || ticks == 0 {
             return Ok(false);
         }
         let ignited = match target {
@@ -1299,6 +1305,122 @@ mod ignite_hook_tests {
                 .ignite_entity_for(IgniteTarget::Mob(8), 40, IgniteCause::FireAspect)
                 .unwrap()
         );
+    }
+
+    /// A listener may change how long the entity burns: the ticks it leaves are
+    /// what `Entity.igniteForTicks` gets, clamped to `0..=72000`, and 0 leaves
+    /// the entity cold.
+    #[test]
+    fn a_listener_may_change_the_fire_ticks() {
+        crate::mod_api::in_own_process(
+            "game::combat::ignite_hook_tests::a_listener_may_change_the_fire_ticks",
+            a_listener_may_change_the_fire_ticks_in_own_process,
+        );
+    }
+
+    fn a_listener_may_change_the_fire_ticks_in_own_process() {
+        use crate::mod_api::{EntityIgniteEvent, Flow, Hooks};
+
+        struct Shorten;
+        impl Hooks for Shorten {
+            fn entity_ignite(
+                &self,
+                _host: &dyn crate::mod_api::Host,
+                event: &mut EntityIgniteEvent<'_>,
+            ) -> Flow {
+                let original = event.original_ticks;
+                match event.cause {
+                    // 160 requested, 40 left.
+                    "lightning" => {
+                        assert_eq!(original, 160);
+                        event.ticks = 40;
+                    }
+                    // 40 requested, 0 left: no fire.
+                    "fire_aspect" => {
+                        assert_eq!(original, 40);
+                        event.ticks = 0;
+                    }
+                    // Negative and over-cap values are clamped, not refused.
+                    "projectile" => event.ticks = -5,
+                    "other" => event.ticks = 100_000,
+                    // A listener that does not touch `ticks` changes nothing.
+                    "fire_block" => assert_eq!(event.ticks, 20),
+                    other => panic!("unexpected cause {other}"),
+                }
+                Flow::Continue
+            }
+        }
+
+        let Some(mut game) = server_game() else {
+            return;
+        };
+        let _ = crate::mod_api::MODS.set(std::sync::Arc::from(vec![
+            Box::new(Shorten) as Box<dyn Hooks>
+        ]));
+        for (id, requested, cause, expected) in [
+            (7, 160, IgniteCause::Lightning, 40),
+            (8, 40, IgniteCause::FireAspect, 0),
+            (9, 40, IgniteCause::Projectile, 0),
+            (10, 40, IgniteCause::Other, 72_000),
+            (11, 20, IgniteCause::FireBlock, 20),
+        ] {
+            game.mobs.push(pig(&game, id));
+            let burned = game
+                .ignite_entity_for(IgniteTarget::Mob(id), requested, cause)
+                .unwrap();
+            assert_eq!(
+                burned,
+                expected > 0,
+                "{cause:?} caught fire or not as the ticks say"
+            );
+            let mob = game.mobs.iter().find(|m| m.id == id).unwrap();
+            assert_eq!(
+                mob.fire_ticks, expected,
+                "{cause:?} burns for the listener's ticks"
+            );
+        }
+    }
+
+    /// A cancel wins over a changed `ticks`: the entity does not catch fire.
+    #[test]
+    fn a_listener_may_cancel_after_changing_ticks() {
+        crate::mod_api::in_own_process(
+            "game::combat::ignite_hook_tests::a_listener_may_cancel_after_changing_ticks",
+            a_listener_may_cancel_after_changing_ticks_in_own_process,
+        );
+    }
+
+    fn a_listener_may_cancel_after_changing_ticks_in_own_process() {
+        use crate::mod_api::{EntityIgniteEvent, Flow, Hooks};
+
+        struct VetoAfterChange;
+        impl Hooks for VetoAfterChange {
+            fn entity_ignite(
+                &self,
+                _host: &dyn crate::mod_api::Host,
+                event: &mut EntityIgniteEvent<'_>,
+            ) -> Flow {
+                assert_eq!(event.cause, "lightning");
+                assert_eq!(event.ticks, 160);
+                assert_eq!(event.original_ticks, 160);
+                event.ticks = 40;
+                Flow::Cancel
+            }
+        }
+
+        let Some(mut game) = server_game() else {
+            return;
+        };
+        let _ = crate::mod_api::MODS.set(std::sync::Arc::from(vec![
+            Box::new(VetoAfterChange) as Box<dyn Hooks>
+        ]));
+        game.mobs.push(pig(&game, 7));
+        assert!(
+            !game
+                .ignite_entity_for(IgniteTarget::Mob(7), 160, IgniteCause::Lightning)
+                .unwrap()
+        );
+        assert_eq!(game.mobs[0].fire_ticks, 0, "cancel wins over 40 ticks");
     }
 
     /// A listener that cancels one cause keeps the mob cold for it and lets

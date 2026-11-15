@@ -9049,21 +9049,35 @@ impl Game<'_> {
     /// `lightning` (a bolt's 8 seconds), `fire_block` (a boat in fire or on a
     /// burning block, or an armor stand set alight by fire or campfire
     /// damage), or `other` (a burning zombie's blow, which is no enchantment).
+    /// `ticks` starts as the fire ticks the cause asks for and a mod may
+    /// change it: the entity then burns for the ticks it left (0 to 72000, an
+    /// hour; anything else is clamped), and 0 leaves it cold. `original_ticks`
+    /// keeps the requested value, and is read-only: a write to it is ignored.
     /// Set `canceled` and the entity does not catch fire: the ignition is
     /// skipped as if that cause had not applied, while the cause's own damage
-    /// goes on. Lava and fire contact on a player or a mob run inside the
-    /// motion code, which has no game at hand, and are not told yet; neither is
-    /// an armor stand merely standing in fire, whose own tick sets the fire;
-    /// neither is an arrow set alight before it joins the level (which has no
-    /// ID to name). Server-side. Pending API @API:entity_ignite@.
+    /// goes on; a cancel wins over a changed `ticks`. Lava and fire contact on
+    /// a player or a mob run inside the motion code, which has no game at
+    /// hand, and are not told yet; neither is an armor stand merely standing
+    /// in fire, whose own tick sets the fire; neither is an arrow set alight
+    /// before it joins the level (which has no ID to name). Server-side.
+    /// Pending API @API:entity_ignite@.
     pub(super) fn native_entity_ignite(
         &self,
         entity: u32,
         cause: &str,
-        ticks: i32,
+        original_ticks: i32,
+        ticks: &mut i32,
         canceled: &mut bool,
     ) {
-        mod_api::dispatch_entity_ignite(self, mod_api::mods(), entity, cause, ticks, canceled);
+        mod_api::dispatch_entity_ignite(
+            self,
+            mod_api::mods(),
+            entity,
+            cause,
+            original_ticks,
+            ticks,
+            canceled,
+        );
     }
     /// An entity mounts or dismounts a vehicle (NeoForge's `EntityMountEvent`, posted from
     /// `Entity.startRiding` and `removeVehicle`): `entity` of type `kind` (`minecraft:player`,
