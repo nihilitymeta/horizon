@@ -723,6 +723,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
         "cannot: tooltip_render_pre: unsupported: HudBatch borrows render state (render thread)",
     ),
     ("trample", "generated"),
+    ("tree_grow", "generated"),
     ("vehicle_moved_v2", "generated"),
     ("wind_burst", "generated"),
     (
@@ -1250,6 +1251,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("trade_select", HookSide::Server),
     ("trade_with_villager", HookSide::Server),
     ("trample", HookSide::Server),
+    ("tree_grow", HookSide::Server),
     ("update_shape", HookSide::Server),
     ("use_animation", HookSide::Client),
     ("use_duration", HookSide::Both),
@@ -1296,14 +1298,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 14;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 15;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "9a5840c8c2e11957";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "1deb671cbd795823";
 
 #[cfg(test)]
 mod test_support;
@@ -1793,6 +1795,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "tnt_primed_v2",
     "toast_add",
     "trample",
+    "tree_grow",
     "vehicle_moved_v2",
     "wind_burst",
     "world_primitives",
@@ -2394,6 +2397,7 @@ macro_rules! impl_generated_hooks {
     gen_cancel!(tnt_primed_v2, game_mut, horizon_client::mod_api::TntPrimedV2Event<'_>, (none), [player: opt_uuid, dimension: cloned, pos: pos]);
     gen_cancel!(toast_add, game_mut, horizon_client::mod_api::ToastAddEvent<'_>, (none), [kind: cloned, id: cloned]);
     gen_cancel!(trample, none, horizon_client::mod_api::TrampleEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, pos: pos, fall_distance: copy]);
+    gen_cancel!(tree_grow, level, horizon_client::mod_api::TreeGrowEvent<'_>, (none), [dimension: cloned, pos: pos, block: cloned, feature: cloned, mega: copy]);
     gen_cancel!(vehicle_moved_v2, game_mut, horizon_client::mod_api::VehicleMovedV2Event<'_>, (field kind), [player: opt_uuid, dimension: cloned, vehicle: copy, kind: cloned, from: vec3, to: s_mut([f64;3]) => w_mut([f64;3])]);
     gen_collect!(wind_burst, game_mut, horizon_client::mod_api::WindBurstEvent<'_>, (none), [dimension: cloned, center: vec3, blocks: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_frame_collect!(world_primitives, game_ref, horizon_client::mod_api::WorldPrimitivesEvent<'_>, (none), [partial: copy, camera: vec3, primitives: world_primitives]);
@@ -73278,6 +73282,129 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_tree_grow() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tree_grow",
+            "horizon.on(\"tree_grow\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.feature == \"test:feature\", \"feature\")\n    assert(event.mega == true, \"mega\")\n    horizon.cancel()\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_tree_grow(
+            &FakeLevel,
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+            "test:block",
+            "test:feature",
+            true,
+            &mut cancel,
+        );
+        assert!(cancel, "cancel not cancelled");
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tree_grow_no_cancel() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_tree_grow_nocancel",
+            "horizon.on(\"tree_grow\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.dimension == \"test:dimension\", \"dimension\")\n    assert(event.pos.x == 2, \"pos\")\n    assert(event.pos.y == 3, \"pos\")\n    assert(event.pos.z == 4, \"pos\")\n    assert(event.block == \"test:block\", \"block\")\n    assert(event.feature == \"test:feature\", \"feature\")\n    assert(event.mega == true, \"mega\")\nend)",
+        );
+        let firing_mods = boxed(m);
+        let mut cancel = false;
+        dispatch_tree_grow(
+            &FakeLevel,
+            &firing_mods,
+            "test:dimension",
+            [2, 3, 4],
+            "test:block",
+            "test:feature",
+            true,
+            &mut cancel,
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        assert!(!cancel, "cancel set with no cancel");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_tree_grow_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tree_grow_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tree_grow(
+                &FakeLevel,
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:block",
+                "test:feature",
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(entity_reads(), 0, "tree_grow read the host with no handler");
+            assert_eq!(host_reads(), 0, "tree_grow read the host with no handler");
+            assert_eq!(level_reads(), 0, "tree_grow read the level with no handler");
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_tree_grow_cost_live",
+            "horizon.on(\"tree_grow\", function(event)\n    __witness = (__witness or 0) + 1\nend)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut cancel = false;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_tree_grow(
+                &FakeLevel,
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:block",
+                "test:feature",
+                true,
+                &mut cancel,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "tree_grow built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "tree_grow read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "tree_grow read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_vehicle_moved_v2() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_vehicle_moved_v2",
@@ -79478,6 +79605,21 @@ mod generated_tests {
                 "test:kind",
                 [4, 5, 6],
                 5.5,
+                &mut cancel,
+            );
+            assert!(!cancel, "cancel changed with no handler");
+        }
+        // tree_grow: unregistered, nothing runs.
+        {
+            let mut cancel = false;
+            dispatch_tree_grow(
+                &FakeLevel,
+                &firing_mods,
+                "test:dimension",
+                [2, 3, 4],
+                "test:block",
+                "test:feature",
+                true,
                 &mut cancel,
             );
             assert!(!cancel, "cancel changed with no handler");

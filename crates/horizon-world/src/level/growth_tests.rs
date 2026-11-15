@@ -1050,3 +1050,250 @@ fn a_hanging_mangrove_propagule_ageing_asks_the_level_and_can_be_cancelled() {
     assert_eq!(cancelled.state, young, "a cancelled step grows nothing");
     assert_eq!(cancelled.rng, allowed.rng);
 }
+
+/// A level whose only hook is `tree_grow`: it records each attempt and cancels
+/// it when `cancel`.
+struct TreeLevel<'a> {
+    inner: &'a mut Level,
+    cancel: bool,
+    asked: Vec<(BlockPos, BlockStateId, String, bool)>,
+}
+impl LevelAccess for TreeLevel<'_> {
+    fn day_time(&self) -> i64 {
+        self.inner.day_time()
+    }
+    fn block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.inner.block_state(pos)
+    }
+    fn set_raw(&mut self, pos: BlockPos, state: BlockStateId) -> Option<BlockStateId> {
+        self.inner.set_raw(pos, state)
+    }
+    fn is_loaded(&self, pos: BlockPos) -> bool {
+        self.inner.is_loaded(pos)
+    }
+    fn random(&mut self) -> &mut LegacyRandom {
+        self.inner.random()
+    }
+    fn game_time(&self) -> i64 {
+        self.inner.game_time()
+    }
+    fn emit(&mut self, event: LevelEvent) {
+        self.inner.emit(event)
+    }
+    fn tree_grow(
+        &mut self,
+        pos: BlockPos,
+        block: BlockStateId,
+        feature: &str,
+        mega: bool,
+        cancel: &mut bool,
+    ) {
+        self.asked.push((pos, block, feature.to_owned(), mega));
+        *cancel = self.cancel;
+    }
+}
+
+/// What one `grow_tree` attempt left behind: the asks it made (the block, the
+/// configured feature picked and whether it was the mega tree), whether it
+/// grew, every block the level holds after and the level random's state.
+struct TreeAttempt {
+    asked: Vec<(BlockPos, BlockStateId, String, bool)>,
+    grew: bool,
+    blocks: HashMap<BlockPos, BlockStateId>,
+    rng: u64,
+}
+
+/// One `grow_tree` call for `grower`, saplings at `positions`, through the
+/// default hook (`cancel` is `None`) or a [`TreeLevel`] that cancels when the
+/// flag says.
+fn tree_attempt(
+    f: &'static Fixture,
+    seed: i64,
+    grower: &str,
+    sapling: BlockStateId,
+    positions: &[(i32, i32)],
+    cancel: Option<bool>,
+) -> TreeAttempt {
+    let mut w = World::new(f, seed);
+    w.floor("grass_block", 12);
+    for &(x, z) in positions {
+        w.put(BlockPos::new(x, 64, z), sapling);
+    }
+    let g = super::growth::grower(grower).expect("a tree grower");
+    let pos = BlockPos::new(0, 64, 0);
+    let (asked, grew) = match cancel {
+        Some(cancel) => {
+            let mut level = TreeLevel {
+                inner: &mut w.level,
+                cancel,
+                asked: Vec::new(),
+            };
+            let mut sim = f.behaviours.sim(&mut level, &mut w.ticks);
+            let grew = sim.grow_tree(g, pos, sapling);
+            (level.asked, grew)
+        }
+        None => {
+            let mut sim = f.behaviours.sim(&mut w.level, &mut w.ticks);
+            (Vec::new(), sim.grow_tree(g, pos, sapling))
+        }
+    };
+    TreeAttempt {
+        asked,
+        grew,
+        blocks: w.level.blocks,
+        rng: w.level.random.state(),
+    }
+}
+
+/// The name of every placed block, for the log and leaf checks.
+fn block_names(f: &Fixture, blocks: &HashMap<BlockPos, BlockStateId>) -> Vec<String> {
+    blocks
+        .values()
+        .map(|&state| f.registry.state(state).unwrap().name.clone())
+        .collect()
+}
+
+/// `LevelAccess::tree_grow` is asked once, before a sapling is taken, with the
+/// sapling's block and the feature picked; a listener that allows changes
+/// nothing, and the picks happen before the ask.
+#[test]
+fn a_tree_grow_asks_the_level_once() {
+    let Some(f) = fixture() else { return };
+    let sapling = World::new(f, 0).id("oak_sapling", &[]);
+    let pos = BlockPos::new(0, 64, 0);
+    let log = World::new(f, 0).id("oak_log", &[("axis", "y")]);
+
+    let default = tree_attempt(f, 0, "oak", sapling, &[(0, 0)], None);
+    assert!(default.grew, "the default hook grows the oak");
+    assert_eq!(default.blocks[&pos], log, "an oak trunk at the sapling");
+    let names = block_names(f, &default.blocks);
+    assert!(
+        names.iter().any(|name| name == "minecraft:oak_leaves"),
+        "the oak leaves"
+    );
+
+    let allowed = tree_attempt(f, 0, "oak", sapling, &[(0, 0)], Some(false));
+    assert_eq!(
+        allowed.asked,
+        vec![(pos, sapling, "minecraft:oak".to_owned(), false)],
+        "one ask, the sapling's block, the feature picked, not mega"
+    );
+    assert!(allowed.grew);
+    assert_eq!(
+        allowed.blocks, default.blocks,
+        "a listener changes no block"
+    );
+    assert_eq!(allowed.rng, default.rng, "a listener adds no draw");
+}
+
+/// A cancelling listener leaves the sapling, places no log or leaf, and makes
+/// `grow_tree` answer false, with the same draws the picks made before the ask.
+#[test]
+fn a_cancelled_tree_grow_leaves_the_sapling() {
+    let Some(f) = fixture() else { return };
+    let sapling = World::new(f, 0).id("oak_sapling", &[]);
+    let pos = BlockPos::new(0, 64, 0);
+    let mut w = World::new(f, 0);
+    w.floor("grass_block", 12);
+    w.put(pos, sapling);
+    let mut level = TreeLevel {
+        inner: &mut w.level,
+        cancel: true,
+        asked: Vec::new(),
+    };
+    let mut sim = f.behaviours.sim(&mut level, &mut w.ticks);
+    assert!(
+        !sim.grow_tree(super::growth::grower("oak").unwrap(), pos, sapling),
+        "a cancelled growth reports false"
+    );
+    assert_eq!(
+        level.asked,
+        vec![(pos, sapling, "minecraft:oak".to_owned(), false)]
+    );
+    assert_eq!(level.block_state(pos), sapling, "the sapling stays");
+    let names = block_names(f, &level.inner.blocks);
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.ends_with("_log") || name.ends_with("_leaves")),
+        "no part of the tree: {names:?}"
+    );
+    // The two picks (the empty mega list draws nothing) are made before the
+    // ask, so cancelling leaves the random at the one draw vanilla made.
+    let mut expected = LegacyRandom::new(0);
+    assert_eq!(expected.next_int_bound(10).unwrap(), 0, "seed 0 picks oak");
+    assert_eq!(level.random().state(), expected.state());
+}
+
+/// A 2x2 square of saplings asks once with `mega`, and a cancel keeps all four.
+#[test]
+fn a_two_by_two_square_asks_with_mega() {
+    let Some(f) = fixture() else { return };
+    let sapling = World::new(f, 0).id("dark_oak_sapling", &[]);
+    let square = [(0, 0), (1, 0), (0, 1), (1, 1)];
+    let pos = BlockPos::new(0, 64, 0);
+
+    let allowed = tree_attempt(f, 0, "dark_oak", sapling, &square, Some(false));
+    assert_eq!(
+        allowed.asked,
+        vec![(pos, sapling, "minecraft:dark_oak".to_owned(), true)],
+        "the mega feature, one ask"
+    );
+    assert!(allowed.grew);
+    assert!(
+        block_names(f, &allowed.blocks)
+            .iter()
+            .any(|name| name == "minecraft:dark_oak_log"),
+        "the trunk"
+    );
+
+    let cancelled = tree_attempt(f, 0, "dark_oak", sapling, &square, Some(true));
+    assert_eq!(cancelled.asked.len(), 1);
+    assert!(!cancelled.grew);
+    for &(x, z) in &square {
+        assert_eq!(
+            cancelled.blocks[&BlockPos::new(x, 64, z)],
+            sapling,
+            "all four saplings stay"
+        );
+    }
+    let names = block_names(f, &cancelled.blocks);
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.ends_with("_log") || name.ends_with("_leaves")),
+        "no part of the tree: {names:?}"
+    );
+}
+
+/// A standing mangrove propagule grows a tree through `grow_tree` too (its
+/// random tick calls `sapling_advance_tree`), so `tree_grow` hears it.
+#[test]
+fn a_standing_mangrove_propagule_asks_the_level() {
+    let Some(f) = fixture() else { return };
+    let propagule = World::new(f, 0).id(
+        "mangrove_propagule",
+        &[("hanging", "false"), ("stage", "1"), ("age", "0")],
+    );
+    let pos = BlockPos::new(0, 64, 0);
+    let allowed = tree_attempt(f, 0, "mangrove", propagule, &[(0, 0)], Some(false));
+    let [(asked_pos, block, feature, mega)] = &allowed.asked[..] else {
+        panic!("one ask: {:?}", allowed.asked);
+    };
+    assert_eq!(*asked_pos, pos);
+    assert_eq!(*block, propagule);
+    assert!(!mega);
+    assert!(
+        matches!(
+            feature.as_str(),
+            "minecraft:mangrove" | "minecraft:tall_mangrove"
+        ),
+        "a mangrove feature: {feature}"
+    );
+    assert!(allowed.grew, "the mangrove tree grows");
+
+    let cancelled = tree_attempt(f, 0, "mangrove", propagule, &[(0, 0)], Some(true));
+    assert_eq!(cancelled.asked.len(), 1);
+    assert!(!cancelled.grew);
+    assert_eq!(cancelled.blocks[&pos], propagule, "the propagule stays");
+}

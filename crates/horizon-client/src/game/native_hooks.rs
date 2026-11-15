@@ -1094,9 +1094,9 @@ impl GameLevel<'_> {
     /// included). Set `cancel` to leave it as it is. Covers crop, stem, cactus,
     /// sugar cane and bamboo growth, grass spreading onto dirt, mushroom and
     /// vine spread, nether wart and sweet berry bush ageing, and a hanging
-    /// mangrove propagule ageing. Not covered: sapling trees (and a standing
-    /// mangrove propagule, which grows a tree) and sculk. Server-side. Pending
-    /// API @API:block_grow@.
+    /// mangrove propagule ageing. Not covered: sapling trees and a standing
+    /// mangrove propagule, which `tree_grow` hears, and sculk. Server-side.
+    /// Pending API @API:block_grow@.
     pub(super) fn native_block_grow(
         &self,
         dimension: &str,
@@ -1106,6 +1106,40 @@ impl GameLevel<'_> {
         cancel: &mut bool,
     ) {
         mod_api::dispatch_block_grow(self, mod_api::mods(), dimension, pos, from, to, cancel);
+    }
+    /// A sapling or a mangrove propagule on an authoritative server at `pos`
+    /// in `dimension` is about to grow a tree: `block` is the sapling's block
+    /// (`minecraft:oak_sapling`, `minecraft:mangrove_propagule`), `feature`
+    /// the configured feature picked (`minecraft:oak`, a mega tree's feature)
+    /// and `mega` true for a 2x2 square of saplings growing the mega feature.
+    /// Set `cancel` to refuse it: the sapling or the four stay where they are,
+    /// as they do when vanilla's growth fails, and no other feature is tried.
+    /// This is every tree `TreeGrower` grows: each sapling species' random tick
+    /// and bone meal, a bone-mealed azalea, and a mangrove propagule that
+    /// grows one (a standing one's random tick). Not covered: a hanging
+    /// mangrove propagule ageing (that is `block_grow`), a tree placed by
+    /// worldgen, a huge mushroom or nether fungus, and a chorus plant or
+    /// flower, each of which grows on its own path. Server-side. Pending API
+    /// @API:tree_grow@.
+    pub(super) fn native_tree_grow(
+        &self,
+        dimension: &str,
+        pos: [i32; 3],
+        block: &str,
+        feature: &str,
+        mega: bool,
+        cancel: &mut bool,
+    ) {
+        mod_api::dispatch_tree_grow(
+            self,
+            mod_api::mods(),
+            dimension,
+            pos,
+            block,
+            feature,
+            mega,
+            cancel,
+        );
     }
     /// `EntityBlock.newBlockEntity` with the actual placed state. The first
     /// entity supplied owns the result. No response means no new entity.

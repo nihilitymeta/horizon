@@ -492,6 +492,21 @@ pub trait LevelAccess {
         _cancel: &mut bool,
     ) {
     }
+    /// A sapling or a mangrove propagule at `pos` is about to grow a tree:
+    /// `block` is the block there now, `feature` the configured feature picked
+    /// (a mega tree's feature in the `mega` case, a 2x2 square of saplings).
+    /// Set `cancel` to refuse the growth: the saplings stay as they are, as
+    /// vanilla's could-not-grow leaves them, and no other feature is tried.
+    /// The default allows it.
+    fn tree_grow(
+        &mut self,
+        _pos: BlockPos,
+        _block: BlockStateId,
+        _feature: &str,
+        _mega: bool,
+        _cancel: &mut bool,
+    ) {
+    }
     /// `BlockState.randomTick` from `ServerLevel.tickChunk`, before the block
     /// handles it. The level may change the block (`Behaviours::set_block`
     /// with `ticks`); setting `handled` skips the block's own random tick. A

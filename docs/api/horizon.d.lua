@@ -523,6 +523,7 @@ export type TooltipComponentEvent = { stack: Item, size: Vec2? }
 export type TradeSelectEvent = { player: PlayerRef, villager: number?, index: number }
 export type TradeWithVillagerEvent = { merchant: number, kind: string, offer: { base_cost_a: { stack: Item }, cost_b: { stack: Item }?, result: Item, uses: number, max_uses: number, reward_exp: boolean, special_price_diff: number, demand: number, price_multiplier: number, xp: number } }
 export type TrampleEvent = { dimension: string, entity: number, kind: string, pos: Vec3, fall_distance: number }
+export type TreeGrowEvent = { dimension: string, pos: Vec3, block: string, feature: string, mega: boolean }
 export type UseAnimationEvent = { stack: Item, animation: "none" | "eat" | "drink" | "block" | "bow" | "trident" | "crossbow" | "spyglass" | "toot_horn" | "brush" | "bundle" | "spear" }
 export type UseDurationEvent = { stack: Item, duration: number }
 export type UseItemEvent = { stack: Item }
@@ -1006,6 +1007,7 @@ export type HorizonOn =
     ((name: "trade_select", fn: (event: TradeSelectEvent) -> ()) -> ()) &
     ((name: "trade_with_villager", fn: (event: TradeWithVillagerEvent) -> (), kind: string?) -> ()) &
     ((name: "trample", fn: (event: TrampleEvent) -> (), kind: string?) -> ()) &
+    ((name: "tree_grow", fn: (event: TreeGrowEvent) -> ()) -> ()) &
     ((name: "use_animation", fn: (event: UseAnimationEvent) -> ()) -> ()) &
     ((name: "use_duration", fn: (event: UseDurationEvent) -> ()) -> ()) &
     ((name: "use_item", fn: (event: UseItemEvent) -> ()) -> ()) &

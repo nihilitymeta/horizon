@@ -380,7 +380,8 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             flags::UPDATE_SKIP_ALL_SIDEEFFECTS | flags::UPDATE_CLIENTS,
         );
     }
-    /// `TreeGrower.growTree`.
+    /// `TreeGrower.growTree`, the level's `tree_grow` asked before any sapling
+    /// is taken.
     pub(crate) fn grow_tree(
         &mut self,
         grower: &TreeGrower,
@@ -391,6 +392,11 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             && self.feature_exists(mega)
             && let Some((dx, dz, around)) = self.two_by_two(state, pos)
         {
+            let mut cancel = false;
+            self.level.tree_grow(pos, state, mega, true, &mut cancel);
+            if cancel {
+                return false;
+            }
             for &(_, p) in &around {
                 self.remove_sapling(p);
             }
@@ -412,6 +418,12 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             return false;
         };
         if !self.feature_exists(feature) {
+            return false;
+        }
+        let mut cancel = false;
+        self.level
+            .tree_grow(pos, state, feature, false, &mut cancel);
+        if cancel {
             return false;
         }
         self.remove_sapling(pos);

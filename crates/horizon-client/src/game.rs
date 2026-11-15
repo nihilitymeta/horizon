@@ -1341,6 +1341,26 @@ impl LevelAccess for GameLevel<'_> {
             );
         }
     }
+    fn tree_grow(
+        &mut self,
+        pos: BlockPos,
+        block: BlockStateId,
+        feature: &str,
+        mega: bool,
+        cancel: &mut bool,
+    ) {
+        if self.native_authoritative {
+            let block = self.facts.get(block).name.to_string();
+            self.native_tree_grow(
+                native_hooks::dimension_id(self.dimension),
+                [pos.x, pos.y, pos.z],
+                &block,
+                feature,
+                mega,
+                cancel,
+            );
+        }
+    }
     fn before_tick_block(
         &mut self,
         ticks: &mut Ticks,
