@@ -9098,7 +9098,7 @@ impl Game<'_> {
     }
     /// A cause is about to set the entity `entity` of type `kind`
     /// (`minecraft:player`, `minecraft:zombie`, `minecraft:armor_stand`,
-    /// `minecraft:arrow`, `minecraft:small_fireball`) alight
+    /// `minecraft:arrow`, `minecraft:trident`, `minecraft:small_fireball`) alight
     /// for `ticks` fire ticks (`Entity.igniteForTicks`, through
     /// `Entity.igniteForSeconds`). `cause` is one of a closed set:
     /// `fire_aspect` (Fire Aspect and the other attack enchantments),
@@ -9106,13 +9106,14 @@ impl Game<'_> {
     /// a bow or crossbow with the Flame enchantment spawns burning),
     /// `projectile` (a blaze's or a fire charge's small fireball), `lightning`
     /// (a bolt's 8 seconds), `lava` (standing in lava or in a lava cauldron, or
-    /// an arrow in lava), `fire_block` (standing in fire, a boat in fire or on a
-    /// burning block, an armor stand standing in fire or set alight by fire or
-    /// campfire damage, or an arrow or another projectile in fire), `sun`
-    /// (sunlight burning an undead), or `other` (a burning zombie's blow, which
-    /// is no enchantment; an item fireball renewing its own flame; a wither
-    /// skeleton's arrow; the arrow a perched dragon's shrug relights). `ticks`
-    /// starts as the fire ticks the cause asks for and a mod may change it: the
+    /// an arrow or a trident in lava), `fire_block` (standing in fire, a boat in
+    /// fire or on a burning block, an armor stand standing in fire or set alight
+    /// by fire or campfire damage, or an arrow, another projectile or a trident
+    /// in fire), `sun` (sunlight burning an undead), or `other` (a burning
+    /// zombie's blow, which is no enchantment; an item fireball renewing its own
+    /// flame; a wither skeleton's arrow; the arrow a perched dragon's shrug
+    /// relights). `ticks` starts as the fire ticks the cause asks for and a mod
+    /// may change it: the
     /// entity then burns for the ticks it left (0 to
     /// 72000, an hour; anything else is clamped), and 0 leaves it cold.
     /// `original_ticks` keeps the requested value, and is read-only: a write to
@@ -9129,21 +9130,20 @@ impl Game<'_> {
     /// fire block sets alight (a thrown one: a snowball, egg, ender pearl,
     /// potion, a llama's spit, a content mod's thrown item; an experience
     /// bottle; a small, large or dragon fireball or a wither skull; a wind
-    /// charge), and for an item fireball's own renewal, for the arrow a bow or
-    /// crossbow with Flame spawns (`flame_arrow`, 2000 ticks) and the one a
-    /// wither skeleton shoots (`other`, 2000 ticks), both told once the level
-    /// holds the arrow under its id, and for the arrow a perched dragon's
-    /// shrug relights (`other`, 20 ticks), every tick of the attempt, on the
-    /// server's copy only: only the server's copy is told, and a client's
-    /// predicted copy never is, neither the window's own player nor a
-    /// projectile or arrow the client ticks ahead of the server's. There the
-    /// hook is skipped and vanilla's own timer applies, unchanged by any
+    /// charge), for an item fireball's own renewal, for the arrow a bow or
+    /// crossbow with Flame spawns (`flame_arrow`, 2000 ticks) — a player's, or a
+    /// mob's whose gear carries the enchantment — and the one a wither skeleton
+    /// shoots (`other`, 2000 ticks), each told once the level holds the arrow
+    /// under its id, for the arrow a perched dragon's shrug relights (`other`,
+    /// 20 ticks), and for a player-thrown trident in a fire block
+    /// (`fire_block`, 160 ticks) or in lava (`lava`, 300 ticks), every tick of
+    /// the attempt, on the server's copy only: only the server's copy is told,
+    /// and a client's predicted copy never is, neither the window's own player
+    /// nor a projectile or arrow the client ticks ahead of the server's. There
+    /// the hook is skipped and vanilla's own timer applies, unchanged by any
     /// listener, and a predicted arrow's fire is cleared at the tick's end, as
     /// vanilla clears it.
-    /// Not yet told: a dropped item in fire or lava; a mob shooter's Flame
-    /// arrow (a skeleton's or pillager's), whose bonus is set where the arrow
-    /// has no id yet; and a player-thrown trident in fire or lava, which asks
-    /// nothing. Server-side.
+    /// Not yet told: a dropped item in fire or lava. Server-side.
     /// Pending API @API:entity_ignite@.
     pub(super) fn native_entity_ignite(
         entity: u32,

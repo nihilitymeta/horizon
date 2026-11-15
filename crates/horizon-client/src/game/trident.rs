@@ -805,12 +805,32 @@ impl Game<'_> {
     }
     /// Apply the environment before impact callbacks can change the world.
     fn trident_block_effects(&mut self, t: &mut ThrownTrident, from: Vec3, to: Vec3) {
+        // Only a server ignites: a window that is a server's client predicts
+        // the throw but never this (`Projectile::ignition`'s guard, per object).
+        let server = self.remote.is_none();
+        let (id, fire_ticks) = (t.id, t.fire_ticks);
         let extinguished = {
             let rain = self.arrow_rain();
             // Block-contact hooks are already delivered by the game's inside pass.
-            let (ticks, extinguished) =
-                self.arrow_scene(&rain)
-                    .apply_block_effects(from, to, t.fire_ticks, |_, _, _| {});
+            let (ticks, extinguished) = self.arrow_scene(&rain).apply_block_effects_told(
+                from,
+                to,
+                fire_ticks,
+                |_, _, _| {},
+                |cause, wanted| {
+                    if !server {
+                        return Some(wanted);
+                    }
+                    // A trident tracked by no server yet has id 0, as a
+                    // projectile's own ignition asks with it.
+                    crate::native_client_hooks::ignite_choice(
+                        id,
+                        "minecraft:trident",
+                        cause,
+                        wanted,
+                    )
+                },
+            );
             t.fire_ticks = ticks;
             extinguished
         };
@@ -1682,5 +1702,243 @@ mod tests {
         game.release_trident(10);
         assert_eq!(game.tridents[1].pickup, super::Pickup::CreativeOnly);
         assert!(game.held().is_some());
+    }
+}
+
+#[cfg(test)]
+mod ignite_hook_tests {
+    use super::*;
+    use horizon_client::native_client_hooks::{NativeClientHooks, install};
+    use std::sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering};
+
+    /// What the installed listener does: leave the ticks alone, set 40, or
+    /// cancel.
+    const LEAVE: i32 = 0;
+    const SHORTEN: i32 = 40;
+    const CANCEL: i32 = -1;
+    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
+    static TOLD: AtomicU32 = AtomicU32::new(0);
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn listener(
+        entity: u32,
+        kind: &str,
+        cause: &str,
+        requested: i32,
+        ticks: &mut i32,
+        cancel: &mut bool,
+    ) {
+        assert_eq!(entity, 11, "the trident's own id");
+        assert_eq!(kind, "minecraft:trident");
+        match cause {
+            "fire_block" => assert_eq!(requested, 160, "the fire block asks for 160"),
+            "lava" => assert_eq!(requested, 300, "lava asks for 300"),
+            other => panic!("unexpected cause {other}"),
+        }
+        TOLD.store(entity, Ordering::Relaxed);
+        CALLS.fetch_add(1, Ordering::Relaxed);
+        match MODE.load(Ordering::Relaxed) {
+            LEAVE => {}
+            SHORTEN => *ticks = 40,
+            CANCEL => *cancel = true,
+            other => panic!("unexpected mode {other}"),
+        }
+    }
+
+    /// The client library's table with only `entity_ignite` working (the table
+    /// is the process's first, so each test runs in its own process).
+    fn install_ignite() {
+        let _ = install(NativeClientHooks {
+            menu_slot_rules: |_, _, _, _, _| {},
+            sound_play: |_, _, _, _| {},
+            player_chat: |_, _, _, _, _| {},
+            player_chat_v2: |_, _, _, _, _, _| {},
+            chat_decorate: |_, _, _, _| {},
+            living_heal: |_, _, _| {},
+            living_breathe: |_, _, _, _, _| {},
+            living_drown: |_, _, _, _, _, _| {},
+            living_fall: |_, _, _, _, _| {},
+            entity_ignite: listener,
+            living_jump: |_, _| {},
+            register_goals: |_| {},
+            player_pre_login: |_, _, _, _| {},
+            player_profile: |_, _, _| {},
+            ingredient: |_, _, _| {},
+            ingredient_test: |_, _, _, _| {},
+            mob_ai_register: |_| {},
+            living_death_message: |_, _, _| {},
+            log_line: |_, _, _, _| {},
+            handshake: |_, _, _, _, _| {},
+        });
+    }
+
+    /// The prepared resources, or None: a clone without them skips the test, as
+    /// chunk A's hook tests do.
+    fn resources_root() -> Option<std::path::PathBuf> {
+        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.local/horizon-client")
+                    .join(horizon_core::VANILLA_VERSION)
+            });
+        root.join("movement-properties.nbt")
+            .exists()
+            .then_some(root)
+    }
+
+    /// A server's game on the prepared resources with the chunk at the origin
+    /// loaded and its `block` from y 4 to 6, as `combat`'s ignite tests make
+    /// one.
+    fn server_game(root: &std::path::Path, block: &str) -> Game<'static> {
+        use crate::game::{Audio, Options, Progress, Settings, load_resources};
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.to_path_buf(),
+            None,
+            root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!(),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.to_path_buf();
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let res: &'static _ = Box::leak(Box::new(loaded.resources));
+        let mut game = Game::new(
+            res,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(root),
+            None,
+        )
+        .unwrap();
+        game.options.dedicated = Some(Vec::new());
+        game.world.chunks.insert(
+            (0, 0),
+            std::sync::Arc::new(horizon_client::chunk::Chunk::empty(0, 0)),
+        );
+        game.streaming.forced.insert((0, 0));
+        let state = game.pack.assets.registry.default_state(block).unwrap();
+        for y in 4..=6 {
+            for x in 0..=2 {
+                for z in 0..=2 {
+                    game.world.set(x, y, z, state).unwrap();
+                }
+            }
+        }
+        game
+    }
+
+    /// Trident id 11 at the middle of the block, its fire applied once through
+    /// `trident_block_effects`.
+    fn ticked(game: &mut Game<'_>, mode: i32) -> i32 {
+        MODE.store(mode, Ordering::Relaxed);
+        CALLS.store(0, Ordering::Relaxed);
+        let mut t = ThrownTrident::remote(11, Vec3::new(1.5, 5.0, 1.5), 0.0, 0.0);
+        let at = t.position;
+        game.trident_block_effects(&mut t, at, at);
+        t.fire_ticks
+    }
+
+    /// A thrown trident in a fire block and in lava asks the hook for each
+    /// ignition, naming the trident's own id and type.
+    #[test]
+    fn a_thrown_tridents_fire_and_lava_are_told() {
+        crate::mod_api::in_own_process(
+            "game::trident::ignite_hook_tests::a_thrown_tridents_fire_and_lava_are_told",
+            a_thrown_tridents_fire_and_lava_are_told_in_own_process,
+        );
+    }
+
+    fn a_thrown_tridents_fire_and_lava_are_told_in_own_process() {
+        let Some(root) = resources_root() else {
+            return;
+        };
+        install_ignite();
+        let mut fire = server_game(&root, "minecraft:fire");
+        // A cancel leaves it cold, told once for the attempt.
+        assert_eq!(
+            (ticked(&mut fire, CANCEL), CALLS.load(Ordering::Relaxed)),
+            (0, 1)
+        );
+        // The listener's 40 replaces the 160 the fire block asks for.
+        assert_eq!(
+            (ticked(&mut fire, SHORTEN), CALLS.load(Ordering::Relaxed)),
+            (40, 1)
+        );
+        // Untouched, the fire block's 160.
+        assert_eq!(
+            (ticked(&mut fire, LEAVE), CALLS.load(Ordering::Relaxed)),
+            (160, 1)
+        );
+        assert_eq!(TOLD.load(Ordering::Relaxed), 11, "the trident's own id");
+        let mut lava = server_game(&root, "minecraft:lava");
+        // Lava asks for 300: cancelled, 40, or vanilla's 300.
+        assert_eq!(
+            (ticked(&mut lava, CANCEL), CALLS.load(Ordering::Relaxed)),
+            (0, 1)
+        );
+        assert_eq!(
+            (ticked(&mut lava, SHORTEN), CALLS.load(Ordering::Relaxed)),
+            (40, 1)
+        );
+        assert_eq!(
+            (ticked(&mut lava, LEAVE), CALLS.load(Ordering::Relaxed)),
+            (300, 1)
+        );
+    }
+
+    /// A trident that touches no fire or lava is never told.
+    #[test]
+    fn a_tridents_air_is_never_told() {
+        crate::mod_api::in_own_process(
+            "game::trident::ignite_hook_tests::a_tridents_air_is_never_told",
+            a_tridents_air_is_never_told_in_own_process,
+        );
+    }
+
+    fn a_tridents_air_is_never_told_in_own_process() {
+        let Some(root) = resources_root() else {
+            return;
+        };
+        install_ignite();
+        let mut game = server_game(&root, "minecraft:stone");
+        let mut t = ThrownTrident::remote(11, Vec3::new(1.5, 5.0, 1.5), 0.0, 0.0);
+        let at = t.position;
+        game.trident_block_effects(&mut t, at, at);
+        assert_eq!((t.fire_ticks, CALLS.load(Ordering::Relaxed)), (0, 0));
+    }
+
+    /// With no table installed the trident's fire and the next draw of its own
+    /// random are exactly vanilla's.
+    #[test]
+    fn no_listener_keeps_a_tridents_fire_and_its_random() {
+        crate::mod_api::in_own_process(
+            "game::trident::ignite_hook_tests::no_listener_keeps_a_tridents_fire_and_its_random",
+            no_listener_keeps_a_tridents_fire_and_its_random_in_own_process,
+        );
+    }
+
+    fn no_listener_keeps_a_tridents_fire_and_its_random_in_own_process() {
+        let Some(root) = resources_root() else {
+            return;
+        };
+        let next = horizon_core::random::LegacyRandom::new(3).next_long();
+        for (block, fire) in [("minecraft:fire", 160), ("minecraft:lava", 300)] {
+            let mut game = server_game(&root, block);
+            let mut t = ThrownTrident::remote(11, Vec3::new(1.5, 5.0, 1.5), 0.0, 0.0);
+            let at = t.position;
+            game.trident_block_effects(&mut t, at, at);
+            assert_eq!(t.fire_ticks, fire, "{block}");
+            t.random.set_seed(3);
+            assert_eq!(t.random.next_long(), next, "{block} drew nothing");
+        }
     }
 }

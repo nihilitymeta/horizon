@@ -3008,6 +3008,12 @@ impl Game<'_> {
                         .iter()
                         .find(|m| m.id == mob)
                         .is_some_and(horizon_client::mobs::undead::lights_its_arrows);
+                    // The gear's Flame (`Projectile::set_bonus`) also lit the
+                    // arrow before it had an id; the wither skeleton's own fire
+                    // is the one told below, so its arrow is not told twice.
+                    let flame = (!wither_skeleton)
+                        .then(|| arrow.arrow.as_ref().map_or(0, |a| a.fire_ticks))
+                        .filter(|ticks| *ticks > 0);
                     self.launch_mob_projectile(arrow);
                     if wither_skeleton {
                         self.ignite_spawned_projectile(
@@ -3015,6 +3021,8 @@ impl Game<'_> {
                             "other",
                             horizon_client::mobs::undead::WITHER_SKELETON_ARROW_FIRE,
                         );
+                    } else if let Some(ticks) = flame {
+                        self.ignite_spawned_projectile(self.next_entity, "flame_arrow", ticks);
                     }
                 }
                 MobEvent::CrossbowShot { ammo, mut arrow } => {
@@ -3025,7 +3033,13 @@ impl Game<'_> {
                         self.launch_angled_rocket(at, &ammo, arrow.owner, |_| arrow.velocity);
                     } else {
                         Self::arrow_from_ammo(&ammo, &mut arrow);
+                        // The gear's Flame (`Projectile::set_bonus`) lit the
+                        // arrow before it had an id.
+                        let flame = arrow.arrow.as_ref().map_or(0, |a| a.fire_ticks);
                         self.launch_mob_projectile(arrow);
+                        if flame > 0 {
+                            self.ignite_spawned_projectile(self.next_entity, "flame_arrow", flame);
+                        }
                     }
                 }
                 MobEvent::CrossbowLoad {
@@ -9710,7 +9724,7 @@ mod ignite_spawned_projectile_tests {
     use super::*;
     use horizon_client::mobs::undead::ignite_for_wither_skeleton;
     use horizon_client::native_client_hooks::{NativeClientHooks, install};
-    use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering};
 
     /// What the listener does: leave the ticks alone, set 40, or cancel.
     const LEAVE: i32 = 0;
@@ -9718,6 +9732,7 @@ mod ignite_spawned_projectile_tests {
     const CANCEL: i32 = -1;
     static MODE: AtomicI32 = AtomicI32::new(LEAVE);
     static TOLD: AtomicU32 = AtomicU32::new(0);
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
 
     /// The client library's table with only `entity_ignite` working (the table
     /// is the process's first, so each test runs in its own process): the
@@ -9741,6 +9756,7 @@ mod ignite_spawned_projectile_tests {
         }
         assert!(entity > 0, "the arrow's own id, not 0");
         TOLD.store(entity, Ordering::Relaxed);
+        CALLS.fetch_add(1, Ordering::Relaxed);
         match MODE.load(Ordering::Relaxed) {
             LEAVE => {}
             SHORTEN => *ticks = 40,
@@ -10012,5 +10028,183 @@ mod ignite_spawned_projectile_tests {
             40,
             "a changed value replaces the fire"
         );
+    }
+
+    /// The mob `kind` with id 1 in `game`, its main hand the `weapon`.
+    fn shooter(game: &mut Game<'_>, kind: &str, weapon: ItemStack) {
+        let kind = game.res.mob_types().get(kind).unwrap().clone();
+        let mut mob = Mob::new(1, kind, Vec3::new(1.5, 64.0, 1.5), 0.0);
+        mob.extra.set_main_hand_stack(Some(weapon));
+        game.mobs.push(mob);
+    }
+
+    /// An arrow as `perform_ranged_attack` made it, lit by the gear's Flame
+    /// (`Projectile::set_bonus`) before it had an id.
+    fn flame_arrow() -> Projectile {
+        let mut p = Projectile::new(
+            ProjectileKind::Arrow {
+                base_damage: 2.0,
+                critical: false,
+                effect: None,
+            },
+            Vec3::new(1.5, 64.0, 1.5),
+            Some(Who::Mob(1)),
+        );
+        p.set_bonus(horizon_client::mobs::gear::ArrowBonus {
+            flame: true,
+            ..Default::default()
+        });
+        p
+    }
+
+    fn called() -> usize {
+        CALLS.load(Ordering::Relaxed)
+    }
+
+    #[test]
+    fn a_mobs_flame_arrow_is_told_once_it_has_its_id() {
+        crate::mod_api::in_own_process(
+            "game::creatures::ignite_spawned_projectile_tests::a_mobs_flame_arrow_is_told_once_it_has_its_id",
+            a_mobs_flame_arrow_is_told_once_it_has_its_id_in_own_process,
+        );
+    }
+
+    fn a_mobs_flame_arrow_is_told_once_it_has_its_id_in_own_process() {
+        let Some(root) = resources() else {
+            return;
+        };
+        let mut game = server_game(&root);
+        let bow = || ItemStack::new("minecraft:bow", 1);
+        // With no listener a skeleton's Flame arrow burns for 100 seconds.
+        shooter(&mut game, "minecraft:skeleton", bow());
+        game.handle_mob_events(vec![MobEvent::BowShot {
+            mob: 1,
+            weapon: bow(),
+            arrow: flame_arrow(),
+        }])
+        .unwrap();
+        assert_eq!(last_arrow_fire(&game), 2000, "Flame is vanilla's");
+        assert_eq!(called(), 0, "no table tells no one");
+        // A listener hears `flame_arrow` with the arrow's id the level gave it:
+        // a cancel leaves it cold, a changed value replaces the fire.
+        install_ignite();
+        MODE.store(CANCEL, Ordering::Relaxed);
+        game.mobs.clear();
+        shooter(&mut game, "minecraft:skeleton", bow());
+        game.handle_mob_events(vec![MobEvent::BowShot {
+            mob: 1,
+            weapon: bow(),
+            arrow: flame_arrow(),
+        }])
+        .unwrap();
+        let shot = game.creatures.projectiles.last().unwrap();
+        assert_eq!(
+            shot.arrow.as_ref().unwrap().fire_ticks,
+            0,
+            "a cancel leaves the arrow cold"
+        );
+        assert_eq!(TOLD.load(Ordering::Relaxed), shot.id, "the arrow's own id");
+        assert_eq!(called(), 1, "told once");
+        MODE.store(SHORTEN, Ordering::Relaxed);
+        game.mobs.clear();
+        shooter(&mut game, "minecraft:skeleton", bow());
+        game.handle_mob_events(vec![MobEvent::BowShot {
+            mob: 1,
+            weapon: bow(),
+            arrow: flame_arrow(),
+        }])
+        .unwrap();
+        assert_eq!(last_arrow_fire(&game), 40, "a changed value replaces it");
+        // A bow without Flame is not told.
+        CALLS.store(0, Ordering::Relaxed);
+        MODE.store(LEAVE, Ordering::Relaxed);
+        game.mobs.clear();
+        shooter(&mut game, "minecraft:skeleton", bow());
+        game.handle_mob_events(vec![MobEvent::BowShot {
+            mob: 1,
+            weapon: bow(),
+            arrow: arrow(0),
+        }])
+        .unwrap();
+        assert_eq!(last_arrow_fire(&game), 0);
+        assert_eq!(called(), 0, "a cold arrow is never told");
+    }
+
+    #[test]
+    fn a_wither_skeletons_flame_bow_is_told_once() {
+        crate::mod_api::in_own_process(
+            "game::creatures::ignite_spawned_projectile_tests::a_wither_skeletons_flame_bow_is_told_once",
+            a_wither_skeletons_flame_bow_is_told_once_in_own_process,
+        );
+    }
+
+    fn a_wither_skeletons_flame_bow_is_told_once_in_own_process() {
+        let Some(root) = resources() else {
+            return;
+        };
+        let mut game = server_game(&root);
+        let mut p = flame_arrow();
+        // `WitherSkeleton.getArrow` lights the arrow the Flame bow lit too: one
+        // tell, with the cause the wither skeleton's own fire names.
+        let kind = game
+            .res
+            .mob_types()
+            .get("minecraft:wither_skeleton")
+            .unwrap()
+            .clone();
+        let mob = Mob::new(1, kind, Vec3::new(1.5, 64.0, 1.5), 0.0);
+        ignite_for_wither_skeleton(&mob, &mut p);
+        game.mobs.push(mob);
+        install_ignite();
+        game.handle_mob_events(vec![MobEvent::BowShot {
+            mob: 1,
+            weapon: ItemStack::new("minecraft:bow", 1),
+            arrow: p,
+        }])
+        .unwrap();
+        assert_eq!(called(), 1, "one ignition, one tell");
+        assert_eq!(last_arrow_fire(&game), 2000);
+    }
+
+    #[test]
+    fn a_mobs_flame_crossbow_is_told_once_it_has_its_id() {
+        crate::mod_api::in_own_process(
+            "game::creatures::ignite_spawned_projectile_tests::a_mobs_flame_crossbow_is_told_once_it_has_its_id",
+            a_mobs_flame_crossbow_is_told_once_it_has_its_id_in_own_process,
+        );
+    }
+
+    fn a_mobs_flame_crossbow_is_told_once_it_has_its_id_in_own_process() {
+        let Some(root) = resources() else {
+            return;
+        };
+        let mut game = server_game(&root);
+        let ammo = || ItemStack::new("minecraft:arrow", 1);
+        // A pillager's Flame crossbow (`set_bonus`) is told like a bow's: with
+        // nobody listening the arrow burns for 100 seconds.
+        let shoot = |game: &mut Game<'_>, p: Projectile| {
+            game.handle_mob_events(vec![MobEvent::CrossbowShot {
+                ammo: ammo(),
+                arrow: p,
+            }])
+            .unwrap();
+        };
+        shoot(&mut game, flame_arrow());
+        assert_eq!(last_arrow_fire(&game), 2000, "Flame is vanilla's");
+        install_ignite();
+        MODE.store(CANCEL, Ordering::Relaxed);
+        shoot(&mut game, flame_arrow());
+        let shot = game.creatures.projectiles.last().unwrap();
+        assert_eq!(shot.arrow.as_ref().unwrap().fire_ticks, 0);
+        assert_eq!(TOLD.load(Ordering::Relaxed), shot.id);
+        assert_eq!(called(), 1);
+        MODE.store(SHORTEN, Ordering::Relaxed);
+        shoot(&mut game, flame_arrow());
+        assert_eq!(last_arrow_fire(&game), 40);
+        CALLS.store(0, Ordering::Relaxed);
+        MODE.store(LEAVE, Ordering::Relaxed);
+        shoot(&mut game, arrow(0));
+        assert_eq!(last_arrow_fire(&game), 0);
+        assert_eq!(called(), 0, "a cold arrow is never told");
     }
 }
