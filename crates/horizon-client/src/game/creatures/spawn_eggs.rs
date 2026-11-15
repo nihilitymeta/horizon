@@ -32,7 +32,7 @@ impl Game<'_> {
         // creates the baby without finalizeSpawn, and `snapTo(pos, 0, 0)` faces
         // it south without a level-random draw.
         let Some(id) =
-            self.spawn_mob_internal(&kind, at, false, false, false, false, SpawnYaw::Fixed(0.0))
+            self.spawn_mob_internal(&kind, at, false, false, false, None, SpawnYaw::Fixed(0.0))
         else {
             return false;
         };
@@ -127,7 +127,9 @@ impl Game<'_> {
             f64::from(p[2]) + 0.5,
         ];
         // SpawnEggItem.spawnMob: `EntityType.spawn`.
-        let Some(id) = self.spawn_mob_spawned(&kind, at, SpawnYaw::Created) else {
+        let Some((id, _)) =
+            self.spawn_mob_spawned(&kind, at, SpawnYaw::Created, SpawnReason::SpawnEgg)
+        else {
             return Ok(false);
         };
         // SpawnEggItem.spawnMob: `EntityType.create` finalizes the mob, then

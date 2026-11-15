@@ -62,8 +62,14 @@ impl Game<'_> {
         let Some(spot) = spot else {
             return;
         };
-        let Some(id) = self.spawn_mob_reason(&kind.id, spot.map(f64::from), false, false, false)
-        else {
+        let Some(id) = self.spawn_mob_reason(
+            &kind.id,
+            spot.map(f64::from),
+            false,
+            false,
+            false,
+            super::creatures::SpawnReason::Reinforcement,
+        ) else {
             return;
         };
         if let Some(reinforcement) = self.mobs.iter_mut().find(|m| m.id == id) {

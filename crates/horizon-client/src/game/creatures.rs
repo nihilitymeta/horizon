@@ -397,6 +397,68 @@ pub(super) enum SpawnYaw {
     Fixed(f32),
 }
 
+/// Why a new mob is finalized, as the `mob_finalize` hook's `reason` names
+/// it: the small closed set the call sites can tell apart.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpawnReason {
+    /// The world's own spawning (`NaturalSpawner`).
+    Natural,
+    /// A spawner block or a trial spawner.
+    Spawner,
+    /// A zombie calling for reinforcements.
+    Reinforcement,
+    /// A conversion: a tadpole that grew into a frog, or a villager turned
+    /// zombie villager.
+    Conversion,
+    /// `/summon`.
+    Command,
+    /// A spawn egg used on a block.
+    SpawnEgg,
+    /// A dispenser.
+    Dispenser,
+    /// Anything the call site cannot tell apart from the rest.
+    Other,
+}
+
+impl SpawnReason {
+    /// The tag `native_mob_finalize` hands a listener.
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Natural => "natural",
+            Self::Spawner => "spawner",
+            Self::Reinforcement => "reinforcement",
+            Self::Conversion => "conversion",
+            Self::Command => "command",
+            Self::SpawnEgg => "spawn_egg",
+            Self::Dispenser => "dispenser",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// What the `mob_finalize` hook said about a mob the game is about to make.
+#[derive(Clone, Copy)]
+pub(super) struct MobFinalize {
+    skip: bool,
+    cancelled: bool,
+}
+
+impl MobFinalize {
+    /// The game's own answer: vanilla's finalize runs.
+    pub(super) const RUN: Self = Self {
+        skip: false,
+        cancelled: false,
+    };
+    /// Whether vanilla's finalize runs.
+    pub(super) fn run(self) -> bool {
+        !self.skip
+    }
+    /// Whether the mob is not made at all.
+    pub(super) fn cancelled(self) -> bool {
+        self.cancelled
+    }
+}
+
 impl Game<'_> {
     /// A sulfur cube's attribute map (`LivingEntity.attributes`), from its
     /// type's defaults, before its first tick adopts the body's archetype
@@ -537,7 +599,7 @@ impl Game<'_> {
         at: [f64; 3],
         persistent: bool,
     ) -> Option<u32> {
-        self.spawn_mob_internal(kind, at, persistent, false, false, false, SpawnYaw::Level)
+        self.spawn_mob_internal(kind, at, persistent, false, false, None, SpawnYaw::Level)
     }
     /// `SummonCommand` and `SpawnEggItem`: vanilla spawns the mob, but it
     /// never calls `Mob.setPersistenceRequired` for it, so the mob is not
@@ -548,20 +610,22 @@ impl Game<'_> {
         kind: &str,
         at: [f64; 3],
         yaw: SpawnYaw,
-    ) -> Option<u32> {
+        reason: SpawnReason,
+    ) -> Option<(u32, bool)> {
         // Ender Dragons have their own entity implementation rather than a
         // `Mob` entry.  Spawn eggs still go through `SpawnEggItem.spawnMob`,
         // so route this special entity through the same spawned-entity path.
         if matches!(kind, "ender_dragon" | "minecraft:ender_dragon") {
-            return self.spawn_dragon_spawned(at);
+            return self.spawn_dragon_spawned(at).map(|id| (id, true));
         }
         // The spawn is not a natural one (no jockeys, the patrol leader roll
         // stays), but the mob is not persistent.
-        let id = self.spawn_mob_reason_yaw(kind, at, true, false, false, yaw)?;
+        let (id, finalized) =
+            self.spawn_mob_reason_yaw(kind, at, true, false, false, yaw, reason)?;
         if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
             m.persistent = false;
         }
-        Some(id)
+        Some((id, finalized))
     }
     /// `spawn_mob` for a patrol or raid (`EntitySpawnReason.PATROL` / `EVENT`),
     /// which never rolls a patrol leader.
@@ -572,7 +636,14 @@ impl Game<'_> {
         persistent: bool,
         scripted: bool,
     ) -> Option<u32> {
-        self.spawn_mob_reason(kind, at, persistent, scripted, !persistent)
+        self.spawn_mob_reason(
+            kind,
+            at,
+            persistent,
+            scripted,
+            !persistent,
+            SpawnReason::Other,
+        )
     }
     /// `spawn_mob_for` with the spawn reason's NATURAL flag explicit: only a
     /// natural spawn rolls the jockey mounts of zombie horses, husks and
@@ -584,6 +655,7 @@ impl Game<'_> {
         persistent: bool,
         scripted: bool,
         natural: bool,
+        reason: SpawnReason,
     ) -> Option<u32> {
         self.spawn_mob_internal(
             kind,
@@ -591,7 +663,7 @@ impl Game<'_> {
             persistent,
             scripted,
             natural,
-            true,
+            Some(reason),
             SpawnYaw::Level,
         )
     }
@@ -604,8 +676,22 @@ impl Game<'_> {
         scripted: bool,
         natural: bool,
         yaw: SpawnYaw,
-    ) -> Option<u32> {
-        self.spawn_mob_internal(kind, at, persistent, scripted, natural, true, yaw)
+        reason: SpawnReason,
+    ) -> Option<(u32, bool)> {
+        self.spawn_mob_full(kind, at, persistent, scripted, natural, Some(reason), yaw)
+    }
+    /// `spawn_mob_for` for a caller that runs the raider finalize itself
+    /// (`/raid spawnleader`): the mob's id and whether vanilla's finalize ran.
+    pub(super) fn spawn_mob_scripted(&mut self, kind: &str, at: [f64; 3]) -> Option<(u32, bool)> {
+        self.spawn_mob_full(
+            kind,
+            at,
+            true,
+            true,
+            false,
+            Some(SpawnReason::Other),
+            SpawnYaw::Level,
+        )
     }
     fn spawn_mob_internal(
         &mut self,
@@ -614,15 +700,39 @@ impl Game<'_> {
         persistent: bool,
         scripted: bool,
         natural: bool,
-        finalize: bool,
+        finalize: Option<SpawnReason>,
         yaw: SpawnYaw,
     ) -> Option<u32> {
+        self.spawn_mob_full(kind, at, persistent, scripted, natural, finalize, yaw)
+            .map(|(id, _)| id)
+    }
+    /// The one place a new mob is created and finalized: `finalize` is why, or
+    /// `None` for `EntityType.create` without `finalizeSpawn`. Returns the mob's
+    /// id and whether vanilla's finalize ran.
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_mob_full(
+        &mut self,
+        kind: &str,
+        at: [f64; 3],
+        persistent: bool,
+        scripted: bool,
+        natural: bool,
+        finalize: Option<SpawnReason>,
+        yaw: SpawnYaw,
+    ) -> Option<(u32, bool)> {
         let kind = if kind.contains(':') {
             kind.to_owned()
         } else {
             format!("minecraft:{kind}")
         };
         let t = self.res.mob_types().get(&kind).cloned()?;
+        let plan = match finalize {
+            Some(reason) => self.mob_finalize_plan(&kind, at, reason, None),
+            None => MobFinalize::RUN,
+        };
+        if plan.cancelled() {
+            return None;
+        }
         self.next_entity += 1;
         let yaw = match yaw {
             SpawnYaw::Level => self.world.random.next_float() * 360.0,
@@ -638,7 +748,8 @@ impl Game<'_> {
         let position = Vec3::new(at[0], at[1], at[2]);
         let mut mob = Mob::with_random(self.next_entity, t, position, yaw, own);
         mob.persistent = persistent;
-        if finalize {
+        let finalized = finalize.is_some() && plan.run();
+        if finalized {
             let facts = self.biome_facts(
                 at[0].floor() as i32,
                 at[1].floor() as i32,
@@ -661,14 +772,36 @@ impl Game<'_> {
         if !self.mobs.iter().any(|m| m.id == id) {
             return None;
         }
-        if finalize {
+        if finalized {
             self.enchant_spawn_equipment(id);
             self.halloween_spawn_head(id);
             if !persistent && !scripted {
                 self.spawn_jockeys(id, natural);
             }
         }
-        Some(id)
+        Some((id, finalized))
+    }
+    /// Asks the `mob_finalize` hook about the mob of `kind` about to be created
+    /// at `position`: `reason` is why it is created, and `spawner` the block of
+    /// the spawner making it when there is one.
+    pub(super) fn mob_finalize_plan(
+        &self,
+        kind: &str,
+        position: [f64; 3],
+        reason: SpawnReason,
+        spawner: Option<[f64; 3]>,
+    ) -> MobFinalize {
+        let mut plan = MobFinalize::RUN;
+        self.native_mob_finalize(
+            kind,
+            position,
+            reason.tag(),
+            spawner,
+            i32::from(self.local_difficulty(position).id),
+            &mut plan.skip,
+            &mut plan.cancelled,
+        );
+        plan
     }
     /// `Mob.burnUndead` for a mob in daylight with an item on its sun
     /// protection slot (the head, or the body for a zombie horse or
@@ -847,17 +980,26 @@ impl Game<'_> {
     /// What a converted frog gets once its tadpole has grown up: the spawn
     /// finalization of a conversion, then persistence.
     fn finalize_converted(&mut self, id: u32) {
-        let Some(at) = self.mobs.iter().find(|m| m.id == id).map(|m| m.position) else {
+        let Some((at, kind)) = self
+            .mobs
+            .iter()
+            .find(|m| m.id == id)
+            .map(|m| (m.position, m.kind.id.clone()))
+        else {
             return;
         };
+        let position = [at.x, at.y, at.z];
         let facts = self.biome_facts(
             at.x.floor() as i32,
             at.y.floor() as i32,
             at.z.floor() as i32,
         );
-        let difficulty = self.local_difficulty([at.x, at.y, at.z]);
+        let difficulty = self.local_difficulty(position);
+        let plan = self.mob_finalize_plan(&kind, position, SpawnReason::Conversion, None);
         if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
-            spawning::finalize(m, &facts, &difficulty);
+            if plan.run() {
+                spawning::finalize(m, &facts, &difficulty);
+            }
             m.persistent = true;
         }
     }
@@ -941,8 +1083,8 @@ impl Game<'_> {
             Some(a) => a,
             None => self.default_summon_position()?,
         };
-        let id = self
-            .spawn_mob_spawned(kind, at, SpawnYaw::Created)
+        let (id, finalized) = self
+            .spawn_mob_spawned(kind, at, SpawnYaw::Created, SpawnReason::Command)
             .ok_or_else(|| format!("unknown or unsupported mob {kind}"))?;
         if baby && let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
             m.extra.age = if m.species() == Species::Sniffer {
@@ -951,7 +1093,9 @@ impl Game<'_> {
                 -24000
             };
         }
-        self.spawn_jockeys(id, false);
+        if finalized {
+            self.spawn_jockeys(id, false);
+        }
         Ok(id)
     }
     /// The `mobs` command: nearby mobs with position, health and running goals.
@@ -9198,3 +9342,341 @@ mod leash_without_item_criterion_tests;
 #[cfg(test)]
 #[path = "leash_without_item_postbaseline_controls.rs"]
 mod leash_without_item_postbaseline_controls;
+
+#[cfg(test)]
+mod mob_finalize_tests {
+    //! The `mob_finalize` gate in front of every finalize of a new mob: no
+    //! listener finalizes as before, and a listener may skip the vanilla
+    //! finalize or cancel the spawn, with each site naming its reason. The
+    //! turtles stand in for the species whose finalize leaves a mark a test can
+    //! read: `Turtle.finalizeSpawn` sets the spawn block as its home.
+    use super::*;
+    use crate::mod_api::{Hooks, Host, MobFinalizeEvent};
+    use horizon_client::chunk::Chunk;
+    use horizon_client::mobs::spawn_selection::SpawnRequest;
+    use horizon_world::nbt::Compound;
+    use std::sync::{Arc, Mutex};
+
+    /// The server game the tests work on, or None where the prepared
+    /// resources are not installed.
+    fn game() -> Option<Game<'static>> {
+        use crate::game::*;
+        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../.local/horizon-client")
+                    .join(horizon_core::VANILLA_VERSION)
+            });
+        if !root.join("movement-properties.nbt").exists() {
+            return None;
+        }
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!(),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.execution_role = execution_role::ExecutionRole::IntegratedServer;
+        let res: &'static _ = Box::leak(Box::new(loaded.resources));
+        let mut game = Game::new(
+            res,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        game.options.dedicated = Some(Vec::new());
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.world
+            .chunks
+            .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+        game.streaming.forced.insert((0, 0));
+        Some(game)
+    }
+
+    /// The home a spawn at `[8.5, 100, 8.5]` leaves on its turtle.
+    const HOME: [i32; 3] = [8, 100, 8];
+
+    /// One `mob_finalize` call as a listener saw it.
+    #[derive(Clone, Debug, PartialEq)]
+    struct Seen {
+        kind: String,
+        reason: String,
+        position: [f64; 3],
+        spawner: Option<[f64; 3]>,
+        difficulty: i32,
+    }
+
+    static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
+
+    /// Records every call and changes nothing.
+    struct Recorder;
+    impl Hooks for Recorder {
+        fn mob_finalize(&self, _host: &dyn Host, event: &mut MobFinalizeEvent<'_>) {
+            SEEN.lock().unwrap().push(Seen {
+                kind: event.kind.to_owned(),
+                reason: event.reason.to_owned(),
+                position: event.position,
+                spawner: event.spawner,
+                difficulty: event.difficulty,
+            });
+        }
+    }
+
+    /// The reasons a listener sees are the documented tags, one per site.
+    #[test]
+    fn the_reason_tags_are_the_documented_set() {
+        let tags: Vec<&str> = [
+            SpawnReason::Natural,
+            SpawnReason::Spawner,
+            SpawnReason::Reinforcement,
+            SpawnReason::Conversion,
+            SpawnReason::Command,
+            SpawnReason::SpawnEgg,
+            SpawnReason::Dispenser,
+            SpawnReason::Other,
+        ]
+        .map(SpawnReason::tag)
+        .to_vec();
+        assert_eq!(
+            tags,
+            [
+                "natural",
+                "spawner",
+                "reinforcement",
+                "conversion",
+                "command",
+                "spawn_egg",
+                "dispenser",
+                "other",
+            ]
+        );
+    }
+
+    /// With no listener a spawned mob is finalized as before: `Turtle`'s home
+    /// is the block it spawned in, set by `spawning::finalize`.
+    #[test]
+    fn no_listener_finalizes_the_mob_as_before() {
+        let Some(mut game) = game() else {
+            return;
+        };
+        let id = game
+            .spawn_mob("minecraft:turtle", [8.5, 100.0, 8.5], true)
+            .expect("a turtle");
+        assert_eq!(game.mobs.len(), 1, "the mob joined the level");
+        assert_eq!(
+            game.mobs.iter().find(|m| m.id == id).unwrap().extra.home,
+            Some(HOME)
+        );
+    }
+
+    /// A listener may skip vanilla's finalize: the mob still spawns and joins
+    /// the level, without what the finalize would have set.
+    #[test]
+    fn a_listener_may_skip_the_finalize() {
+        crate::mod_api::in_own_process(
+            "game::creatures::mob_finalize_tests::a_listener_may_skip_the_finalize",
+            a_listener_may_skip_the_finalize_in_own_process,
+        );
+    }
+
+    fn a_listener_may_skip_the_finalize_in_own_process() {
+        struct SkipTurtles;
+        impl Hooks for SkipTurtles {
+            fn mob_finalize(&self, _host: &dyn Host, event: &mut MobFinalizeEvent<'_>) {
+                assert_eq!(event.reason, "other");
+                assert!(matches!(event.difficulty, 0..=3), "{}", event.difficulty);
+                if event.kind == "minecraft:turtle" {
+                    event.skip = true;
+                }
+            }
+        }
+        let Some(mut game) = game() else {
+            return;
+        };
+        let _ = crate::mod_api::MODS.set(Arc::from(vec![Box::new(SkipTurtles) as Box<dyn Hooks>]));
+        let id = game
+            .spawn_mob("minecraft:turtle", [8.5, 100.0, 8.5], true)
+            .expect("the mob still spawns");
+        let m = game.mobs.iter().find(|m| m.id == id).expect("joined");
+        assert_eq!(m.extra.home, None, "the finalize was skipped");
+    }
+
+    /// A listener may cancel the spawn: no mob is made, and both a plain spawn
+    /// and a spawner's add fail.
+    #[test]
+    fn a_listener_may_cancel_the_spawn() {
+        crate::mod_api::in_own_process(
+            "game::creatures::mob_finalize_tests::a_listener_may_cancel_the_spawn",
+            a_listener_may_cancel_the_spawn_in_own_process,
+        );
+    }
+
+    fn a_listener_may_cancel_the_spawn_in_own_process() {
+        struct Cancel;
+        impl Hooks for Cancel {
+            fn mob_finalize(&self, _host: &dyn Host, event: &mut MobFinalizeEvent<'_>) {
+                event.spawn_cancelled = true;
+                // A skip alongside it does not rescue the mob.
+                event.skip = true;
+            }
+        }
+        let Some(mut game) = game() else {
+            return;
+        };
+        let _ = crate::mod_api::MODS.set(Arc::from(vec![Box::new(Cancel) as Box<dyn Hooks>]));
+        assert_eq!(
+            game.spawn_mob("minecraft:zombie", [8.5, 100.0, 8.5], true),
+            None
+        );
+        assert!(game.mobs.is_empty(), "no mob was made");
+        // A spawner's mob is a failed add: no bounds, nothing planned.
+        let entity = Compound::new();
+        let r = horizon_client::mobs::spawner::SpawnerSpawn {
+            entity: &entity,
+            id: "minecraft:zombie",
+            position: [8.5, 100.0, 8.5],
+            yaw: 0.0,
+            finalize: true,
+            equipment: None,
+            trial: false,
+        };
+        let level = game.natural_level();
+        let mut planned = Vec::new();
+        assert!(
+            game.plan_spawner_mob(&level, &r, Some([4.0, 5.0, 6.0]), &mut planned)
+                .is_none()
+        );
+        assert!(planned.is_empty(), "the spawner planned no mob");
+    }
+
+    /// Each site names its reason to a listener, with the spawner's block where
+    /// there is one, and a listener that touches nothing changes nothing.
+    #[test]
+    fn every_site_names_its_reason() {
+        crate::mod_api::in_own_process(
+            "game::creatures::mob_finalize_tests::every_site_names_its_reason",
+            every_site_names_its_reason_in_own_process,
+        );
+    }
+
+    fn every_site_names_its_reason_in_own_process() {
+        let Some(mut game) = game() else {
+            return;
+        };
+        let _ = crate::mod_api::MODS.set(Arc::from(vec![Box::new(Recorder) as Box<dyn Hooks>]));
+        // Natural spawning's own finalize.
+        let r = SpawnRequest {
+            entity: "minecraft:pig",
+            species: Species::Pig,
+            position: [0.5, 100.0, 0.5],
+            yaw: 0.0,
+            group_index: 0,
+            reason: horizon_client::mobs::spawn_rules::Reason::Natural,
+        };
+        let mut pending = Vec::new();
+        assert!(game.finalize_spawned(&r, &mut pending).is_some());
+        // A spawner block's and a trial spawner's, with the block it is in.
+        let entity = Compound::new();
+        let spawner = horizon_client::mobs::spawner::SpawnerSpawn {
+            entity: &entity,
+            id: "minecraft:pig",
+            position: [2.5, 100.0, 2.5],
+            yaw: 0.0,
+            finalize: true,
+            equipment: None,
+            trial: false,
+        };
+        let level = game.natural_level();
+        let mut planned = Vec::new();
+        assert!(
+            game.plan_spawner_mob(&level, &spawner, Some([4.0, 5.0, 6.0]), &mut planned)
+                .is_some()
+        );
+        // A conversion: the tadpole that grew into a frog.
+        let frog = game.res.mob_types().get("minecraft:frog").unwrap().clone();
+        game.mobs
+            .push(Mob::new(99, frog, Vec3::new(0.5, 64.0, 0.5), 0.0));
+        game.finalize_converted(99);
+        // `/summon`, a spawn egg's mob, a dispenser's, and anything else.
+        assert!(game.run_command("summon pig 11.5 100 11.5"));
+        assert!(
+            game.spawn_mob_spawned(
+                "minecraft:pig",
+                [12.5, 100.0, 12.5],
+                SpawnYaw::Fixed(0.0),
+                SpawnReason::SpawnEgg,
+            )
+            .is_some()
+        );
+        assert!(
+            game.spawn_mob_at("minecraft:pig", (13, 100, 13), false)
+                .is_some()
+        );
+        let id = game
+            .spawn_mob("minecraft:turtle", [8.5, 100.0, 8.5], true)
+            .expect("a turtle");
+        // The reinforcement call site's own reason.
+        assert!(
+            game.spawn_mob_reason(
+                "minecraft:pig",
+                [14.5, 100.0, 14.5],
+                false,
+                false,
+                false,
+                SpawnReason::Reinforcement,
+            )
+            .is_some()
+        );
+        // The listener touched nothing: the turtle is finalized as usual.
+        assert_eq!(
+            game.mobs.iter().find(|m| m.id == id).unwrap().extra.home,
+            Some(HOME)
+        );
+        // A spawn with no finalize at all tells no one.
+        let seen = SEEN.lock().unwrap().len();
+        assert!(
+            game.spawn_mob_raw("minecraft:pig", [15.5, 100.0, 15.5], true)
+                .is_some()
+        );
+        assert_eq!(SEEN.lock().unwrap().len(), seen);
+
+        let seen: Vec<(String, String, Option<[f64; 3]>)> = SEEN
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|s| (s.kind.clone(), s.reason.clone(), s.spawner))
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                ("minecraft:pig".into(), "natural".into(), None),
+                (
+                    "minecraft:pig".into(),
+                    "spawner".into(),
+                    Some([4.0, 5.0, 6.0])
+                ),
+                ("minecraft:frog".into(), "conversion".into(), None),
+                ("minecraft:pig".into(), "command".into(), None),
+                ("minecraft:pig".into(), "spawn_egg".into(), None),
+                ("minecraft:pig".into(), "dispenser".into(), None),
+                ("minecraft:turtle".into(), "other".into(), None),
+                ("minecraft:pig".into(), "reinforcement".into(), None),
+            ]
+        );
+    }
+}

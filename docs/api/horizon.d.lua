@@ -306,6 +306,7 @@ export type MinimapEvent = { minimap: { corner: string, size: number, blocks_per
 export type MobAiRegisterEvent = { mob: MobView }
 export type MobDiedEvent = { dimension: string, entity: number, kind: string, damage_type: string, causing: number, player: string? }
 export type MobEffectAddedEvent = { effect: string, entity: number?, amplifier: number }
+export type MobFinalizeEvent = { kind: string, position: Vec3, reason: string, spawner: Vec3?, difficulty: number, skip: boolean, spawn_cancelled: boolean }
 export type MobKilledEvent = { player: string, entity: number, kind: string }
 export type MobSpawnedEvent = { dimension: string, kind: string, pos: Vec3, natural: boolean }
 export type MobSplitEvent = { parent: number, kind: string, size: number, child_size: number, count: number }
@@ -787,6 +788,7 @@ export type HorizonOn =
     ((name: "mob_ai_register", fn: (event: MobAiRegisterEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_died", fn: (event: MobDiedEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_effect_added", fn: (event: MobEffectAddedEvent) -> (), kind: string?) -> ()) &
+    ((name: "mob_finalize", fn: (event: MobFinalizeEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_killed", fn: (event: MobKilledEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_spawned", fn: (event: MobSpawnedEvent) -> (), kind: string?) -> ()) &
     ((name: "mob_split", fn: (event: MobSplitEvent) -> (), kind: string?) -> ()) &

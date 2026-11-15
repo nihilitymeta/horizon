@@ -1842,6 +1842,7 @@ mod wolf_live_anger_tests {
 #[cfg(test)]
 mod boat_passenger_tree_tests {
     use super::*;
+    use crate::game::creatures::SpawnReason;
     use crate::game::native_machines::tests::server_game;
     #[test]
     #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES and scratch homes/cwd"]
@@ -1856,7 +1857,14 @@ mod boat_passenger_tree_tests {
         let bi = game.boats.iter().position(|b| b.position.x == 8.5).unwrap();
         let bid = game.boats[bi].id;
         let child = game
-            .spawn_mob_reason("minecraft:cow", [8.5, 200.0, 8.5], true, true, false)
+            .spawn_mob_reason(
+                "minecraft:cow",
+                [8.5, 200.0, 8.5],
+                true,
+                true,
+                false,
+                SpawnReason::Other,
+            )
             .unwrap();
         let ci = game.mobs.iter().position(|m| m.id == child).unwrap();
         game.mobs[ci].no_ai = true;
@@ -1898,7 +1906,14 @@ mod boat_passenger_tree_tests {
             failures.push("first parent must use existing UUID registration once".into());
         }
         let control = game
-            .spawn_mob_reason("minecraft:cow", [12.5, 200.0, 8.5], true, true, false)
+            .spawn_mob_reason(
+                "minecraft:cow",
+                [12.5, 200.0, 8.5],
+                true,
+                true,
+                false,
+                SpawnReason::Other,
+            )
             .unwrap();
         let di = game.mobs.iter().position(|m| m.id == control).unwrap();
         game.mobs[di].no_ai = true;

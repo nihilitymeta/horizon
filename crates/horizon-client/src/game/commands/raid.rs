@@ -59,11 +59,13 @@ impl Game<'_> {
             },
             "raid.spawnleader" => {
                 let kind = "minecraft:pillager";
-                match self.spawn_mob_for(kind, [player.x, player.y, player.z], true, true) {
-                    Some(id) => {
+                match self.spawn_mob_scripted(kind, [player.x, player.y, player.z]) {
+                    Some((id, finalized)) => {
                         if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
                             raider::set_patrol_leader(m, true);
-                            raider::finalize(m, raider::Reason::Other);
+                            if finalized {
+                                raider::finalize(m, raider::Reason::Other);
+                            }
                         }
                         self.feedback(Text::literal("Spawned a raid captain"));
                         Ok(1)

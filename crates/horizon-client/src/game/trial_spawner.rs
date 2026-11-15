@@ -191,7 +191,9 @@ impl Game<'_> {
             );
             let seed = self.level.seed;
             let mut spawn = |l: &GameLevel, r: &SpawnerSpawn| {
-                let added = l.game.plan_spawner_mob(l, r, &mut planned)?;
+                let added =
+                    l.game
+                        .plan_spawner_mob(l, r, Some(pos.map(f64::from)), &mut planned)?;
                 let uuid = match planned.last_mut() {
                     Some(Planned::Loaded(Tag::Compound(tag), _)) => {
                         let tag_uuid =

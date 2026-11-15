@@ -2,6 +2,7 @@
 //! their waves, boss bar, victory and the raiders' bookkeeping. The rules are
 //! `horizon_client::patrol` and `horizon_client::raid`; this is the game's
 //! side of them.
+use super::creatures::SpawnReason;
 use super::{Dim, Game};
 use horizon_client::mobs::villager as mobs_villager;
 use horizon_client::{
@@ -778,7 +779,7 @@ impl Game<'_> {
             f64::from(pos[1]) + 1.0,
             f64::from(pos[2]) + 0.5,
         ];
-        let id = self.spawn_event_mob(kind.entity(), at, leader, raider::Reason::Event)?;
+        let (id, _) = self.spawn_event_mob(kind.entity(), at, leader, raider::Reason::Event)?;
         let m = self.mobs.iter_mut().find(|m| m.id == id)?;
         let s = raider::state_mut(m);
         s.raid_id = Some(raid_id);
@@ -800,7 +801,11 @@ impl Game<'_> {
         at: [f64; 3],
         leader: bool,
         reason: raider::Reason,
-    ) -> Option<u32> {
+    ) -> Option<(u32, bool)> {
+        let plan = self.mob_finalize_plan(kind, at, SpawnReason::Other, None);
+        if plan.cancelled() {
+            return None;
+        }
         let t = self.res.mob_types().get(kind).cloned()?;
         self.next_entity += 1;
         let mut mob = Mob::new(self.next_entity, t, Vec3::new(at[0], at[1], at[2]), 0.0);
@@ -812,20 +817,24 @@ impl Game<'_> {
                 raider::find_patrol_target_from(&mut mob, [0, 0, 0]);
             }
         }
-        let facts = self.biome_facts(
-            at[0].floor() as i32,
-            at[1].floor() as i32,
-            at[2].floor() as i32,
-        );
-        let difficulty = self.local_difficulty(at);
-        spawning::finalize(&mut mob, &facts, &difficulty);
-        raider::finalize(&mut mob, reason);
+        if plan.run() {
+            let facts = self.biome_facts(
+                at[0].floor() as i32,
+                at[1].floor() as i32,
+                at[2].floor() as i32,
+            );
+            let difficulty = self.local_difficulty(at);
+            spawning::finalize(&mut mob, &facts, &difficulty);
+            raider::finalize(&mut mob, reason);
+        }
         let id = mob.id;
         self.mobs.push(mob);
         self.native_mobs_joined(self.mobs.len() - 1, false);
-        self.enchant_spawn_equipment(id);
-        self.halloween_spawn_head(id);
-        Some(id)
+        if plan.run() {
+            self.enchant_spawn_equipment(id);
+            self.halloween_spawn_head(id);
+        }
+        Some((id, plan.run()))
     }
 
     /// Per-tick raid bookkeeping of every raider (and the ravagers they
@@ -1416,7 +1425,8 @@ impl Game<'_> {
         let Some(at) = self.find_siege_spawn_pos(&centers, spot) else {
             return;
         };
-        let Some(id) = self.spawn_event_mob("minecraft:zombie", at, false, raider::Reason::Event)
+        let Some((id, finalized)) =
+            self.spawn_event_mob("minecraft:zombie", at, false, raider::Reason::Event)
         else {
             return;
         };
@@ -1425,7 +1435,9 @@ impl Game<'_> {
             (m.yaw, m.previous_yaw, m.body_yaw, m.previous_body_yaw) = (yaw, yaw, yaw, yaw);
             (m.head_yaw, m.previous_head_yaw) = (yaw, yaw);
         }
-        self.spawn_jockeys(id, false);
+        if finalized {
+            self.spawn_jockeys(id, false);
+        }
     }
     /// `VillageSiege.findRandomSpawnPos`: ten tries within 8 blocks of the
     /// spot for a village column where a zombie may spawn.

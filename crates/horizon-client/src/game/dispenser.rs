@@ -871,17 +871,20 @@ impl Game<'_> {
             f64::from(p.2) + 0.5,
         ];
         // EntityType.create: `snapTo(.., Mth.wrapDegrees(level.random.nextFloat() * 360), 0)`.
-        let id = self.spawn_mob_reason_yaw(
+        let (id, finalized) = self.spawn_mob_reason_yaw(
             &name,
             at,
             true,
             false,
             false,
             super::creatures::SpawnYaw::Created,
+            super::creatures::SpawnReason::Dispenser,
         )?;
         // finalizeSpawn's riders (chicken jockeys, spider jockeys...) come
         // with a dispensed mob as with any spawn that is not natural.
-        self.spawn_jockeys(id, false);
+        if finalized {
+            self.spawn_jockeys(id, false);
+        }
         Some(id)
     }
     /// `Player.setItemSlot` of a dispensed piece for the player in place:

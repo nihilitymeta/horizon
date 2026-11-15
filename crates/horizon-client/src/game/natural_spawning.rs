@@ -1,7 +1,7 @@
 //! The game's side of `NaturalSpawner` (`mobs::spawn_selection`): the level
 //! it reads, the spawning chunks and caps of `ServerChunkCache.tickChunks`,
 //! and the mobs it adds (finalized with the game's `finalizeSpawn`).
-use super::{Dim, Game};
+use super::{Dim, Game, creatures::SpawnReason};
 use horizon_client::vanillagen::VanillaTerrain;
 use horizon_client::{
     biome::{BiomeInfo, SpawnEntry},
@@ -693,37 +693,49 @@ impl<'a> Game<'a> {
     }
     /// Creates a mob the spawner accepted, finalized the game's way; the
     /// caller adds it with [`Game::add_spawned`].
-    fn finalize_spawned(&self, r: &SpawnRequest, pending: &mut Vec<Mob>) -> Option<Spawned> {
+    pub(super) fn finalize_spawned(
+        &self,
+        r: &SpawnRequest,
+        pending: &mut Vec<(Mob, bool)>,
+    ) -> Option<Spawned> {
         let kind = self.res.mob_types().get(r.entity)?.clone();
         let [x, y, z] = r.position;
+        let plan = self.mob_finalize_plan(r.entity, r.position, SpawnReason::Natural, None);
+        if plan.cancelled() {
+            return None;
+        }
         let mut mob = Mob::new(0, kind, Vec3::new(x, y, z), r.yaw);
-        let facts = self.biome_facts(x.floor() as i32, y.floor() as i32, z.floor() as i32);
-        let difficulty = self.local_difficulty(r.position);
-        horizon_client::mobs::spawning::finalize(&mut mob, &facts, &difficulty);
-        horizon_client::mobs::raider::finalize(
-            &mut mob,
-            horizon_client::mobs::raider::Reason::Natural,
-        );
+        if plan.run() {
+            let facts = self.biome_facts(x.floor() as i32, y.floor() as i32, z.floor() as i32);
+            let difficulty = self.local_difficulty(r.position);
+            horizon_client::mobs::spawning::finalize(&mut mob, &facts, &difficulty);
+            horizon_client::mobs::raider::finalize(
+                &mut mob,
+                horizon_client::mobs::raider::Reason::Natural,
+            );
+        }
         let bounds = mob.bounds();
-        pending.push(mob);
+        pending.push((mob, plan.run()));
         Some(Spawned {
             bounds,
             school: true,
         })
     }
     /// Adds the mobs a spawn pass created: ids, enchanted gear and jockeys.
-    fn add_spawned(&mut self, pending: Vec<Mob>, persistent: bool) {
-        for mut mob in pending {
+    fn add_spawned(&mut self, pending: Vec<(Mob, bool)>, persistent: bool) {
+        for (mut mob, finalized) in pending {
             self.next_entity += 1;
             mob.id = self.next_entity;
             mob.persistent = persistent;
             let id = mob.id;
             self.mobs.push(mob);
             self.native_mobs_joined(self.mobs.len() - 1, true);
-            self.enchant_spawn_equipment(id);
-            self.halloween_spawn_head(id);
-            if !persistent {
-                self.spawn_jockeys(id, true);
+            if finalized {
+                self.enchant_spawn_equipment(id);
+                self.halloween_spawn_head(id);
+                if !persistent {
+                    self.spawn_jockeys(id, true);
+                }
             }
         }
     }

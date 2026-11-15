@@ -8989,6 +8989,61 @@ impl Game<'_> {
     ) {
         mod_api::dispatch_mob_spawned(self, mod_api::mods(), dimension, kind, pos, natural);
     }
+    /// A mob of `kind` is about to be created and finalized, before it exists
+    /// (NeoForge's `FinalizeSpawnEvent`): `position` is where it will stand,
+    /// `reason` is why it is made, and `spawner` the block of the spawner
+    /// making it when there is one. `reason` is one of a closed set: `natural`
+    /// (the world's own spawning), `spawner` (a spawner block or a trial
+    /// spawner), `reinforcement` (a zombie calling for reinforcements),
+    /// `conversion` (a conversion, a tadpole that grew into a frog, or a
+    /// villager turned zombie villager), `command` (`/summon`), `spawn_egg` (a
+    /// spawn egg used on a block), `dispenser` (a dispenser), or `other` for
+    /// every spawn the game cannot tell apart from the rest (a jockey, a
+    /// wandering trader, a patrol or raid, a structure mob generation left to
+    /// finish). `difficulty` is the local difficulty's id at `position`, 0
+    /// peaceful to 3 hard, and is read-only. Set `skip` and vanilla's finalize
+    /// does not run: no random gear, equipment enchantments, halloween
+    /// pumpkins, variants, riders or patrol leader, while the mob still spawns
+    /// and joins the level (`mob_spawned` still tells it). Set
+    /// `spawn_cancelled` and the mob is not made at all, and the spawn counts
+    /// as a failed one (`spawn_mob_internal` returns none, so `/summon` fails
+    /// and a spawner counts a failed add); it wins over `skip`. Of the two
+    /// conversions told here, a tadpole grown into a frog has already joined
+    /// the level by the time it is finalized in place (vanilla runs that
+    /// finalize from the conversion's own step), so `spawn_cancelled` does
+    /// nothing there and only `skip` applies, while a villager turned zombie
+    /// villager is asked before the mob exists, so `spawn_cancelled` stops the
+    /// zombie villager being made; the conversions that run no finalize (a
+    /// skeleton into a stray, a zombie into a drowned, a husk into a zombie, a
+    /// piglin into a zombified piglin, a hoglin into a zoglin) are not told.
+    /// The event carries no entity id: for most spawns the mob is not in the
+    /// level yet, but a conversion finalized in place and a mob loaded from a
+    /// save already have one, which this hook does not tell. Not told of a
+    /// mob a chunk's generation places: that runs on the worldgen threads,
+    /// which have no game, nor of a mob an AI event builds and adds itself,
+    /// which runs no finalize. Server-side. Pending API @API:mob_finalize@.
+    pub(super) fn native_mob_finalize(
+        &self,
+        kind: &str,
+        position: [f64; 3],
+        reason: &str,
+        spawner: Option<[f64; 3]>,
+        difficulty: i32,
+        skip: &mut bool,
+        spawn_cancelled: &mut bool,
+    ) {
+        mod_api::dispatch_mob_finalize(
+            self,
+            mod_api::mods(),
+            kind,
+            position,
+            reason,
+            spawner,
+            difficulty,
+            skip,
+            spawn_cancelled,
+        );
+    }
     /// An entity leaves the server level `dimension` (NeoForge's
     /// `EntityLeaveLevelEvent`): vanilla's `onTrackingEnd`, when it is removed
     /// for any reason (picked up, merged, despawned, burnt, blown up, killed,

@@ -2481,7 +2481,13 @@ impl Game<'_> {
             // SummonCommand.createEntity loads the mob from `{id:..}`: its yaw
             // is the compound's (none, so 0), with no level-random draw.
             let id = self
-                .spawn_mob_spawned(&short, pos, super::creatures::SpawnYaw::Fixed(0.0))
+                .spawn_mob_spawned(
+                    &short,
+                    pos,
+                    super::creatures::SpawnYaw::Fixed(0.0),
+                    super::creatures::SpawnReason::Command,
+                )
+                .map(|(id, _)| id)
                 .ok_or_else(|| err("commands.summon.failed.uuid", &[]))?;
             name = self.target_name(Target::Mob(id));
         } else {

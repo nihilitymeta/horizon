@@ -6,6 +6,7 @@ mod anger_tests;
 mod display;
 mod hurt_by_refs;
 
+use super::creatures::{MobFinalize, SpawnReason};
 use super::{FallingBlock, Game};
 use horizon_client::world::EntityLoadReason;
 use horizon_client::{
@@ -1127,7 +1128,16 @@ impl Game<'_> {
         }
         m.extra.mount = mount;
         m.extra.passenger = mount.is_some();
-        if finalize {
+        let plan = if finalize {
+            let at = [m.position.x, m.position.y, m.position.z];
+            self.mob_finalize_plan(&m.kind.id, at, SpawnReason::Other, None)
+        } else {
+            MobFinalize::RUN
+        };
+        if plan.cancelled() {
+            return None;
+        }
+        if finalize && plan.run() {
             let facts = self.biome_facts(
                 m.position.x.floor() as i32,
                 m.position.y.floor() as i32,
@@ -1153,7 +1163,7 @@ impl Game<'_> {
         let id = m.id;
         self.remember(id, Some(uuid.unwrap_or(fresh)), tag);
         self.mobs.push(m);
-        if finalize {
+        if finalize && plan.run() {
             self.enchant_spawn_equipment(id);
             self.halloween_spawn_head(id);
         }

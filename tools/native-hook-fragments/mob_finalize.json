@@ -1,0 +1,17 @@
+{
+  "hooks": [
+    {
+      "name": "mob_finalize",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_mob_finalize",
+      "neoforge": "FinalizeSpawnEvent (skip = cancel the finalizeSpawn, spawn_cancelled = setSpawnCancelled)",
+      "side": "server",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "listen"
+      }
+    }
+  ],
+  "rust_summary": "a mob about to be created and finalized, with why and where (`native_mob_finalize`).",
+  "doc_summary": "`native_mob_finalize(kind, position, reason, spawner, difficulty, skip, spawn_cancelled)` is asked before a mob of `kind` is created and finalized, as NeoForge's `FinalizeSpawnEvent`: `position` is where it will stand, `reason` is why it is made from a closed set (`natural`, `spawner`, `reinforcement`, `conversion`, `command`, `spawn_egg`, `dispenser`, `other`), `spawner` is the block of the spawner making it when there is one (a spawner block or a trial spawner, nil otherwise), and `difficulty` is the local difficulty's id there, 0 peaceful to 3 hard, read-only. Set `skip` and vanilla's finalize does not run: no random gear, equipment enchantments, halloween pumpkins, variants or riders, while the mob still spawns and joins the level (`mob_spawned` still fires). Set `spawn_cancelled` and the mob is not made at all, and the spawn counts as failed; it wins over `skip`. Of the two conversions told here, a tadpole grown into a frog has already joined the level when it is finalized in place (vanilla finalizes it from the conversion's own step), so `spawn_cancelled` does nothing there and only `skip` applies, while a villager turned zombie villager is asked before the mob exists, so `spawn_cancelled` stops the zombie villager being made; the conversions that run no finalize (a skeleton into a stray, a zombie into a drowned, a husk into a zombie, a piglin into a zombified piglin, a hoglin into a zoglin) are not told. The event carries no entity id: for most spawns the mob is not in the level yet, but a conversion finalized in place and a mob loaded from a save already have one, which this hook does not tell. Not told of a mob a chunk's generation places, which happens on the worldgen threads with no game, nor of a mob an AI event builds and adds itself, which runs no finalize. Server-side. Bundles need \"hooks\": @API:mob_finalize@.",
+  "comments": ["crates/horizon-client/src/game/creatures.rs"]
+}

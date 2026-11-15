@@ -643,6 +643,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("menu_links", "generated"),
     ("mob_ai_register", "generated"),
     ("mob_died", "generated"),
+    ("mob_finalize", "generated"),
     ("mod_event", "generated"),
     (
         "layer_definitions",
@@ -1013,6 +1014,7 @@ pub const HOOK_SIDES: &[(&str, HookSide)] = &[
     ("mob_ai_register", HookSide::Server),
     ("mob_died", HookSide::Server),
     ("mob_effect_added", HookSide::Server),
+    ("mob_finalize", HookSide::Server),
     ("mob_killed", HookSide::Server),
     ("mob_layer", HookSide::Client),
     ("mob_spawned", HookSide::Server),
@@ -1292,14 +1294,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 11;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 12;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "861b3ea4fa7b59b5";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "75207a8615660bfb";
 
 #[cfg(test)]
 mod test_support;
@@ -1749,6 +1751,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "menu_links",
     "mob_ai_register",
     "mob_died",
+    "mob_finalize",
     "mod_event",
     "permission_check",
     "permission_groups",
@@ -1896,6 +1899,7 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "living_incoming_damage_v3",
     "mob_ai_register",
     "mob_died",
+    "mob_finalize",
     "projectile_world_border",
     "register_goals",
     "trample",
@@ -2347,6 +2351,7 @@ macro_rules! impl_generated_hooks {
     gen_collect!(menu_links, game_mut, horizon_client::mod_api::MenuLinksEvent<'_>, (none), [player: uuid, menu: cloned, pos: pos, links: s_vec([i32;3]) => w_vec([i32;3])]);
     gen_mob_ai_register!(mob_ai_register, none, horizon_client::mod_api::MobAiRegisterEvent<'_>, (mob mob), [mob: mob_view]);
     gen_listen!(mob_died, game_mut, horizon_client::mod_api::MobDiedEvent<'_>, (field kind), [dimension: cloned, entity: copy, kind: cloned, damage_type: cloned, causing: copy, player: opt_uuid]);
+    gen_listen!(mob_finalize, game_ref, horizon_client::mod_api::MobFinalizeEvent<'_>, (field kind), [kind: cloned, position: vec3, reason: cloned, spawner: s_opt([f64;3]), difficulty: copy, skip: copy => mut_scalar, spawn_cancelled: copy => mut_scalar]);
     gen_listen!(mod_event, game_mut, horizon_client::mod_api::ModEventEvent<'_>, (none), [event: cloned, payload: s_ref(serde_json::Value)]);
     gen_replace!(permission_check, game_ref, horizon_client::mod_api::PermissionCheckEvent<'_>, (none), [player: uuid, node: cloned, default_level: copy], result : value, Option<bool>);
     gen_collect!(permission_groups, game_ref, horizon_client::mod_api::PermissionGroupsEvent<'_>, (none), [player: uuid, groups: str_seq => mut_strvec]);
@@ -67204,6 +67209,190 @@ mod generated_tests {
     }
 
     #[test]
+    fn generated_mob_finalize() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_mob_finalize",
+            "horizon.on(\"mob_finalize\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.position.x == 2.0, \"position\")\n    assert(event.position.y == 3.0, \"position\")\n    assert(event.position.z == 4.0, \"position\")\n    assert(event.reason == \"test:reason\", \"reason\")\n    assert(event.spawner.x == 4.0, \"spawner\")\n    assert(event.spawner.y == 5.0, \"spawner\")\n    assert(event.spawner.z == 6.0, \"spawner\")\n    assert(event.difficulty == 11, \"difficulty\")\n    assert(event.skip == false, \"skip\")\n    event.skip = true\n    assert(event.spawn_cancelled == true, \"spawn_cancelled\")\n    event.spawn_cancelled = false\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut skip = false;
+            let mut spawn_cancelled = true;
+            dispatch_mob_finalize(
+                &FakeHost::empty(),
+                &firing_mods,
+                "minecraft:skeleton",
+                [2.0, 3.0, 4.0],
+                "test:reason",
+                Some([4.0, 5.0, 6.0]),
+                11,
+                &mut skip,
+                &mut spawn_cancelled,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut skip = false;
+        let mut spawn_cancelled = true;
+        dispatch_mob_finalize(
+            &FakeHost::empty(),
+            &firing_mods,
+            "minecraft:zombie",
+            [2.0, 3.0, 4.0],
+            "test:reason",
+            Some([4.0, 5.0, 6.0]),
+            11,
+            &mut skip,
+            &mut spawn_cancelled,
+        );
+        assert!(skip);
+        assert!(!spawn_cancelled);
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_mob_finalize_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_finalize_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut skip = false;
+            let mut spawn_cancelled = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_finalize(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                [2.0, 3.0, 4.0],
+                "test:reason",
+                Some([4.0, 5.0, 6.0]),
+                11,
+                &mut skip,
+                &mut spawn_cancelled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_finalize read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_finalize read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_finalize read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_finalize_cost_kind",
+            "horizon.on(\"mob_finalize\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut skip = false;
+            let mut spawn_cancelled = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_finalize(
+                &FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                [2.0, 3.0, 4.0],
+                "test:reason",
+                Some([4.0, 5.0, 6.0]),
+                11,
+                &mut skip,
+                &mut spawn_cancelled,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "mob_finalize read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_finalize read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_finalize read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_mob_finalize_cost_live",
+            "horizon.on(\"mob_finalize\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut skip = false;
+            let mut spawn_cancelled = true;
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_mob_finalize(
+                &FakeHost::empty(),
+                &firing_mods,
+                "minecraft:zombie",
+                [2.0, 3.0, 4.0],
+                "test:reason",
+                Some([4.0, 5.0, 6.0]),
+                11,
+                &mut skip,
+                &mut spawn_cancelled,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "mob_finalize built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "mob_finalize read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "mob_finalize read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
     fn generated_mod_event() {
         let (m, id, _dir, lua) = loaded_tracked(
             "gen_mod_event",
@@ -78584,6 +78773,22 @@ mod generated_tests {
                 "test:damage_type",
                 11,
                 None,
+            );
+        }
+        // mob_finalize: unregistered, nothing runs.
+        {
+            let mut skip = false;
+            let mut spawn_cancelled = true;
+            dispatch_mob_finalize(
+                &FakeHost::empty(),
+                &firing_mods,
+                "test:kind",
+                [2.0, 3.0, 4.0],
+                "test:reason",
+                Some([4.0, 5.0, 6.0]),
+                11,
+                &mut skip,
+                &mut spawn_cancelled,
             );
         }
         // mod_event: unregistered, nothing runs.

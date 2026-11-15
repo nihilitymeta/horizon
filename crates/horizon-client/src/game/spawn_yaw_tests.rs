@@ -82,8 +82,13 @@ fn a_spawn_eggs_yaw_is_the_wrapped_level_draw() {
     for _ in 0..32 {
         let mut level = game.world.random.clone();
         let draw = level.next_float() * 360.0;
-        let id = game
-            .spawn_mob_spawned("pig", [4.5, 100.0, 8.5], SpawnYaw::Created)
+        let (id, _) = game
+            .spawn_mob_spawned(
+                "pig",
+                [4.5, 100.0, 8.5],
+                SpawnYaw::Created,
+                super::creatures::SpawnReason::SpawnEgg,
+            )
             .expect("pig");
         let yaw = yaw_of(&game, id);
         assert_eq!(yaw, horizon_client::camera::wrap_degrees(draw));
