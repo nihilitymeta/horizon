@@ -3028,6 +3028,12 @@ mod mod_kind_tests {
 
     /// Vanilla conditions and functions never reach the hook, and the table
     /// takes exactly the one draw its `random_chance` makes.
+    ///
+    /// The expected values come from Java's `java.util.Random` (JDK 25,
+    /// `new Random(seed)`): `nextFloat() < 0.5` decides the drop, and
+    /// `nextLong()` is the next value after that one float. Seeds 0..7 all
+    /// start near 0.73 in Java, so they never drop; the seeds below cover both
+    /// outcomes.
     #[test]
     fn mod_kind_vanilla_entries_never_reach_the_hook() {
         install_stub();
@@ -3037,16 +3043,25 @@ mod mod_kind_tests {
                 "condition":{"type":"minecraft:random_chance","chance":0.5},
                 "modifier":[{"type":"minecraft:set_count","count":3}]}]}]}"#,
         );
-        for seed in 0..8 {
+        // (seed, dropped, next long after the roll's one float), from Java.
+        let java: [(i64, bool, i64); 8] = [
+            (1, false, 1853403699951111791),
+            (2, false, 5411842376618821008),
+            (8, false, -300705196293627100),
+            (42, false, 1008396158678580193),
+            (4096, true, -2297027267632269370),
+            (4097, true, 2665741198048344763),
+            (12345, true, -8979699159253079774),
+            (99991, false, 8922315943997803559),
+        ];
+        for (seed, dropped, next_long) in java {
             let mut random = LegacyRandom::new(seed);
-            let mut expected = LegacyRandom::new(seed);
             let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
-            let dropped = expected.next_float() < 0.5;
             assert_eq!(stacks.len(), usize::from(dropped), "seed {seed}");
             if dropped {
                 assert_eq!(stacks[0].count, 3, "seed {seed}");
             }
-            assert_eq!(random.next_long(), expected.next_long(), "seed {seed}");
+            assert_eq!(random.next_long(), next_long, "seed {seed}");
         }
         assert!(seen().is_empty());
     }
@@ -3062,11 +3077,11 @@ mod mod_kind_tests {
                 "modifier":[{"type":"minecraft:set_count","count":2}]}]}]}"#,
         );
         let mut random = LegacyRandom::new(9);
-        let mut expected = LegacyRandom::new(9);
         let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
         assert_eq!(names(&stacks), ["minecraft:stone"]);
         assert_eq!(stacks[0].count, 2);
-        assert_eq!(random.next_long(), expected.next_long());
+        // The first long of Java's `new Random(9)`: the roll drew nothing.
+        assert_eq!(random.next_long(), -4977640823216473640);
         assert!(seen().is_empty());
     }
 }
