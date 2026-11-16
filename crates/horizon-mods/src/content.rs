@@ -1971,6 +1971,44 @@ fn open_zip(path: &Path) -> Result<zip::ZipArchive<std::fs::File>, String> {
     zip::ZipArchive::new(file).map_err(|e| e.to_string())
 }
 
+/// The most bytes [`read_root_file`] gives for one file.
+pub const MAX_ROOT_FILE: u64 = 64 << 10;
+
+/// The bytes of one file at the root of the mod at `path` (a `.hmod` or a mod folder), such as
+/// `settings.json` beside the manifest. It is not content: the content fence ([`Content::read`])
+/// does not admit it, and this reads nothing else. `name` is one plain file name (no `/`, no `..`,
+/// no `\`); a file over [`MAX_ROOT_FILE`] is an error. `None` when the mod has no such file.
+pub fn read_root_file(path: &Path, name: &str) -> Result<Option<Vec<u8>>, String> {
+    if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+        return Err(format!("{name:?} is not a plain file name"));
+    }
+    if path.is_dir() {
+        return match std::fs::File::open(path.join(name)) {
+            Ok(file) => read_capped(file, name).map(Some),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("{name}: {e}")),
+        };
+    }
+    let mut zip = open_zip(path)?;
+    match zip.by_name(name) {
+        Ok(entry) => read_capped(entry, name).map(Some),
+        Err(zip::result::ZipError::FileNotFound) => Ok(None),
+        Err(e) => Err(format!("{name}: {e}")),
+    }
+}
+
+fn read_capped(reader: impl Read, name: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    reader
+        .take(MAX_ROOT_FILE + 1)
+        .read_to_end(&mut out)
+        .map_err(|e| format!("{name}: {e}"))?;
+    if out.len() as u64 > MAX_ROOT_FILE {
+        return Err(format!("{name} is over {} KiB", MAX_ROOT_FILE >> 10));
+    }
+    Ok(out)
+}
+
 /// Files under `dir`, relative to `root` with `/` separators. Symbolic links
 /// are not followed: a mod folder holds its own files.
 fn read_from(source: &Source) -> Result<ReadFrom<'_>, String> {
@@ -2375,6 +2413,127 @@ registry.fluid("honey", {
         let content = package.and_then(|p| Content::read(&path, &p.manifest));
         std::fs::remove_dir_all(&dir).unwrap();
         content
+    }
+
+    const SETTINGS_JSON: &[u8] =
+        br#"{"settings": [{"key": "volume", "type": "int", "default": 5}]}"#;
+
+    /// A `.hmod` of the manifest and `files` as they are, unchecked. `Package::write_files` runs the
+    /// content fence, which refuses a root `settings.json`; these tests need one in the archive.
+    fn raw_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        let all =
+            std::iter::once((MANIFEST, MANIFEST_TEXT.as_bytes())).chain(files.iter().copied());
+        for (name, bytes) in all {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn root_file_reads_a_folder_and_a_package_and_is_none_when_absent() {
+        let dir = scratch("root-file-read");
+        let folder = dir.join("ruby");
+        std::fs::create_dir_all(folder.join("data/ruby")).unwrap();
+        std::fs::write(folder.join(MANIFEST), MANIFEST_TEXT).unwrap();
+        std::fs::write(folder.join("settings.json"), SETTINGS_JSON).unwrap();
+        let hmod = dir.join("ruby.hmod");
+        let bytes = raw_zip(&[("settings.json", SETTINGS_JSON), ("data/ruby/x.json", ITEM)]);
+        std::fs::write(&hmod, bytes).unwrap();
+        for path in [&folder, &hmod] {
+            assert_eq!(
+                read_root_file(path, "settings.json").unwrap().as_deref(),
+                Some(SETTINGS_JSON),
+                "{}",
+                path.display()
+            );
+            assert_eq!(read_root_file(path, "other.json").unwrap(), None);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn root_file_ignores_a_file_of_that_name_under_scripts_or_data() {
+        let dir = scratch("root-file-nested");
+        let hmod = dir.join("ruby.hmod");
+        let bytes = raw_zip(&[
+            ("data/ruby/settings.json", SETTINGS_JSON),
+            ("scripts/settings.json", SETTINGS_JSON),
+        ]);
+        std::fs::write(&hmod, bytes).unwrap();
+        assert_eq!(read_root_file(&hmod, "settings.json").unwrap(), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn root_file_refuses_a_name_that_is_not_a_plain_root_name() {
+        let dir = scratch("root-file-names");
+        let hmod = dir.join("ruby.hmod");
+        std::fs::write(&hmod, raw_zip(&[("settings.json", SETTINGS_JSON)])).unwrap();
+        for name in [
+            "",
+            ".",
+            "..",
+            "data/ruby/settings.json",
+            "../settings.json",
+            "a\\b",
+        ] {
+            assert!(
+                read_root_file(&hmod, name).is_err(),
+                "{name:?} must be refused"
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn root_file_over_the_cap_is_an_error() {
+        let dir = scratch("root-file-cap");
+        let folder = dir.join("ruby");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("settings.json"),
+            vec![b' '; MAX_ROOT_FILE as usize],
+        )
+        .unwrap();
+        assert_eq!(
+            read_root_file(&folder, "settings.json")
+                .unwrap()
+                .map(|b| b.len()),
+            Some(MAX_ROOT_FILE as usize),
+            "exactly the cap is read"
+        );
+        std::fs::write(
+            folder.join("settings.json"),
+            vec![b' '; MAX_ROOT_FILE as usize + 1],
+        )
+        .unwrap();
+        assert!(read_root_file(&folder, "settings.json").is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn root_file_leaves_the_content_fence_as_it_was() {
+        let dir = scratch("root-file-fence");
+        let (plain_path, with_path) = (dir.join("plain.hmod"), dir.join("with.hmod"));
+        std::fs::write(&plain_path, raw_zip(&[("data/ruby/x.json", ITEM)])).unwrap();
+        std::fs::write(
+            &with_path,
+            raw_zip(&[("data/ruby/x.json", ITEM), ("settings.json", SETTINGS_JSON)]),
+        )
+        .unwrap();
+        let read = |path: &Path| {
+            let package = Package::read(path).unwrap();
+            Content::read(path, &package.manifest).unwrap()
+        };
+        let (plain, with) = (read(&plain_path), read(&with_path));
+        assert_eq!(with.files, plain.files);
+        assert_eq!(with.files, ["data/ruby/x.json"]);
+        assert!(with.scripts.is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

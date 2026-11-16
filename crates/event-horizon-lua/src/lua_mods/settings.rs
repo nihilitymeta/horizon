@@ -207,28 +207,86 @@ fn entry(item: &Value, earlier: &[Entry]) -> Result<Entry, (String, String)> {
     Ok(out)
 }
 
-/// The schema of the mod at `path`: `settings.json` at a mod folder's root. None when there is no
-/// such file, or it is not a valid one (logged once). A packaged `.hmod` has its file read by
-/// nothing yet, so it has no schema.
+/// The schema of the mod at `path` (a mod folder, or a `.hmod`): `settings.json` at its root,
+/// beside the manifest. None when there is no such file, or it is not a valid one (logged once).
 pub fn read(path: &Path, mod_id: &str) -> Option<Vec<Entry>> {
-    if !path.is_dir() {
-        return None;
-    }
-    let text = match std::fs::read_to_string(path.join(FILE)) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(e) => {
-            log::error!("[lua:{mod_id}] settings.json: {e}; the mod has no settings schema");
-            return None;
-        }
+    let text = match horizon_mods::content::read_root_file(path, FILE) {
+        Ok(Some(bytes)) => String::from_utf8(bytes).map_err(|_| "not UTF-8".to_owned()),
+        Ok(None) => return None,
+        Err(e) => Err(e),
     };
-    match parse(&text, mod_id) {
+    let parsed = text.and_then(|text| parse(&text, mod_id));
+    match parsed {
         Ok(entries) => Some(entries),
         Err(e) => {
             log::error!("[lua:{mod_id}] settings.json: {e}; the mod has no settings schema");
             None
         }
     }
+}
+
+/// A `.hmod` of `files` (name, text), stored without compression and written by hand: this crate
+/// does not depend on the zip library, and `Package::write_files` refuses a root `settings.json`,
+/// which the packaged tests need.
+#[cfg(test)]
+pub(crate) fn stored_zip(files: &[(&str, &str)]) -> Vec<u8> {
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for &b in bytes {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for (name, text) in files {
+        let (data, name) = (text.as_bytes(), name.as_bytes());
+        let (crc, len, offset) = (crc32(data), data.len() as u32, out.len() as u32);
+        // The local file header, then the data.
+        out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        out.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        out.extend_from_slice(&[0u8; 2 + 2 + 2]); // flags, stored, time
+        out.extend_from_slice(&0x21u16.to_le_bytes()); // date: 1980-01-01
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&len.to_le_bytes());
+        out.extend_from_slice(&len.to_le_bytes());
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&[0u8; 2]); // extra length
+        out.extend_from_slice(name);
+        out.extend_from_slice(data);
+        // The central directory header for it.
+        central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes()); // made by
+        central.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        central.extend_from_slice(&[0u8; 2 + 2 + 2]); // flags, stored, time
+        central.extend_from_slice(&0x21u16.to_le_bytes());
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&len.to_le_bytes());
+        central.extend_from_slice(&len.to_le_bytes());
+        central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        central.extend_from_slice(&[0u8; 2 + 2 + 2 + 2 + 4]); // extra, comment, disk, attrs
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name);
+    }
+    let (cd_offset, cd_len) = (out.len() as u32, central.len() as u32);
+    out.extend_from_slice(&central);
+    // The end of the central directory.
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]); // disk numbers
+    let count = files.len() as u16;
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(&cd_len.to_le_bytes());
+    out.extend_from_slice(&cd_offset.to_le_bytes());
+    out.extend_from_slice(&[0u8; 2]); // comment length
+    out
 }
 
 /// The file a side's values live in, under the game folder's `config/`: `<id>.json` on the
@@ -434,10 +492,10 @@ impl super::LuaMod {
         value: Value,
         notify: &mut dyn FnMut(&Change),
     ) -> Result<(), String> {
-        self.settings
-            .as_ref()
-            .ok_or_else(|| format!("{} declares no settings", self.id))?
-            .set(side, key, value, notify)
+        let schema = self
+            .schema()
+            .ok_or_else(|| format!("{} declares no settings", self.id))?;
+        schema.set(side, key, value, notify)
     }
 
     /// Removes a setting of the mod's schema from `side`'s config file (see [`Settings::reset`]).
@@ -447,9 +505,9 @@ impl super::LuaMod {
         key: &str,
         notify: &mut dyn FnMut(&Change),
     ) -> Result<(), String> {
-        self.settings
-            .as_ref()
-            .ok_or_else(|| format!("{} declares no settings", self.id))?
-            .reset(side, key, notify)
+        let schema = self
+            .schema()
+            .ok_or_else(|| format!("{} declares no settings", self.id))?;
+        schema.reset(side, key, notify)
     }
 }

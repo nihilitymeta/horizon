@@ -112,7 +112,7 @@ fn config_without_a_schema_returns_the_file_as_it_is() {
     let stored = json!({"limit": 3, "kinds": ["a"], "volume": 99});
     std::fs::write(dir.join("config/ruby.json"), stored.to_string()).unwrap();
     let m = load(&dir);
-    assert!(m.settings.is_none());
+    assert!(m.schema().is_none());
     assert_eq!(config_seen(&m), stored);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -259,5 +259,111 @@ fn config_changed_hook_is_told_once_per_real_change() {
         .map(|v| v.unwrap())
         .collect();
     assert_eq!(told, ["ruby volume 5 7", "ruby volume 7 5"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// What `horizon.config()` gives now, by a fresh call (not the global the script set at load).
+fn config_now(m: &LuaMod) -> serde_json::Value {
+    let value: mlua::Value = m.lua.load("return horizon.config()").eval().unwrap();
+    lua_to_json(&value).unwrap()
+}
+
+#[test]
+fn settings_packaged_mod_reads_its_root_schema_as_its_folder_does() {
+    let dir = folder("packaged", Some(SCHEMA), "CFG = horizon.config()");
+    let packed = std::env::temp_dir().join(format!(
+        "horizon-settings-{}-packaged.hmod",
+        std::process::id()
+    ));
+    std::fs::write(
+        &packed,
+        stored_zip(&[
+            ("horizon-mod.toml", MANIFEST),
+            ("scripts/server/init.lua", "CFG = horizon.config()"),
+            (FILE, SCHEMA),
+        ]),
+    )
+    .unwrap();
+    let from_folder = read(&dir, "ruby").unwrap();
+    let from_package = read(&packed, "ruby").unwrap();
+    assert_eq!(from_package, from_folder, "the same entries as the folder");
+    assert_eq!(from_package.len(), 6);
+    let m = LuaMod::load_with(&packed, LuaSide::Server, &[], Some(&dir.join("config"))).unwrap();
+    assert_eq!(
+        config_now(&m),
+        json!({"volume": 5, "ratio": 0.5, "name": "steve", "on": true, "mode": "fast"}),
+        "the declared defaults, the client-side hud.scale left out"
+    );
+    std::fs::remove_file(&packed).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn settings_reload_reads_the_edited_schema() {
+    let dir = folder("reload_edit", Some(SCHEMA), "CFG = horizon.config()");
+    let m = load(&dir);
+    assert_eq!(config_now(&m)["volume"], 5);
+    std::fs::write(
+        dir.join(FILE),
+        r#"{"settings": [
+          {"key": "volume", "type": "int", "default": 8, "min": 0, "max": 10},
+          {"key": "added", "type": "int", "default": 3}
+        ]}"#,
+    )
+    .unwrap();
+    m.reload().unwrap();
+    assert_eq!(config_now(&m), json!({"volume": 8, "added": 3}));
+    m.set_setting(LuaSide::Server, "added", json!(4), &mut |_| {})
+        .unwrap();
+    assert_eq!(saved(&dir), json!({"added": 4}));
+    assert!(
+        m.set_setting(LuaSide::Server, "name", json!("alex"), &mut |_| {})
+            .is_err(),
+        "name is no longer in the schema, so it is refused"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn settings_reload_without_the_file_drops_the_schema() {
+    let dir = folder("reload_gone", Some(SCHEMA), "CFG = horizon.config()");
+    let m = load(&dir);
+    std::fs::remove_file(dir.join(FILE)).unwrap();
+    m.reload().unwrap();
+    assert!(m.schema().is_none());
+    assert_eq!(config_now(&m), json!({}), "no schema, no saved values");
+    assert!(
+        m.set_setting(LuaSide::Server, "volume", json!(7), &mut |_| {})
+            .is_err()
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn settings_reload_with_an_invalid_file_succeeds_without_a_schema() {
+    let dir = folder("reload_invalid", Some(SCHEMA), "CFG = horizon.config()");
+    let m = load(&dir);
+    std::fs::write(dir.join(FILE), "{not json").unwrap();
+    m.reload()
+        .expect("a bad settings.json never stops a reload");
+    assert!(m.schema().is_none());
+    assert_eq!(config_now(&m), json!({}));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn settings_failed_reload_keeps_the_schema_it_had() {
+    let dir = folder("reload_failed", Some(SCHEMA), "CFG = horizon.config()");
+    let m = load(&dir);
+    std::fs::write(
+        dir.join(FILE),
+        r#"{"settings": [{"key": "volume", "type": "int", "default": 8}]}"#,
+    )
+    .unwrap();
+    // The script does not compile, so the reload fails with the scripts beside the old schema.
+    std::fs::write(dir.join("scripts/server/init.lua"), "CFG = horizon.config(").unwrap();
+    assert!(m.reload().is_err());
+    assert_eq!(config_now(&m)["volume"], 5, "the old schema's default");
+    assert_eq!(m.schema().unwrap().entries().len(), 6);
     std::fs::remove_dir_all(&dir).unwrap();
 }

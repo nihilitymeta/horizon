@@ -1719,7 +1719,9 @@ pub struct LuaMod {
     config_path: Option<PathBuf>,
     /// The mod's settings schema (`settings.json` at its root), when it has one:
     /// `horizon.config()` fills its defaults and `set_setting` writes through it.
-    settings: Option<Arc<settings::Settings>>,
+    /// A successful `reload` swaps it for the one the new `settings.json` gives
+    /// (see [`LuaMod::schema`]); `horizon.config()` reads it through this handle.
+    settings: Arc<Mutex<Option<Arc<settings::Settings>>>>,
     /// Reloads done, for the status.
     reloads: AtomicU32,
     /// The `RELOAD_ALL` generation served last.
@@ -2266,7 +2268,7 @@ impl LuaMod {
             player_attachment,
             entity_attachment,
             config_path,
-            settings: schema.map(Arc::new),
+            settings: Arc::new(Mutex::new(schema.map(Arc::new))),
             reloads: AtomicU32::new(0),
             reload_seen: AtomicU32::new(reload_generation()),
             turn: turn::ReentrantTurn::new(),
@@ -2371,6 +2373,9 @@ impl LuaMod {
         let (_, _, world_settings, server_admin, scripts) =
             Self::read_scripts(&self.source, self.side)?;
         let (library_scripts, _) = Self::read_libraries(&self.libraries, self.side)?;
+        // The schema the mod's `settings.json` gives now. It is swapped in with the scripts, below,
+        // and only when the reload as a whole succeeds.
+        let schema = self.read_schema();
         // Hold the per-state turn for the whole reload: the registry
         // tables, timers and `run` touch the host slot and the queue.
         let _guard = self
@@ -2454,6 +2459,10 @@ impl LuaMod {
             // keeps the old permission beside the restored old scripts.
             self.world_settings.store(world_settings, Ordering::Relaxed);
             self.server_admin.store(server_admin, Ordering::Relaxed);
+            // The schema is written here too, after the scripts ran, so a failed reload keeps the
+            // old one; the registry's entry for the mod follows it (a mod with none leaves it).
+            *self.settings.lock().unwrap_or_else(|p| p.into_inner()) = schema.clone();
+            registry::refresh(&self.id, schema);
             return Ok(());
         };
         // Whatever the failed script registered is dropped with the fresh
@@ -2472,6 +2481,28 @@ impl LuaMod {
     /// The mod's id, as its manifest says.
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The mod's settings schema as it is now: None when its `settings.json` gives none.
+    pub(crate) fn schema(&self) -> Option<Arc<settings::Settings>> {
+        self.settings
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// The schema the mod's `settings.json` gives now, for this state's config file (its folder is
+    /// the one `load_with` was given). Logged and None when the file is absent or not valid.
+    fn read_schema(&self) -> Option<Arc<settings::Settings>> {
+        let entries = settings::read(&self.source, &self.id)?;
+        let config_dir = self
+            .config_path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(Path::to_path_buf);
+        Some(Arc::new(settings::Settings::new(
+            &self.id, entries, config_dir,
+        )))
     }
 
     /// The side this state runs in.
@@ -3092,7 +3123,7 @@ impl LuaMod {
         // No host needed: at load too.
         let config_path = self.config_path.clone();
         let id = self.id.clone();
-        let schema = self.settings.clone();
+        let schema_slot = self.settings.clone();
         let side = self.side;
         api.set(
             "config",
@@ -3100,6 +3131,11 @@ impl LuaMod {
                 let Some(path) = &config_path else {
                     return Err(mlua::Error::runtime("horizon.config: no config folder"));
                 };
+                // The schema as it is now: a reload may have swapped it since the load.
+                let schema = schema_slot
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone();
                 let text = match std::fs::read_to_string(path) {
                     Ok(text) => text,
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

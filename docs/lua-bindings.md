@@ -744,8 +744,10 @@ in the defaults and saves them, so the file is there to edit after the first run
 
 ### Settings schema
 
-A mod may declare its settings in `settings.json`, at the root of its folder. The file is read at load, without
-running Lua. A packaged `.hmod` does not have its file read yet, so a schema needs a mod folder.
+A mod may declare its settings in `settings.json`, at the root of the mod: beside `horizon-mod.toml` in a mod folder,
+or at the root of a packaged `.hmod`. The file is read at load, without running Lua, and read again by each successful
+`/reload` ([Reloading](#reloading)). It is not content: the content rules do not admit it under `assets/`, `data/` or
+`scripts/`, and it is read by its name at the root alone.
 
 ```json
 {"settings": [
@@ -798,8 +800,10 @@ fire it too, as the write goes through the same path.
 The game reads the schemas of its loaded mods through one seam, `horizon_client::mod_settings`: the mods that declare
 a schema, each setting with the value `horizon.config()` gives it, and a write or a reset of one value. The
 executable answers it from the schemas that discovery loaded at start, and a write goes through the same checks and
-`config_changed` as above. A `/reload` runs a mod's scripts again but keeps the schema it had at discovery, so a
-changed `settings.json` takes effect at the next start.
+`config_changed` as above. A `/reload` runs a mod's scripts again and reads its `settings.json` again, with the scripts:
+a successful reload shows the new schema in the Options page and in `horizon.config()`, a removed or invalid file leaves
+the mod with no schema (its settings then leave the page, and the reload still succeeds), and a failed reload keeps the
+schema it had, beside the old scripts.
 
 ### Blocks
 

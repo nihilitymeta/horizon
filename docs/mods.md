@@ -111,6 +111,9 @@ Unknown keys are refused, so a typo is an error, not a silently ignored permissi
 
 A content mod has capability `registries` and carries `assets/` and `data/` in the `.hmod`. With capability `scripts`
 (experimental), it also carries `scripts/`: Lua that the game runs on its hook points, one Lua state per side per mod.
+A scripted mod may also carry `settings.json` at its root, beside `horizon-mod.toml` (in the folder, or at the root of
+the `.hmod`): its settings schema ([lua-bindings.md](lua-bindings.md#settings-schema)). That file is not content, so the
+content rules do not apply to it, and `/reload` reads it again.
 The server state starts from `scripts/server/init.lua`, the client state from `scripts/client/init.lua` (a mod needs
 one or both, or none as a shared-only library with only `scripts/shared/`), and `scripts/shared/` holds the modules either side may `require`. Such a mod can declare its
 content in `scripts/registry.lua`, and the modules it requires from `scripts/registry/`, instead of files

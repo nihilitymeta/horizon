@@ -1,9 +1,9 @@
 //! The settings of the loaded Lua mods, for the game's own screens (#64): which mods declare a
 //! `settings.json`, each setting with the value `horizon.config()` gives it now, and a write or a
 //! reset of one value. `discover` fills the registry from the mods it loads, and replaces what it
-//! held before: a second discovery does not add to the first. A `/reload` of a mod re-runs its
-//! scripts but not its schema, so the schema a mod had at discovery is the one shown until the
-//! next discovery.
+//! held before: a second discovery does not add to the first. A successful `/reload` of a mod
+//! re-reads its `settings.json` too, and `refresh` puts the new schema in its entry (or takes the
+//! entry out when the file is gone or not valid), so the Options page shows what the reload read.
 
 use super::settings::{Change, Entry, Settings};
 use super::{LuaMod, LuaSide};
@@ -34,12 +34,20 @@ pub struct SettingView {
 /// Replaces the registry with the schemas of `mods`: one per mod id, the first state's.
 pub fn replace(mods: &[LuaMod]) {
     let mut found: Vec<Arc<Settings>> = Vec::new();
-    for s in mods.iter().filter_map(|m| m.settings.as_ref()) {
+    for s in mods.iter().filter_map(LuaMod::schema) {
         if !found.iter().any(|f| f.mod_id() == s.mod_id()) {
-            found.push(s.clone());
+            found.push(s);
         }
     }
     *schemas() = found;
+}
+
+/// Sets mod `mod_id`'s entry to `schema`, the schema its state has after a reload: a new one, or
+/// none, which takes the mod out of the registry. The other mods' entries stay.
+pub fn refresh(mod_id: &str, schema: Option<Arc<Settings>>) {
+    let mut all = schemas();
+    all.retain(|s| s.mod_id() != mod_id);
+    all.extend(schema);
 }
 
 /// Every mod with a schema, sorted by id, each with its settings sorted by group, order and key
@@ -120,6 +128,7 @@ fn settings_of(mod_id: &str) -> Result<Arc<Settings>, String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::settings::{FILE, stored_zip};
     use super::super::{LuaSide, load_states};
     use super::*;
     use serde_json::json;
@@ -317,6 +326,105 @@ mod tests {
         assert!(mod_settings().is_empty());
         replace(&mods);
         assert_eq!(mod_settings().len(), 2);
+        std::fs::remove_dir_all(&game).unwrap();
+    }
+
+    const RUBY_MANIFEST: &str = "id = \"ruby\"\nname = \"ruby\"\nversion = \"0.1.0\"\napi = \"0.2\"\n\
+         side = \"both\"\ncapabilities = [\"scripts\"]\nexperimental = [\"scripts\"]\n";
+
+    /// The keys the registry lists for mod `mod_id`, None when it is not listed.
+    fn keys_of(mod_id: &str) -> Option<Vec<String>> {
+        mod_settings()
+            .into_iter()
+            .find(|m| m.mod_id == mod_id)
+            .map(|m| m.entries.into_iter().map(|e| e.entry.key).collect())
+    }
+
+    #[test]
+    fn settings_registry_lists_a_packaged_mod_with_its_declared_defaults() {
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let game = std::env::temp_dir().join(format!(
+            "horizon-settings-registry-{}-packaged",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&game);
+        std::fs::create_dir_all(&game).unwrap();
+        let packed = game.join("ruby.hmod");
+        std::fs::write(
+            &packed,
+            stored_zip(&[
+                ("horizon-mod.toml", RUBY_MANIFEST),
+                ("scripts/server/init.lua", "-- settings only"),
+                (FILE, RUBY),
+            ]),
+        )
+        .unwrap();
+        let args = [
+            "--game-dir".to_owned(),
+            game.display().to_string(),
+            "--dev-mod".to_owned(),
+            packed.display().to_string(),
+        ];
+        replace(&load_states(args.into_iter()));
+        let listed = mod_settings();
+        assert_eq!(
+            listed.iter().map(|m| m.mod_id.as_str()).collect::<Vec<_>>(),
+            ["ruby"]
+        );
+        assert_eq!(
+            keys_of("ruby").unwrap(),
+            ["on", "ratio", "name", "volume", "mode"]
+        );
+        let volume = listed[0]
+            .entries
+            .iter()
+            .find(|e| e.entry.key == "volume")
+            .unwrap();
+        assert_eq!(
+            volume.value,
+            json!(5),
+            "no saved file: the declared default"
+        );
+        replace(&[]);
+        std::fs::remove_dir_all(&game).unwrap();
+    }
+
+    #[test]
+    fn settings_registry_reload_refreshes_the_listed_schema() {
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (game, mods) = discovered("reload");
+        replace(&mods);
+        let ruby = mods.iter().find(|m| m.id() == "ruby").unwrap();
+        let plain = mods.iter().find(|m| m.id() == "plain").unwrap();
+        let mod_dir = |id: &str| game.join("mods").join(id);
+        assert_eq!(keys_of("plain"), None);
+
+        // ruby's file changes: the listing shows the new schema after its reload.
+        std::fs::write(
+            mod_dir("ruby").join(FILE),
+            r#"{"settings": [{"key": "gain", "type": "int", "default": 4}]}"#,
+        )
+        .unwrap();
+        ruby.reload().unwrap();
+        assert_eq!(keys_of("ruby"), Some(vec!["gain".to_owned()]));
+        assert!(keys_of("moss").is_some(), "the other mods stay listed");
+
+        // plain had no schema: a reload that finds one lists it.
+        std::fs::write(
+            mod_dir("plain").join(FILE),
+            r#"{"settings": [{"key": "level", "type": "int", "default": 2}]}"#,
+        )
+        .unwrap();
+        plain.reload().unwrap();
+        assert_eq!(keys_of("plain"), Some(vec!["level".to_owned()]));
+
+        // ruby's file goes: a reload takes it out, and a write to it is refused.
+        std::fs::remove_file(mod_dir("ruby").join(FILE)).unwrap();
+        ruby.reload().unwrap();
+        assert_eq!(keys_of("ruby"), None);
+        assert!(set("ruby", LuaSide::Server, "gain", json!(1), &mut |_| {}).is_err());
+        assert!(keys_of("moss").is_some());
+        replace(&[]);
         std::fs::remove_dir_all(&game).unwrap();
     }
 }
