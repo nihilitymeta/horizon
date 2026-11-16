@@ -123,12 +123,16 @@ pub(crate) mod test_hooks {
         *holds = data["holds"].as_bool().unwrap_or(false);
     }
 
-    /// A `ruby:` function multiplies the stack's count by its own `factor`.
+    /// A `ruby:` function multiplies the stack's count by its own `factor`,
+    /// and sets its item to its own `item` when it names one.
     fn loot_function(kind: &str, data: &Value, _: &NativeLootContext<'_>, stack: &mut LootStack) {
         if !kind.starts_with("ruby:") {
             return;
         }
         SEEN.with_borrow_mut(|seen| seen.push((kind.to_owned(), data.clone())));
+        if let Some(item) = data["item"].as_str() {
+            stack.item = item.to_owned();
+        }
         stack.count *= data["factor"].as_i64().unwrap_or(1) as i32;
     }
 }

@@ -13,11 +13,11 @@ use horizon_core::random::{LegacyRandom, RandomSource};
 use serde_json::Value;
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs, io,
     path::Path,
     rc::Rc,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, OnceLock, Weak},
 };
 
 /// Raw files a world's data packs add over the game's own data, by
@@ -74,6 +74,50 @@ pub fn native_loot_function(
     stack: &mut LootStack,
 ) {
     crate::native_load_hooks::loot_function(kind, data, ctx, stack);
+}
+
+/// Whether a mod's loot function that changed a stack's item id left an id
+/// the item table does not have. The game then gives air, so the diagnostic
+/// names the kind and the id. `None` when the id did not change, when it is
+/// `minecraft:air`, or when `known` has it. The change itself is kept: no
+/// refusal and no substitute.
+pub fn unknown_item_warning(
+    known: impl Fn(&str) -> bool,
+    kind: &str,
+    before: &str,
+    after: &str,
+) -> Option<String> {
+    if before == after || after == "minecraft:air" || known(after) {
+        return None;
+    }
+    Some(format!(
+        "Horizon: loot function {kind} gave a stack the unknown item id {after}: it becomes air"
+    ))
+}
+
+/// The (kind, id) pairs `warn_unknown_item` has already logged in this process.
+static WARNED_UNKNOWN_ITEMS: OnceLock<Mutex<HashSet<(String, String)>>> = OnceLock::new();
+
+/// Logs `unknown_item_warning` once per (kind, id) per process. Returns
+/// whether this call logged, so a table rolled many times logs once.
+pub fn warn_unknown_item(
+    known: impl Fn(&str) -> bool,
+    kind: &str,
+    before: &str,
+    after: &str,
+) -> bool {
+    let Some(message) = unknown_item_warning(known, kind, before, after) else {
+        return false;
+    };
+    let warned = WARNED_UNKNOWN_ITEMS.get_or_init(Default::default);
+    let first = warned
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert((kind.to_owned(), after.to_owned()));
+    if first {
+        log::warn!("{message}");
+    }
+    first
 }
 
 /// A loot condition of a mod's own kind: the entry named a `type` in a
@@ -1042,6 +1086,11 @@ impl LootData {
             ..ItemFacts::default()
         })
     }
+    /// Whether the item table (`items.json`, with the content mods' items)
+    /// has `id`: the same table the items engine reads.
+    pub fn knows_item(&self, id: &str) -> bool {
+        self.items.contains_key(id)
+    }
 
     /// LootTable.getRandomItems with the given random (its state is
     /// advanced), luck and, for fishing, whether the hook is in open water.
@@ -1915,7 +1964,12 @@ impl<R: RandomSource> Context<'_, R> {
             }
             // A mod's own kind: the hook changes the stack.
             k if k.contains(':') && !k.starts_with("minecraft:") => {
+                let before = stack.item.clone();
                 native_loot_function(k, f, &self.native_ctx(), &mut stack);
+                if stack.item != before {
+                    let data = self.data;
+                    warn_unknown_item(|id| data.knows_item(id), k, &before, &stack.item);
+                }
             }
             // Lore and other data without random draws.
             _ => {}
@@ -2956,6 +3010,113 @@ mod native_kinds_tests {
 /// the crate's shared one (`native_load_hooks::test_hooks`), which every test
 /// that installs a hook uses. The recorder is thread-local: a roll runs on its
 /// test's thread.
+/// Tests of the unknown-item check: the pure message, the dedupe, and the
+/// table lookup. Kinds and ids are unique to each test: the dedupe set is
+/// process-wide.
+#[cfg(test)]
+mod unknown_item_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_item_warning_names_the_kind_and_the_unknown_id() {
+        let message =
+            unknown_item_warning(|_| false, "mymod:kind", "minecraft:stone", "mymod:typo");
+        assert_eq!(
+            message.as_deref(),
+            Some(
+                "Horizon: loot function mymod:kind gave a stack the unknown item id mymod:typo: it becomes air"
+            )
+        );
+    }
+
+    #[test]
+    fn unknown_item_warning_is_none_for_a_known_or_air_or_unchanged_id() {
+        // Known to the table: vanilla, or a mod's item the table holds.
+        assert_eq!(
+            unknown_item_warning(
+                |id| id == "minecraft:diamond",
+                "mymod:k",
+                "minecraft:stone",
+                "minecraft:diamond"
+            ),
+            None
+        );
+        assert_eq!(
+            unknown_item_warning(
+                |id| id == "mymod:item",
+                "mymod:k",
+                "minecraft:stone",
+                "mymod:item"
+            ),
+            None
+        );
+        // minecraft:air is valid even though the table may not list it.
+        assert_eq!(
+            unknown_item_warning(|_| false, "mymod:k", "minecraft:stone", "minecraft:air"),
+            None
+        );
+        // Unchanged id: the function left it alone, whatever the table says.
+        assert_eq!(
+            unknown_item_warning(|_| false, "mymod:k", "mymod:typo", "mymod:typo"),
+            None
+        );
+    }
+
+    #[test]
+    fn unknown_item_warn_logs_once_per_kind_and_id() {
+        assert!(warn_unknown_item(
+            |_| false,
+            "mymod:dedupe",
+            "minecraft:stone",
+            "mymod:once"
+        ));
+        assert!(!warn_unknown_item(
+            |_| false,
+            "mymod:dedupe",
+            "minecraft:stone",
+            "mymod:once"
+        ));
+        // A different id, or the same id from a different kind, is its own warning.
+        assert!(warn_unknown_item(
+            |_| false,
+            "mymod:dedupe",
+            "minecraft:stone",
+            "mymod:twice"
+        ));
+        assert!(warn_unknown_item(
+            |_| false,
+            "mymod:other",
+            "minecraft:stone",
+            "mymod:once"
+        ));
+        // A known id is never recorded, so it is never reported.
+        assert!(!warn_unknown_item(
+            |_| true,
+            "mymod:dedupe",
+            "minecraft:stone",
+            "mymod:known"
+        ));
+    }
+
+    #[test]
+    fn unknown_item_knows_the_items_json_table() {
+        let root = std::env::temp_dir().join(format!("loot-unknown-item-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("data/minecraft/loot_table");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            root.join("items.json"),
+            r#"{"minecraft:stick": {}, "mymod:item": {}}"#,
+        )
+        .unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(data.knows_item("minecraft:stick"));
+        assert!(data.knows_item("mymod:item"));
+        assert!(!data.knows_item("mymod:missing"));
+    }
+}
+
 #[cfg(test)]
 mod mod_kind_tests {
     use super::*;
@@ -2965,13 +3126,18 @@ mod mod_kind_tests {
 
     /// A loot table `minecraft:test` with `json`, loaded from a scratch root.
     fn table(name: &str, json: &str) -> LootData {
+        table_with_items(name, "{}", json)
+    }
+
+    /// `table` with `items_json` as the root's item table.
+    fn table_with_items(name: &str, items_json: &str, json: &str) -> LootData {
         let root =
             std::env::temp_dir().join(format!("loot-mod-kind-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let dir = root.join("data/minecraft/loot_table");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("test.json"), json).unwrap();
-        std::fs::write(root.join("items.json"), "{}").unwrap();
+        std::fs::write(root.join("items.json"), items_json).unwrap();
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let _ = std::fs::remove_dir_all(&root);
         data
@@ -3024,6 +3190,51 @@ mod mod_kind_tests {
         assert_eq!(seen.len(), 1, "{seen:?}");
         assert_eq!(seen[0].0, "ruby:double");
         assert_eq!(seen[0].1["factor"], 2);
+    }
+
+    /// Whether `warn_unknown_item` has logged this (kind, id) in this process.
+    fn warned_unknown_item(kind: &str, id: &str) -> bool {
+        WARNED_UNKNOWN_ITEMS.get().is_some_and(|set| {
+            set.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&(kind.to_owned(), id.to_owned()))
+        })
+    }
+
+    /// A mod's function that sets an item id the table lacks keeps that id on
+    /// the rolled stack (no refusal, no substitute) and is recorded as
+    /// reported for its (kind, id). The id in the table is kept as before.
+    #[test]
+    fn unknown_item_mod_function_keeps_the_id_and_is_reported() {
+        install_stub();
+        let data = table_with_items(
+            "unknown-item",
+            r#"{"test:known-roll": {}}"#,
+            r#"{"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone",
+                "modifier":[{"type":"ruby:set-item","item":"test:typo-roll"}]}]}]}"#,
+        );
+        let mut random = LegacyRandom::new(5);
+        let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
+        assert_eq!(names(&stacks), ["test:typo-roll"]);
+        assert!(warned_unknown_item("ruby:set-item", "test:typo-roll"));
+        assert!(data.knows_item("test:known-roll"));
+        assert!(!data.knows_item("test:typo-roll"));
+    }
+
+    /// A mod's function that sets an id the item table has is not reported.
+    #[test]
+    fn unknown_item_mod_function_to_a_known_id_is_not_reported() {
+        install_stub();
+        let data = table_with_items(
+            "known-item",
+            r#"{"test:known-roll": {}}"#,
+            r#"{"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone",
+                "modifier":[{"type":"ruby:set-item","item":"test:known-roll"}]}]}]}"#,
+        );
+        let mut random = LegacyRandom::new(5);
+        let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
+        assert_eq!(names(&stacks), ["test:known-roll"]);
+        assert!(!warned_unknown_item("ruby:set-item", "test:known-roll"));
     }
 
     /// Vanilla conditions and functions never reach the hook, and the table

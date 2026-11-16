@@ -2569,7 +2569,15 @@ impl LootContext<'_> {
                 // does in the main loot engine.
                 k if k.contains(':') && !k.starts_with("minecraft:") => {
                     let ctx = self.native_loot_context(random);
-                    mod_function(k, f, &ctx, stack, horizon_world::loot::native_loot_function);
+                    let items = self.items;
+                    mod_function(
+                        k,
+                        f,
+                        &ctx,
+                        stack,
+                        horizon_world::loot::native_loot_function,
+                        |id| items.items.contains_key(id),
+                    );
                 }
                 _ => {}
             }
@@ -2732,6 +2740,9 @@ fn apply_loot(
 /// `native_loot_function` with the items engine's stack: the stack as the
 /// loot engine's, the hook, and back what it changed. `hook` is the hook
 /// point (`horizon_world::loot::native_loot_function`); a test passes its own.
+/// `known` is the item table: an id the hook changed to one it lacks is
+/// reported once (`horizon_world::loot::warn_unknown_item`). Returns whether
+/// that call logged.
 fn mod_function(
     kind: &str,
     data: &Value,
@@ -2743,11 +2754,14 @@ fn mod_function(
         &horizon_world::loot::NativeLootContext<'_>,
         &mut horizon_world::loot::LootStack,
     ),
-) {
+    known: impl Fn(&str) -> bool,
+) -> bool {
     let before = loot_of(stack);
     let mut after = before.clone();
     hook(kind, data, ctx, &mut after);
+    let warned = horizon_world::loot::warn_unknown_item(known, kind, &before.item, &after.item);
     apply_loot(&before, &after, stack);
+    warned
 }
 
 /// `DispensibleContainerItem`: shared contents for hand use and dispensers.
@@ -3750,6 +3764,7 @@ mod tests {
                     json!({"machine": "furnace"}),
                 ));
             },
+            |_| true,
         );
         assert_eq!(&*stack.item, "minecraft:diamond");
         assert_eq!(stack.count, 7);
@@ -3782,8 +3797,82 @@ mod tests {
             &native,
             &mut stack,
             |_, _, _, _| {},
+            |_| true,
         );
         assert_eq!(stack, before);
+    }
+
+    /// A mod's function that changes the item to an id the table lacks still
+    /// gives that stack (no refusal, no substitute), and is reported once for
+    /// its (kind, id): the second roll of the same typo logs nothing.
+    #[test]
+    fn unknown_item_mod_function_keeps_the_typo_id_and_reports_it_once() {
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let mut random = LegacyRandom::new(7);
+        let block = ctx(&items, None, &props, "minecraft:stone");
+        let native = block.native_loot_context(&mut random);
+        let known = |id: &str| id == "minecraft:stone";
+        let typo = |_: &str,
+                    _: &Value,
+                    _: &horizon_world::loot::NativeLootContext<'_>,
+                    loot: &mut horizon_world::loot::LootStack| {
+            loot.item = "mymod:typo-items".to_owned();
+        };
+        let mut stack = ItemStack::new("minecraft:stone", 1);
+        let first = mod_function(
+            "mymod:unknown-items",
+            &json!({"type": "mymod:unknown-items"}),
+            &native,
+            &mut stack,
+            typo,
+            known,
+        );
+        assert!(first, "the first unknown id is reported");
+        assert_eq!(&*stack.item, "mymod:typo-items");
+        let mut again = ItemStack::new("minecraft:stone", 1);
+        let second = mod_function(
+            "mymod:unknown-items",
+            &json!({"type": "mymod:unknown-items"}),
+            &native,
+            &mut again,
+            typo,
+            known,
+        );
+        assert!(!second, "the same (kind, id) is not reported twice");
+        assert_eq!(&*again.item, "mymod:typo-items");
+    }
+
+    /// A mod's function that changes the item to an id the table has, or to
+    /// minecraft:air, is not reported.
+    #[test]
+    fn unknown_item_known_or_air_target_is_not_reported() {
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let mut random = LegacyRandom::new(7);
+        let block = ctx(&items, None, &props, "minecraft:stone");
+        let native = block.native_loot_context(&mut random);
+        let mut stack = ItemStack::new("minecraft:stone", 1);
+        let warned = mod_function(
+            "mymod:known-items",
+            &json!({"type": "mymod:known-items"}),
+            &native,
+            &mut stack,
+            |_, _, _, loot| loot.item = "mymod:known-items-ok".to_owned(),
+            |id| id == "mymod:known-items-ok",
+        );
+        assert!(!warned);
+        assert_eq!(&*stack.item, "mymod:known-items-ok");
+        let warned = mod_function(
+            "mymod:air-items",
+            &json!({"type": "mymod:air-items"}),
+            &native,
+            &mut stack,
+            |_, _, _, loot| loot.item = "minecraft:air".to_owned(),
+            |_| false,
+        );
+        assert!(!warned);
+        assert_eq!(&*stack.item, "minecraft:air");
     }
 
     /// The items engine reaches the function hook: a pool whose function kind
