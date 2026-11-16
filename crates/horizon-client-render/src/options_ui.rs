@@ -39,10 +39,28 @@ fn tr(key: &str) -> Text {
 
 /// False only in a game built without the `horizon-extras` feature (docs/forking.md), which says
 /// so once at startup: the Options screen then has vanilla's Telemetry Data slot instead of
-/// Horizon Settings and Mods, and Credits & Attribution names the official build.
+/// Horizon Settings (Mods stays), and Credits & Attribution names the official build.
 pub static HORIZON_EXTRAS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 fn horizon_extras() -> bool {
     HORIZON_EXTRAS.load(std::sync::atomic::Ordering::Relaxed)
+}
+/// The last three Options main-screen buttons, after vanilla's: Horizon Settings and Mods with
+/// `horizon-extras`; without it, vanilla's Telemetry Data (greyed: nothing is sent) and Mods.
+/// Credits & Attribution comes last either way.
+fn options_main_tail(extras: bool) -> [(&'static str, Option<Page>); 3] {
+    if extras {
+        [
+            ("horizon.pages.open.horizon_settings", Some(Page::Horizon)),
+            ("horizon.pages.open.mods", Some(Page::Mods)),
+            ("options.credits_and_attribution", Some(Page::Credits)),
+        ]
+    } else {
+        [
+            ("options.telemetry", None),
+            ("horizon.pages.open.mods", Some(Page::Mods)),
+            ("options.credits_and_attribution", Some(Page::Credits)),
+        ]
+    }
 }
 /// `text` cut into lines of at most `width` characters, at spaces where it has them.
 fn wrap(text: &str, width: usize) -> Vec<String> {
@@ -2892,29 +2910,12 @@ impl OptionsUi {
                         (!self.split_guest).then_some(Page::Packs),
                     ),
                     ("options.accessibility", Some(Page::Accessibility)),
-                    // Vanilla's Telemetry Data and Credits slots: Horizon's
-                    // settings and its mods, as a mod adds its button here.
-                    // Credits & Attribution (WinScreen's credits) follows them.
-                    ("horizon.pages.open.horizon_settings", Some(Page::Horizon)),
-                    ("horizon.pages.open.mods", Some(Page::Mods)),
-                    ("options.credits_and_attribution", Some(Page::Credits)),
+                    // Vanilla's Telemetry Data and Credits slots, see options_main_tail.
                 ];
-                // horizon-extras: without it, vanilla's last row instead of Horizon Settings and
-                // Mods: Telemetry Data (greyed: nothing is sent) and Credits & Attribution.
-                let plain;
-                let entries: &[_] = if horizon_extras() {
-                    &entries
-                } else {
-                    plain = [
-                        &entries[..entries.len() - 3],
-                        &[
-                            ("options.telemetry", None),
-                            ("options.credits_and_attribution", Some(Page::Credits)),
-                        ],
-                    ]
-                    .concat();
-                    &plain
-                };
+                let entries: Vec<(&str, Option<Page>)> = entries
+                    .into_iter()
+                    .chain(options_main_tail(horizon_extras()))
+                    .collect();
                 let rows = entries.len().div_ceil(2) as f32;
                 let gy = (61.0 + 30.0f32).min(h - 33.0 - rows * 24.0);
                 for (i, (key, page)) in entries.iter().enumerate() {
@@ -7498,6 +7499,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn options_main_tail_keeps_mods_in_a_build_without_extras() {
+        assert_eq!(
+            options_main_tail(true),
+            [
+                ("horizon.pages.open.horizon_settings", Some(Page::Horizon)),
+                ("horizon.pages.open.mods", Some(Page::Mods)),
+                ("options.credits_and_attribution", Some(Page::Credits)),
+            ]
+        );
+        assert_eq!(
+            options_main_tail(false),
+            [
+                ("options.telemetry", None),
+                ("horizon.pages.open.mods", Some(Page::Mods)),
+                ("options.credits_and_attribution", Some(Page::Credits)),
+            ]
+        );
     }
 
     #[test]
