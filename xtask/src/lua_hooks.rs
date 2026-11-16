@@ -38,11 +38,11 @@ const ENTITY_GONE: i64 = 99;
 /// or retyped), and update `LUA_HOOK_SURFACE_FINGERPRINT` beside it.
 /// A mod built for another surface fails at load with both numbers, instead
 /// of failing later on a missing hook name.
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 17;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 18;
 /// The committed fingerprint of the surface `LUA_HOOK_SURFACE_VERSION`
 /// describes: `lua-hooks --check` fails when the freshly computed one
 /// differs, so nobody forgets the bump above.
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "07c982a495870d2a";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "5398458872c1b746";
 
 /// The macro's host kind for a model host.
 fn host_ident(host: Host) -> &'static str {
@@ -198,6 +198,7 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         Conv::WorldPhaseName => "world_phase",
         Conv::LootCtx => "loot_ctx",
         Conv::NativeLootCtx => "native_loot_ctx",
+        Conv::LootStack => "loot_stack",
         // Loot's drops seed like the struct vec of stacks they are.
         Conv::LootDrops => return struct_shape(ty, key.unwrap_or("?")).0,
         Conv::Struct => return struct_shape(ty, key.unwrap_or("?")).0,
@@ -257,6 +258,8 @@ pub(crate) fn write_tag(conv: &Conv, ty: &str, key: Option<&str>) -> Option<Stri
         }),
         // The component-keeping drops write-back, not a plain struct vec.
         Conv::LootDrops => Some("loot_write".into()),
+        // A loot function's stack: validated whole, then assigned.
+        Conv::LootStack => Some("loot_stack_write".into()),
         Conv::Struct => struct_shape(ty, key.unwrap_or("?")).1,
         // A `&Text` field is read-only (a listener's message): the script
         // cannot change it, so it carries no write-back.
@@ -3160,6 +3163,31 @@ fn duo_parts(
                 seq_asserts(&mut rust_eb, &[count_b]);
                 suffix = "append_in_load_order";
             }
+            // A loot function's stack, edited in turn: A replaces the whole
+            // stack, B adds one to its count. A then B ends at (duo_a, 52),
+            // B then A at (duo_a, 51); with A erroring, B's edit lands on the
+            // seed's count.
+            Conv::LootStack => {
+                let seed_count = 2 + eff_n(&field.conv, n, false) as i32;
+                lua_a.push(format!(
+                    "    {read} = {{ id = \"test:duo_a\", count = 51, damage = 0, enchantments = {{}} }}"
+                ));
+                lua_b.push(format!("    {read}.count = {read}.count + 1"));
+                rust_ab.push(format!(
+                    "    assert_eq!({0}.item, \"test:duo_a\");\n    assert_eq!({0}.count, 52);",
+                    field.name
+                ));
+                rust_ba.push(format!(
+                    "    assert_eq!({0}.item, \"test:duo_a\");\n    assert_eq!({0}.count, 51);",
+                    field.name
+                ));
+                rust_eb.push(format!(
+                    "    assert_eq!({0}.item, \"test:stack\");\n    assert_eq!({0}.count, {1});",
+                    field.name,
+                    seed_count + 1
+                ));
+                suffix = "last_write_wins";
+            }
             _ => {
                 let (la, lb, ab, ba, eb) = duo_exotic(model, &field.name);
                 suffix = if model.name == "player_pre_login" {
@@ -4254,7 +4282,7 @@ mod tests {
 
     #[test]
     fn the_surface_starts_at_version_one() {
-        assert_eq!(LUA_HOOK_SURFACE_VERSION, 17);
+        assert_eq!(LUA_HOOK_SURFACE_VERSION, 18);
     }
 
     /// `neighbor_changed`'s `changed: BlockId` names the block through the

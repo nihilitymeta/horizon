@@ -292,6 +292,7 @@ export type LivingKnockbackV2Event = { entity: number, kind: string, attacker: n
 export type LogLineEvent = { level: string, thread: string, message: string, line: string }
 export type LootConditionEvent = { kind: string, data: Data, seed: number, luck: number, biome: string?, block: string?, tool: { id: string, enchantments: { [string]: number } }?, entity: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, player: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, damage: { kind: string, source: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, direct: { kind: string, living: boolean, on_fire: boolean, baby: boolean }? }?, origin: Vec3?, dimension: string?, game_time: number?, day_time: number?, raining: boolean?, thundering: boolean?, holds: boolean }
 export type LootDropsEvent = { table: string, dimension: string, origin: Vec3, block: LootBlock?, entity: IdKind?, player: PlayerRef?, tool: Item?, explosion: number?, used: boolean, drops: { Item } }
+export type LootFunctionEvent = { kind: string, data: Data, seed: number, luck: number, biome: string?, block: string?, tool: { id: string, enchantments: { [string]: number } }?, entity: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, player: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, damage: { kind: string, source: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, direct: { kind: string, living: boolean, on_fire: boolean, baby: boolean }? }?, origin: Vec3?, dimension: string?, game_time: number?, day_time: number?, raining: boolean?, thundering: boolean?, stack: { id: string, count: number, damage: number, enchantments: { [string]: number }, potion: string? } }
 export type LootTableLoadEvent = { id: string, table: Data }
 export type MapDecorationsEvent = { map: { id: number, center: { x: number, z: number }, scale: number, dimension: string, locked: boolean, in_frame: boolean }, decorations: { { sprite: string, x: number, y: number, rot: number, shown_on_frame: boolean } } }
 export type MayPlaceOnEvent = { dimension: string, state: string, ground: string, ground_pos: Vec3, state_props: Props, ground_props: Props, may: boolean? }
@@ -778,6 +779,7 @@ export type HorizonOn =
     ((name: "log_line", fn: (event: LogLineEvent) -> ()) -> ()) &
     ((name: "loot_condition", fn: (event: LootConditionEvent) -> (), kind: string?) -> ()) &
     ((name: "loot_drops", fn: (event: LootDropsEvent) -> (), kind: string?) -> ()) &
+    ((name: "loot_function", fn: (event: LootFunctionEvent) -> (), kind: string?) -> ()) &
     ((name: "loot_table_load", fn: (event: LootTableLoadEvent) -> ()) -> ()) &
     ((name: "map_decorations", fn: (event: MapDecorationsEvent) -> ()) -> ()) &
     ((name: "may_place_on", fn: (event: MayPlaceOnEvent) -> ()) -> ()) &

@@ -8,8 +8,8 @@
 //! other id after itself).
 
 use super::test_support::{
-    FakeHost, FakeLevel, boxed, drop_dir, event_tables, loaded, loaded_tracked, no_error,
-    reset_event_tables, witness,
+    FakeHost, FakeLevel, boxed, drop_dir, event_tables, has_error, loaded, loaded_tracked,
+    no_error, reset_event_tables, witness,
 };
 use crate::generated_runtime::{
     INTERNED_CAP, LuaStruct, StrInterner, placement_answer, props_of, read_string_seq,
@@ -22,10 +22,11 @@ use horizon_client::mod_api::{
     ModEnergyBuffer, NativeConfigKind, NativeFluidAction, NativeInventoryKind, NativeScreen, Tag,
     Text, dispatch_broadcast_message, dispatch_commands, dispatch_console_line,
     dispatch_custom_block_fluids, dispatch_entity_outline, dispatch_inventory_changed,
-    dispatch_item_after_vertical_collision, dispatch_loot_condition, dispatch_menu_background,
-    dispatch_menu_input_closed, dispatch_mouse_scrolling, dispatch_neighbor_changed,
-    dispatch_net_from_client, dispatch_player_inventory_changed, dispatch_player_login,
-    dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params, dispatch_state_for_placement,
+    dispatch_item_after_vertical_collision, dispatch_loot_condition, dispatch_loot_function,
+    dispatch_menu_background, dispatch_menu_input_closed, dispatch_mouse_scrolling,
+    dispatch_neighbor_changed, dispatch_net_from_client, dispatch_player_inventory_changed,
+    dispatch_player_login, dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params,
+    dispatch_state_for_placement,
 };
 use horizon_world::consumable::UseAnimation;
 use mlua::{Lua, Table, Value};
@@ -1885,6 +1886,261 @@ fn bare_loot_ctx(luck: f32, seed: i64) -> horizon_world::loot::NativeLootContext
         seed,
         place: None,
     }
+}
+
+/// A loot function's stack as a test starts from it: every field set, the
+/// fields the write-back does not touch (names, components, the ominous
+/// amplifier) included, so a test can show they survive a write.
+fn loot_stack(count: i32) -> horizon_world::loot::LootStack {
+    horizon_world::loot::LootStack {
+        item: "test:stack".into(),
+        count,
+        damage: 4,
+        enchantments: vec![("minecraft:unbreaking".into(), 2)],
+        potion: Some("minecraft:swiftness".into()),
+        map: false,
+        exploration: None,
+        ominous_amplifier: Some(1),
+        stew_effects: Vec::new(),
+        names: vec![("custom_name".into(), serde_json::json!("kept"))],
+        components: vec![("minecraft:max_stack_size".into(), serde_json::json!(16))],
+    }
+}
+
+/// A mod's handler edits the stack's count, enchantments and potion: the
+/// native stack takes all three, and what the write does not replace (the
+/// damage, names, components, ominous amplifier) is exactly as it was.
+#[test]
+fn loot_function_writes_count_enchantments_and_potion_back() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_function_write",
+        r#"
+        horizon.on("loot_function", function(event)
+          __witness = (__witness or 0) + 1
+          event.stack.count = event.stack.count * 2
+          event.stack.enchantments["minecraft:sharpness"] = 3
+          event.stack.potion = "minecraft:healing"
+        end, "ruby:double")
+        "#,
+    );
+    let mods = boxed(m);
+    let mut stack = loot_stack(3);
+    dispatch_loot_function(
+        &mods,
+        "ruby:double",
+        &serde_json::json!({}),
+        &bare_loot_ctx(0.5, 1),
+        &mut stack,
+    );
+    assert_eq!(witness(&lua), 1, "the handler ran for its kind");
+    // Enchantments come back in id order (the table has no order of its own).
+    assert_eq!(
+        stack,
+        horizon_world::loot::LootStack {
+            count: 6,
+            enchantments: vec![
+                ("minecraft:sharpness".into(), 3),
+                ("minecraft:unbreaking".into(), 2),
+            ],
+            potion: Some("minecraft:healing".into()),
+            ..loot_stack(3)
+        }
+    );
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// Two handlers in turn: the second reads the count the first left, and its
+/// own edit is what the native stack keeps.
+#[test]
+fn loot_function_second_handler_sees_the_first_edit() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_function_turns",
+        r#"
+        horizon.on("loot_function", function(event)
+          __witness = (__witness or 0) + 1
+          event.stack.count = event.stack.count + 1
+        end, "ruby:double")
+        horizon.on("loot_function", function(event)
+          __witness = (__witness or 0) + 1
+          assert(event.stack.count == 4, "second sees the first's edit")
+          event.stack.count = event.stack.count * 10
+        end, "ruby:double")
+        "#,
+    );
+    let mods = boxed(m);
+    let mut stack = loot_stack(3);
+    dispatch_loot_function(
+        &mods,
+        "ruby:double",
+        &serde_json::json!({}),
+        &bare_loot_ctx(0.5, 1),
+        &mut stack,
+    );
+    assert_eq!(witness(&lua), 2, "both handlers ran");
+    assert_eq!(stack.count, 40, "3 + 1, then times 10");
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// A handler for `ruby:double` is not run for another kind, and the stack
+/// is not touched.
+#[test]
+fn loot_function_kind_filter_leaves_other_kinds_alone() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_function_kind",
+        r#"
+        horizon.on("loot_function", function(event)
+          __witness = (__witness or 0) + 1
+          event.stack.count = 99
+        end, "ruby:double")
+        "#,
+    );
+    let mods = boxed(m);
+    let mut stack = loot_stack(3);
+    let before = stack.clone();
+    dispatch_loot_function(
+        &mods,
+        "ruby:other",
+        &serde_json::json!({}),
+        &bare_loot_ctx(0.5, 1),
+        &mut stack,
+    );
+    assert_eq!(witness(&lua), 0, "the handler is not run for another kind");
+    assert_eq!(stack, before, "the stack is unchanged");
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// Each bad write is refused whole: the handler's error is reported and the
+/// native stack stays byte-identical to what it was before the call.
+#[test]
+fn loot_function_refused_writes_leave_the_stack_as_it_was() {
+    let refusals = [
+        ("count -1", "event.stack.count = -1"),
+        ("count 1.5", "event.stack.count = 1.5"),
+        ("empty id", "event.stack.id = \"\""),
+        (
+            "fractional level",
+            "event.stack.enchantments[\"minecraft:sharpness\"] = 2.5",
+        ),
+        ("numeric potion", "event.stack.potion = 7"),
+    ];
+    for (i, (what, write)) in refusals.iter().enumerate() {
+        let source = format!(
+            "horizon.on(\"loot_function\", function(event)\n  {write}\nend, \"ruby:double\")"
+        );
+        let (m, id, dir, _lua) = loaded_tracked(&format!("loot_function_refuse_{i}"), &source);
+        let mods = boxed(m);
+        let mut stack = loot_stack(3);
+        let before = stack.clone();
+        dispatch_loot_function(
+            &mods,
+            "ruby:double",
+            &serde_json::json!({}),
+            &bare_loot_ctx(0.5, 1),
+            &mut stack,
+        );
+        assert_eq!(stack, before, "{what}: the native stack is unchanged");
+        has_error(&id);
+        drop_dir(dir);
+    }
+}
+
+/// A level of 0 drops its enchantment, and `potion = nil` clears the potion.
+#[test]
+fn loot_function_zero_level_drops_and_nil_potion_clears() {
+    let (m, id, dir, _lua) = loaded_tracked(
+        "loot_function_clear",
+        r#"
+        horizon.on("loot_function", function(event)
+          event.stack.enchantments["minecraft:unbreaking"] = 0
+          event.stack.potion = nil
+        end, "ruby:double")
+        "#,
+    );
+    let mods = boxed(m);
+    let mut stack = loot_stack(3);
+    dispatch_loot_function(
+        &mods,
+        "ruby:double",
+        &serde_json::json!({}),
+        &bare_loot_ctx(0.5, 1),
+        &mut stack,
+    );
+    assert_eq!(stack.enchantments, Vec::new(), "level 0 is dropped");
+    assert_eq!(stack.potion, None, "nil clears the potion");
+    assert_eq!(stack.count, 3, "an untouched field keeps its value");
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// The context is the loot condition's flat one: a spot-check of the seed,
+/// the luck and the biome the handler reads.
+#[test]
+fn loot_function_event_carries_the_roll_context() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_function_ctx",
+        r#"
+        horizon.on("loot_function", function(event)
+          __witness = (__witness or 0) + 1
+          assert(event.seed == 77, "seed")
+          assert(event.luck == 0.5, "luck")
+          assert(event.biome == "minecraft:plains", "biome")
+          assert(event.entity == nil, "entity")
+        end, "ruby:double")
+        "#,
+    );
+    let mods = boxed(m);
+    let mut stack = loot_stack(3);
+    let ctx = horizon_world::loot::NativeLootContext {
+        biome: Some("minecraft:plains"),
+        ..bare_loot_ctx(0.5, 77)
+    };
+    dispatch_loot_function(
+        &mods,
+        "ruby:double",
+        &serde_json::json!({}),
+        &ctx,
+        &mut stack,
+    );
+    assert_eq!(witness(&lua), 1, "the handler ran with the roll's context");
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// With no handler for the kind, the stack is unchanged and no event table
+/// is built at all.
+#[test]
+fn loot_function_without_a_handler_for_its_kind_builds_nothing() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_function_none",
+        r#"
+        horizon.on("loot_function", function(event)
+          __witness = (__witness or 0) + 1
+        end, "ruby:double")
+        "#,
+    );
+    let mods = boxed(m);
+    let mut stack = loot_stack(3);
+    let before = stack.clone();
+    reset_event_tables();
+    dispatch_loot_function(
+        &mods,
+        "ruby:other",
+        &serde_json::json!({}),
+        &bare_loot_ctx(0.5, 1),
+        &mut stack,
+    );
+    assert_eq!(stack, before, "the stack is unchanged");
+    assert_eq!(witness(&lua), 0, "no handler ran");
+    assert_eq!(
+        event_tables(),
+        0,
+        "no event table is built for another kind"
+    );
+    no_error(&id);
+    drop_dir(dir);
 }
 
 /// A mod's own loot condition claims its kind by the roll's luck and the

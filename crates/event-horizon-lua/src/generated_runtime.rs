@@ -738,6 +738,13 @@ macro_rules! gen_seed {
     ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : native_loot_ctx) => {
         crate::generated_runtime::seed_native_loot_ctx($lua, $event.$field, &$table)?
     };
+    // A loot function's stack: a fresh table of its five written fields.
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : loot_stack) => {
+        $table.set(
+            stringify!($field),
+            crate::generated_runtime::seed_loot_stack($lua, &*$event.$field)?,
+        )?
+    };
 }
 
 /// One _event-table field's write-back: what the handler changed, read into
@@ -993,6 +1000,15 @@ macro_rules! gen_writeback {
             }
         }
     }};
+    // A loot function's stack: validated whole, then assigned.
+    ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, loot_stack_write) => {
+        crate::generated_runtime::write_loot_stack_back(
+            $lua,
+            &$table,
+            &mut *$event.$field,
+            stringify!($field),
+        )?
+    };
     // Loot's drops: an entry with the item of the stack at its place keeps
     // that stack (its components), others are plain.
     ($table:ident, $lua:ident, $event:ident, $level:expr, $field:ident, loot_write) => {
@@ -2851,6 +2867,108 @@ pub(crate) fn write_loot_drops_back(
     }
     *drops = out;
     Ok(())
+}
+
+/// A loot function's stack, seeded for one call: the five fields the
+/// write-back replaces, as a fresh table (`potion` nil without one).
+pub(crate) fn seed_loot_stack(
+    lua: &Lua,
+    stack: &horizon_world::loot::LootStack,
+) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    table.set("id", stack.item.as_str())?;
+    table.set("count", stack.count)?;
+    table.set("damage", stack.damage)?;
+    let enchantments = lua.create_table()?;
+    for (id, level) in &stack.enchantments {
+        enchantments.set(id.as_str(), *level)?;
+    }
+    table.set("enchantments", enchantments)?;
+    table.set("potion", stack.potion.as_deref())?;
+    Ok(table)
+}
+
+/// A loot function's write-back. Every field is checked before anything is
+/// assigned, so an error leaves the native stack exactly as it was (the
+/// handler's error is reported like the other handler errors). `id` is a
+/// non-empty string, qualified as the drops' ids are (the item itself is not
+/// checked: the world has no item registry here). `count` and `damage` are
+/// whole numbers from 0, `enchantments` maps ids to whole numbers (a level of
+/// 0 or below drops the entry), and `potion` is a non-empty string or nil.
+/// The rest of the stack (map, exploration, ominous amplifier, stew effects,
+/// names, components) is not touched.
+pub(crate) fn write_loot_stack_back(
+    _lua: &Lua,
+    table: &Table,
+    stack: &mut horizon_world::loot::LootStack,
+    field: &str,
+) -> mlua::Result<()> {
+    use crate::lua_mods::qualify;
+    use std::collections::BTreeMap;
+    let fail = |what: &str| mlua::Error::runtime(format!("{field}.{what}"));
+    let edited = match table.get::<Value>(field)? {
+        Value::Table(t) => t,
+        _ => return Err(fail("expected a table")),
+    };
+    let id = match edited.get::<Value>("id")? {
+        Value::String(s) if !s.to_string_lossy().is_empty() => qualify(&s.to_string_lossy()),
+        _ => return Err(fail("id: expected a non-empty string")),
+    };
+    let count = whole_i32(&edited, "count", field)?;
+    if count < 0 {
+        return Err(fail("count: expected a whole number from 0"));
+    }
+    let damage = whole_i32(&edited, "damage", field)?;
+    if damage < 0 {
+        return Err(fail("damage: expected a whole number from 0"));
+    }
+    let mut enchantments = BTreeMap::new();
+    match edited.get::<Value>("enchantments")? {
+        Value::Table(t) => {
+            for pair in t.pairs::<Value, Value>() {
+                let (key, value) = pair?;
+                let Value::String(key) = key else {
+                    return Err(fail("enchantments: expected enchantment ids as keys"));
+                };
+                let key = key.to_string_lossy();
+                if key.is_empty() {
+                    return Err(fail("enchantments: expected a non-empty id"));
+                }
+                let level = whole_i32_value(value, "enchantments")?;
+                if level > 0 {
+                    enchantments.insert(qualify(&key), level);
+                }
+            }
+        }
+        _ => return Err(fail("enchantments: expected a table")),
+    }
+    let potion = match edited.get::<Value>("potion")? {
+        Value::Nil => None,
+        Value::String(s) if !s.to_string_lossy().is_empty() => Some(qualify(&s.to_string_lossy())),
+        _ => return Err(fail("potion: expected a string or nil")),
+    };
+    stack.item = id;
+    stack.count = count;
+    stack.damage = damage;
+    stack.enchantments = enchantments.into_iter().collect();
+    stack.potion = potion;
+    Ok(())
+}
+
+/// A whole number field of a table, as an `i32`.
+fn whole_i32(t: &Table, key: &str, field: &str) -> mlua::Result<i32> {
+    whole_i32_value(t.get::<Value>(key)?, &format!("{field}.{key}"))
+}
+
+/// A whole number as an `i32`: an integer, or a float with no fraction that
+/// fits. Anything else (a fraction, NaN, infinity, a non-number) is an error.
+fn whole_i32_value(value: Value, what: &str) -> mlua::Result<i32> {
+    let whole = match value {
+        Value::Integer(i) => i32::try_from(i).ok(),
+        Value::Number(n) if n.fract() == 0.0 => i32::try_from(n as i64).ok(),
+        _ => None,
+    };
+    whole.ok_or_else(|| mlua::Error::runtime(format!("{what}: expected a whole number")))
 }
 
 /// A fieldless enum from its lowercase name; a wrong name errors listing the

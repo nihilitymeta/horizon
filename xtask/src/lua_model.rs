@@ -203,6 +203,11 @@ pub enum Conv {
     /// written back by the component-keeping `loot_write` arm (a same-id
     /// entry keeps its stack), not plain `from_value`.
     LootDrops,
+    /// `&mut LootStack` of a mod's own loot function: seeded as the table
+    /// `{id, count, damage, enchantments, potion}` (a copy of the stack),
+    /// written back by the validating `loot_stack_write` arm, which replaces
+    /// those five fields and leaves the rest of the native stack alone.
+    LootStack,
     /// A state field's `_props` note: seeded beside the state itself.
     StateProps,
     /// A level-tick hook's `state_props`: the ticked state's properties by
@@ -714,7 +719,6 @@ const NON_ENTITY_KINDS: &[(&str, &str)] = &[
     ("block_spread", "`fluid` or `fire`, not an entity type"),
     ("consume_effect", "an effect namespace, not an entity type"),
     ("enchant_effect", "an effect namespace, not an entity type"),
-    ("loot_function", "a loot function id, not an entity type"),
     ("ingredient", "an ingredient kind id, not an entity type"),
     (
         "ingredient_test",
@@ -1050,6 +1054,12 @@ fn mut_of(
         && single_generic_arg(elem, &["Vec"]).is_some_and(|e| is_path(e, "ItemStack"))
     {
         return FieldOutcome::Conv(Conv::LootDrops, struct_ts_owned("Vec<ItemStack>"));
+    }
+    // A loot function's stack: its table seeds in, the validating
+    // `loot_stack_write` arm writes it back. Name-gated like the drops:
+    // only `loot_function` takes a live `&mut LootStack`.
+    if hook == "loot_function" && is_path(elem, "LootStack") {
+        return FieldOutcome::Conv(Conv::LootStack, LOOT_STACK_TS.into());
     }
     if mentions_stack(elem) {
         if let Some(key) = struct_key_of(elem) {
@@ -2944,6 +2954,10 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
 /// a loot condition reads; a vehicle and the equipment stay out).
 const LOOT_ENTITY_TS: &str = "{ kind: string, living: boolean, on_fire: boolean, baby: boolean }?";
 
+/// A loot function's `stack` as the `.d.lua` type names it: the five fields
+/// the write-back replaces (`potion` nil when the stack has none).
+const LOOT_STACK_TS: &str = "{ id: string, count: number, damage: number, enchantments: { [string]: number }, potion: string? }";
+
 /// The event-table keys a flat seed writes, with their `.d.lua` types, in
 /// table order: the generated `horizon.d.lua` event type lists these, not
 /// the native parameter name (which has no table key of its own).
@@ -4137,6 +4151,19 @@ pub fn assert_lines(
             ][n % 4];
             vec![a(&format!("event.phase == \"{phase}\""))]
         }
+        // A loot function's stack: every field pinned, with the seed's
+        // values counting up with `n` (the handler sees the seed before it
+        // writes).
+        Conv::LootStack => vec![
+            a("event.stack.id == \"test:stack\""),
+            a(&format!("event.stack.count == {}", 2 + n as i32)),
+            a(&format!("event.stack.damage == {n}")),
+            a(&format!(
+                "event.stack.enchantments[\"minecraft:sharpness\"] == {}",
+                3 + n as i32
+            )),
+            a("event.stack.potion == \"minecraft:swiftness\""),
+        ],
         // A mod's own loot condition: each flat key is pinned by its own
         // assert, with values that differ per `n` where the seed varies.
         Conv::NativeLootCtx => {
@@ -4661,6 +4688,25 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
         // Loot's context: a block-stone break at every parity (the kind
         // stays stone, so the kind plan's static registration holds), with
         // every other leaf counting up with `n`.
+        // A mod's own loot function's stack: the seed carries a swiftness
+        // potion and a sharpness level that count up with `n`; the write
+        // sets a new id, count, damage and sharpness, and clears the potion.
+        Conv::LootStack => mut_sample(
+            format!(
+                "horizon_world::loot::LootStack {{ item: \"test:stack\".into(), count: {count}, damage: {n}, enchantments: vec![(\"minecraft:sharpness\".into(), {sharpness})], potion: Some(\"minecraft:swiftness\".into()), map: false, exploration: None, ominous_amplifier: None, stew_effects: Vec::new(), names: Vec::new(), components: Vec::new() }}",
+                count = 2 + n as i32,
+                sharpness = 3 + n as i32,
+            ),
+            "{}".into(),
+            format!(
+                "horizon_world::loot::LootStack {{ item: \"test:stack:edited\".into(), count: {count}, damage: 7, enchantments: vec![(\"minecraft:sharpness\".into(), 4)], potion: None, map: false, exploration: None, ominous_amplifier: None, stew_effects: Vec::new(), names: Vec::new(), components: Vec::new() }}",
+                count = 5 + n as i32,
+            ),
+            format!(
+                "{{ id = \"test:stack:edited\", count = {}, damage = 7, enchantments = {{ [\"minecraft:sharpness\"] = 4 }} }}",
+                5 + n as i32
+            ),
+        ),
         // A mod's own loot condition: the context built inline (its entity,
         // damage, player and tool are owned or borrowed from this call), with
         // the seed and the luck counting up with `n`.
@@ -5091,7 +5137,7 @@ mod tests {
     }
 
     #[test]
-    fn loot_condition_generates_and_loot_function_does_not() {
+    fn loot_condition_and_loot_function_both_generate() {
         let root = repo_root();
         let classes = classify(&root).unwrap();
         let class_of = |name: &str| {
@@ -5114,13 +5160,24 @@ mod tests {
             }
             class => panic!("loot_condition should generate, got {class:?}"),
         }
-        // Its function still takes the borrowed stack: not in Lua yet.
+        // Its function's `&mut LootStack` is an in/out table, filtered by
+        // its kind like the condition.
         match class_of("loot_function") {
-            Class::Cannot(reason) => assert!(
-                reason.contains("LootStack is borrowed loot state"),
-                "{reason}"
-            ),
-            class => panic!("loot_function should stay cannot, got {class:?}"),
+            Class::Generated(model) => {
+                assert_eq!(model.host, Host::None, "loot_function host");
+                assert!(
+                    matches!(model.kind, Kind::Field),
+                    "loot_function filters by its kind"
+                );
+                assert!(
+                    model
+                        .fields
+                        .iter()
+                        .any(|f| f.name == "stack" && f.conv == Conv::LootStack),
+                    "loot_function's stack is a LootStack field"
+                );
+            }
+            class => panic!("loot_function should generate, got {class:?}"),
         }
     }
 

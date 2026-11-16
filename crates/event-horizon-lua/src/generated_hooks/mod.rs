@@ -237,10 +237,7 @@ pub const HOOK_CLASSIFICATION: &[(&str, &str)] = &[
     ("on_use_tick", "generated"),
     ("living_entity_use_item_stop", "generated"),
     ("release_using", "generated"),
-    (
-        "loot_function",
-        "cannot: loot_function: unsupported: LootStack is borrowed loot state",
-    ),
+    ("loot_function", "generated"),
     ("loot_condition", "generated"),
     ("level_load", "generated"),
     ("level_unload", "generated"),
@@ -1297,14 +1294,14 @@ pub fn hook_side(name: &str) -> Option<HookSide> {
 /// of failing later on a missing hook name. Bumped by hand in
 /// `xtask/src/lua_hooks.rs` whenever the surface changes shape.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 17;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 18;
 
 /// The fingerprint of the surface above (every generated hook's
 /// name, kind filter, contract and published field types): `lua-hooks
 /// --check` fails when the freshly computed one differs, so the
 /// version above is bumped with the change.
 #[allow(dead_code)]
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "07c982a495870d2a";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "5398458872c1b746";
 
 #[cfg(test)]
 mod test_support;
@@ -1443,6 +1440,7 @@ pub const GENERATED_HOOK_NAMES: &[&str] = &[
     "on_use_tick",
     "living_entity_use_item_stop",
     "release_using",
+    "loot_function",
     "loot_condition",
     "level_load",
     "level_unload",
@@ -1828,6 +1826,7 @@ pub const GENERATED_KIND_HOOK_NAMES: &[&str] = &[
     "on_use_tick",
     "living_entity_use_item_stop",
     "release_using",
+    "loot_function",
     "loot_condition",
     "projectile_impact",
     "entity_mount",
@@ -2045,6 +2044,7 @@ macro_rules! impl_generated_hooks {
     gen_listen!(on_use_tick, game_mut, horizon_client::mod_api::OnUseTickEvent<'_>, (opt_entity entity), [stack: item, entity: copy, remaining: copy]);
     gen_cancel!(living_entity_use_item_stop, game_mut, horizon_client::mod_api::LivingEntityUseItemStopEvent<'_>, (opt_entity entity), [stack: item, entity: copy, hand: s_val(horizon_client::mod_api::Hand), duration: copy]);
     gen_listen!(release_using, game_mut, horizon_client::mod_api::ReleaseUsingEvent<'_>, (opt_entity entity), [stack: item, entity: copy, time_left: copy, used: copy => mut_scalar]);
+    gen_collect!(loot_function, none, horizon_client::mod_api::LootFunctionEvent<'_>, (field kind), [kind: cloned, data: s_ref(serde_json::Value), ctx: native_loot_ctx, stack: loot_stack => loot_stack_write]);
     gen_collect!(loot_condition, none, horizon_client::mod_api::LootConditionEvent<'_>, (field kind), [kind: cloned, data: s_ref(serde_json::Value), ctx: native_loot_ctx, holds: copy => mut_scalar]);
     gen_listen!(level_load, game_mut, horizon_client::mod_api::LevelLoadEvent<'_>, (none), [dimension: cloned]);
     gen_listen!(level_unload, game_mut, horizon_client::mod_api::LevelUnloadEvent<'_>, (none), [dimension: cloned]);
@@ -23281,6 +23281,747 @@ mod generated_tests {
             no_error(&id);
             drop_dir(dir);
         }
+    }
+
+    #[test]
+    fn generated_loot_function() {
+        let (m, id, _dir, lua) = loaded_tracked(
+            "gen_loot_function",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\n    assert(event.kind == \"minecraft:zombie\", \"kind\")\n    assert(event.data.testkey == 8, \"data\")\n    assert(event.seed == 102, \"ctx\")\n    assert(event.luck == 2.5, \"ctx\")\n    assert(event.biome == \"minecraft:plains\", \"ctx\")\n    assert(event.block == \"minecraft:stone\", \"ctx\")\n    assert(event.tool.id == \"test:tool\", \"ctx\")\n    assert(event.tool.enchantments[\"minecraft:sharpness\"] == 7, \"ctx\")\n    assert(event.tool.enchantments[\"minecraft:unbreaking\"] == 3, \"ctx\")\n    assert(event.entity.kind == \"minecraft:zombie\", \"ctx\")\n    assert(event.entity.living == true, \"ctx\")\n    assert(event.entity.on_fire == true, \"ctx\")\n    assert(event.entity.baby == false, \"ctx\")\n    assert(event.player.kind == \"minecraft:player\", \"ctx\")\n    assert(event.player.on_fire == false, \"ctx\")\n    assert(event.damage.kind == \"minecraft:player_attack\", \"ctx\")\n    assert(event.damage.source.kind == \"minecraft:skeleton\", \"ctx\")\n    assert(event.damage.direct.kind == \"minecraft:arrow\", \"ctx\")\n    assert(event.origin.x == 1.0, \"ctx\")\n    assert(event.origin.y == 2.0, \"ctx\")\n    assert(event.origin.z == 3.0, \"ctx\")\n    assert(event.dimension == \"minecraft:overworld\", \"ctx\")\n    assert(event.game_time == 1002, \"ctx\")\n    assert(event.day_time == 6000, \"ctx\")\n    assert(event.raining == true, \"ctx\")\n    assert(event.thundering == false, \"ctx\")\n    assert(event.stack.id == \"test:stack\", \"stack\")\n    assert(event.stack.count == 5, \"stack\")\n    assert(event.stack.damage == 3, \"stack\")\n    assert(event.stack.enchantments[\"minecraft:sharpness\"] == 6, \"stack\")\n    assert(event.stack.potion == \"minecraft:swiftness\", \"stack\")\n    event.stack = { id = \"test:stack:edited\", count = 8, damage = 7, enchantments = { [\"minecraft:sharpness\"] = 4 } }\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        // K2 event: the handler stays quiet.
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            dispatch_loot_function(
+                &firing_mods,
+                "minecraft:skeleton",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
+            );
+            assert_eq!(witness(&lua), 0, "K2 event must not fire the handler");
+        }
+        no_error(&id);
+        let mut stack = horizon_world::loot::LootStack {
+            item: "test:stack".into(),
+            count: 5,
+            damage: 3,
+            enchantments: vec![("minecraft:sharpness".into(), 6)],
+            potion: Some("minecraft:swiftness".into()),
+            map: false,
+            exploration: None,
+            ominous_amplifier: None,
+            stew_effects: Vec::new(),
+            names: Vec::new(),
+            components: Vec::new(),
+        };
+        dispatch_loot_function(
+            &firing_mods,
+            "minecraft:zombie",
+            &serde_json::json!({ "testkey": 8 }),
+            &horizon_world::loot::NativeLootContext {
+                entity: Some(&horizon_world::loot::LootEntity {
+                    kind: "minecraft:zombie".into(),
+                    living: true,
+                    on_fire: true,
+                    baby: false,
+                    ..Default::default()
+                }),
+                damage: Some(&horizon_world::loot::LootDamage {
+                    kind: "minecraft:player_attack".into(),
+                    source: Some(horizon_world::loot::LootEntity {
+                        kind: "minecraft:skeleton".into(),
+                        ..Default::default()
+                    }),
+                    direct: Some(horizon_world::loot::LootEntity {
+                        kind: "minecraft:arrow".into(),
+                        ..Default::default()
+                    }),
+                }),
+                player: Some(&horizon_world::loot::LootEntity {
+                    kind: "minecraft:player".into(),
+                    living: true,
+                    on_fire: false,
+                    baby: false,
+                    ..Default::default()
+                }),
+                tool: Some(horizon_world::loot::NativeLootTool {
+                    item: "test:tool".into(),
+                    enchantments: vec![
+                        ("minecraft:sharpness".into(), 7),
+                        ("minecraft:unbreaking".into(), 3),
+                    ],
+                }),
+                block: Some("minecraft:stone"),
+                luck: 2.5,
+                biome: Some("minecraft:plains"),
+                seed: 102,
+                place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                    origin: Some([1.0, 2.0, 3.0]),
+                    block_entity: None,
+                    level: Some(horizon_world::loot::NativeLootLevel {
+                        dimension: "minecraft:overworld".into(),
+                        game_time: 1002,
+                        day_time: 6000,
+                        raining: true,
+                        thundering: false,
+                    }),
+                })),
+            },
+            &mut stack,
+        );
+        assert_eq!(
+            stack,
+            horizon_world::loot::LootStack {
+                item: "test:stack:edited".into(),
+                count: 8,
+                damage: 7,
+                enchantments: vec![("minecraft:sharpness".into(), 4)],
+                potion: None,
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new()
+            }
+        );
+        assert_eq!(witness(&lua), 1, "the handler ran");
+        no_error(&id);
+    }
+
+    #[test]
+    fn generated_loot_function_unregistered_costs_nothing() {
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_function_cost",
+            "horizon.on(\"tick\", function(event) end)",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_loot_function(
+                &firing_mods,
+                "test:kind",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table was built with no handler"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "loot_function read the host with no handler"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "loot_function read the host with no handler"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_function read the level with no handler"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_function_cost_kind",
+            "horizon.on(\"loot_function\", function(event) end, \"minecraft:skeleton\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_loot_function(
+                &firing_mods,
+                "minecraft:zombie",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
+            );
+            assert_eq!(witness(&lua), 0, "no handler ran");
+            assert_eq!(
+                event_tables(),
+                0,
+                "no event table is built for a watched-away kind (the table is built after the kind check)"
+            );
+            assert_eq!(
+                entity_reads(),
+                0,
+                "loot_function read the host for a watched-away kind"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "loot_function read the host for a watched-away kind"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_function read the level for a watched-away kind"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+        let (m, id, dir, lua) = loaded_tracked(
+            "gen_loot_function_cost_live",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = boxed(m);
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            reset_entity_reads();
+            reset_host_reads();
+            reset_level_reads();
+            reset_event_tables();
+            dispatch_loot_function(
+                &firing_mods,
+                "minecraft:zombie",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
+            );
+            assert_eq!(witness(&lua), 1, "the control handler ran");
+            assert_eq!(
+                event_tables(),
+                1,
+                "loot_function built an event table for a heard dispatch"
+            );
+            assert_eq!(
+                host_reads(),
+                0,
+                "loot_function read the host for a heard dispatch"
+            );
+            assert_eq!(
+                level_reads(),
+                0,
+                "loot_function read the level for a heard dispatch"
+            );
+            no_error(&id);
+            drop_dir(dir);
+        }
+    }
+
+    #[test]
+    fn generated_loot_function_two_mods_last_write_wins() {
+        // First in load order lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_loot_function_duo_a1",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack = { id = \"test:duo_a\", count = 51, damage = 0, enchantments = {} }\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_function_duo_b1",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack.count = event.stack.count + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(a, b);
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            dispatch_loot_function(
+                &firing_mods,
+                "minecraft:zombie",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
+            );
+            assert_eq!(stack.item, "test:duo_a");
+            assert_eq!(stack.count, 52);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // Swapped: the other mod lands first.
+        let (a, a_id, a_dir, a_lua) = loaded_tracked(
+            "gen_loot_function_duo_a2",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack = { id = \"test:duo_a\", count = 51, damage = 0, enchantments = {} }\nend, \"minecraft:zombie\")",
+        );
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_function_duo_b2",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack.count = event.stack.count + 1\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(b, a);
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            dispatch_loot_function(
+                &firing_mods,
+                "minecraft:zombie",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
+            );
+            assert_eq!(stack.item, "test:duo_a");
+            assert_eq!(stack.count, 51);
+        }
+        assert_eq!(witness(&a_lua), 1, "the first handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        no_error(&a_id);
+        no_error(&b_id);
+        drop_dir(a_dir);
+        drop_dir(b_dir);
+        // An erroring first mod does not hide the second mod's result.
+        let (b, b_id, b_dir, b_lua) = loaded_tracked(
+            "gen_loot_function_duo_b3",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\n    event.stack.count = event.stack.count + 1\nend, \"minecraft:zombie\")",
+        );
+        let (e, e_id, e_dir, e_lua) = loaded_tracked(
+            "gen_loot_function_duo_e3",
+            "horizon.on(\"loot_function\", function(event)\n    __witness = (__witness or 0) + 1\n    error(\"test:boom\")\nend, \"minecraft:zombie\")",
+        );
+        let firing_mods = duo_boxed(e, b);
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            dispatch_loot_function(
+                &firing_mods,
+                "minecraft:zombie",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
+            );
+            assert_eq!(stack.item, "test:stack");
+            assert_eq!(stack.count, 6);
+        }
+        assert_eq!(witness(&e_lua), 1, "the erroring handler ran");
+        assert_eq!(witness(&b_lua), 1, "the second handler ran");
+        has_error(&e_id);
+        no_error(&b_id);
+        drop_dir(e_dir);
+        drop_dir(b_dir);
     }
 
     #[test]
@@ -76171,6 +76912,77 @@ mod generated_tests {
                 None,
                 9,
                 &mut used,
+            );
+        }
+        // loot_function: unregistered, nothing runs.
+        {
+            let mut stack = horizon_world::loot::LootStack {
+                item: "test:stack".into(),
+                count: 5,
+                damage: 3,
+                enchantments: vec![("minecraft:sharpness".into(), 6)],
+                potion: Some("minecraft:swiftness".into()),
+                map: false,
+                exploration: None,
+                ominous_amplifier: None,
+                stew_effects: Vec::new(),
+                names: Vec::new(),
+                components: Vec::new(),
+            };
+            dispatch_loot_function(
+                &firing_mods,
+                "test:kind",
+                &serde_json::json!({ "testkey": 8 }),
+                &horizon_world::loot::NativeLootContext {
+                    entity: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:zombie".into(),
+                        living: true,
+                        on_fire: true,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    damage: Some(&horizon_world::loot::LootDamage {
+                        kind: "minecraft:player_attack".into(),
+                        source: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:skeleton".into(),
+                            ..Default::default()
+                        }),
+                        direct: Some(horizon_world::loot::LootEntity {
+                            kind: "minecraft:arrow".into(),
+                            ..Default::default()
+                        }),
+                    }),
+                    player: Some(&horizon_world::loot::LootEntity {
+                        kind: "minecraft:player".into(),
+                        living: true,
+                        on_fire: false,
+                        baby: false,
+                        ..Default::default()
+                    }),
+                    tool: Some(horizon_world::loot::NativeLootTool {
+                        item: "test:tool".into(),
+                        enchantments: vec![
+                            ("minecraft:sharpness".into(), 7),
+                            ("minecraft:unbreaking".into(), 3),
+                        ],
+                    }),
+                    block: Some("minecraft:stone"),
+                    luck: 2.5,
+                    biome: Some("minecraft:plains"),
+                    seed: 102,
+                    place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+                        origin: Some([1.0, 2.0, 3.0]),
+                        block_entity: None,
+                        level: Some(horizon_world::loot::NativeLootLevel {
+                            dimension: "minecraft:overworld".into(),
+                            game_time: 1002,
+                            day_time: 6000,
+                            raining: true,
+                            thundering: false,
+                        }),
+                    })),
+                },
+                &mut stack,
             );
         }
         // loot_condition: unregistered, nothing runs.
