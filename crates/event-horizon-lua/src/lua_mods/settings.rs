@@ -269,6 +269,31 @@ impl Settings {
         }
     }
 
+    pub fn mod_id(&self) -> &str {
+        &self.mod_id
+    }
+
+    /// Every declared setting, both sides, in the order declared.
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
+    /// The side's values as `horizon.config()` gives them now: its saved file read and resolved
+    /// (see [`Settings::resolve`]). A file that cannot be read gives the defaults, logged.
+    pub fn values(&self, side: LuaSide) -> Map<String, Value> {
+        let saved = match self.file(side) {
+            Ok(path) => read_map(&path).unwrap_or_else(|e| {
+                log::warn!("[lua:{}] settings: {e}", self.mod_id);
+                Map::new()
+            }),
+            Err(_) => Map::new(),
+        };
+        match self.resolve(side, Value::Object(saved)) {
+            Value::Object(map) => map,
+            _ => Map::new(),
+        }
+    }
+
     /// `json` (the side's saved object) with the side's declared defaults filled in for missing
     /// keys, and a refused stored value replaced by its default. Keys the schema does not name
     /// stay as they are.

@@ -781,6 +781,12 @@ the mod that declares the setting, and `old` and `new` are what `horizon.config(
 after it (null for an absent value). They are equal when a key is written at its default. The hook is wired, but
 until the Options page calls `set_setting`, a running game does not fire it.
 
+The game reads the schemas of its loaded mods through one seam, `horizon_client::mod_settings`: the mods that declare
+a schema, each setting with the value `horizon.config()` gives it, and a write or a reset of one value. The
+executable answers it from the schemas that discovery loaded at start, and a write goes through the same checks and
+`config_changed` as above. A `/reload` runs a mod's scripts again but keeps the schema it had at discovery, so a
+changed `settings.json` takes effect at the next start.
+
 ### Blocks
 
 `horizon.block_entity(block, { ticks = true, data = {...} })` gives the mod's block a block entity. It is made with

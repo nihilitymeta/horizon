@@ -1,7 +1,11 @@
 //! Event Horizon's program assembly.
 #![forbid(unsafe_code)]
 
-use horizon_client::mod_api::Hooks;
+use event_horizon_lua::lua_mods::LuaSide;
+use event_horizon_lua::lua_mods::registry::{self, SettingView};
+use event_horizon_lua::lua_mods::settings::{Change, Kind as LuaKind};
+use horizon_client::mod_api::{Hooks, Value};
+use horizon_client::mod_settings::{Kind, ModSettings, Provider, SettingEntry, Side};
 
 /// The mod API level this game serves, kept in the program for the launcher to read
 /// without running it (`horizon_mods::api_level::MARK`). [`run`] reads both marks, so
@@ -16,6 +20,7 @@ static FEATURE_REGISTRY: [u8; 27] = horizon_mods::feature_registry::MARK;
 /// then the `/lua` console (the developer tools only).
 pub fn builtin_mods(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
     let lua = event_horizon_lua::discover(args);
+    install_mod_settings();
     let mut mods = event_horizon_extras::mods();
     mods.extend(event_horizon_dev_tools::mods(!lua.is_empty()));
     mods.extend(lua);
@@ -24,6 +29,74 @@ pub fn builtin_mods(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
         mods.extend(event_horizon_lua::console::mods());
     }
     mods
+}
+
+/// Gives the game's screens the Lua mods' settings (#64): the registry `discover` just filled,
+/// and a write's `config_changed` told through the executable's native hook table. Installed once.
+fn install_mod_settings() {
+    let _ = horizon_client::mod_settings::install(Provider {
+        list: list_mod_settings,
+        set: set_mod_setting,
+        reset: reset_mod_setting,
+    });
+}
+
+fn list_mod_settings() -> Vec<ModSettings> {
+    registry::mod_settings()
+        .into_iter()
+        .map(|m| ModSettings {
+            mod_id: m.mod_id,
+            entries: m.entries.into_iter().map(setting_entry).collect(),
+        })
+        .collect()
+}
+
+/// A declared setting as the game's screens take it. Editable is set here; whether this game may
+/// write a server-side value is for the screen to gate (the provider cannot see the game's state).
+fn setting_entry(view: SettingView) -> SettingEntry {
+    let e = view.entry;
+    SettingEntry {
+        key: e.key,
+        kind: match e.kind {
+            LuaKind::Bool => Kind::Bool,
+            LuaKind::Int => Kind::Int,
+            LuaKind::Float => Kind::Float,
+            LuaKind::Str => Kind::Text,
+            LuaKind::Choice => Kind::Choice,
+        },
+        side: match e.side {
+            LuaSide::Server => Side::Server,
+            LuaSide::Client => Side::Client,
+        },
+        group: e.group,
+        order: e.order,
+        hidden: e.hidden,
+        editable: true,
+        min: e.min,
+        max: e.max,
+        choices: e.choices,
+        default: e.default,
+        value: view.value,
+    }
+}
+
+fn lua_side(side: Side) -> LuaSide {
+    match side {
+        Side::Server => LuaSide::Server,
+        Side::Client => LuaSide::Client,
+    }
+}
+
+fn set_mod_setting(mod_id: &str, side: Side, key: &str, value: Value) -> Result<(), String> {
+    registry::set(mod_id, lua_side(side), key, value, &mut notify_changed)
+}
+
+fn reset_mod_setting(mod_id: &str, side: Side, key: &str) -> Result<(), String> {
+    registry::reset(mod_id, lua_side(side), key, &mut notify_changed)
+}
+
+fn notify_changed(c: &Change) {
+    horizon_client::native_client_hooks::native_config_changed(&c.mod_id, &c.key, &c.old, &c.new);
 }
 
 /// Event Horizon's startup, shared by its own executable and the launcher's generated one

@@ -9,6 +9,7 @@ pub mod entry;
 pub mod game;
 mod horizon_look;
 pub mod mod_api;
+pub mod mod_settings;
 /// Constructors for the mod API's `#[non_exhaustive]` event and player structs
 /// (whos-carmen/horizon#28): the structs say fields may be added, so only their
 /// defining crate can build them, and the Lua runtime's tests moved out of it

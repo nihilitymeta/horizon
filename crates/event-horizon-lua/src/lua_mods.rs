@@ -50,6 +50,7 @@ fn to_console(error: bool, line: String) {
 pub mod goals;
 pub mod json;
 pub mod nbt;
+pub mod registry;
 pub mod settings;
 
 /// Wall-clock time one handler or one goal function may take before Luau's
@@ -1839,7 +1840,10 @@ type Scripts = Arc<Mutex<HashMap<String, String>>>;
 /// `scripts/client/`); a `--dedicated` server gives no client state. One
 /// whose scripts fail to load is left out with the error in the log.
 pub fn discover(args: impl Iterator<Item = String>) -> Vec<Box<dyn Hooks>> {
-    load_states(args)
+    let states = load_states(args);
+    // The settings registry holds what this discovery loaded (see `registry`).
+    registry::replace(&states);
+    states
         .into_iter()
         .map(|m| Box::new(m) as Box<dyn Hooks>)
         .collect()
