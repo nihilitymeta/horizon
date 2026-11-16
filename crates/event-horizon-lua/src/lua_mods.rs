@@ -1700,6 +1700,11 @@ pub struct LuaMod {
     /// handler that keeps missing `FRAME_BUDGET` is disabled after
     /// `FRAME_OVERRUNS_UNTIL_DISABLED`, until `/reload`.
     frame_overruns: Mutex<HashMap<String, u32>>,
+    /// Tests only: the budget this mod's frame hooks get in place of
+    /// `FRAME_BUDGET`, so a test of a frame hook's output cannot be
+    /// disabled by scheduler preemption.
+    #[cfg(test)]
+    frame_budget_override: Mutex<Option<Duration>>,
     /// The mod's saved data on the world (`horizon.world_data()`) and on a
     /// player (`horizon.player_data(who)`): attachments on the level and
     /// the player, under the mod's id.
@@ -2264,6 +2269,8 @@ impl LuaMod {
             budget,
             kinds: Kinds::default(),
             frame_overruns: Mutex::default(),
+            #[cfg(test)]
+            frame_budget_override: Mutex::default(),
             world_attachment,
             player_attachment,
             entity_attachment,
@@ -3486,6 +3493,12 @@ impl LuaMod {
         Flow::Continue
     }
 
+    /// Tests only: give this mod's frame hooks `budget` instead of `FRAME_BUDGET`.
+    #[cfg(test)]
+    pub(crate) fn set_frame_budget_for_test(&self, budget: Duration) {
+        *self.frame_budget_override.lock().unwrap() = Some(budget);
+    }
+
     /// A frame hook's (`hud`, `gui_layer_post`, `gui_layer_pre`, `world_primitives`) handlers finished: `overrun`
     /// when the budget stopped them. A handler that errors, or runs clean,
     /// resets its count; one that keeps missing `FRAME_BUDGET` is disabled
@@ -3752,6 +3765,11 @@ impl LuaMod {
         args: impl mlua::IntoLuaMulti,
         limit: Duration,
     ) -> mlua::Result<Vec<(String, Table)>> {
+        #[cfg(test)]
+        let limit = match *self.frame_budget_override.lock().unwrap() {
+            Some(over) if limit == FRAME_BUDGET => over,
+            _ => limit,
+        };
         // One thread at a time per state; a wait does not count toward the
         // budget and is bounded at 5 s, after which this firing errors.
         let _guard = self
