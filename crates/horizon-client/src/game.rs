@@ -260,6 +260,7 @@ mod mob_sounds;
 mod mod_api_host;
 mod mod_browser;
 mod mod_events;
+mod mod_settings_glue;
 mod mods;
 mod mount_menu;
 mod mounts;

@@ -489,6 +489,50 @@ impl Game<'_> {
                     let _ = std::fs::create_dir_all(&dir);
                     super::packs::open_folder(&dir);
                 }
+                // Lua mods' settings (#64): the provider writes or resets, a refusal is logged,
+                // and the page reads the settings again, so it shows what was stored.
+                Event::ModSetting {
+                    mod_id,
+                    side,
+                    key,
+                    value,
+                } => {
+                    if let Err(why) =
+                        super::mod_settings_glue::write_mod_setting(&mod_id, side, &key, value)
+                    {
+                        log::warn!("mod {mod_id}: setting {key} not saved: {why}");
+                    }
+                    self.refresh_mod_config();
+                }
+                Event::ModSettingReset { mod_id, side, key } => {
+                    let side = super::mod_settings_glue::side_of(side);
+                    if let Err(why) = horizon_client::mod_settings::reset(&mod_id, side, &key) {
+                        log::warn!("mod {mod_id}: setting {key} not reset: {why}");
+                    }
+                    self.refresh_mod_config();
+                }
+                Event::ModSettingsResetAll { mod_id } => {
+                    let remote = self.settings.mods.config.remote;
+                    let changed: Vec<_> = self
+                        .settings
+                        .mods
+                        .config
+                        .mods
+                        .iter()
+                        .filter(|m| m.mod_id == mod_id)
+                        .flat_map(|m| m.entries.iter())
+                        .filter(|e| e.writable(remote) && e.changed())
+                        .map(|e| (e.side, e.key.clone()))
+                        .collect();
+                    for (side, key) in changed {
+                        let side = super::mod_settings_glue::side_of(side);
+                        if let Err(why) = horizon_client::mod_settings::reset(&mod_id, side, &key) {
+                            log::warn!("mod {mod_id}: setting {key} not reset: {why}");
+                        }
+                    }
+                    self.refresh_mod_config();
+                }
+                Event::ModSettingsOpened => self.refresh_mod_config(),
                 Event::NativeSettings(i) => self.native_settings_refresh(i),
                 Event::NativeButton(i, b) => self.native_settings_event(i, b),
                 Event::Credits => self.open_win_screen(false, super::win::Finish::Options),

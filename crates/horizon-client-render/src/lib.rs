@@ -83,6 +83,7 @@ pub mod mipmap;
 pub mod mod_browser;
 pub mod mod_list;
 pub mod mod_mirror;
+pub mod mod_settings_ui;
 pub mod model_library;
 pub mod models;
 pub mod multiline_edit;

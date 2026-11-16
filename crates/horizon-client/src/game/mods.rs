@@ -687,6 +687,7 @@ impl Game<'_> {
             .collect();
         (self.mods.content_ids, self.mods.live_ids) = (content_ids, live_ids);
         self.ui.options.mods_live = self.mods_live_now();
+        self.refresh_mod_config();
         if self.mods.applied.is_none() {
             self.mods.applied = Some(self.settings.mods.enabled.clone());
         }

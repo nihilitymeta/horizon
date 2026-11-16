@@ -26,7 +26,8 @@ Mods are **off by default**. A fresh install has no `horizon-mods` folder and pl
    `horizon-mods/`. Native mods go in `horizon-native-mods/`, and the launcher builds them
    ([native-mods.md](native-mods.md)).
 2. Options > **Mods** lists them with what each may do ("May add blocks, items, mob effects and entity types to your
-   worlds") and a switch. They start off. The choice is kept in `horizon-mods.txt` (`mod.<id>:true`).
+   worlds") and a switch. They start off. The choice is kept in `horizon-mods.txt` (`mod.<id>:true`). A Lua mod that
+   declares a `settings.json` has a Settings button there, for its settings ([lua-bindings.md](lua-bindings.md#settings-schema)).
 3. A content mod's blocks, items, mob effects, entity types and menu types load once, when the game starts: restart
    the game after a switch. The game can build its content root again while it runs, on a resource pack reload, or on
    a `/reload` in builds that layer the mods' data again. Then it layers every mod's data and assets as they are now,

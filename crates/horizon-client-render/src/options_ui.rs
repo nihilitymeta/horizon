@@ -1261,6 +1261,8 @@ pub enum Page {
     ModProject,
     /// A native mod's settings page: its index in `mods.installed`.
     NativeMod(usize),
+    /// A Lua mod's settings page (`mod_settings_ui`): its index in `mods.installed`.
+    ModSettings(usize),
     /// A page a crate registered (`horizon_hooks::pages`): its index in `OptionsUi::pages`.
     Added(usize),
     /// Horizon's shader packs, either kind (`shader_pack_list`).
@@ -1324,6 +1326,8 @@ pub(crate) enum Act {
     HudEditor,
     /// The installed native mod's settings page.
     ModSettings(usize),
+    /// The installed Lua mod's settings page (`mod_settings_ui`).
+    ModConfig(usize),
     /// A native mod's key (mod, key) waits for a key; a button of its page.
     #[allow(dead_code)]
     NativeKey(usize, usize),
@@ -1490,6 +1494,25 @@ pub enum Event {
     NativeButton(usize, usize),
     /// Roll the credits (`CreditsAndAttributionScreen.openCreditsScreen`).
     Credits,
+    /// A Lua mod's setting was changed on its page: write it, then read the settings again.
+    ModSetting {
+        mod_id: String,
+        side: crate::mod_settings_ui::Side,
+        key: String,
+        value: serde_json::Value,
+    },
+    /// A Lua mod's setting was reset to its default on its page.
+    ModSettingReset {
+        mod_id: String,
+        side: crate::mod_settings_ui::Side,
+        key: String,
+    },
+    /// Every setting of a Lua mod was reset to its default on its page.
+    ModSettingsResetAll {
+        mod_id: String,
+    },
+    /// A Lua mod's settings page opened: read the settings again (the remote flag may have changed).
+    ModSettingsOpened,
     /// PvP & HUD's Edit HUD: open the HUD editor over the game.
     HudEditor,
     /// Copy how an agent connects (the AI Agent page).
@@ -1600,6 +1623,8 @@ pub struct OptionsUi {
     controller: shell::Shell<crate::controller_ui::ControllerScreen>,
     /// Horizon Extras, on the settings shell.
     extras: shell::Shell<crate::extras_ui::ExtrasScreen>,
+    /// A Lua mod's settings page (`mod_settings_ui`).
+    mod_settings: shell::Shell<crate::mod_settings_ui::ModSettingsScreen>,
     /// The radial menu's pages, on the settings shell.
     radial: shell::Shell<crate::radial_editor::RadialScreen>,
     /// The list of actions for one of the radial menu's slots.
@@ -1688,6 +1713,7 @@ impl Default for OptionsUi {
             graphics: Default::default(),
             controller: Default::default(),
             extras: Default::default(),
+            mod_settings: Default::default(),
             radial: Default::default(),
             radial_pick: Default::default(),
             shader: Default::default(),
@@ -2114,6 +2140,10 @@ impl OptionsUi {
         if let Some(at) = Self::shader_page(page) {
             self.shader.show(at);
         }
+        if let Page::ModSettings(i) = page {
+            self.mod_settings.screen.index = i;
+            self.mod_settings.show(());
+        }
         if let Some(at) = Self::graphics_page(page) {
             self.graphics.show(at);
         }
@@ -2180,6 +2210,7 @@ impl OptionsUi {
             Page::ControllerRadialName => "horizon.radial.name_title",
             Page::ControllerRadialPick => "horizon.radial.pick_title",
             Page::Extras => "horizon.pages.extras",
+            Page::ModSettings(_) => "horizon.mods.settings",
             Page::Pvp => "horizon.pages.pvp",
             Page::Credits => "credits_and_attribution.screen.title",
             Page::Horizon => "horizon.pages.settings",
@@ -2736,11 +2767,14 @@ impl OptionsUi {
                         // Keys live on the Key Binds screen, so only a mod with settings of
                         // its own (a native mod's buttons, a hook mod's Extras rows) has a
                         // settings page worth a second button.
-                        let has_settings = m
+                        let native_page = m
                             .native
                             .as_ref()
                             .is_some_and(|page| !page.buttons.is_empty())
                             || !mod_items(&m.id).is_empty();
+                        // A Lua mod with a settings.json has its page too.
+                        let schema = s.mods.config.mods.iter().any(|c| c.mod_id == m.id);
+                        let has_settings = native_page || schema;
                         let toggle = button(
                             0.0,
                             0.0,
@@ -2750,13 +2784,13 @@ impl OptionsUi {
                         );
                         let toggle_widget = if dead { inactive(toggle) } else { toggle };
                         if has_settings {
-                            let settings = button(
-                                0.0,
-                                0.0,
-                                150.0,
-                                tr("horizon.mods.settings"),
-                                Act::ModSettings(i),
-                            );
+                            let act = if native_page {
+                                Act::ModSettings(i)
+                            } else {
+                                Act::ModConfig(i)
+                            };
+                            let settings =
+                                button(0.0, 0.0, 150.0, tr("horizon.mods.settings"), act);
                             rows.push(Row::Buttons(toggle_widget, Some(settings)));
                         } else {
                             rows.push(Row::Buttons(toggle_widget, None));
@@ -4027,6 +4061,11 @@ impl OptionsUi {
                             self.push(Page::NativeMod(i));
                             events.push(Event::NativeSettings(i));
                         }
+                        Act::ModConfig(i) => {
+                            events.push(Event::ButtonClick);
+                            self.push(Page::ModSettings(i));
+                            events.push(Event::ModSettingsOpened);
+                        }
                         Act::NativeKey(i, k) => self.wait_native_key(i, k),
                         Act::NativeButton(i, b) => events.push(Event::NativeButton(i, b)),
                         Act::PageRow(p, r) => events.extend(self.page_act(p, r, self.shift)),
@@ -4909,6 +4948,11 @@ impl OptionsUi {
                             self.can_change_value = false;
                             self.push(Page::NativeMod(i));
                             events.push(Event::NativeSettings(i));
+                        }
+                        Act::ModConfig(i) => {
+                            events.push(Event::ButtonClick);
+                            self.push(Page::ModSettings(i));
+                            events.push(Event::ModSettingsOpened);
                         }
                         Act::NativeKey(i, k) => self.wait_native_key(i, k),
                         Act::NativeButton(i, b) => events.push(Event::NativeButton(i, b)),
@@ -8267,6 +8311,54 @@ mod tests {
             .collect();
         assert_eq!(acts, vec![Act::ToggleMod(0), Act::ModSettings(0)]);
         assert!(matches!(page[0], Row::Header("horizon.mods.section.hook")));
+    }
+
+    /// A Lua mod with a settings schema gets a Settings button to its page; a mod without one
+    /// gets its toggle only.
+    #[test]
+    fn options_ui_mod_settings_button_is_offered_to_a_mod_with_a_schema_only() {
+        use crate::mod_list::{Installed, ModKind};
+        use crate::mod_settings_ui::{ModConfig, Snapshot};
+        let mut s = Settings::default();
+        for id in ["ruby", "plain"] {
+            s.mods.installed.push(Installed {
+                kind: ModKind::Content,
+                id: id.into(),
+                title: format!("{id} 1.0"),
+                description: String::new(),
+                problem: None,
+                dev: false,
+                native: None,
+            });
+        }
+        s.mods.config = Snapshot {
+            mods: vec![ModConfig {
+                mod_id: "ruby".into(),
+                entries: Vec::new(),
+            }],
+            remote: false,
+        };
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        let page = without_browse(ui.list_rows(&s));
+        let acts: Vec<Act> = page
+            .iter()
+            .flat_map(|r| match r {
+                Row::Buttons(w1, w2) => [Some(w1), w2.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|w| match &w.kind {
+                        WKind::Button { act, .. } => Some(act.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            })
+            .collect();
+        assert_eq!(
+            acts,
+            vec![Act::ToggleMod(0), Act::ModConfig(0), Act::ToggleMod(1)]
+        );
     }
 
     /// The Mods page has a section per kind in the launcher's order, each named by a bundled key,

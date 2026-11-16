@@ -773,13 +773,27 @@ back as saved. A mod without `settings.json` gets its saved table as it always w
 
 Writing a setting is the engine's: `set_setting` (`LuaMod::set_setting`, in Rust) writes that one key into its
 side's file, keeping the other keys, and refuses a value that does not fit. `reset_setting` removes the key, so the
-default applies again. Writing the value a setting already has changes nothing. Nothing in the game calls them yet:
-the Options page that shows the settings and calls them is not built, so for now a person edits the file.
+default applies again. Writing the value a setting already has changes nothing.
+
+The Options page shows them: Options > Mods, on a mod with a `settings.json`, has a Settings button. The page is one
+control per setting, grouped by `group` and ordered by `order` then key; hidden settings are not shown. A bool is a
+switch, a choice steps through its choices, an `int` or `float` with both bounds is a slider. A text setting, and a
+number without both bounds, is typed in: a press opens the row for editing, Enter sets it and Escape leaves it. A
+number that does not parse, or is outside its min or max, is not set, and the row keeps the stored value. Each changed
+setting has a Reset under it, and the page has Reset all. A change is
+saved at once through `set_setting` (or `reset_setting`), and the page reads the settings again, so a refused value
+shows the stored one. The labels are translation keys: `mod.<id>.setting.<key>` for a setting, `mod.<id>.setting.<key>.desc`
+for its description and `mod.<id>.group.<group>` for a group's heading. A key with no translation shows the setting's own
+key (the group's own name for a heading). The page's own texts are Horizon's `horizon.mods.settings*` keys.
+
+The scope is global per install. A setting on the server side (`side` `server`) is shown, but not changed, by a client
+of a remote server: that game shows the line "The server's settings are changed on the server." over the page. Single
+player, a LAN host and a dedicated server's own game change them.
 
 The `config_changed` hook is told `{mod_id, key, old, new}` once per write that changes the stored value. `mod_id` is
 the mod that declares the setting, and `old` and `new` are what `horizon.config()` gave before the write and gives
-after it (null for an absent value). They are equal when a key is written at its default. The hook is wired, but
-until the Options page calls `set_setting`, a running game does not fire it.
+after it (null for an absent value). They are equal when a key is written at its default. The Options page's changes
+fire it too, as the write goes through the same path.
 
 The game reads the schemas of its loaded mods through one seam, `horizon_client::mod_settings`: the mods that declare
 a schema, each setting with the value `horizon.config()` gives it, and a write or a reset of one value. The
@@ -1316,7 +1330,7 @@ table when its step lands, with the tests and the game check that show it.
 | Custom projectiles and other entities that are not mobs | A thrown mod item already flies as its template does (a snowball's `template` in `registry.item`). The planned shape is an entity type of the mod's own over a projectile template (`registry.entity_type("spore", { template = "minecraft:snowball", ... })`), with `projectile_impact` by that kind, and `horizon.shoot(dimension, kind, x, y, z, vx, vy, vz)` to launch one. Vehicles, displays and markers stay the engine's own |
 | Screens | Content mods have menu types (`data/<id>/horizon/menu/`), but a screen that draws them is native only (`native_screen`). Scripts get no screens: titles, subtitles, the action bar, chat lines and commands are their user interface. A later content-menu helper would show a content mod's menu |
 | Client-side scripts | A client state exists when `scripts/client/` does and runs the client hooks (those tagged `client` or `both` in [docs/api/hook-points.md](api/hook-points.md)). A server state runs the server hooks. A mod that registers the other side's hook is refused at load with an error that names the folder to use. Saved data (`horizon.world_data()`, `horizon.player_data`) is server state; the client reads server data only through messages (client-to-server messages are planned, saved data on the client is planned) |
-| Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. A mod may declare its settings in `settings.json` ([Settings schema](#settings-schema)): the defaults are filled in and the `config_changed` hook is told of each change. The options page that shows them is not built yet, so a person edits the file for now. There is no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
+| Configuration | `horizon.config()` and `horizon.save_config(t)` are all of it: one JSON file that a person edits. A mod may declare its settings in `settings.json` ([Settings schema](#settings-schema)): the defaults are filled in and the `config_changed` hook is told of each change. The Options > Mods page shows them and changes them ([Settings schema](#settings-schema)). There is no setting per world; a mod that wants values per world keeps them in `horizon.world_data()`, and sets them with a command of its own |
 
 ## Working on a script
 

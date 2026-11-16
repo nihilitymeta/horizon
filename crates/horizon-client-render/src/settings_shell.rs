@@ -1086,6 +1086,8 @@ pub(crate) enum Value {
     Press,
     /// A line to read, which no focus reaches (unlike `Read`) and nothing presses.
     Note,
+    /// A text a press edits on the row: Enter sets it (`Screen::field`), Escape leaves it as it was.
+    Field(String),
 }
 
 /// What a binding row waits for once pressed, by the name the host binds.
@@ -1264,9 +1266,10 @@ impl<R> Row<R> {
             } else {
                 lang::get_or("Off", "Off")
             }),
-            Value::Choice(text) | Value::Slider { text, .. } | Value::Read(text) => {
-                Some(text.clone())
-            }
+            Value::Choice(text)
+            | Value::Slider { text, .. }
+            | Value::Read(text)
+            | Value::Field(text) => Some(text.clone()),
             Value::Binding(binding) => Some(binding.text()),
             Value::Press | Value::Note => None,
         }
@@ -1382,6 +1385,10 @@ pub(crate) trait Screen {
     }
     /// A binding row's reset was pressed: its binding goes back to its default.
     fn reset(&mut self, _s: &mut Settings, _row: Self::Row) -> Vec<Output> {
+        Vec::new()
+    }
+    /// A `Value::Field` row's edit was submitted with Enter: the text it holds now.
+    fn field(&mut self, _s: &mut Settings, _row: Self::Row, _text: String) -> Vec<Output> {
         Vec::new()
     }
     /// Lines under the page list: whose settings these are, say.
@@ -1583,6 +1590,8 @@ pub(crate) struct Shell<S: Screen> {
     /// Left and Right move the focused slider rather than the focus.
     can_change_value: bool,
     search: ui::EditBox,
+    /// The `Value::Field` row being edited, and its text while it is (Enter sets it, Escape leaves).
+    edit: Option<(S::Row, ui::EditBox)>,
     /// The page the plate shows, alone, while nothing is searched; `None` is the first.
     page: Option<S::Page>,
     /// While searching, the page last picked in the page list: current until the list scrolls.
@@ -1615,6 +1624,7 @@ impl<S: Screen + Default> Default for Shell<S> {
         search.message = lang::get("Search options");
         Self {
             screen: S::default(),
+            edit: None,
             scroll: ui::Scroll::default(),
             dragging: None,
             focus: None,
@@ -2029,6 +2039,15 @@ impl<S: Screen> Shell<S> {
         }
         match row.value {
             Value::Note | Value::Read(_) => Vec::new(),
+            // The edit opens on the row with the text it holds; typing goes to it (`key_edit`).
+            Value::Field(ref text) => {
+                self.can_change_value = false;
+                let mut edit = ui::EditBox::new(0.0, 0.0, 0.0, 8.0);
+                edit.bordered = false;
+                edit.set_value(text);
+                self.edit = Some((row.id, edit));
+                vec![CLICK]
+            }
             // The shell, not the screen, starts the wait.
             Value::Binding(ref binding) => {
                 self.can_change_value = false;
@@ -2146,6 +2165,41 @@ impl<S: Screen> Shell<S> {
         note.unwrap_or_else(|| row.described().to_owned())
     }
     /// Whether the host waits on `row`'s binding.
+    /// Keys while a `Value::Field` row is edited: its text takes them. Enter sets it through the
+    /// screen (`Screen::field`), Escape leaves it as it was.
+    fn key_edit(
+        &mut self,
+        s: &mut Settings,
+        key: winit::keyboard::KeyCode,
+        text: Option<&str>,
+        shift: bool,
+    ) -> Vec<Output> {
+        use winit::keyboard::KeyCode as K;
+        match key {
+            K::Escape => {
+                self.edit = None;
+                Vec::new()
+            }
+            K::Enter | K::NumpadEnter => {
+                let Some((row, edit)) = self.edit.take() else {
+                    return Vec::new();
+                };
+                let outputs = self.screen.field(s, row, edit.value);
+                self.did(&outputs);
+                outputs
+            }
+            _ => {
+                if let Some((_, edit)) = self.edit.as_mut()
+                    && !edit.key(key, false, shift)
+                    && let Some(t) = text
+                {
+                    let typed: String = t.chars().filter(|c| !c.is_control()).collect();
+                    edit.insert_text(&typed);
+                }
+                Vec::new()
+            }
+        }
+    }
     fn waits(&self, row: &Row<S::Row>) -> bool {
         row.binding()
             .is_some_and(|b| self.waiting == Some(b.capture))
@@ -2185,6 +2239,18 @@ impl<S: Screen> Shell<S> {
         let label = row.label(value.as_deref());
         let focused = self.shows_focus(Target::Row(row.id));
         let hint = self.strip_text(row);
+        // A text being edited shows what it holds now, with a caret.
+        let edited = self.edit.as_ref().filter(|(id, _)| *id == row.id);
+        if let Value::Field(value) = &row.value {
+            let shown = match edited {
+                Some((_, edit)) => format!("{}|", edit.value),
+                None => value.clone(),
+            };
+            let view = (label.as_str(), row.name.as_str(), shown.as_str());
+            read_row(batch, atlas, cols, y, view, (hover, focused));
+            crate::widgets::last_narratable(|n| n.hint = Some(hint.clone()));
+            return;
+        }
         if let Value::Read(value) = &row.value {
             let view = (label.as_str(), row.name.as_str(), value.as_str());
             read_row(batch, atlas, cols, y, view, (hover, focused));
@@ -2408,6 +2474,8 @@ impl<S: Screen + Default> Hosted for Shell<S> {
         shift: bool,
     ) -> Vec<Output> {
         self.keep(s);
+        // A click leaves an edit that is open: a press on its row opens it again.
+        self.edit = None;
         // A click of its own: the focus a page opened on is the mouse's now.
         if !drag {
             self.focus_opened = None;
@@ -2564,6 +2632,9 @@ impl<S: Screen + Default> Hosted for Shell<S> {
     ) -> Vec<Output> {
         use winit::keyboard::KeyCode as K;
         self.keep(s);
+        if self.edit.is_some() {
+            return self.key_edit(s, key, text, shift);
+        }
         if key == K::Escape {
             self.can_change_value = false;
             // Back out of a page a link opened, then out of the screen.
@@ -2683,10 +2754,12 @@ impl<S: Screen + Default> Hosted for Shell<S> {
         }
     }
     fn typing(&self) -> bool {
-        self.focus == Some(Target::Search)
+        self.focus == Some(Target::Search) || self.edit.is_some()
     }
     fn blur_search(&mut self) {
-        if self.typing() {
+        // Moving the focus away leaves a row's edit as it was.
+        self.edit = None;
+        if self.focus == Some(Target::Search) {
             self.focus = None;
         }
     }
@@ -2695,6 +2768,12 @@ impl<S: Screen + Default> Hosted for Shell<S> {
         self.can_change_value = false;
     }
     fn type_text(&mut self, text: &str) {
+        if let Some((_, edit)) = self.edit.as_mut() {
+            if !text.is_empty() {
+                edit.insert_text(text);
+            }
+            return;
+        }
         if !text.is_empty() {
             self.search.insert_text(text);
             self.searched();
@@ -2705,6 +2784,10 @@ impl<S: Screen + Default> Hosted for Shell<S> {
         shortcut: crate::clipboard::EditShortcut,
         clipboard: &mut dyn crate::clipboard::Clipboard,
     ) -> bool {
+        if let Some((_, edit)) = self.edit.as_mut() {
+            edit.shortcut(shortcut, clipboard);
+            return true;
+        }
         if !self.typing() {
             return false;
         }

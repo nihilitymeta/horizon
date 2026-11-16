@@ -18,6 +18,7 @@ impl OptionsUi {
     pub(super) fn shell(&self) -> Option<&dyn shell::Hosted> {
         match self.page() {
             Page::Extras => Some(&self.extras),
+            Page::ModSettings(_) => Some(&self.mod_settings),
             page if Self::graphics_page(page).is_some() => Some(&self.graphics),
             Page::ControllerRadial => Some(&self.radial),
             Page::ControllerRadialPick => Some(&self.radial_pick),
@@ -31,6 +32,7 @@ impl OptionsUi {
         self.graphics.screen.output = self.output;
         match self.page() {
             Page::Extras => Some(&mut self.extras),
+            Page::ModSettings(_) => Some(&mut self.mod_settings),
             page if Self::graphics_page(page).is_some() => Some(&mut self.graphics),
             Page::ControllerRadial => Some(&mut self.radial),
             Page::ControllerRadialPick => Some(&mut self.radial_pick),
@@ -65,8 +67,9 @@ impl OptionsUi {
             return;
         }
         // Every shell: the click may have changed the page.
-        let shells: [&mut dyn shell::Hosted; 7] = [
+        let shells: [&mut dyn shell::Hosted; 8] = [
             &mut self.extras,
+            &mut self.mod_settings,
             &mut self.graphics,
             &mut self.controller,
             &mut self.radial,

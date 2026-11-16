@@ -30,6 +30,9 @@ pub struct ModList {
     pub keys: BTreeMap<String, BTreeMap<String, String>>,
     /// What the Mods page shows, filled by the game from the mods it found.
     pub installed: Vec<Installed>,
+    /// The Lua mods' settings, as the settings page shows them (`mod_settings_ui`), filled by the
+    /// game from the mods' schemas and refreshed after each change.
+    pub config: crate::mod_settings_ui::Snapshot,
 }
 
 /// What an installed mod is, for the sections of the Mods page and of the launcher's.
@@ -145,6 +148,7 @@ impl ModList {
             disabled,
             keys,
             installed: Vec::new(),
+            config: Default::default(),
         }
     }
     pub fn serialize(&self) -> String {
