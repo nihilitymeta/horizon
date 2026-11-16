@@ -2947,6 +2947,130 @@ mod native_kinds_tests {
     }
 }
 
+/// A mod's own loot kind, end to end through the roll: the hook is reached
+/// for a mod's kind only, its answer decides the entry and the stack, and a
+/// table without a mod's kind never reaches it nor draws the hook's seed.
+///
+/// The hook table is process-wide and installs once, and CI runs every lib
+/// test of this crate in one process (`cargo test --locked`), so the stub is
+/// the crate's shared one (`native_load_hooks::test_hooks`), which every test
+/// that installs a hook uses. The recorder is thread-local: a roll runs on its
+/// test's thread.
+#[cfg(test)]
+mod mod_kind_tests {
+    use super::*;
+    use crate::native_load_hooks::test_hooks::{
+        install_test_hooks as install_stub, take_seen_ruby_kinds as seen,
+    };
+
+    /// A loot table `minecraft:test` with `json`, loaded from a scratch root.
+    fn table(name: &str, json: &str) -> LootData {
+        let root =
+            std::env::temp_dir().join(format!("loot-mod-kind-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("data/minecraft/loot_table");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("test.json"), json).unwrap();
+        std::fs::write(root.join("items.json"), "{}").unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        data
+    }
+
+    fn names(stacks: &[LootStack]) -> Vec<&str> {
+        stacks.iter().map(|s| &*s.item).collect()
+    }
+
+    #[test]
+    fn mod_kind_condition_reaches_the_hook_and_its_answer_decides_the_entry() {
+        install_stub();
+        let data = table(
+            "condition",
+            r#"{"pools":[
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone",
+                    "condition":{"type":"ruby:chance","holds":true}}]},
+                {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:dirt",
+                    "condition":{"type":"ruby:chance","holds":false}}]}]}"#,
+        );
+        let mut random = LegacyRandom::new(5);
+        let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
+        assert_eq!(names(&stacks), ["minecraft:stone"]);
+        let seen = seen();
+        // One call per mod condition: the two entries, in table order.
+        assert_eq!(seen.len(), 2, "{seen:?}");
+        assert!(
+            seen.iter().all(|(kind, _)| kind == "ruby:chance"),
+            "{seen:?}"
+        );
+        assert_eq!(seen[0].1["holds"], true);
+        assert_eq!(seen[1].1["holds"], false);
+    }
+
+    #[test]
+    fn mod_kind_function_reaches_the_hook_and_changes_the_rolled_stack() {
+        install_stub();
+        let data = table(
+            "function",
+            r#"{"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone",
+                "modifier":[{"type":"minecraft:set_count","count":3},
+                            {"type":"ruby:double","factor":2}]}]}]}"#,
+        );
+        let mut random = LegacyRandom::new(5);
+        let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
+        assert_eq!(names(&stacks), ["minecraft:stone"]);
+        // 3 from set_count, doubled by the mod's function: 6.
+        assert_eq!(stacks[0].count, 6);
+        let seen = seen();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert_eq!(seen[0].0, "ruby:double");
+        assert_eq!(seen[0].1["factor"], 2);
+    }
+
+    /// Vanilla conditions and functions never reach the hook, and the table
+    /// takes exactly the one draw its `random_chance` makes.
+    #[test]
+    fn mod_kind_vanilla_entries_never_reach_the_hook() {
+        install_stub();
+        let data = table(
+            "vanilla",
+            r#"{"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone",
+                "condition":{"type":"minecraft:random_chance","chance":0.5},
+                "modifier":[{"type":"minecraft:set_count","count":3}]}]}]}"#,
+        );
+        for seed in 0..8 {
+            let mut random = LegacyRandom::new(seed);
+            let mut expected = LegacyRandom::new(seed);
+            let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
+            let dropped = expected.next_float() < 0.5;
+            assert_eq!(stacks.len(), usize::from(dropped), "seed {seed}");
+            if dropped {
+                assert_eq!(stacks[0].count, 3, "seed {seed}");
+            }
+            assert_eq!(random.next_long(), expected.next_long(), "seed {seed}");
+        }
+        assert!(seen().is_empty());
+    }
+
+    /// A table with no mod kind takes no seed for a hook: the roll leaves the
+    /// random where its vanilla entries left it.
+    #[test]
+    fn mod_kind_table_without_one_draws_no_extra_random() {
+        install_stub();
+        let data = table(
+            "no_draw",
+            r#"{"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone",
+                "modifier":[{"type":"minecraft:set_count","count":2}]}]}]}"#,
+        );
+        let mut random = LegacyRandom::new(9);
+        let mut expected = LegacyRandom::new(9);
+        let stacks = data.roll("minecraft:test", &mut random, 0.0, None, Some(true));
+        assert_eq!(names(&stacks), ["minecraft:stone"]);
+        assert_eq!(stacks[0].count, 2);
+        assert_eq!(random.next_long(), expected.next_long());
+        assert!(seen().is_empty());
+    }
+}
+
 #[cfg(test)]
 #[path = "recipe_result_tests.rs"]
 mod recipe_result_tests;

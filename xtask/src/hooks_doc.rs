@@ -153,6 +153,12 @@ fn cell_keys(model: &Model) -> Vec<String> {
     keys
 }
 
+/// The loot hooks whose `kind` is a loot entry's `type` (a mod's own loot
+/// kind), not an entity's kind: a per-hook wording, `Kind` stays `Field`.
+fn loot_entry_kind(name: &str) -> bool {
+    matches!(name, "loot_condition" | "loot_function")
+}
+
 /// The Lua cell of one generated hook from the model: `an event table with
 /// <fields>; kind: <domain>|none; <how a script cancels or changes it>`.
 /// `perform_command` answers `(player, args)` instead of an event table, so
@@ -169,6 +175,10 @@ fn lua_cell(model: &Model) -> String {
     };
     cell.push_str(&match &model.kind {
         Kind::None => "; kind: none".to_owned(),
+        // A loot hook's kind is the loot entry's `type`, not an entity's.
+        Kind::Field if loot_entry_kind(&model.name) => {
+            "; kind: the loot entry's type (a mod's own, e.g. ruby:double)".to_owned()
+        }
         Kind::Field => "; kind: entity kind (`kind`)".to_owned(),
         Kind::Entity { field, opt } => {
             let mut s = format!("; kind: kind of `{field}`");
@@ -1041,6 +1051,9 @@ mod tests {
         for (name, model, cell) in event_tables() {
             let domain: String = match &model.kind {
                 super::Kind::None => "kind: none".to_owned(),
+                super::Kind::Field if super::loot_entry_kind(&name) => {
+                    "kind: the loot entry's type".to_owned()
+                }
                 super::Kind::Field => "kind: entity kind (`kind`)".to_owned(),
                 super::Kind::Entity { field, .. } => format!("kind: kind of `{field}`"),
                 super::Kind::Loot => "kind: loot block or entity kind".to_owned(),

@@ -3816,6 +3816,129 @@ mod tests {
         assert_eq!(drops[0].count, 1);
     }
 
+    thread_local! {
+        /// The `(kind, data)` pairs the hook stub saw on this test's thread.
+        static MOD_KIND_SEEN: std::cell::RefCell<Vec<(String, Value)>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// The loot hook stub for the mod-kind tests: a condition answers with its
+    /// own `holds`, a function multiplies the count by its own `factor`.
+    /// The hook table is process-wide and installs once. CI runs this crate's
+    /// lib tests in one process (`cargo test --locked`), so every test here
+    /// shares this stub: it is the only installer in this test binary, and it
+    /// answers only `ruby:` kinds, so the other tests' mod kinds keep their own
+    /// (no) answer.
+    fn mod_kind_stub_install() {
+        fn condition(
+            kind: &str,
+            data: &Value,
+            _: &horizon_world::loot::NativeLootContext<'_>,
+            holds: &mut bool,
+        ) {
+            if !kind.starts_with("ruby:") {
+                return;
+            }
+            MOD_KIND_SEEN.with_borrow_mut(|s| s.push((kind.to_owned(), data.clone())));
+            *holds = data["holds"].as_bool().unwrap_or(false);
+        }
+        fn function(
+            kind: &str,
+            data: &Value,
+            _: &horizon_world::loot::NativeLootContext<'_>,
+            stack: &mut horizon_world::loot::LootStack,
+        ) {
+            if !kind.starts_with("ruby:") {
+                return;
+            }
+            MOD_KIND_SEEN.with_borrow_mut(|s| s.push((kind.to_owned(), data.clone())));
+            stack.count *= data["factor"].as_i64().unwrap_or(1) as i32;
+        }
+        let _ = horizon_world::native_load_hooks::install(
+            horizon_world::native_load_hooks::NativeLoadHooks {
+                loot_table_load: |_, _| {},
+                modify_default_components: |_, _| {},
+                loot_function: function,
+                loot_condition: condition,
+            },
+        );
+    }
+
+    fn mod_kind_seen() -> Vec<(String, Value)> {
+        MOD_KIND_SEEN.with_borrow_mut(std::mem::take)
+    }
+
+    /// The items engine reaches the condition hook for a mod's kind only: the
+    /// hook's answer keeps or drops the entry, one call per mod condition.
+    #[test]
+    fn mod_kind_condition_reaches_the_hook_in_the_items_engine() {
+        mod_kind_stub_install();
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let table = json!({"pools":[
+            {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone",
+                "conditions":[{"type":"ruby:chance","holds":true}]}]},
+            {"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:dirt",
+                "conditions":[{"type":"ruby:chance","holds":false}]}]}]});
+        let mut random = LegacyRandom::new(5);
+        let drops = ctx(&items, None, &props, "minecraft:stone").evaluate(&table, &mut random);
+        let names: Vec<&str> = drops.iter().map(|s| &*s.item).collect();
+        assert_eq!(names, ["minecraft:stone"]);
+        let seen = mod_kind_seen();
+        assert_eq!(seen.len(), 2, "{seen:?}");
+        assert!(
+            seen.iter().all(|(kind, _)| kind == "ruby:chance"),
+            "{seen:?}"
+        );
+        assert_eq!(
+            (seen[0].1["holds"].clone(), seen[1].1["holds"].clone()),
+            (json!(true), json!(false))
+        );
+    }
+
+    /// A mod's function changes the stack the items engine drops: 3 from
+    /// set_count, doubled by the hook's factor 2.
+    #[test]
+    fn mod_kind_function_changes_the_stack_in_the_items_engine() {
+        mod_kind_stub_install();
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let table = json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item",
+            "name":"minecraft:stone",
+            "modifier":[{"type":"minecraft:set_count","count":3},
+                        {"type":"ruby:double","factor":2}]}]}]});
+        let mut random = LegacyRandom::new(5);
+        let drops = ctx(&items, None, &props, "minecraft:stone").evaluate(&table, &mut random);
+        assert_eq!(drops.len(), 1);
+        assert_eq!(&*drops[0].item, "minecraft:stone");
+        assert_eq!(drops[0].count, 6);
+        let seen = mod_kind_seen();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert_eq!(seen[0].0, "ruby:double");
+    }
+
+    /// A vanilla table never reaches the hook, and draws exactly the one
+    /// random its `random_chance` makes: the sequences stay in step.
+    #[test]
+    fn mod_kind_vanilla_table_never_reaches_the_hook_and_draws_nothing_extra() {
+        mod_kind_stub_install();
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let table = json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item",
+            "name":"minecraft:stone",
+            "conditions":[{"type":"minecraft:random_chance","chance":0.5}],
+            "modifier":[{"type":"minecraft:set_count","count":3}]}]}]});
+        for seed in 0..8 {
+            let mut random = LegacyRandom::new(seed);
+            let mut expected = LegacyRandom::new(seed);
+            let drops = ctx(&items, None, &props, "minecraft:stone").evaluate(&table, &mut random);
+            let dropped = expected.next_float() < 0.5;
+            assert_eq!(drops.len(), usize::from(dropped), "seed {seed}");
+            assert_eq!(random.next_long(), expected.next_long(), "seed {seed}");
+        }
+        assert!(mod_kind_seen().is_empty());
+    }
+
     #[test]
     fn fortune_silk_touch_and_looting() {
         let items = Items::for_tests(HashMap::new());
