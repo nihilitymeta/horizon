@@ -38,11 +38,11 @@ const ENTITY_GONE: i64 = 99;
 /// or retyped), and update `LUA_HOOK_SURFACE_FINGERPRINT` beside it.
 /// A mod built for another surface fails at load with both numbers, instead
 /// of failing later on a missing hook name.
-pub const LUA_HOOK_SURFACE_VERSION: u32 = 16;
+pub const LUA_HOOK_SURFACE_VERSION: u32 = 17;
 /// The committed fingerprint of the surface `LUA_HOOK_SURFACE_VERSION`
 /// describes: `lua-hooks --check` fails when the freshly computed one
 /// differs, so nobody forgets the bump above.
-pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "b7da9d711229325a";
+pub const LUA_HOOK_SURFACE_FINGERPRINT: &str = "07c982a495870d2a";
 
 /// The macro's host kind for a model host.
 fn host_ident(host: Host) -> &'static str {
@@ -197,6 +197,7 @@ fn seed_tag(conv: &Conv, ty: &str, key: Option<&str>) -> String {
         Conv::TickPhase => "tick_phase",
         Conv::WorldPhaseName => "world_phase",
         Conv::LootCtx => "loot_ctx",
+        Conv::NativeLootCtx => "native_loot_ctx",
         // Loot's drops seed like the struct vec of stacks they are.
         Conv::LootDrops => return struct_shape(ty, key.unwrap_or("?")).0,
         Conv::Struct => return struct_shape(ty, key.unwrap_or("?")).0,
@@ -4253,7 +4254,7 @@ mod tests {
 
     #[test]
     fn the_surface_starts_at_version_one() {
-        assert_eq!(LUA_HOOK_SURFACE_VERSION, 16);
+        assert_eq!(LUA_HOOK_SURFACE_VERSION, 17);
     }
 
     /// `neighbor_changed`'s `changed: BlockId` names the block through the

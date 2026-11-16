@@ -290,6 +290,7 @@ export type LivingJumpEvent = { entity: number, kind: string }
 export type LivingKnockbackEvent = { entity: number, kind: string, damage_type: string, causing: number, direct: number, strength: number, x: number, z: number }
 export type LivingKnockbackV2Event = { entity: number, kind: string, attacker: number, attacker_main: Item?, attacker_off: Item?, strength: number, x: number, z: number }
 export type LogLineEvent = { level: string, thread: string, message: string, line: string }
+export type LootConditionEvent = { kind: string, data: Data, seed: number, luck: number, biome: string?, block: string?, tool: { id: string, enchantments: { [string]: number } }?, entity: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, player: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, damage: { kind: string, source: { kind: string, living: boolean, on_fire: boolean, baby: boolean }?, direct: { kind: string, living: boolean, on_fire: boolean, baby: boolean }? }?, origin: Vec3?, dimension: string?, game_time: number?, day_time: number?, raining: boolean?, thundering: boolean?, holds: boolean }
 export type LootDropsEvent = { table: string, dimension: string, origin: Vec3, block: LootBlock?, entity: IdKind?, player: PlayerRef?, tool: Item?, explosion: number?, used: boolean, drops: { Item } }
 export type LootTableLoadEvent = { id: string, table: Data }
 export type MapDecorationsEvent = { map: { id: number, center: { x: number, z: number }, scale: number, dimension: string, locked: boolean, in_frame: boolean }, decorations: { { sprite: string, x: number, y: number, rot: number, shown_on_frame: boolean } } }
@@ -775,6 +776,7 @@ export type HorizonOn =
     ((name: "living_knockback", fn: (event: LivingKnockbackEvent) -> (), kind: string?) -> ()) &
     ((name: "living_knockback_v2", fn: (event: LivingKnockbackV2Event) -> (), kind: string?) -> ()) &
     ((name: "log_line", fn: (event: LogLineEvent) -> ()) -> ()) &
+    ((name: "loot_condition", fn: (event: LootConditionEvent) -> (), kind: string?) -> ()) &
     ((name: "loot_drops", fn: (event: LootDropsEvent) -> (), kind: string?) -> ()) &
     ((name: "loot_table_load", fn: (event: LootTableLoadEvent) -> ()) -> ()) &
     ((name: "map_decorations", fn: (event: MapDecorationsEvent) -> ()) -> ()) &

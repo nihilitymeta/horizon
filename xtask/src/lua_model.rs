@@ -193,6 +193,12 @@ pub enum Conv {
     /// `dimension`, `origin`, `block`, `entity`, `player`, `tool`,
     /// `explosion`, `used`), read-only.
     LootCtx,
+    /// `&NativeLootContext` of a mod's own loot condition: seeds its flat
+    /// fields (`seed`, `luck`, `biome`, `block`, `tool`, `entity`, `player`,
+    /// `damage`, `origin`, `dimension`, `game_time`, `day_time`, `raining`,
+    /// `thundering`) from a copy of the context, read-only. A field the roll
+    /// has none of is nil.
+    NativeLootCtx,
     /// `&mut Vec<ItemStack>` of loot: seeded like a struct vec of stacks,
     /// written back by the component-keeping `loot_write` arm (a same-id
     /// entry keeps its stack), not plain `from_value`.
@@ -709,7 +715,6 @@ const NON_ENTITY_KINDS: &[(&str, &str)] = &[
     ("consume_effect", "an effect namespace, not an entity type"),
     ("enchant_effect", "an effect namespace, not an entity type"),
     ("loot_function", "a loot function id, not an entity type"),
-    ("loot_condition", "a loot condition id, not an entity type"),
     ("ingredient", "an ingredient kind id, not an entity type"),
     (
         "ingredient_test",
@@ -894,6 +899,9 @@ fn field_of(hook: &str, param: &str, ty: &syn::Type, host: Host, is_out: bool) -
         Some("ServerTickPhase") if !borrowed => FieldOutcome::Conv(Conv::TickPhase, "any".into()),
         Some("WorldPhase") if !borrowed => FieldOutcome::Conv(Conv::WorldPhaseName, "any".into()),
         Some("NativeLootDrops") if borrowed => FieldOutcome::Conv(Conv::LootCtx, "any".into()),
+        Some("NativeLootContext") if borrowed => {
+            FieldOutcome::Conv(Conv::NativeLootCtx, "any".into())
+        }
         Some("NativeServerPlayer") if borrowed => {
             FieldOutcome::Conv(Conv::ServerPlayer, "CommandPlayer".into())
         }
@@ -2932,6 +2940,10 @@ fn struct_sample(key: &str, field: &str, n: usize) -> Option<StructSample> {
     Some(s)
 }
 
+/// A loot entity's facts as the `.d.lua` type names them (the scalar fields
+/// a loot condition reads; a vehicle and the equipment stay out).
+const LOOT_ENTITY_TS: &str = "{ kind: string, living: boolean, on_fire: boolean, baby: boolean }?";
+
 /// The event-table keys a flat seed writes, with their `.d.lua` types, in
 /// table order: the generated `horizon.d.lua` event type lists these, not
 /// the native parameter name (which has no table key of its own).
@@ -2947,6 +2959,28 @@ pub fn flat_ts(conv: &Conv) -> Vec<(String, String)> {
             ("world_running".into(), "boolean".into()),
         ],
         Conv::WorldPhaseName => vec![("phase".into(), "string".into())],
+        Conv::NativeLootCtx => vec![
+            ("seed".into(), "number".into()),
+            ("luck".into(), "number".into()),
+            ("biome".into(), "string?".into()),
+            ("block".into(), "string?".into()),
+            (
+                "tool".into(),
+                "{ id: string, enchantments: { [string]: number } }?".into(),
+            ),
+            ("entity".into(), LOOT_ENTITY_TS.into()),
+            ("player".into(), LOOT_ENTITY_TS.into()),
+            (
+                "damage".into(),
+                format!("{{ kind: string, source: {LOOT_ENTITY_TS}, direct: {LOOT_ENTITY_TS} }}?"),
+            ),
+            ("origin".into(), "Vec3?".into()),
+            ("dimension".into(), "string?".into()),
+            ("game_time".into(), "number?".into()),
+            ("day_time".into(), "number?".into()),
+            ("raining".into(), "boolean?".into()),
+            ("thundering".into(), "boolean?".into()),
+        ],
         Conv::LootCtx => vec![
             ("table".into(), "string".into()),
             ("dimension".into(), "string".into()),
@@ -4103,6 +4137,42 @@ pub fn assert_lines(
             ][n % 4];
             vec![a(&format!("event.phase == \"{phase}\""))]
         }
+        // A mod's own loot condition: each flat key is pinned by its own
+        // assert, with values that differ per `n` where the seed varies.
+        Conv::NativeLootCtx => {
+            let luck = 0.5 + n as f32;
+            let seed = 100 + n as i64;
+            let game_time = 1000 + n as i64;
+            let sharpness = 5 + n as i32;
+            vec![
+                a(&format!("event.seed == {seed}")),
+                a(&format!("event.luck == {luck:?}")),
+                a("event.biome == \"minecraft:plains\""),
+                a("event.block == \"minecraft:stone\""),
+                a("event.tool.id == \"test:tool\""),
+                a(&format!(
+                    "event.tool.enchantments[\"minecraft:sharpness\"] == {sharpness}"
+                )),
+                a("event.tool.enchantments[\"minecraft:unbreaking\"] == 3"),
+                a("event.entity.kind == \"minecraft:zombie\""),
+                a("event.entity.living == true"),
+                a("event.entity.on_fire == true"),
+                a("event.entity.baby == false"),
+                a("event.player.kind == \"minecraft:player\""),
+                a("event.player.on_fire == false"),
+                a("event.damage.kind == \"minecraft:player_attack\""),
+                a("event.damage.source.kind == \"minecraft:skeleton\""),
+                a("event.damage.direct.kind == \"minecraft:arrow\""),
+                a("event.origin.x == 1.0"),
+                a("event.origin.y == 2.0"),
+                a("event.origin.z == 3.0"),
+                a("event.dimension == \"minecraft:overworld\""),
+                a(&format!("event.game_time == {game_time}")),
+                a("event.day_time == 6000"),
+                a("event.raining == true"),
+                a("event.thundering == false"),
+            ]
+        }
         Conv::LootCtx => {
             let origin = |c: f64| format!("{c:?}");
             let (ox, oy, oz) = (1.0 + n as f64, 2.0 + n as f64, 3.0 + n as f64);
@@ -4290,7 +4360,11 @@ pub fn table_leaves(
         // `assert_lines`): the `event.<field>`-rooted leaf check has no
         // suffix spelling them, so they carry no leaves. Their assert
         // values are hand-picked distinct per key.
-        Conv::LifecycleCtx | Conv::TickPhase | Conv::WorldPhaseName | Conv::LootCtx => Vec::new(),
+        Conv::LifecycleCtx
+        | Conv::TickPhase
+        | Conv::WorldPhaseName
+        | Conv::LootCtx
+        | Conv::NativeLootCtx => Vec::new(),
         _ => Vec::new(),
     }
 }
@@ -4584,6 +4658,22 @@ pub fn sample(conv: &Conv, ty: &str, field: &str, n: usize) -> Sample {
                 "{}".into(),
             )
         }
+        // Loot's context: a block-stone break at every parity (the kind
+        // stays stone, so the kind plan's static registration holds), with
+        // every other leaf counting up with `n`.
+        // A mod's own loot condition: the context built inline (its entity,
+        // damage, player and tool are owned or borrowed from this call), with
+        // the seed and the luck counting up with `n`.
+        Conv::NativeLootCtx => plain(
+            format!(
+                "&horizon_world::loot::NativeLootContext {{ entity: Some(&horizon_world::loot::LootEntity {{ kind: \"minecraft:zombie\".into(), living: true, on_fire: true, baby: false, ..Default::default() }}), damage: Some(&horizon_world::loot::LootDamage {{ kind: \"minecraft:player_attack\".into(), source: Some(horizon_world::loot::LootEntity {{ kind: \"minecraft:skeleton\".into(), ..Default::default() }}), direct: Some(horizon_world::loot::LootEntity {{ kind: \"minecraft:arrow\".into(), ..Default::default() }}) }}), player: Some(&horizon_world::loot::LootEntity {{ kind: \"minecraft:player\".into(), living: true, on_fire: false, baby: false, ..Default::default() }}), tool: Some(horizon_world::loot::NativeLootTool {{ item: \"test:tool\".into(), enchantments: vec![(\"minecraft:sharpness\".into(), {sharpness}), (\"minecraft:unbreaking\".into(), 3)] }}), block: Some(\"minecraft:stone\"), luck: {luck:?}, biome: Some(\"minecraft:plains\"), seed: {seed}, place: Some(std::rc::Rc::new(horizon_world::loot::NativeLootPlace {{ origin: Some([1.0, 2.0, 3.0]), block_entity: None, level: Some(horizon_world::loot::NativeLootLevel {{ dimension: \"minecraft:overworld\".into(), game_time: {game_time}, day_time: 6000, raining: true, thundering: false }}) }})) }}",
+                sharpness = 5 + n as i32,
+                luck = 0.5 + n as f32,
+                seed = 100 + n as i64,
+                game_time = 1000 + n as i64,
+            ),
+            "{}".into(),
+        ),
         // Loot's context: a block-stone break at every parity (the kind
         // stays stone, so the kind plan's static registration holds), with
         // every other leaf counting up with `n`.
@@ -4998,6 +5088,40 @@ mod tests {
 
     fn repo_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+    }
+
+    #[test]
+    fn loot_condition_generates_and_loot_function_does_not() {
+        let root = repo_root();
+        let classes = classify(&root).unwrap();
+        let class_of = |name: &str| {
+            classes
+                .iter()
+                .find(|row| row.name == name)
+                .unwrap()
+                .class
+                .clone()
+        };
+        // A mod's own loot condition: its context is flat, `holds` is written
+        // back, and its kind filters by the entry's `kind`.
+        match class_of("loot_condition") {
+            Class::Generated(model) => {
+                assert_eq!(model.host, Host::None, "loot_condition host");
+                assert!(
+                    matches!(model.kind, Kind::Field),
+                    "loot_condition filters by its kind"
+                );
+            }
+            class => panic!("loot_condition should generate, got {class:?}"),
+        }
+        // Its function still takes the borrowed stack: not in Lua yet.
+        match class_of("loot_function") {
+            Class::Cannot(reason) => assert!(
+                reason.contains("LootStack is borrowed loot state"),
+                "{reason}"
+            ),
+            class => panic!("loot_function should stay cannot, got {class:?}"),
+        }
     }
 
     /// The level-tick hosts classify where their chunks expect them: the

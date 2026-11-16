@@ -8,7 +8,8 @@
 //! other id after itself).
 
 use super::test_support::{
-    FakeHost, FakeLevel, boxed, drop_dir, loaded, loaded_tracked, no_error, witness,
+    FakeHost, FakeLevel, boxed, drop_dir, event_tables, loaded, loaded_tracked, no_error,
+    reset_event_tables, witness,
 };
 use crate::generated_runtime::{
     INTERNED_CAP, LuaStruct, StrInterner, placement_answer, props_of, read_string_seq,
@@ -21,10 +22,10 @@ use horizon_client::mod_api::{
     ModEnergyBuffer, NativeConfigKind, NativeFluidAction, NativeInventoryKind, NativeScreen, Tag,
     Text, dispatch_broadcast_message, dispatch_commands, dispatch_console_line,
     dispatch_custom_block_fluids, dispatch_entity_outline, dispatch_inventory_changed,
-    dispatch_item_after_vertical_collision, dispatch_menu_background, dispatch_menu_input_closed,
-    dispatch_mouse_scrolling, dispatch_neighbor_changed, dispatch_net_from_client,
-    dispatch_player_inventory_changed, dispatch_player_login, dispatch_prepare_anvil,
-    dispatch_screen, dispatch_shader_params, dispatch_state_for_placement,
+    dispatch_item_after_vertical_collision, dispatch_loot_condition, dispatch_menu_background,
+    dispatch_menu_input_closed, dispatch_mouse_scrolling, dispatch_neighbor_changed,
+    dispatch_net_from_client, dispatch_player_inventory_changed, dispatch_player_login,
+    dispatch_prepare_anvil, dispatch_screen, dispatch_shader_params, dispatch_state_for_placement,
 };
 use horizon_world::consumable::UseAnimation;
 use mlua::{Lua, Table, Value};
@@ -1868,4 +1869,237 @@ fn neighbor_changed_names_the_changed_block_and_state() {
         "the handler heard both dispatches"
     );
     no_error(&id);
+}
+
+/// A loot context with nothing in it but the luck and the seed: every
+/// optional fact is nil, so a test adds only what it tells.
+fn bare_loot_ctx(luck: f32, seed: i64) -> horizon_world::loot::NativeLootContext<'static> {
+    horizon_world::loot::NativeLootContext {
+        entity: None,
+        damage: None,
+        player: None,
+        tool: None,
+        block: None,
+        luck,
+        biome: None,
+        seed,
+        place: None,
+    }
+}
+
+/// A mod's own loot condition claims its kind by the roll's luck and the
+/// entry's data: the handler runs for the kind it names, `holds` is what it
+/// set, and another kind neither runs it nor changes `holds`.
+#[test]
+fn loot_condition_claims_its_kind_by_luck_and_data() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_condition_claim",
+        r#"
+        horizon.on("loot_condition", function(event)
+          __witness = (__witness or 0) + 1
+          if event.luck > 0.5 and event.data.threshold == 3 then
+            event.holds = true
+          end
+        end, "ruby:chance")
+        "#,
+    );
+    let mods = boxed(m);
+    let data = serde_json::json!({ "threshold": 3 });
+
+    let mut holds = false;
+    dispatch_loot_condition(
+        &mods,
+        "ruby:chance",
+        &data,
+        &bare_loot_ctx(0.75, 1),
+        &mut holds,
+    );
+    assert!(holds, "luck 0.75 above 0.5 with threshold 3 holds");
+    assert_eq!(witness(&lua), 1, "the handler ran for its kind");
+
+    let mut holds = false;
+    dispatch_loot_condition(
+        &mods,
+        "ruby:chance",
+        &data,
+        &bare_loot_ctx(0.0, 1),
+        &mut holds,
+    );
+    assert!(!holds, "luck 0 does not hold");
+    assert_eq!(witness(&lua), 2, "the handler ran again for its kind");
+
+    let mut holds = false;
+    dispatch_loot_condition(
+        &mods,
+        "ruby:other",
+        &data,
+        &bare_loot_ctx(0.75, 1),
+        &mut holds,
+    );
+    assert!(!holds, "another kind does not hold");
+    assert_eq!(witness(&lua), 2, "the handler is not run for another kind");
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// Every fact of a full roll reaches the event as the value it was given,
+/// and a bare roll leaves each optional fact nil.
+#[test]
+fn loot_condition_event_carries_the_roll_and_nil_without_it() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_condition_facts",
+        r#"
+        horizon.on("loot_condition", function(event)
+          __witness = (__witness or 0) + 1
+          if event.seed == 7 then
+            assert(event.entity == nil, "entity")
+            assert(event.player == nil, "player")
+            assert(event.damage == nil, "damage")
+            assert(event.tool == nil, "tool")
+            assert(event.block == nil, "block")
+            assert(event.biome == nil, "biome")
+            assert(event.origin == nil, "origin")
+            assert(event.dimension == nil, "dimension")
+            assert(event.game_time == nil, "game_time")
+            assert(event.raining == nil, "raining")
+          else
+            assert(event.seed == 99, "seed")
+            assert(event.luck == 0.25, "luck")
+            assert(event.biome == "minecraft:plains", "biome")
+            assert(event.block == "minecraft:stone", "block")
+            assert(event.tool.id == "minecraft:diamond_pickaxe", "tool.id")
+            assert(event.tool.enchantments["minecraft:fortune"] == 3, "fortune")
+            assert(event.tool.enchantments["minecraft:efficiency"] == 5, "efficiency")
+            assert(event.entity.kind == "minecraft:zombie", "entity.kind")
+            assert(event.entity.living == true, "entity.living")
+            assert(event.entity.on_fire == false, "entity.on_fire")
+            assert(event.entity.baby == true, "entity.baby")
+            assert(event.player.kind == "minecraft:player", "player.kind")
+            assert(event.damage.kind == "minecraft:mob_attack", "damage.kind")
+            assert(event.damage.source.kind == "minecraft:zombie", "damage.source")
+            assert(event.damage.direct == nil, "damage.direct")
+            assert(event.origin.x == 4.5, "origin.x")
+            assert(event.origin.y == 64.0, "origin.y")
+            assert(event.origin.z == -2.0, "origin.z")
+            assert(event.dimension == "minecraft:the_nether", "dimension")
+            assert(event.game_time == 12345, "game_time")
+            assert(event.day_time == 18000, "day_time")
+            assert(event.raining == false, "raining")
+            assert(event.thundering == true, "thundering")
+          end
+        end, "ruby:chance")
+        "#,
+    );
+    let mods = boxed(m);
+    let data = serde_json::json!({});
+
+    let mut holds = false;
+    dispatch_loot_condition(
+        &mods,
+        "ruby:chance",
+        &data,
+        &bare_loot_ctx(0.25, 7),
+        &mut holds,
+    );
+    assert_eq!(witness(&lua), 1, "the bare roll reached the handler");
+
+    let zombie = horizon_world::loot::LootEntity {
+        kind: "minecraft:zombie".into(),
+        living: true,
+        on_fire: false,
+        baby: true,
+        ..Default::default()
+    };
+    let player = horizon_world::loot::LootEntity {
+        kind: "minecraft:player".into(),
+        living: true,
+        ..Default::default()
+    };
+    let zombie_source = horizon_world::loot::LootEntity {
+        kind: "minecraft:zombie".into(),
+        living: true,
+        ..Default::default()
+    };
+    let damage = horizon_world::loot::LootDamage {
+        kind: "minecraft:mob_attack".into(),
+        source: Some(zombie_source),
+        direct: None,
+    };
+    let place = std::rc::Rc::new(horizon_world::loot::NativeLootPlace {
+        origin: Some([4.5, 64.0, -2.0]),
+        block_entity: None,
+        level: Some(horizon_world::loot::NativeLootLevel {
+            dimension: "minecraft:the_nether".into(),
+            game_time: 12345,
+            day_time: 18000,
+            raining: false,
+            thundering: true,
+        }),
+    });
+    let full = horizon_world::loot::NativeLootContext {
+        entity: Some(&zombie),
+        damage: Some(&damage),
+        player: Some(&player),
+        tool: Some(horizon_world::loot::NativeLootTool {
+            item: "minecraft:diamond_pickaxe".into(),
+            enchantments: vec![
+                ("minecraft:fortune".into(), 3),
+                ("minecraft:efficiency".into(), 5),
+            ],
+        }),
+        block: Some("minecraft:stone"),
+        luck: 0.25,
+        biome: Some("minecraft:plains"),
+        seed: 99,
+        place: Some(place),
+    };
+    let mut holds = false;
+    dispatch_loot_condition(&mods, "ruby:chance", &data, &full, &mut holds);
+    assert_eq!(witness(&lua), 2, "the full roll reached the handler");
+    no_error(&id);
+    drop_dir(dir);
+}
+
+/// With no handler for the entry's kind, a loot condition builds no event
+/// table and leaves `holds` as it was.
+#[test]
+fn loot_condition_without_a_handler_for_the_kind_builds_nothing() {
+    let (m, id, dir, lua) = loaded_tracked(
+        "loot_condition_quiet",
+        r#"
+        horizon.on("loot_condition", function(event)
+          __witness = (__witness or 0) + 1
+          event.holds = true
+        end, "ruby:chance")
+        "#,
+    );
+    let mods = boxed(m);
+    let data = serde_json::json!({});
+
+    reset_event_tables();
+    let mut holds = true;
+    dispatch_loot_condition(
+        &mods,
+        "ruby:other",
+        &data,
+        &bare_loot_ctx(0.75, 1),
+        &mut holds,
+    );
+    assert!(holds, "no handler for the kind leaves holds as it was");
+    assert_eq!(event_tables(), 0, "an unclaimed kind builds no event table");
+    assert_eq!(witness(&lua), 0, "the handler did not run");
+
+    reset_event_tables();
+    let mut holds = true;
+    dispatch_loot_condition(
+        &Vec::new(),
+        "ruby:chance",
+        &data,
+        &bare_loot_ctx(0.75, 1),
+        &mut holds,
+    );
+    assert!(holds, "no listener at all leaves holds as it was");
+    assert_eq!(event_tables(), 0, "no listener builds no event table");
+    no_error(&id);
+    drop_dir(dir);
 }

@@ -733,6 +733,11 @@ macro_rules! gen_seed {
         }
         $table.set("used", context.used)?;
     }};
+    // A mod's own loot condition: the roll's context, flat under the native
+    // names, copied for this call (a write to it changes nothing).
+    ($this:expr, $table:ident, $lua:ident, $host:expr, $level:expr, $event:ident, $field:ident : native_loot_ctx) => {
+        crate::generated_runtime::seed_native_loot_ctx($lua, $event.$field, &$table)?
+    };
 }
 
 /// One _event-table field's write-back: what the handler changed, read into
@@ -2746,6 +2751,72 @@ pub(crate) fn loot_kind_key(
         (None, None) => return None,
     };
     Some(key.split('[').next().unwrap_or(&key).to_owned())
+}
+
+/// A mod's own loot condition's context, seeded flat for one call: the roll's
+/// luck, seed, biome, block, tool, entity, player and damage, and the place's
+/// origin, dimension, time and weather. Every table is built fresh from the
+/// context, so nothing borrowed survives the call; a field the roll has none
+/// of stays nil.
+pub(crate) fn seed_native_loot_ctx(
+    lua: &Lua,
+    context: &horizon_world::loot::NativeLootContext<'_>,
+    table: &Table,
+) -> mlua::Result<()> {
+    table.set("seed", context.seed)?;
+    table.set("luck", f64::from(context.luck))?;
+    table.set("biome", context.biome)?;
+    table.set("block", context.block)?;
+    if let Some(tool) = &context.tool {
+        let tool_table = lua.create_table()?;
+        tool_table.set("id", tool.item.as_str())?;
+        let enchantments = lua.create_table()?;
+        for (id, level) in &tool.enchantments {
+            enchantments.set(id.as_str(), *level)?;
+        }
+        tool_table.set("enchantments", enchantments)?;
+        table.set("tool", tool_table)?;
+    }
+    if let Some(entity) = context.entity {
+        table.set("entity", loot_entity_table(lua, entity)?)?;
+    }
+    if let Some(player) = context.player {
+        table.set("player", loot_entity_table(lua, player)?)?;
+    }
+    if let Some(damage) = context.damage {
+        let damage_table = lua.create_table()?;
+        damage_table.set("kind", damage.kind.as_str())?;
+        if let Some(source) = &damage.source {
+            damage_table.set("source", loot_entity_table(lua, source)?)?;
+        }
+        if let Some(direct) = &damage.direct {
+            damage_table.set("direct", loot_entity_table(lua, direct)?)?;
+        }
+        table.set("damage", damage_table)?;
+    }
+    if let Some(place) = &context.place {
+        if let Some(origin) = place.origin {
+            table.set("origin", crate::lua_mods::goals::vec3(lua, origin)?)?;
+        }
+        if let Some(level) = &place.level {
+            table.set("dimension", level.dimension.as_str())?;
+            table.set("game_time", level.game_time)?;
+            table.set("day_time", level.day_time)?;
+            table.set("raining", level.raining)?;
+            table.set("thundering", level.thundering)?;
+        }
+    }
+    Ok(())
+}
+
+/// One loot entity's scalar facts as a loot condition reads them.
+fn loot_entity_table(lua: &Lua, entity: &horizon_world::loot::LootEntity) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    table.set("kind", entity.kind.as_str())?;
+    table.set("living", entity.living)?;
+    table.set("on_fire", entity.on_fire)?;
+    table.set("baby", entity.baby)?;
+    Ok(table)
 }
 
 /// Loot's drops write-back: an entry with the item of the stack at its place
