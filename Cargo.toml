@@ -76,6 +76,13 @@ members = [
     "crates/horizon-release-sign",
     "crates/horizon-mod-deps",
     "xtask",
+    "crates/event-horizon",
+    "crates/event-horizon-lua",
+    "crates/event-horizon-lua-convert",
+    "crates/event-horizon-lua-gen",
+    "crates/event-horizon-dev-tools",
+    "crates/event-horizon-observe",
+    "crates/event-horizon-debug",
 ]
 resolver = "2"
 

@@ -61,6 +61,9 @@ horizon-narrator = { path = "../horizon-narrator" }
 horizon-mod-package = { path = "../horizon-mod-package", default-features = false, features = ["index", "runtime-process"] }
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
 winit = "0.30.13"
+# The developer tools' egui overlay (event-horizon-dev-tools): window events go through egui-winit.
+egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
+egui-winit = { version = "0.37", default-features = false }
 pollster = "0.4"
 bytemuck = { version = "1.24", features = ["derive"] }
 glam = "0.30"
