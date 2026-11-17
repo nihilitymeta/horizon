@@ -511,7 +511,6 @@ fn nested_tables(lua: &Lua, levels: usize) -> Value {
 /// A defect found by this file, kept as an ignored test: the plain enum's error repeats the whole
 /// input name, so a long string gives an error past the 500-byte bound.
 #[test]
-#[ignore = "defect: plain enum error echoes the whole input name, so a long name is an unbounded error"]
 fn enum_error_does_not_echo_a_long_name() {
     let lua = Lua::new();
     let long = Value::String(lua.create_string("x".repeat(2000)).expect("string"));
@@ -521,7 +520,6 @@ fn enum_error_does_not_echo_a_long_name() {
 
 /// A defect found by this file, kept as an ignored test: an unknown NBT tag name is echoed whole.
 #[test]
-#[ignore = "defect: unknown NBT tag error echoes the whole tag name, so a long name is an unbounded error"]
 fn unknown_nbt_tag_error_does_not_echo_a_long_name() {
     let lua = Lua::new();
     let t = lua.create_table().expect("table");
@@ -600,7 +598,6 @@ fn integers_refuse_out_of_range_and_fractional_numbers() {
 
 /// A defect found by this file, kept as an ignored test. Remove the ignore when it is fixed.
 #[test]
-#[ignore = "defect: a long_array element past 2^53 cannot be written, so the tag does not round trip"]
 fn long_array_keeps_longs_past_the_exact_limit() {
     let lua = Lua::new();
     let tag = Tag::LongArray(vec![(1 << 60) + 1]);

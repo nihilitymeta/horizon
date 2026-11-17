@@ -31,12 +31,22 @@ impl ConvertError {
         Self(format!("expected {expected}, got {}", found.type_name()))
     }
 
+    /// `text` cut to 40 characters (with `...`), for error messages that quote a mod's input.
+    pub fn clip(text: &str) -> String {
+        let mut out: String = text.chars().take(40).collect();
+        if out.len() < text.len() {
+            out.push_str("...");
+        }
+        out
+    }
+
     /// The error for a string that is not one of a plain enum's names.
     pub fn unknown_variant(name: &str, allowed: &[&str]) -> Self {
         let allowed: Vec<String> = allowed.iter().map(|a| format!("{a:?}")).collect();
         Self(format!(
-            "expected one of {}, got {name:?}",
-            allowed.join(", ")
+            "expected one of {}, got {:?}",
+            allowed.join(", "),
+            Self::clip(name)
         ))
     }
 }

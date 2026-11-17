@@ -263,8 +263,20 @@ fn tagged_from(name: &str, value: &Value) -> Result<Tag, ConvertError> {
         "byte_array" => array(value, i8::from_lua_value)
             .map(|v| Tag::ByteArray(v.into_iter().map(|b| b as u8).collect())),
         "int_array" => array(value, i32::from_lua_value).map(Tag::IntArray),
-        "long_array" => array(value, i64::from_lua_value).map(Tag::LongArray),
-        other => Err(ConvertError::new(format!("unknown NBT tag {other:?}"))),
+        "long_array" => array(value, long_from).map(Tag::LongArray),
+        other => Err(ConvertError::new(format!(
+            "unknown NBT tag {:?}",
+            ConvertError::clip(other)
+        ))),
+    }
+}
+
+/// A long as a Lua number when that is exact, otherwise as a decimal string.
+fn long_to_lua(lua: &Lua, l: i64) -> mlua::Result<Value> {
+    if l.unsigned_abs() <= MAX_EXACT_LONG {
+        l.to_lua_value(lua)
+    } else {
+        Ok(Value::String(lua.create_string(l.to_string())?))
     }
 }
 
@@ -411,14 +423,7 @@ fn write_tag(lua: &Lua, tag: &Tag, parent: usize, budget: &mut Budget) -> mlua::
         Tag::Byte(b) => tagged(lua, "byte", b.to_lua_value(lua)?),
         Tag::Short(s) => tagged(lua, "short", s.to_lua_value(lua)?),
         Tag::Int(i) => i.to_lua_value(lua),
-        Tag::Long(l) => {
-            let value = if l.unsigned_abs() <= MAX_EXACT_LONG {
-                l.to_lua_value(lua)?
-            } else {
-                Value::String(lua.create_string(l.to_string())?)
-            };
-            tagged(lua, "long", value)
-        }
+        Tag::Long(l) => tagged(lua, "long", long_to_lua(lua, *l)?),
         Tag::Float(bits) => tagged(lua, "float", f32::from_bits(*bits).to_lua_value(lua)?),
         Tag::Double(bits) => {
             let n = f64::from_bits(*bits);
@@ -435,7 +440,18 @@ fn write_tag(lua: &Lua, tag: &Tag, parent: usize, budget: &mut Budget) -> mlua::
             tagged(lua, "byte_array", array_value(lua, &signed)?)
         }
         Tag::IntArray(ints) => tagged(lua, "int_array", array_value(lua, ints)?),
-        Tag::LongArray(longs) => tagged(lua, "long_array", array_value(lua, longs)?),
+        Tag::LongArray(longs) => {
+            if longs.len() > MAX_ARRAY {
+                return Err(mlua::Error::runtime(format!(
+                    "NBT array has more than {MAX_ARRAY} elements"
+                )));
+            }
+            let table = lua.create_table_with_capacity(longs.len(), 0)?;
+            for (index, long) in longs.iter().enumerate() {
+                table.raw_set(index + 1, long_to_lua(lua, *long)?)?;
+            }
+            tagged(lua, "long_array", Value::Table(table))
+        }
         // The element type of an empty list is not preserved: `Tag::List` holds none, so it reads
         // back as the empty list of the one type it has.
         Tag::List(items) if items.is_empty() => {
