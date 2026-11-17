@@ -42,10 +42,21 @@ pub struct HookIr {
     pub cancellable: Option<bool>,
     /// The scope's kind and key, for a hook fired on the Parts of a named argument.
     pub scope: Option<(String, String)>,
+    /// The game function that fires the hook (`engine.target`), e.g.
+    /// `horizon_client::game::...` or `mod_render::render::world_drawn`.
+    pub engine_target: String,
     pub arguments: Vec<ArgIr>,
     pub output: Option<ArgIr>,
     pub hash: String,
     pub version: u64,
+}
+
+impl HookIr {
+    /// Whether the hook fires in the separate render crate (`mod_render::`), which the game's
+    /// `HookId` does not name.
+    pub fn is_render(&self) -> bool {
+        self.engine_target.starts_with("mod_render::")
+    }
 }
 
 /// The hooks of one surface, sorted by name.
@@ -111,6 +122,7 @@ fn convert(hook: &Hook) -> Result<HookIr, String> {
             SurfaceSide::Both => Side::Both,
         },
         cancellable: contract.cancellable,
+        engine_target: hook.engine.target.clone(),
         scope: contract
             .scope
             .as_ref()
@@ -202,6 +214,18 @@ mod tests {
             cancel.arguments.last().map(|a| a.name.as_str()),
             Some("cancelled")
         );
+    }
+
+    #[test]
+    fn the_engine_target_marks_render_hooks() {
+        let ir = fixture();
+        let client = ir.hook("animal_tame").expect("present");
+        assert!(client.engine_target.starts_with("horizon_client::"));
+        assert!(!client.is_render());
+
+        let mut render = client.clone();
+        render.engine_target = "mod_render::render::world_drawn".to_owned();
+        assert!(render.is_render());
     }
 
     #[test]
