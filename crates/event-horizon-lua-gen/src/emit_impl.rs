@@ -12,6 +12,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::emit_types::Plain;
 use crate::ir::{HookIr, Ir, Kind};
 use crate::trait_sigs::HookSig;
 use crate::types::{Access, IntKind, Mapped, TypeIr, kind_of, map_type};
@@ -52,9 +53,10 @@ struct Method<'a> {
     cancel: bool,
 }
 
-/// Emits the methods of the hooks named in `hooks`, sorted by name. The same inputs always give
-/// the same text.
-pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str]) -> Emitted {
+/// Emits the methods of the hooks named in `hooks`, sorted by name. `plain` is the set of plain
+/// surface types, whose `ToLuaValue` impls the convert crate's `generated_types` has. The same
+/// inputs always give the same text.
+pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str], plain: &Plain) -> Emitted {
     let mut names = hooks.to_vec();
     names.sort_unstable();
     names.dedup();
@@ -62,7 +64,7 @@ pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str]) -> Emitted {
     let mut methods = Vec::new();
     let mut skipped = Vec::new();
     for name in names {
-        match plan(ir, sigs, name) {
+        match plan(ir, sigs, name, plain) {
             Ok(method) => methods.push(method),
             Err(reason) => skipped.push((name.to_owned(), reason)),
         }
@@ -90,7 +92,12 @@ pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str]) -> Emitted {
 }
 
 /// Decides whether the hook `name` can be emitted, and what its method contains.
-fn plan<'a>(ir: &'a Ir, sigs: &'a [HookSig], name: &str) -> Result<Method<'a>, String> {
+fn plan<'a>(
+    ir: &'a Ir,
+    sigs: &'a [HookSig],
+    name: &str,
+    plain: &Plain,
+) -> Result<Method<'a>, String> {
     let Some(sig) = sigs.iter().find(|sig| sig.name == name) else {
         return Err("not a method of the Hooks trait".to_owned());
     };
@@ -151,7 +158,7 @@ fn plan<'a>(ir: &'a Ir, sigs: &'a [HookSig], name: &str) -> Result<Method<'a>, S
                 "{shown}: a reference inside Option has no Lua conversion"
             ));
         }
-        match to_lua_expr(&format!("{}.{}", sig.event_name, arg.name), &mapped) {
+        match to_lua_expr(&format!("{}.{}", sig.event_name, arg.name), &mapped, plain) {
             Some(expr) => fields.push((arg.name.clone(), expr)),
             None => return Err(format!("{shown}: no Lua conversion")),
         }
@@ -167,20 +174,20 @@ fn plan<'a>(ir: &'a Ir, sigs: &'a [HookSig], name: &str) -> Result<Method<'a>, S
 
 /// The Lua value of the field `field_expr` (such as `event.pos`) as an `mlua::Value`, or `None`
 /// when the type has no conversion. Every conversion used here is an impl of `ToLuaValue`.
-fn to_lua_expr(field_expr: &str, mapped: &Mapped) -> Option<String> {
+fn to_lua_expr(field_expr: &str, mapped: &Mapped, plain: &Plain) -> Option<String> {
     match &mapped.ty {
         TypeIr::Str => Some(format!("{field_expr}.to_string().to_lua_value(lua)?")),
         TypeIr::Option(inner) if matches!(**inner, TypeIr::Str) => Some(format!(
             "{field_expr}.as_ref().map(|value| value.to_string()).to_lua_value(lua)?"
         )),
-        ty => convertible(ty).then(|| format!("{field_expr}.to_lua_value(lua)?")),
+        ty => convertible(ty, plain).then(|| format!("{field_expr}.to_lua_value(lua)?")),
     }
 }
 
-/// Whether `ty` has a `ToLuaValue` impl in `event-horizon-lua-convert` (for a reference, the
-/// referent). `u128` (a UUID, as text), `usize` and `Identifier` have impls in its `ids` module;
-/// `i128` and `isize` have none.
-fn convertible(ty: &TypeIr) -> bool {
+/// Whether `ty` has a `ToLuaValue` impl in `event-horizon-lua-convert`, or is a plain surface type
+/// whose impl `generated_types` has (for a reference, the referent). `u128` (a UUID, as text),
+/// `usize` and `Identifier` have impls in its `ids` module; `i128` and `isize` have none.
+pub fn convertible(ty: &TypeIr, plain: &Plain) -> bool {
     match ty {
         TypeIr::Bool | TypeIr::Str | TypeIr::Float(_) => true,
         TypeIr::Int(kind) => matches!(
@@ -196,15 +203,17 @@ fn convertible(ty: &TypeIr) -> bool {
                 | IntKind::U128
                 | IntKind::Usize
         ),
-        TypeIr::Option(inner) => !matches!(**inner, TypeIr::Option(_)) && convertible(inner),
+        TypeIr::Option(inner) => !matches!(**inner, TypeIr::Option(_)) && convertible(inner, plain),
         TypeIr::Array(elem, len) => matches!(
             (&**elem, *len),
             (TypeIr::Int(IntKind::I32), 2 | 3) | (TypeIr::Float(_), 2 | 3)
         ),
-        TypeIr::Named(name) => matches!(
-            name.as_str(),
-            "BlockPos" | "Compound" | "Text" | "text::Text" | "Identifier"
-        ),
+        TypeIr::Named(name) => {
+            matches!(
+                name.as_str(),
+                "BlockPos" | "Compound" | "Text" | "text::Text" | "Identifier" | "Rotation"
+            ) || plain.contains(name)
+        }
         _ => false,
     }
 }
@@ -343,6 +352,7 @@ fn method_text(method: &Method<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::emit_types::Plain;
     use crate::ir::{ArgIr, Side};
 
     fn arg(name: &str, ty: &str) -> ArgIr {
@@ -436,7 +446,12 @@ mod tests {
 
     #[test]
     fn a_listen_hook_gets_a_golden_method() {
-        let out = emit(&step_ir(), &[step_sig()], &["block_step_on"]);
+        let out = emit(
+            &step_ir(),
+            &[step_sig()],
+            &["block_step_on"],
+            &Plain::default(),
+        );
         let expected = r#"// @generated by event-horizon-lua-gen from surface abc123: do not edit.
 use crate::host::LuaHost;
 use event_horizon_lua_convert::scalar::ToLuaValue;
@@ -474,7 +489,12 @@ impl mod_api::Hooks for LuaHost {
 
     #[test]
     fn a_cancel_hook_answers_with_cancel_and_returns_flow() {
-        let out = emit(&receive_ir(), &[receive_sig()], &["block_receive_game"]);
+        let out = emit(
+            &receive_ir(),
+            &[receive_sig()],
+            &["block_receive_game"],
+            &Plain::default(),
+        );
         let text = &out.text;
         for piece in [
             "use mod_api::{BlockReceiveGameEvent, Flow, ServerHost};\n",
@@ -513,6 +533,7 @@ impl mod_api::Hooks for LuaHost {
                 None,
             )],
             &["level_thing"],
+            &Plain::default(),
         );
         assert!(out.emitted.is_empty());
         assert_eq!(out.skipped.len(), 1);
@@ -521,6 +542,40 @@ impl mod_api::Hooks for LuaHost {
         assert!(reason.contains("`level`"), "{reason}");
         assert!(reason.contains("`&'a LevelRef`"), "{reason}");
         assert!(reason.contains("Handle"), "{reason}");
+    }
+
+    #[test]
+    fn a_named_plain_type_converts_only_when_the_plain_set_has_it() {
+        let ir = ir(vec![hook(
+            "server_thing",
+            Kind::Listen,
+            vec![arg("context", "&'a LifecycleContext")],
+        )]);
+        let sigs = [sig(
+            "server_thing",
+            None,
+            "event",
+            "ServerThingEvent<'_>",
+            None,
+        )];
+        let without = emit(&ir, &sigs, &["server_thing"], &Plain::default());
+        assert!(without.emitted.is_empty());
+        assert!(
+            without.skipped[0].1.contains("no Lua conversion"),
+            "{:?}",
+            without.skipped
+        );
+
+        let plain = Plain::from_paths(["LifecycleContext"]);
+        let with = emit(&ir, &sigs, &["server_thing"], &plain);
+        assert_eq!(with.emitted, ["server_thing"]);
+        assert!(
+            with.text
+                .contains("data.raw_set(\"context\", event.context.to_lua_value(lua)?)?;"),
+            "{}",
+            with.text
+        );
+        syn::parse_file(&with.text).expect("the text parses");
     }
 
     #[test]
@@ -534,7 +589,12 @@ impl mod_api::Hooks for LuaHost {
             sig("only_trait", None, "event", "OnlyTraitEvent<'_>", None),
             sig("collects", None, "event", "CollectsEvent<'_>", None),
         ];
-        let out = emit(&ir, &sigs, &["only_surface", "only_trait", "collects"]);
+        let out = emit(
+            &ir,
+            &sigs,
+            &["only_surface", "only_trait", "collects"],
+            &Plain::default(),
+        );
         assert!(out.emitted.is_empty());
         let reasons: Vec<&str> = out.skipped.iter().map(|(_, r)| r.as_str()).collect();
         assert_eq!(
@@ -565,6 +625,7 @@ impl mod_api::Hooks for LuaHost {
                 None,
             )],
             &["block_receive_game"],
+            &Plain::default(),
         );
         assert_eq!(out.skipped.len(), 1);
         assert_eq!(out.skipped[0].1, "cancel hook does not return Flow");
@@ -580,12 +641,27 @@ impl mod_api::Hooks for LuaHost {
             sig("a_step", None, "event", "AStepEvent<'_>", None),
             sig("b_step", None, "event", "BStepEvent<'_>", None),
         ];
-        let forward = emit(&ir, &sigs, &["a_step", "b_step", "z_missing", "y_missing"]);
-        let backward = emit(&ir, &sigs, &["y_missing", "z_missing", "b_step", "a_step"]);
+        let forward = emit(
+            &ir,
+            &sigs,
+            &["a_step", "b_step", "z_missing", "y_missing"],
+            &Plain::default(),
+        );
+        let backward = emit(
+            &ir,
+            &sigs,
+            &["y_missing", "z_missing", "b_step", "a_step"],
+            &Plain::default(),
+        );
         assert_eq!(forward, backward);
         assert_eq!(
             forward,
-            emit(&ir, &sigs, &["a_step", "b_step", "z_missing", "y_missing"])
+            emit(
+                &ir,
+                &sigs,
+                &["a_step", "b_step", "z_missing", "y_missing"],
+                &Plain::default()
+            )
         );
         assert_eq!(forward.emitted, ["a_step", "b_step"]);
         let skipped: Vec<&str> = forward.skipped.iter().map(|(n, _)| n.as_str()).collect();
@@ -601,6 +677,7 @@ impl mod_api::Hooks for LuaHost {
             &ir(vec![hook("bare", Kind::Listen, vec![])]),
             &[sig("bare", None, "event", "BareEvent<'_>", None)],
             &["bare"],
+            &Plain::default(),
         );
         assert!(out.text.contains("        let _ = &event;\n"));
         assert!(!out.text.contains("ToLuaValue"), "no value is converted");
@@ -623,7 +700,7 @@ impl mod_api::Hooks for LuaHost {
         let sigs = crate::trait_sigs::parse(&source).expect("the trait parses");
         let names: Vec<&str> = ir.hooks.iter().map(|hook| hook.name.as_str()).collect();
 
-        let out = emit(&ir, &sigs, &names);
+        let out = emit(&ir, &sigs, &names, &Plain::default());
         syn::parse_file(&out.text).expect("the emitted file parses");
 
         let mut table = std::collections::BTreeMap::<String, usize>::new();

@@ -4,6 +4,8 @@
 pub mod ids;
 pub mod item;
 pub mod nbt;
+#[rustfmt::skip]
+pub mod generated_types;
 pub mod scalar;
 pub mod text;
 pub mod vector;

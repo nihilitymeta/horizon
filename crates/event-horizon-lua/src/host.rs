@@ -512,10 +512,17 @@ mod tests {
 
     #[test]
     fn a_hook_without_a_generated_method_is_refused() {
-        let err = load_one("horizon.on(\"server_tick\", function() end)")
+        // `play_sound` writes back (`sound: &mut Option<SoundPlay>`), so it has no generated method.
+        let err = load_one("horizon.on(\"play_sound\", function() end)")
             .err()
             .unwrap();
-        assert!(err.contains("unknown hook 'server_tick'"), "got {err}");
+        assert!(err.contains("unknown hook 'play_sound'"), "got {err}");
+    }
+
+    #[test]
+    fn a_server_tick_listener_is_declared_now_that_the_phase_converts() {
+        let loaded = load_one("horizon.on(\"server_tick\", function() end)").unwrap();
+        assert_eq!(loaded.hooks(), ["server_tick"]);
     }
 
     /// The host argument of a server hook: it has no state the Lua hooks read.

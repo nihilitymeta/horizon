@@ -3,6 +3,7 @@
 
 pub mod emit_hooks;
 pub mod emit_impl;
+pub mod emit_types;
 pub mod handles;
 pub mod ir;
 pub mod trait_sigs;
