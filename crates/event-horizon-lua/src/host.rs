@@ -7,12 +7,14 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::thread::{self, ThreadId};
+use std::time::Duration;
 
 use horizon_client::save::level_mods::{self, ModRecord};
-use mlua::{Error, Function, Lua, Table, Value, VmState};
+use mlua::{Error, Function, Lua, Table, Value};
 
+use crate::budget;
 use crate::declare;
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::state;
@@ -40,7 +42,8 @@ pub fn hook_id(name: &str) -> Option<mod_api::HookId> {
     }
 }
 
-/// One loaded Lua mod: its own sandboxed state, the hooks it declared, and its log lines.
+/// One loaded Lua mod: its own sandboxed state, the hooks it declared, its log lines, and the turn
+/// that serialises the threads calling into its state.
 pub struct LuaMod {
     id: String,
     version: String,
@@ -48,6 +51,61 @@ pub struct LuaMod {
     hooks: Vec<String>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
+    turn: Turn,
+}
+
+/// A per-mod turn: one thread at a time runs a mod's handlers. The same thread may enter again
+/// (a call that re-enters the mod does not wait for itself), and another thread waits until the
+/// turn is free. std has no such lock, so it is built from a mutex, its holder and a condvar.
+#[derive(Default)]
+struct Turn {
+    holder: Mutex<Option<(ThreadId, usize)>>,
+    free: Condvar,
+}
+
+/// Holds a mod's turn; the turn is given back when the guard drops, also when the thread panics.
+struct TurnGuard<'a> {
+    turn: &'a Turn,
+}
+
+impl Turn {
+    fn enter(&self) -> TurnGuard<'_> {
+        let me = thread::current().id();
+        let mut holder = self.holder.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            match *holder {
+                None => {
+                    *holder = Some((me, 1));
+                    break;
+                }
+                Some((who, depth)) if who == me => {
+                    *holder = Some((me, depth + 1));
+                    break;
+                }
+                Some(_) => {
+                    holder = self
+                        .free
+                        .wait(holder)
+                        .unwrap_or_else(PoisonError::into_inner);
+                }
+            }
+        }
+        TurnGuard { turn: self }
+    }
+}
+
+impl Drop for TurnGuard<'_> {
+    fn drop(&mut self) {
+        let mut holder = self
+            .turn
+            .holder
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some((who, depth)) = *holder {
+            *holder = (depth > 1).then_some((who, depth - 1));
+        }
+        self.turn.free.notify_all();
+    }
 }
 
 impl LuaMod {
@@ -73,6 +131,7 @@ impl LuaMod {
             hooks: declaration.hooks,
             lua,
             log,
+            turn: Turn::default(),
         })
     }
 
@@ -160,6 +219,7 @@ impl LuaHost {
             if hook == SERVER_TICK && m.side == Side::Client {
                 continue;
             }
+            let _turn = m.turn.enter();
             let handlers = match declare::handlers(&m.lua, hook) {
                 Ok(handlers) => handlers,
                 Err(err) => {
@@ -194,20 +254,15 @@ impl mod_api::Hooks for LuaHost {
     }
 }
 
-/// Runs one handler under `HANDLER_BUDGET`. The interrupt keeps failing after the deadline, so a
+/// Runs one handler under `HANDLER_BUDGET`. The budget keeps failing after the deadline, so a
 /// `pcall` inside the handler cannot swallow the stop.
 fn call_handler(lua: &Lua, handler: &Function) -> mlua::Result<()> {
-    let deadline = Instant::now() + HANDLER_BUDGET;
-    lua.set_interrupt(move |_| {
-        if Instant::now() >= deadline {
-            Err(Error::runtime("the handler ran over its time budget"))
-        } else {
-            Ok(VmState::Continue)
-        }
-    });
-    let result = handler.call::<()>(());
-    lua.remove_interrupt();
-    result
+    budget::within_with(
+        lua,
+        HANDLER_BUDGET,
+        "the handler ran over its time budget",
+        || handler.call::<()>(()),
+    )
 }
 
 /// The `horizon` table a mod's handlers see: `log`, and nothing else yet. Any other field errors,
@@ -289,6 +344,8 @@ fn lock(log: &Mutex<Vec<String>>) -> MutexGuard<'_, Vec<String>> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::mpsc;
+    use std::time::Instant;
 
     /// A mod folder with `source` as its main.luau; returns what discovery would have reported.
     fn mod_folder(root: &Path, name: &str, source: &str, side: Side) -> Discovered {
@@ -557,5 +614,110 @@ mod tests {
         let loaded = level_mods::loaded().unwrap();
         assert_eq!(loaded.iter().filter(|m| m.id == "both_mod").count(), 1);
         level_mods::set_loaded(previous);
+    }
+
+    /// Adds a handler for `name` to the mod, as a second hook the mod could declare. Only the
+    /// game's own hooks can be declared through `horizon.on`, so the test registers the hook here.
+    fn add_hook_for_test(m: &LuaMod, name: &str, source: &str) {
+        let env = declare::environment(&m.lua).unwrap();
+        let handler: Function = m.lua.load(source).set_environment(env).eval().unwrap();
+        let all: Table = m.lua.named_registry_value("eh_handlers").unwrap();
+        let list = m.lua.create_table().unwrap();
+        list.raw_set(1, handler).unwrap();
+        all.raw_set(name, list).unwrap();
+    }
+
+    #[test]
+    fn two_threads_calling_one_state_each_keep_their_own_limit() {
+        let root = tempfile::tempdir().unwrap();
+        let runaway = "horizon.on(\"server_tick\", function() while true do end end)";
+        let m = LuaMod::load(&mod_folder(root.path(), "mod_a", runaway, Side::Both)).unwrap();
+        add_hook_for_test(&m, "other", "return function() horizon.log(\"other\") end");
+        let log = Arc::clone(&m.log);
+        let host = LuaHost::new(vec![m]);
+        let started = Instant::now();
+        thread::scope(|s| {
+            let a = s.spawn(|| {
+                let began = Instant::now();
+                host.fire(SERVER_TICK);
+                began.elapsed()
+            });
+            s.spawn(|| {
+                for _ in 0..50 {
+                    host.fire("other");
+                }
+            });
+            let a_elapsed = a.join().unwrap();
+            assert!(
+                a_elapsed < HANDLER_BUDGET * 5,
+                "the runaway was not stopped in time: {a_elapsed:?}"
+            );
+        });
+        assert!(started.elapsed() < Duration::from_secs(10));
+        let others = lock(&log)
+            .iter()
+            .filter(|line| line.as_str() == "other")
+            .count();
+        assert_eq!(others, 50, "every other call must have run");
+    }
+
+    #[test]
+    fn the_turn_lock_is_reentrant_and_exclusive() {
+        let root = tempfile::tempdir().unwrap();
+        let m = lua_mod(root.path(), "mod_a", "", Side::Both);
+        let turn = Arc::new(m.turn);
+        // Re-entry on one thread must not deadlock: a watchdog fails the test if it does.
+        let (done_tx, done_rx) = mpsc::channel();
+        let reentrant = Arc::clone(&turn);
+        thread::spawn(move || {
+            let _outer = reentrant.enter();
+            let _inner = reentrant.enter();
+            let _deepest = reentrant.enter();
+            let _ = done_tx.send(());
+        });
+        done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("re-entering the turn on one thread deadlocked");
+
+        // Another thread waits while the turn is held, and gets it once it is free.
+        let holder = turn.enter();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let waiter = Arc::clone(&turn);
+        let handle = thread::spawn(move || {
+            let _turn = waiter.enter();
+            let _ = entered_tx.send(());
+        });
+        assert!(
+            entered_rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "a second thread entered a held turn"
+        );
+        drop(holder);
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the waiting thread never got the free turn");
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn a_panic_inside_a_turn_releases_it() {
+        let root = tempfile::tempdir().unwrap();
+        let m = lua_mod(root.path(), "mod_a", "", Side::Both);
+        let turn = Arc::new(m.turn);
+        let panicking = Arc::clone(&turn);
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _turn = panicking.enter();
+            panic!("a handler panicked");
+        }));
+        assert!(caught.is_err());
+        // Another thread enters at once only if the panic gave the turn back.
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let after = Arc::clone(&turn);
+        thread::spawn(move || {
+            let _turn = after.enter();
+            let _ = entered_tx.send(());
+        });
+        entered_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the panicking thread kept the turn");
     }
 }

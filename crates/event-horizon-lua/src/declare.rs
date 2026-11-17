@@ -6,9 +6,11 @@
 //! budget, cannot touch anything but `horizon.on`, and can register at most `MAX_HANDLERS`.
 
 use std::cell::{Cell, RefCell};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use mlua::{Error, Function, Lua, Table, Value, VmState};
+use mlua::{Error, Function, Lua, Table, Value};
+
+use crate::budget;
 
 /// The most `horizon.on` calls one mod may make.
 pub const MAX_HANDLERS: usize = 256;
@@ -82,7 +84,7 @@ fn run(
     source: &str,
     chunk_name: &str,
     is_hook: &dyn Fn(&str) -> bool,
-    budget: Duration,
+    budget_limit: Duration,
 ) -> mlua::Result<(Vec<String>, mlua::Result<()>)> {
     let handlers = lua.create_table()?;
     lua.set_named_registry_value(HANDLERS_KEY, handlers.clone())?;
@@ -154,20 +156,17 @@ fn run(
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
-            let deadline = Instant::now() + budget;
-            lua.set_interrupt(move |_| {
-                if Instant::now() >= deadline {
-                    Err(Error::runtime("the mod ran over its loading time budget"))
-                } else {
-                    Ok(VmState::Continue)
-                }
-            });
-            let result = lua
-                .load(source)
-                .set_name(chunk_name)
-                .set_environment(env.clone())
-                .exec();
-            lua.remove_interrupt();
+            let result = budget::within_with(
+                lua,
+                budget_limit,
+                "the mod ran over its loading time budget",
+                || {
+                    lua.load(source)
+                        .set_name(chunk_name)
+                        .set_environment(env.clone())
+                        .exec()
+                },
+            );
             finished.set(true);
             Ok(result)
         })
@@ -187,6 +186,7 @@ fn run(
 mod tests {
     use super::*;
     use crate::state::new_state;
+    use std::time::Instant;
 
     fn is_known(name: &str) -> bool {
         name == "tick" || name == "chat"
