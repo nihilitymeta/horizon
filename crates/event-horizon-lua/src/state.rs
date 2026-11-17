@@ -5,6 +5,10 @@
 
 use mlua::{Lua, LuaOptions, StdLib};
 
+/// The most memory one mod's state may use, in bytes. A mod that goes over it fails with a Lua
+/// memory error; other mods and the game are not affected.
+pub const MEMORY_LIMIT: usize = 64 * 1024 * 1024;
+
 /// The libraries a mod's state gets. No PACKAGE (its `require` reads files), no IO, no DEBUG,
 /// no JIT and no FFI. A function, not a constant: mlua's `StdLib` union is not `const`.
 pub fn libraries() -> StdLib {
@@ -23,11 +27,13 @@ pub fn libraries() -> StdLib {
 /// the libraries and the globals read-only and gives the chunk a local environment for its writes.
 ///
 /// mlua installs a file-reading `require` in every Luau state, whatever the libraries are, so it
-/// is removed here, before the globals become read-only.
+/// is removed here, before the globals become read-only. The state then gets [`MEMORY_LIMIT`],
+/// set after the sandbox so the start-up allocation is already in place.
 pub fn new_state() -> mlua::Result<Lua> {
     let lua = Lua::new_with(libraries(), LuaOptions::default())?;
     lua.globals().raw_set("require", mlua::Value::Nil)?;
     lua.sandbox(true)?;
+    lua.set_memory_limit(MEMORY_LIMIT)?;
     Ok(lua)
 }
 
@@ -141,5 +147,37 @@ mod tests {
             loaded.is_err(),
             "require must not read a file from the mod's folder, got {loaded:?}"
         );
+    }
+
+    #[test]
+    fn a_memory_bomb_fails_the_mod_and_not_the_process() {
+        let lua = new_state().unwrap();
+        let result = lua
+            .load("local t = {} while true do t[#t+1] = string.rep(tostring(#t), 1e6) end")
+            .exec();
+        let err = result.expect_err("a memory bomb must fail");
+        let text = err.to_string();
+        println!("memory bomb error: {text}");
+        assert!(
+            text.to_lowercase().contains("memory"),
+            "the error must mention memory, got {text}"
+        );
+        assert!(lua.used_memory() < MEMORY_LIMIT + 8 * 1024 * 1024);
+    }
+
+    #[test]
+    fn a_fresh_state_is_far_below_the_cap() {
+        let lua = new_state().unwrap();
+        assert!(lua.used_memory() < MEMORY_LIMIT / 10);
+    }
+
+    #[test]
+    fn a_normal_script_is_not_affected() {
+        let lua = new_state().unwrap();
+        let n: i64 = lua
+            .load("local t = {} for i = 1, 100000 do t[i] = i end return #t")
+            .eval()
+            .unwrap();
+        assert_eq!(n, 100_000);
     }
 }
