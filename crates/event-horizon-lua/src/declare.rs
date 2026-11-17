@@ -26,10 +26,26 @@ const ENV_KEY: &str = "eh_env";
 
 const LATE_ON: &str = "horizon.on can only be used while the mod loads";
 
+/// The `horizon.on` options table's `priority` range.
+const PRIORITY_MIN: i64 = i32::MIN as i64;
+const PRIORITY_MAX: i64 = i32::MAX as i64;
+
 /// The hooks a mod subscribed to: each name once, in the order of its first `horizon.on`.
+/// `options` has one entry per hook, in the same order, with the options that hook was declared
+/// with.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Declaration {
     pub hooks: Vec<String>,
+    pub options: Vec<(String, ListenerOptions)>,
+}
+
+/// How a mod's listener for one hook is ordered and whether it still runs once the event is
+/// cancelled. `priority` runs higher first; a mod that did not set `receive_cancelled` is skipped
+/// while the event is cancelled.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ListenerOptions {
+    pub priority: i32,
+    pub receive_cancelled: bool,
 }
 
 /// Runs `source` (the mod's main.luau, named `chunk_name`) in declaring mode, with the default
@@ -51,10 +67,11 @@ pub fn declare_with_budget(
     is_hook: &dyn Fn(&str) -> bool,
     budget: Duration,
 ) -> Result<Declaration, String> {
-    let (hooks, loaded) =
+    let (options, loaded) =
         run(lua, source, chunk_name, is_hook, budget).map_err(|e| e.to_string())?;
+    let hooks = options.iter().map(|(name, _)| name.clone()).collect();
     loaded
-        .map(|()| Declaration { hooks })
+        .map(|()| Declaration { hooks, options })
         .map_err(|e| e.to_string())
 }
 
@@ -76,16 +93,73 @@ pub fn environment(lua: &Lua) -> mlua::Result<Table> {
     lua.named_registry_value::<Table>(ENV_KEY)
 }
 
+/// Reads the optional options table of `horizon.on`. Nil means the defaults. Only `priority` (an
+/// integer in the i32 range) and `receive_cancelled` (a boolean) are known; anything else is an
+/// error that names the key.
+fn parse_options(value: Value) -> mlua::Result<ListenerOptions> {
+    let table = match value {
+        Value::Nil => return Ok(ListenerOptions::default()),
+        Value::Table(table) => table,
+        other => {
+            return Err(Error::runtime(format!(
+                "horizon.on needs its options as a table, not {}",
+                other.type_name()
+            )));
+        }
+    };
+    let mut options = ListenerOptions::default();
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let name = match &key {
+            Value::String(s) => s.to_str()?.to_string(),
+            other => {
+                return Err(Error::runtime(format!(
+                    "horizon.on option {} is not a known option",
+                    other.type_name()
+                )));
+            }
+        };
+        match (name.as_str(), value) {
+            ("priority", Value::Integer(n)) if (PRIORITY_MIN..=PRIORITY_MAX).contains(&n) => {
+                options.priority = n as i32;
+            }
+            ("priority", Value::Number(n))
+                if n.fract() == 0.0 && (PRIORITY_MIN as f64..=PRIORITY_MAX as f64).contains(&n) =>
+            {
+                options.priority = n as i32;
+            }
+            ("priority", _) => {
+                return Err(Error::runtime(
+                    "horizon.on option 'priority' needs a whole number from -2147483648 to 2147483647",
+                ));
+            }
+            ("receive_cancelled", Value::Boolean(flag)) => options.receive_cancelled = flag,
+            ("receive_cancelled", _) => {
+                return Err(Error::runtime(
+                    "horizon.on option 'receive_cancelled' needs true or false",
+                ));
+            }
+            (other, _) => {
+                return Err(Error::runtime(format!(
+                    "unknown horizon.on option '{other}'; the options are priority and receive_cancelled"
+                )));
+            }
+        }
+    }
+    Ok(options)
+}
+
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces `horizon.on`
-/// with a function that only refuses. Returns the hooks recorded and the chunk's own result: the
-/// setup errors come first, and the chunk's result is kept apart so the caller can report it.
+/// with a function that only refuses. Returns each hook recorded with its options, and the chunk's
+/// own result: the setup errors come first, and the chunk's result is kept apart so the caller can
+/// report it.
 fn run(
     lua: &Lua,
     source: &str,
     chunk_name: &str,
     is_hook: &dyn Fn(&str) -> bool,
     budget_limit: Duration,
-) -> mlua::Result<(Vec<String>, mlua::Result<()>)> {
+) -> mlua::Result<(Vec<(String, ListenerOptions)>, mlua::Result<()>)> {
     let handlers = lua.create_table()?;
     lua.set_named_registry_value(HANDLERS_KEY, handlers.clone())?;
 
@@ -107,7 +181,7 @@ fn run(
     env.set_metatable(Some(env_meta))?;
     lua.set_named_registry_value(ENV_KEY, env.clone())?;
 
-    let recorded = RefCell::new(Vec::<String>::new());
+    let recorded = RefCell::new(Vec::<(String, ListenerOptions)>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
@@ -115,7 +189,7 @@ fn run(
     // it expires when the scope ends, and is replaced below before anything can call it.
     let loaded = lua
         .scope(|scope| {
-            let on = scope.create_function(|_, (name, handler): (Value, Value)| {
+            let on = scope.create_function(|_, (name, handler, opts): (Value, Value, Value)| {
                 if finished.get() {
                     return Err(Error::runtime(LATE_ON));
                 }
@@ -136,10 +210,17 @@ fn run(
                 if !is_hook(&name) {
                     return Err(Error::runtime(format!("unknown hook '{name}'")));
                 }
+                let options = parse_options(opts)?;
                 {
                     let mut hooks = recorded.borrow_mut();
-                    if !hooks.contains(&name) {
-                        hooks.push(name.clone());
+                    match hooks.iter().find(|(seen, _)| *seen == name) {
+                        Some((_, first)) if *first != options => {
+                            return Err(Error::runtime(format!(
+                                "conflicting options for hook '{name}': every horizon.on of one hook must use the same options"
+                            )));
+                        }
+                        Some(_) => {}
+                        None => hooks.push((name.clone(), options)),
                     }
                 }
                 let list = match handlers.raw_get::<Option<Table>>(name.as_str())? {
@@ -326,5 +407,122 @@ mod tests {
             declare_with_budget(&lua, source, "=mod", &|_| true, Duration::from_millis(100));
         assert!(result.is_err());
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    fn options_of(source: &str) -> Result<Vec<(String, ListenerOptions)>, String> {
+        declare_in_fresh_state(source).map(|d| d.options)
+    }
+
+    #[test]
+    fn options_default_to_priority_zero_and_not_receiving_cancelled() {
+        let options = options_of("horizon.on(\"tick\", function() end)").unwrap();
+        assert_eq!(options, [("tick".to_string(), ListenerOptions::default())]);
+        assert_eq!(options[0].1.priority, 0);
+        assert!(!options[0].1.receive_cancelled);
+    }
+
+    #[test]
+    fn both_options_are_read() {
+        let source =
+            "horizon.on(\"tick\", function() end, {priority = -7, receive_cancelled = true})";
+        let options = options_of(source).unwrap();
+        assert_eq!(
+            options[0].1,
+            ListenerOptions {
+                priority: -7,
+                receive_cancelled: true
+            }
+        );
+    }
+
+    #[test]
+    fn a_priority_at_the_i32_limits_is_kept() {
+        let source = "horizon.on(\"tick\", function() end, {priority = 2147483647})\n\
+                      horizon.on(\"chat\", function() end, {priority = -2147483648})";
+        let options = options_of(source).unwrap();
+        assert_eq!(options[0].1.priority, i32::MAX);
+        assert_eq!(options[1].1.priority, i32::MIN);
+    }
+
+    #[test]
+    fn a_priority_out_of_the_i32_range_is_refused() {
+        for value in ["2147483648", "-2147483649", "1e12"] {
+            let source = format!("horizon.on(\"tick\", function() end, {{priority = {value}}})");
+            let err = options_of(&source).unwrap_err();
+            assert!(err.contains("'priority'"), "{value}: got {err}");
+        }
+    }
+
+    #[test]
+    fn a_fractional_priority_is_refused() {
+        let err = options_of("horizon.on(\"tick\", function() end, {priority = 1.5})").unwrap_err();
+        assert!(err.contains("'priority'"), "got {err}");
+    }
+
+    #[test]
+    fn a_string_priority_is_refused() {
+        let err =
+            options_of("horizon.on(\"tick\", function() end, {priority = \"5\"})").unwrap_err();
+        assert!(err.contains("'priority'"), "got {err}");
+    }
+
+    #[test]
+    fn an_unknown_option_key_is_refused_by_name() {
+        let err = options_of("horizon.on(\"tick\", function() end, {colour = 1})").unwrap_err();
+        assert!(
+            err.contains("unknown horizon.on option 'colour'"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn options_that_are_not_a_table_are_refused() {
+        let err = options_of("horizon.on(\"tick\", function() end, 5)").unwrap_err();
+        assert!(err.contains("needs its options as a table"), "got {err}");
+    }
+
+    #[test]
+    fn receive_cancelled_must_be_a_boolean() {
+        let err = options_of("horizon.on(\"tick\", function() end, {receive_cancelled = 1})")
+            .unwrap_err();
+        assert!(
+            err.contains("'receive_cancelled' needs true or false"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn two_calls_for_one_hook_with_the_same_options_are_fine() {
+        let source = "horizon.on(\"tick\", function() end, {priority = 3})\n\
+                      horizon.on(\"tick\", function() end, {priority = 3})";
+        let declaration = declare_in_fresh_state(source).unwrap();
+        assert_eq!(declaration.hooks, ["tick"]);
+        assert_eq!(declaration.options[0].1.priority, 3);
+    }
+
+    #[test]
+    fn two_calls_for_one_hook_with_different_options_are_refused() {
+        let source = "horizon.on(\"tick\", function() end)\n\
+                      horizon.on(\"tick\", function() end, {priority = 1})";
+        let err = declare_in_fresh_state(source).unwrap_err();
+        assert!(
+            err.contains("conflicting options for hook 'tick'"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn options_are_kept_per_hook_in_first_seen_order() {
+        let source = "horizon.on(\"chat\", function() end, {priority = 2})\n\
+                      horizon.on(\"tick\", function() end)";
+        let declaration = declare_in_fresh_state(source).unwrap();
+        assert_eq!(declaration.hooks, ["chat", "tick"]);
+        assert_eq!(declaration.options.len(), 2);
+        assert_eq!(declaration.options[0].0, "chat");
+        assert_eq!(declaration.options[0].1.priority, 2);
+        assert_eq!(
+            declaration.options[1],
+            ("tick".to_string(), ListenerOptions::default())
+        );
     }
 }

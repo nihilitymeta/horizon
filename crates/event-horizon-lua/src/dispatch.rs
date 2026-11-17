@@ -103,7 +103,25 @@ impl LuaHost {
         build: &dyn Fn(&Lua) -> mlua::Result<Event>,
         answers: &mut dyn FnMut(&str, &Event) -> bool,
     ) {
-        for m in self.mods() {
+        self.dispatch_cancellable(hook, &|| false, build, answers);
+    }
+
+    /// The same as `dispatch`, in the order the mods' priorities give (`run_order`). Before each
+    /// mod, if `is_cancelled()` says the event is already cancelled, a mod that did not declare
+    /// `receive_cancelled` for this hook is skipped; the others see the event as it is.
+    pub fn dispatch_cancellable(
+        &self,
+        hook: &str,
+        is_cancelled: &dyn Fn() -> bool,
+        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
+        answers: &mut dyn FnMut(&str, &Event) -> bool,
+    ) {
+        let mods = self.mods();
+        for &index in self.run_order(hook) {
+            let m = &mods[index];
+            if is_cancelled() && !m.options(hook).receive_cancelled {
+                continue;
+            }
             let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
             if server_hook && m.side() == Side::Client {
                 continue;
@@ -369,5 +387,67 @@ mod tests {
         fire_with_pos(&host);
         assert!(started.elapsed() < Duration::from_secs(2));
         assert_eq!(host.mods()[1].log_lines(), ["ran"]);
+    }
+
+    /// The ids of the mods a `dispatch_cancellable` call ran, in order.
+    fn run_ids(host: &LuaHost, is_cancelled: bool) -> Vec<String> {
+        let mut ids = Vec::new();
+        host.dispatch_cancellable(
+            HOOK,
+            &|| is_cancelled,
+            &|lua| new_event(lua, pos_data(lua), &[]),
+            &mut |id, _| {
+                ids.push(id.to_string());
+                true
+            },
+        );
+        ids
+    }
+
+    #[test]
+    fn a_cancelled_event_is_hidden_from_mods_that_do_not_receive_it() {
+        let root = tempfile::tempdir().unwrap();
+        let plain = "horizon.on(\"block_receive_game\", function() horizon.log(\"plain\") end)";
+        let receiving = "horizon.on(\"block_receive_game\", function() horizon.log(\"receiving\") end, {receive_cancelled = true})";
+        let host = LuaHost::new(vec![
+            load(root.path(), "mod_a", plain, Side::Both),
+            load(root.path(), "mod_b", receiving, Side::Both),
+        ]);
+        assert_eq!(run_ids(&host, true), ["mod_b"]);
+        assert!(host.mods()[0].log_lines().is_empty());
+        assert_eq!(host.mods()[1].log_lines(), ["receiving"]);
+    }
+
+    #[test]
+    fn an_uncancelled_event_reaches_every_mod() {
+        let root = tempfile::tempdir().unwrap();
+        let plain = "horizon.on(\"block_receive_game\", function() end)";
+        let receiving =
+            "horizon.on(\"block_receive_game\", function() end, {receive_cancelled = true})";
+        let host = LuaHost::new(vec![
+            load(root.path(), "mod_a", plain, Side::Both),
+            load(root.path(), "mod_b", receiving, Side::Both),
+        ]);
+        assert_eq!(run_ids(&host, false), ["mod_a", "mod_b"]);
+    }
+
+    #[test]
+    fn dispatch_runs_every_mod_like_an_uncancelled_event() {
+        let root = tempfile::tempdir().unwrap();
+        let plain = "horizon.on(\"block_receive_game\", function() end)";
+        let host = LuaHost::new(vec![
+            load(root.path(), "mod_a", plain, Side::Both),
+            load(root.path(), "mod_b", plain, Side::Both),
+        ]);
+        let mut ids = Vec::new();
+        host.dispatch(
+            HOOK,
+            &|lua| new_event(lua, pos_data(lua), &[]),
+            &mut |id, _| {
+                ids.push(id.to_string());
+                true
+            },
+        );
+        assert_eq!(ids, ["mod_a", "mod_b"]);
     }
 }

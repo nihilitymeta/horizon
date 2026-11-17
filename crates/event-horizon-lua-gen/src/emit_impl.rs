@@ -39,6 +39,10 @@ impl mod_api::Hooks for LuaHost {
     fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
         self.on_register()
     }
+
+    fn listeners(&self) -> &'static [mod_api::Listener] {
+        self.listeners_slice()
+    }
 ";
 
 /// The comment written above a cancel hook's body.
@@ -488,6 +492,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
         self.on_register()
+    }
+
+    fn listeners(&self) -> &'static [mod_api::Listener] {
+        self.listeners_slice()
     }
 
     fn block_step_on(&self, event: &mut BlockStepOnEvent<'_>) {

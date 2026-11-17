@@ -12,6 +12,10 @@ impl mod_api::Hooks for LuaHost {
         self.on_register()
     }
 
+    fn listeners(&self) -> &'static [mod_api::Listener] {
+        self.listeners_slice()
+    }
+
     fn animal_tame(&self, host: &mut dyn ServerHost, event: &mut AnimalTameEvent<'_>) -> Flow {
         let _ = &host;
         // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.

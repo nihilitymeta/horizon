@@ -5,6 +5,7 @@
 //! hook fires, runs each handler the mods registered for it. A mod's failure stays in that mod:
 //! its error is logged, its handler is stopped by a time budget, and the others still run.
 
+use std::cmp::Reverse;
 use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,7 +17,7 @@ use horizon_client::save::level_mods::{self, ModRecord};
 use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
-use crate::declare;
+use crate::declare::{self, ListenerOptions};
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::new_event;
 use crate::generated::hooks::{hook_id, is_emitted};
@@ -47,6 +48,7 @@ pub struct LuaMod {
     version: String,
     side: Side,
     hooks: Vec<String>,
+    options: Vec<(String, ListenerOptions)>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -127,6 +129,7 @@ impl LuaMod {
             version: found.version.clone(),
             side: found.side,
             hooks: declaration.hooks,
+            options: declaration.options,
             lua,
             log,
             turn: Turn::default(),
@@ -159,6 +162,15 @@ impl LuaMod {
         &self.hooks
     }
 
+    /// The options this mod declared for `hook`, or the defaults when it did not declare the hook.
+    pub fn options(&self, hook: &str) -> ListenerOptions {
+        self.options
+            .iter()
+            .find(|(name, _)| name == hook)
+            .map(|(_, options)| *options)
+            .unwrap_or_default()
+    }
+
     /// The lines `horizon.log` wrote, oldest first.
     pub fn log_lines(&self) -> Vec<String> {
         lock(&self.log).clone()
@@ -186,9 +198,16 @@ pub fn merged_records(existing: Option<Vec<ModRecord>>, mods: &[LuaMod]) -> Vec<
 }
 
 /// The one `Hooks` implementation the game installs: it fans each hook out to the Lua mods.
+///
+/// The game sees this host as ONE listener per hook, so `listeners` gives the game the highest
+/// priority any Lua mod asked for and whether any of them receives cancelled events. The order
+/// between the Lua mods is the host's own job: `order` holds, for each hook a mod declared, the
+/// mods in the order they run.
 pub struct LuaHost {
     mods: Vec<LuaMod>,
     subscribed: &'static [Option<mod_api::HookId>],
+    listeners: &'static [mod_api::Listener],
+    order: Vec<(String, Vec<usize>)>,
     /// One line per folder or mod that did not load, from `builtin`.
     report: Vec<String>,
     /// Set once the report is written, so a second `register` writes nothing.
@@ -197,18 +216,41 @@ pub struct LuaHost {
 
 impl LuaHost {
     pub fn new(mods: Vec<LuaMod>) -> LuaHost {
-        let mut seen = Vec::<usize>::new();
-        let mut subscribed = Vec::<Option<mod_api::HookId>>::new();
+        // The hooks in the order the mods first declare them. Each one's mods run by priority,
+        // highest first; ties keep load order.
+        let mut names = Vec::<String>::new();
         for name in mods.iter().flat_map(|m| m.hooks.iter()) {
-            let Some(id) = hook_id(name) else { continue };
-            if !seen.contains(&(id as usize)) {
-                seen.push(id as usize);
-                subscribed.push(Some(id));
+            if !names.contains(name) {
+                names.push(name.clone());
             }
+        }
+        let mut order = Vec::new();
+        let mut subscribed = Vec::<Option<mod_api::HookId>>::new();
+        let mut listeners = Vec::<mod_api::Listener>::new();
+        for name in names {
+            let declared: Vec<usize> = (0..mods.len())
+                .filter(|&i| mods[i].hooks.contains(&name))
+                .collect();
+            let priority_of = |i: usize| mods[i].options(&name).priority;
+            let mut run = declared.clone();
+            run.sort_by_key(|&i| (Reverse(priority_of(i)), i));
+            if let Some(id) = hook_id(&name) {
+                subscribed.push(Some(id));
+                listeners.push(mod_api::Listener {
+                    hook: Some(id),
+                    priority: declared.iter().map(|&i| priority_of(i)).max().unwrap_or(0),
+                    receive_cancelled: declared
+                        .iter()
+                        .any(|&i| mods[i].options(&name).receive_cancelled),
+                });
+            }
+            order.push((name, run));
         }
         LuaHost {
             mods,
             subscribed: Box::leak(subscribed.into_boxed_slice()),
+            listeners: Box::leak(listeners.into_boxed_slice()),
+            order,
             report: Vec::new(),
             reported: AtomicBool::new(false),
         }
@@ -227,6 +269,15 @@ impl LuaHost {
     /// The loaded Lua mods, in load order.
     pub(crate) fn mods(&self) -> &[LuaMod] {
         &self.mods
+    }
+
+    /// The indexes into `mods()` of the mods that declared `hook`, in the order they run. Empty
+    /// for a hook no mod declared.
+    pub(crate) fn run_order(&self, hook: &str) -> &[usize] {
+        match self.order.iter().find(|(name, _)| name == hook) {
+            Some((_, run)) => run,
+            None => &[],
+        }
     }
 
     /// Writes the loaded and refused counts and one line per refusal. The game's logger is up by
@@ -272,6 +323,12 @@ impl LuaHost {
     /// The hook ids the game subscribes to, read by the generated `Hooks::subscribed`.
     pub(crate) fn subscribed_slice(&self) -> &'static [Option<mod_api::HookId>] {
         self.subscribed
+    }
+
+    /// The listeners the game reads, generated `Hooks::listeners`: one per subscribed hook, in the
+    /// same order as `subscribed_slice`.
+    pub(crate) fn listeners_slice(&self) -> &'static [mod_api::Listener] {
+        self.listeners
     }
 
     /// What `register` does: writes the report and records the loaded mods. The generated
@@ -843,22 +900,14 @@ mod tests {
 
     /// Adds a handler for `name` to the mod, as a second hook the mod could declare. Only the
     /// game's own hooks can be declared through `horizon.on`, so the test registers the hook here.
-    fn add_hook_for_test(m: &LuaMod, name: &str, source: &str) {
-        let env = declare::environment(&m.lua).unwrap();
-        let handler: Function = m.lua.load(source).set_environment(env).eval().unwrap();
-        let all: Table = m.lua.named_registry_value("eh_handlers").unwrap();
-        let list = m.lua.create_table().unwrap();
-        list.raw_set(1, handler).unwrap();
-        all.raw_set(name, list).unwrap();
-    }
-
     #[test]
     fn two_threads_calling_one_state_each_keep_their_own_limit() {
         let root = tempfile::tempdir().unwrap();
         let runaway = "horizon.on(\"block_receive_game\", function() while true do end end)";
-        let m = LuaMod::load(&mod_folder(root.path(), "mod_a", runaway, Side::Both)).unwrap();
         // The other hook counts in a Lua global rather than logging: log lines are rate limited.
-        add_hook_for_test(&m, "other", "return function() n = (n or 0) + 1 end");
+        let source =
+            format!("{runaway}\nhorizon.on(\"animal_tame\", function() n = (n or 0) + 1 end)");
+        let m = LuaMod::load(&mod_folder(root.path(), "mod_a", &source, Side::Both)).unwrap();
         let host = LuaHost::new(vec![m]);
         let started = Instant::now();
         thread::scope(|s| {
@@ -869,7 +918,7 @@ mod tests {
             });
             s.spawn(|| {
                 for _ in 0..50 {
-                    host.fire("other");
+                    host.fire("animal_tame");
                 }
             });
             let a_elapsed = a.join().unwrap();
@@ -1023,5 +1072,123 @@ mod tests {
             captured_with_prefix("Lua mod refused: "),
             ["Lua mod refused: report_mod: nope"]
         );
+    }
+
+    /// A mod `id` that declares `hook` with `options` (a Lua table literal, or "" for none).
+    fn ordered_mod(root: &Path, id: &str, hook: &str, options: &str) -> LuaMod {
+        let source = if options.is_empty() {
+            format!("horizon.on(\"{hook}\", function() end)")
+        } else {
+            format!("horizon.on(\"{hook}\", function() end, {options})")
+        };
+        let found = mod_folder(root, id, &source, Side::Both);
+        LuaMod::load(&found).unwrap()
+    }
+
+    /// The ids of the mods that ran for `HOOK`, in the order they ran.
+    fn ran_order(host: &LuaHost) -> Vec<String> {
+        let mut ids = Vec::new();
+        host.dispatch(
+            HOOK,
+            &|lua| new_event(lua, lua.create_table()?, &[]),
+            &mut |id, _| {
+                ids.push(id.to_string());
+                true
+            },
+        );
+        ids
+    }
+
+    #[test]
+    fn mods_run_by_priority_highest_first_and_ties_in_load_order() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            ordered_mod(root.path(), "a", HOOK, "{priority = 0}"),
+            ordered_mod(root.path(), "b", HOOK, "{priority = 100}"),
+            ordered_mod(root.path(), "c", HOOK, "{priority = 100}"),
+        ]);
+        assert_eq!(ran_order(&host), ["b", "c", "a"]);
+    }
+
+    #[test]
+    fn a_negative_priority_runs_last() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            ordered_mod(root.path(), "a", HOOK, "{priority = -5}"),
+            ordered_mod(root.path(), "b", HOOK, ""),
+            ordered_mod(root.path(), "c", HOOK, "{priority = 1}"),
+        ]);
+        assert_eq!(ran_order(&host), ["c", "b", "a"]);
+    }
+
+    #[test]
+    fn a_mod_that_fails_keeps_the_order_and_the_later_mods_run() {
+        let root = tempfile::tempdir().unwrap();
+        let failing = mod_folder(
+            root.path(),
+            "a",
+            "horizon.on(\"block_receive_game\", function() error(\"boom\") end, {priority = 10})",
+            Side::Both,
+        );
+        let host = LuaHost::new(vec![
+            LuaMod::load(&failing).unwrap(),
+            ordered_mod(root.path(), "b", HOOK, ""),
+        ]);
+        assert_eq!(ran_order(&host), ["a", "b"]);
+        assert_eq!(host.run_order(HOOK), [0, 1]);
+    }
+
+    #[test]
+    fn a_mod_with_no_options_for_a_hook_gets_the_defaults() {
+        let root = tempfile::tempdir().unwrap();
+        let m = ordered_mod(
+            root.path(),
+            "a",
+            HOOK,
+            "{priority = 4, receive_cancelled = true}",
+        );
+        assert_eq!(
+            m.options(HOOK),
+            ListenerOptions {
+                priority: 4,
+                receive_cancelled: true
+            }
+        );
+        assert_eq!(m.options("animal_tame"), ListenerOptions::default());
+    }
+
+    #[test]
+    fn the_game_gets_one_listener_per_subscribed_hook_with_the_max_priority_and_any_receive() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            ordered_mod(root.path(), "a", HOOK, "{priority = 3}"),
+            ordered_mod(
+                root.path(),
+                "b",
+                HOOK,
+                "{priority = 7, receive_cancelled = true}",
+            ),
+            ordered_mod(root.path(), "c", "animal_tame", "{priority = -2}"),
+        ]);
+        let subscribed = mod_api::Hooks::subscribed(&host);
+        let listeners = mod_api::Hooks::listeners(&host);
+        assert_eq!(listeners.len(), subscribed.len());
+        assert_eq!(listeners.len(), 2);
+        for (listener, hook) in listeners.iter().zip(subscribed) {
+            assert_eq!(
+                listener.hook.map(|id| id as usize),
+                hook.map(|id| id as usize)
+            );
+        }
+        assert_eq!(listeners[0].priority, 7);
+        assert!(listeners[0].receive_cancelled);
+        assert_eq!(listeners[1].priority, -2);
+        assert!(!listeners[1].receive_cancelled);
+    }
+
+    #[test]
+    fn a_host_with_no_mods_gives_the_game_no_listeners() {
+        let host = LuaHost::new(Vec::new());
+        assert!(mod_api::Hooks::listeners(&host).is_empty());
     }
 }
