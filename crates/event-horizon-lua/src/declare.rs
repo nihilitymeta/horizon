@@ -69,6 +69,11 @@ pub fn handlers(lua: &Lua, hook: &str) -> mlua::Result<Vec<Function>> {
         .collect()
 }
 
+/// The environment the mod's chunk ran in, the table kept under `ENV_KEY`.
+pub fn environment(lua: &Lua) -> mlua::Result<Table> {
+    lua.named_registry_value::<Table>(ENV_KEY)
+}
+
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces `horizon.on`
 /// with a function that only refuses. Returns the hooks recorded and the chunk's own result: the
 /// setup errors come first, and the chunk's result is kept apart so the caller can report it.
@@ -284,6 +289,20 @@ mod tests {
         let source = "horizon.on(\"tick\", function() return math.floor(1.5) end)";
         let declaration = declare_in_fresh_state(source).unwrap();
         assert_eq!(declaration.hooks, ["tick"]);
+    }
+
+    #[test]
+    fn environment_returns_the_mods_environment() {
+        let lua = new_state().unwrap();
+        declare(
+            &lua,
+            "horizon.on(\"tick\", function() end)",
+            "@lua-mods/test/main.luau",
+            &is_known,
+        )
+        .unwrap();
+        let env = environment(&lua).unwrap();
+        assert!(env.raw_get::<Table>("horizon").is_ok());
     }
 
     #[test]

@@ -2,5 +2,6 @@
 #![forbid(unsafe_code)]
 pub mod declare;
 pub mod discover;
+pub mod host;
 pub mod package;
 pub mod state;
