@@ -2,3 +2,4 @@
 #![forbid(unsafe_code)]
 
 pub mod scalar;
+pub mod vector;
