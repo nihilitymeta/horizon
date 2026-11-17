@@ -1,104 +1,123 @@
-//! Host calls from a Lua handler (H0 spike, issue 74): a handle that reaches the host of the hook
-//! call that is running, with no `'static` host and no `unsafe`.
+//! Host calls from a Lua handler (issue 74): a handle that reaches the host of the hook call that is
+//! running, with no `'static` host and no `unsafe`.
 //!
-//! A hook that has a host hands it to `LuaHost::dispatch_hosted` as a [`TurnHost`]. For each mod's
-//! turn, `run_hosted` opens a `Lua::scope`, and inside it creates one scoped Lua function that
-//! closes over that host. A scope may borrow for one call only, so the host never has to be
-//! `'static`. The function is stored in the Lua registry under [`SLOT`]. The handle's methods are
-//! ordinary `'static` callbacks: they look the slot up and call it with the operation's name. The
-//! scoped function does the host work, charges the turn's budget and checks the hook's kind. The
-//! slot is cleared before the scope ends, so a handle kept from an earlier fire finds no slot and
-//! raises `no host call outside a hook`.
+//! A hook hands its host to the dispatch functions as a [`TurnHost`]: the real `mod_api` host kind
+//! its method was given (`ServerHost`, `ClientHost`, `Host`), or [`TurnHost::None`] for a hook that
+//! gets none. For each mod's turn, [`scoped`] opens a `Lua::scope` and creates one scoped Lua
+//! function that closes over that host. A scope may borrow for one call only, so the host never has
+//! to be `'static`. The function is stored in the Lua registry under [`SLOT`] and cleared before the
+//! scope ends, so a handle kept from an earlier fire finds no slot and raises
+//! `no host call outside a hook`.
 //!
-//! [`HostLike`] and [`WriteHostLike`] are small traits of this file. The real `Host` and
-//! `ServerHost` of mod_api are not used here: each real host kind gets a one-line adapter to these
-//! traits, which is the next chunk's job.
+//! A handle's method is an ordinary `'static` callback: it finds the slot and calls it with the
+//! operation's name. The scoped function charges the turn's budget and runs the operation against
+//! the turn's host, which must be of the kind the operation needs: a read needs [`TurnHost::read`],
+//! a write needs [`TurnHost::server`]. A turn without that kind raises `not available in this hook`.
+//! A `None` turn opens no scope, so every host call raises `no host call outside a hook`.
+//!
+//! The operations themselves are the handles' job (the next chunk). Until then the only operations
+//! are the H0 stub's, which exist under `cfg(test)` and drive the real `EntityRef` methods.
 //!
 //! Re-entrancy: a host call may fire a hook again on this thread. A mod whose turn is open is
-//! skipped there (one log line per mod per tick), the other mods run, and the nesting is limited to
-//! [`MAX_DEPTH`] hook calls open at once.
+//! skipped there (one log line per mod per top-level call), the other mods run, and the nesting is
+//! limited to [`MAX_DEPTH`] hook calls open at once. A call past that is refused to its caller.
 //!
 //! Budget: each turn may spend [`TURN_BUDGET`] units. A read costs 1, a write 10 and a heavy read
 //! 100. A call past the budget raises, and the budget stays spent for the rest of the turn, so a
-//! `pcall` cannot keep the turn going. The turn is then void, as a failing handler's is. A write
-//! is not rolled back by a void turn: the host keeps it.
+//! `pcall` cannot keep the turn going. The turn is then void, as a failing handler's is. A write is
+//! not rolled back by a void turn: the host keeps it.
 
 use std::cell::{Cell, RefCell};
 
-use event_horizon_lua_convert::scalar::FromLuaValue;
-use mlua::{Error, Function, Lua, Table, UserData, UserDataMethods, Value};
+use mlua::{Error, Lua, Value};
+use mod_api::{ClientHost, Host, HostSide, ServerHost};
 
-use crate::dispatch::Event;
-use crate::host::{LOG_TARGET, LuaHost, LuaMod, call_handler};
+use crate::host::{LOG_TARGET, LuaMod};
 
 /// The units one turn may spend on host calls.
 pub const TURN_BUDGET: u32 = 10_000;
-/// The hook calls that may be open at once on one thread. A call past this raises.
+/// The hook calls that may be open at once on one thread. A call past this is refused.
 pub const MAX_DEPTH: u32 = 8;
-const READ: u32 = 1;
-const WRITE: u32 = 10;
-const HEAVY: u32 = 100;
-/// The Lua registry key of the turn's scoped function. Only the host sets it, and only inside a turn.
+/// The Lua registry key of the turn's scoped function. Only [`scoped`] sets it, and only in a turn.
 const SLOT: &str = "event_horizon.host_call";
-const OUTSIDE: &str = "no host call outside a hook";
-const NOT_HERE: &str = "not available in this hook";
+/// Raised when a handle is called with no turn open, or by a turn with no host at all.
+pub const OUTSIDE: &str = "no host call outside a hook";
+/// Raised when the turn's host is not of the kind the operation needs.
+pub const NOT_HERE: &str = "not available in this hook";
 const SPENT: &str = "host call budget is spent for this turn";
 
-/// A handle to a world object, by the id and epoch the host gave it. A copy of two numbers: it
-/// holds no host and says nothing about the object until a method asks the host.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Entity {
-    pub id: u32,
-    pub epoch: u32,
-}
-
-impl UserData for Entity {
-    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("id", |_, this, ()| Ok(this.id));
-        methods.add_method("position", |lua, this, ()| {
-            host_call(lua, "position", *this, Value::Nil)
-        });
-        methods.add_method("heavy", |lua, this, ()| {
-            host_call(lua, "heavy", *this, Value::Nil)
-        });
-        methods.add_method("set_velocity", |lua, this, velocity: Value| {
-            host_call(lua, "set_velocity", *this, velocity)
-        });
-    }
-}
-
-/// A read of the world: what a read-only hook gets, and what a writable hook gets too.
-pub trait HostLike {
-    /// The position of `entity`, or `None` when the handle is stale.
-    fn position(&self, entity: Entity) -> Option<[f64; 3]>;
-    /// A read that scans more than a position does (charged as a heavy read).
-    fn heavy(&self, entity: Entity) -> Option<[f64; 3]>;
-}
-
-/// A write of the world: what a hook that may change things gets.
-pub trait WriteHostLike: HostLike {
-    /// Sets the velocity of `entity`. `Ok(false)` when the handle is stale; `Err` is refused and
-    /// reaches the handler as a Lua error.
-    fn set_velocity(&mut self, entity: Entity, velocity: [f64; 3]) -> Result<bool, String>;
-}
-
-/// The host a hook gave for one call. A `None` hook has no host: every host call is refused.
+/// The host a hook gave for one call, by the kind its method takes.
 pub enum TurnHost<'a> {
-    Read(&'a dyn HostLike),
-    Write(&'a mut dyn WriteHostLike),
+    /// A hook that fired on the server: writes and reads.
+    Server(&'a mut dyn ServerHost),
+    /// A hook that fired on the client: the client's services and reads.
+    Client(&'a mut dyn ClientHost),
+    /// A read-only client hook.
+    ClientRead(&'a dyn ClientHost),
+    /// A read-only hook.
+    Read(&'a dyn Host),
+    /// A hook that gets no host. Its handles raise `no host call outside a hook`.
     None,
 }
 
-impl TurnHost<'_> {
+impl<'a> TurnHost<'a> {
+    /// The turn of a hook that is given a [`HostSide`]: the side it fired on.
+    pub fn of_side(side: HostSide<'a>) -> TurnHost<'a> {
+        match side {
+            HostSide::Server(host) => TurnHost::Server(host),
+            HostSide::Client(host) => TurnHost::Client(host),
+        }
+    }
+
+    /// The host for a read: every kind but `None` has one (a server or client host upcast to `Host`).
+    pub fn read(&self) -> Option<&dyn Host> {
+        match self {
+            TurnHost::Server(host) => Some(&**host as &dyn Host),
+            TurnHost::Client(host) => Some(&**host as &dyn Host),
+            TurnHost::ClientRead(host) => Some(*host as &dyn Host),
+            TurnHost::Read(host) => Some(*host),
+            TurnHost::None => None,
+        }
+    }
+
+    /// [`TurnHost::read`], or a host that refuses every read. The generated hooks convert their
+    /// carried values through this inside their closures; a hook that has a host always has a read.
+    pub fn read_or_unavailable(&self) -> &dyn Host {
+        self.read().unwrap_or(&Unavailable)
+    }
+
+    /// The host for a write, when the turn's hook is a server hook.
+    pub fn server(&mut self) -> Option<&mut dyn ServerHost> {
+        match self {
+            TurnHost::Server(host) => Some(&mut **host),
+            _ => None,
+        }
+    }
+
+    /// The host for the client's services, when the turn's hook is a writable client hook.
+    pub fn client(&mut self) -> Option<&mut dyn ClientHost> {
+        match self {
+            TurnHost::Client(host) => Some(&mut **host),
+            _ => None,
+        }
+    }
+
     /// The same host for one mod's turn, borrowed again so each mod gets its own scope.
     fn reborrow(&mut self) -> TurnHost<'_> {
         match self {
+            TurnHost::Server(host) => TurnHost::Server(&mut **host),
+            TurnHost::Client(host) => TurnHost::Client(&mut **host),
+            TurnHost::ClientRead(host) => TurnHost::ClientRead(*host),
             TurnHost::Read(host) => TurnHost::Read(*host),
-            TurnHost::Write(host) => TurnHost::Write(&mut **host),
             TurnHost::None => TurnHost::None,
         }
     }
 }
+
+/// The host of a turn that has none: every read is refused, as a stale handle's is.
+struct Unavailable;
+mod_api::impl_host_areas!(Unavailable);
+impl Host for Unavailable {}
 
 thread_local! {
     /// The hook calls open on this thread.
@@ -108,7 +127,7 @@ thread_local! {
 }
 
 /// Lets go of one open hook call when it ends, also when it panics.
-struct OpenCall;
+pub(crate) struct OpenCall;
 
 impl Drop for OpenCall {
     fn drop(&mut self) {
@@ -116,30 +135,26 @@ impl Drop for OpenCall {
     }
 }
 
-impl LuaHost {
-    /// Fires `hook` for every mod that declared it, for a hook that gets a host. Each mod's turn is
-    /// run as `dispatch_turns` runs it, but its handlers can call `host` through their handles.
-    /// `Err` when `MAX_DEPTH` hook calls are already open on this thread: the call is refused.
-    pub fn dispatch_hosted(
-        &self,
-        hook: &str,
-        mut host: TurnHost<'_>,
-        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
-        commit: &mut dyn FnMut(&str, &Event) -> bool,
-    ) -> Result<(), String> {
-        let depth = DEPTH.with(Cell::get);
-        if depth >= MAX_DEPTH {
-            return Err(format!(
-                "{hook} is refused: hook calls are nested more than {MAX_DEPTH} deep"
-            ));
-        }
-        if depth == 0 {
-            SKIPPED.with_borrow_mut(Vec::clear);
-        }
-        DEPTH.with(|open| open.set(depth + 1));
-        let _open = OpenCall;
-        self.run_turns(hook, &|| false, build, commit, Some(&mut host));
-        Ok(())
+/// Opens one hook call on this thread. Refused, with the reason, past [`MAX_DEPTH`].
+pub(crate) fn open_call(hook: &str) -> Result<OpenCall, String> {
+    let depth = DEPTH.with(Cell::get);
+    if depth >= MAX_DEPTH {
+        return Err(format!(
+            "{hook} is refused: hook calls are nested more than {MAX_DEPTH} deep"
+        ));
+    }
+    if depth == 0 {
+        SKIPPED.with_borrow_mut(Vec::clear);
+    }
+    DEPTH.with(|open| open.set(depth + 1));
+    Ok(OpenCall)
+}
+
+/// Logs a hook call that was refused, so the hook's mods do not run. The generated hooks call this
+/// on the result of their dispatch.
+pub fn refused(result: Result<(), String>) {
+    if let Err(err) = result {
+        log::warn!(target: LOG_TARGET, "{err}");
     }
 }
 
@@ -161,20 +176,22 @@ pub(crate) fn note_skipped(id: &str, hook: &str) {
     }
 }
 
-/// Runs one mod's handlers inside a scope that carries `host`. Returns whether the turn failed: a
-/// handler raised, the scope failed, or the budget ran out (even if a `pcall` hid the raise).
-pub(crate) fn run_hosted(
-    m: &LuaMod,
-    hook: &str,
+/// Runs `body` for one mod's turn with `host` open to its handles. For a host turn, a scope holds
+/// the scoped function under [`SLOT`] while `body` runs. A `None` turn runs `body` with no scope.
+/// Returns what `body` returned and whether the turn's budget was spent, which voids the turn even
+/// when a `pcall` hid the raise. An error from the scope itself is returned as is.
+pub(crate) fn scoped<R>(
+    lua: &Lua,
     host: &mut TurnHost<'_>,
-    handlers: &[Function],
-    event: &Table,
-) -> bool {
-    let lua = m.lua();
+    body: impl FnOnce(&Lua) -> R,
+) -> mlua::Result<(R, bool)> {
+    if let TurnHost::None = host {
+        return Ok((body(lua), false));
+    }
     let mut turn_host = host.reborrow();
     let spent_cell = Cell::new(false);
     let spent_out = &spent_cell;
-    let outcome = lua.scope(|scope| {
+    let out = lua.scope(|scope| {
         let mut spent = 0u32;
         let calls = scope.create_function_mut(
             move |lua: &Lua, (op, id, epoch, arg): (String, u32, u32, Value)| {
@@ -187,23 +204,39 @@ pub(crate) fn run_hosted(
                     return Err(Error::runtime(SPENT));
                 }
                 spent += cost;
-                run_op(lua, &mut turn_host, &op, Entity { id, epoch }, arg)
+                run_op(lua, &mut turn_host, &op, id, epoch, arg)
             },
         )?;
         lua.set_named_registry_value(SLOT, calls)?;
+        let out = body(lua);
+        // The slot goes before the scope ends, so nothing finds the function once it is invalid.
+        let _ = lua.set_named_registry_value(SLOT, Value::Nil);
+        Ok(out)
+    })?;
+    Ok((out, spent_cell.get()))
+}
+
+/// Runs one mod's handlers in its turn with `host` open. Returns whether the turn failed: a handler
+/// raised, the scope failed, or the budget ran out.
+pub(crate) fn run_hosted(
+    m: &LuaMod,
+    hook: &str,
+    host: &mut TurnHost<'_>,
+    handlers: &[mlua::Function],
+    event: &mlua::Table,
+) -> bool {
+    let outcome = scoped(m.lua(), host, |lua| {
         let mut failed = false;
         for handler in handlers {
-            if let Err(err) = call_handler(lua, handler, event) {
+            if let Err(err) = crate::host::call_handler(lua, handler, event) {
                 log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
                 failed = true;
             }
         }
-        // The slot goes before the scope ends, so nothing finds the function once it is invalid.
-        let _ = lua.set_named_registry_value(SLOT, Value::Nil);
-        Ok(failed)
+        failed
     });
     match outcome {
-        Ok(failed) => failed || spent_cell.get(),
+        Ok((failed, spent)) => failed || spent,
         Err(err) => {
             log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
             true
@@ -211,103 +244,201 @@ pub(crate) fn run_hosted(
     }
 }
 
-/// The handle's side of a host call: find the turn's scoped function and call it. Outside a turn
-/// there is none.
-fn host_call(lua: &Lua, op: &'static str, entity: Entity, arg: Value) -> mlua::Result<Value> {
-    let slot: Option<Function> = lua.named_registry_value(SLOT)?;
+/// The handle's side of a host call: find the turn's scoped function and call it with the
+/// operation's name and the handle's id and epoch. Outside a host turn there is none.
+pub fn host_call(
+    lua: &Lua,
+    op: &'static str,
+    id: u32,
+    epoch: u32,
+    arg: Value,
+) -> mlua::Result<Value> {
+    let slot: Option<mlua::Function> = lua.named_registry_value(SLOT)?;
     match slot {
-        Some(slot) => slot.call((op, entity.id, entity.epoch, arg)),
+        Some(slot) => slot.call((op, id, epoch, arg)),
         None => Err(Error::runtime(OUTSIDE)),
     }
 }
 
-/// What one operation costs the turn, or an error for a name that is not an operation.
+/// The operations the scoped function knows. None exist until the handles do (the next chunk), so
+/// outside tests every call is an unknown operation; the H0 stub's table is under `cfg(test)`.
+#[cfg(not(test))]
 fn op_cost(op: &str) -> mlua::Result<u32> {
-    match op {
-        "position" => Ok(READ),
-        "heavy" => Ok(HEAVY),
-        "set_velocity" => Ok(WRITE),
-        other => Err(Error::runtime(format!("unknown host call {other}"))),
-    }
+    Err(Error::runtime(format!("unknown host call {op}")))
 }
 
-/// Runs one operation against the hook's host. The host kind is checked here, so a read-only hook
-/// refuses a write with the same error a `None` hook gives.
+#[cfg(not(test))]
 fn run_op(
-    lua: &Lua,
-    host: &mut TurnHost<'_>,
+    _: &Lua,
+    _: &mut TurnHost<'_>,
     op: &str,
-    entity: Entity,
-    arg: Value,
+    _: u32,
+    _: u32,
+    _: Value,
 ) -> mlua::Result<Value> {
-    match op {
-        "position" | "heavy" => {
-            let reader: &dyn HostLike = match host {
-                TurnHost::Read(reader) => *reader,
-                TurnHost::Write(writer) => &**writer,
-                TurnHost::None => return Err(Error::runtime(NOT_HERE)),
-            };
-            let found = if op == "position" {
-                reader.position(entity)
-            } else {
-                reader.heavy(entity)
-            };
-            match found {
-                Some([x, y, z]) => {
-                    let point = lua.create_table()?;
-                    point.raw_set("x", x)?;
-                    point.raw_set("y", y)?;
-                    point.raw_set("z", z)?;
-                    Ok(Value::Table(point))
+    Err(Error::runtime(format!("unknown host call {op}")))
+}
+
+#[cfg(test)]
+use stub::{op_cost, run_op};
+
+#[cfg(test)]
+mod stub {
+    //! The H0 stub: a handle `Entity` with `position`, `heavy` and `set_velocity`, which reach the
+    //! real `EntityRef` methods through the turn's host. Test-only: the handles are the next chunk.
+
+    use event_horizon_lua_convert::scalar::FromLuaValue;
+    use mlua::{Error, Lua, UserData, UserDataMethods, Value};
+    use mod_api::{EntityRef, WorldEpoch};
+
+    use super::{NOT_HERE, TurnHost, host_call};
+
+    const READ: u32 = 1;
+    const WRITE: u32 = 10;
+    const HEAVY: u32 = 100;
+
+    /// A handle to a world object, by the id and epoch the host gave it. A copy of two numbers.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Entity {
+        pub id: u32,
+        pub epoch: u32,
+    }
+
+    impl UserData for Entity {
+        fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+            methods.add_method("id", |_, this, ()| Ok(this.id));
+            methods.add_method("position", |lua, this, ()| {
+                host_call(lua, "position", this.id, this.epoch, Value::Nil)
+            });
+            methods.add_method("heavy", |lua, this, ()| {
+                host_call(lua, "heavy", this.id, this.epoch, Value::Nil)
+            });
+            methods.add_method("set_velocity", |lua, this, velocity: Value| {
+                host_call(lua, "set_velocity", this.id, this.epoch, velocity)
+            });
+        }
+    }
+
+    pub fn op_cost(op: &str) -> mlua::Result<u32> {
+        match op {
+            "position" => Ok(READ),
+            "heavy" => Ok(HEAVY),
+            "set_velocity" => Ok(WRITE),
+            other => Err(Error::runtime(format!("unknown host call {other}"))),
+        }
+    }
+
+    /// Runs one operation against the turn's host. Each operation asks for the host kind it needs,
+    /// so a read-only turn refuses a write with the same error a `None` turn gives a read.
+    pub fn run_op(
+        lua: &Lua,
+        host: &mut TurnHost<'_>,
+        op: &str,
+        id: u32,
+        epoch: u32,
+        arg: Value,
+    ) -> mlua::Result<Value> {
+        let entity = EntityRef::new(WorldEpoch::new(u64::from(epoch)), id);
+        match op {
+            "position" | "heavy" => {
+                let Some(read) = host.read() else {
+                    return Err(Error::runtime(NOT_HERE));
+                };
+                match EntityRef::position(entity, read) {
+                    Some([x, y, z]) => {
+                        let point = lua.create_table()?;
+                        point.raw_set("x", x)?;
+                        point.raw_set("y", y)?;
+                        point.raw_set("z", z)?;
+                        Ok(Value::Table(point))
+                    }
+                    None => Ok(Value::Nil),
                 }
-                None => Ok(Value::Nil),
+            }
+            _ => {
+                let Some(server) = host.server() else {
+                    return Err(Error::runtime(NOT_HERE));
+                };
+                let velocity = vector(&arg)?;
+                Ok(Value::Boolean(entity.set_velocity(server, velocity)))
             }
         }
-        _ => {
-            let TurnHost::Write(writer) = host else {
-                return Err(Error::runtime(NOT_HERE));
-            };
-            let velocity = vector(&arg)?;
-            let moved = writer
-                .set_velocity(entity, velocity)
-                .map_err(Error::runtime)?;
-            Ok(Value::Boolean(moved))
-        }
     }
-}
 
-/// Reads `{x, y, z}` strictly: each axis must be a finite number. The error names the argument.
-fn vector(value: &Value) -> mlua::Result<[f64; 3]> {
-    let bad = |why: String| Error::runtime(format!("set_velocity: argument 1 (velocity) {why}"));
-    let Value::Table(table) = value else {
-        return Err(bad(format!(
-            "must be a table {{x, y, z}}, not {}",
-            value.type_name()
-        )));
-    };
-    let axis = |name: &str| -> mlua::Result<f64> {
-        let found: Value = table.get(name)?;
-        f64::from_lua_value(&found).map_err(|err| bad(format!("field {name}: {err}")))
-    };
-    Ok([axis("x")?, axis("y")?, axis("z")?])
+    /// Reads `{x, y, z}` strictly: each axis must be a finite number. The error names the argument.
+    fn vector(value: &Value) -> mlua::Result<[f64; 3]> {
+        let bad =
+            |why: String| Error::runtime(format!("set_velocity: argument 1 (velocity) {why}"));
+        let Value::Table(table) = value else {
+            return Err(bad(format!(
+                "must be a table {{x, y, z}}, not {}",
+                value.type_name()
+            )));
+        };
+        let axis = |name: &str| -> mlua::Result<f64> {
+            let found: Value = table.get(name)?;
+            f64::from_lua_value(&found).map_err(|err| bad(format!("field {name}: {err}")))
+        };
+        Ok([axis("x")?, axis("y")?, axis("z")?])
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::path::Path;
     use std::sync::mpsc;
     use std::time::Duration;
 
+    use mod_api::__private::game::{BackendMutRefOf, BackendRefOf};
+    use mod_api::prelude::{EntitiesBackend, EntitiesBackendMut};
+    use mod_api::{
+        Backend, BackendMut, BackendMutRef, BackendRef, ClientHost, EntityRef, Host, ServerHost,
+    };
+
+    use super::stub::Entity;
     use super::*;
     use crate::declare;
     use crate::discover::{Discovered, ENTRY, Side};
-    use crate::dispatch::new_event;
+    use crate::dispatch::{Event, new_event};
+    use crate::host::LuaHost;
     use crate::host::tests::{captured_with_prefix, install_capture};
 
     const HOOK: &str = "block_receive_game";
     const ME: Entity = Entity { id: 1, epoch: 1 };
     /// The same id with an older epoch: a stale handle, which the host does not know.
     const STRANGER: Entity = Entity { id: 1, epoch: 0 };
+
+    /// The `Host` of a test world. Each host kind a test needs is a macro of the real traits: the
+    /// generated `impl_*_areas!` give every area its defaults, and only the entity's backend is
+    /// written here, as the game writes it.
+    macro_rules! host_double {
+        ($ty:ty) => {
+            impl Host for $ty {
+                fn backend(&self) -> Option<BackendRef<'_>> {
+                    Some(BackendRefOf::of(self))
+                }
+            }
+            impl Backend for $ty {}
+            mod_api::impl_host_areas!($ty);
+            mod_api::impl_backend_areas!($ty, except(entities));
+            impl ServerHost for $ty {
+                fn backend_mut(&mut self) -> Option<BackendMutRef<'_>> {
+                    Some(BackendMutRefOf::of(self))
+                }
+            }
+            impl BackendMut for $ty {}
+            mod_api::impl_server_host_areas!($ty);
+            mod_api::impl_backend_mut_areas!($ty, except(entities));
+            impl ClientHost for $ty {}
+            mod_api::impl_client_host_areas!($ty);
+        };
+    }
+
+    /// Whether `entity` is the test world's `ME`, by id and epoch.
+    fn is_me(entity: EntityRef) -> bool {
+        entity.id() == ME.id && entity.epoch().get() == u64::from(ME.epoch)
+    }
 
     /// A host that knows `ME` at `at`, counts its writes and keeps the last velocity.
     struct Fake {
@@ -326,23 +457,22 @@ mod tests {
         }
     }
 
-    impl HostLike for Fake {
-        fn position(&self, entity: Entity) -> Option<[f64; 3]> {
-            (entity == ME).then_some(self.at)
-        }
-        fn heavy(&self, entity: Entity) -> Option<[f64; 3]> {
-            self.position(entity)
+    host_double!(Fake);
+
+    impl EntitiesBackend for Fake {
+        fn entity_position(&self, entity: EntityRef) -> Option<[f64; 3]> {
+            is_me(entity).then_some(self.at)
         }
     }
 
-    impl WriteHostLike for Fake {
-        fn set_velocity(&mut self, entity: Entity, velocity: [f64; 3]) -> Result<bool, String> {
+    impl EntitiesBackendMut for Fake {
+        fn entity_set_velocity(&mut self, entity: EntityRef, velocity: [f64; 3]) -> bool {
             self.writes += 1;
-            if entity != ME {
-                return Ok(false);
+            if !is_me(entity) {
+                return false;
             }
             self.velocity = Some(velocity);
-            Ok(true)
+            true
         }
     }
 
@@ -361,8 +491,8 @@ mod tests {
     }
 
     /// The event for one fire: the handles, and `n`, a count the mod's source reads.
-    fn build(n: u32) -> impl Fn(&Lua) -> mlua::Result<Event> {
-        move |lua| {
+    fn build(n: u32) -> impl Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event> {
+        move |lua: &Lua, _: &TurnHost<'_>| {
             let data = lua.create_table()?;
             data.raw_set("entity", lua.create_userdata(ME)?)?;
             data.raw_set("stranger", lua.create_userdata(STRANGER)?)?;
@@ -371,10 +501,10 @@ mod tests {
         }
     }
 
-    /// Fires `HOOK` with `host` and `n`; returns how many turns committed.
+    /// Fires `HOOK` with `turn` and `n`; returns how many turns committed.
     fn fire(host: &LuaHost, turn: TurnHost<'_>, n: u32) -> u32 {
         let mut commits = 0;
-        host.dispatch_hosted(HOOK, turn, &build(n), &mut |_, _| {
+        host.dispatch_turns(HOOK, turn, &|| false, &build(n), &mut |_, _, _| {
             commits += 1;
             true
         })
@@ -421,9 +551,76 @@ mod tests {
         );
         let host = LuaHost::new(vec![m]);
         let mut fake = Fake::at([0.0; 3]);
-        fire(&host, TurnHost::Write(&mut fake), 0);
+        fire(&host, TurnHost::Server(&mut fake), 0);
         assert_eq!(fake.velocity, Some([0.5, -1.0, 2.0]));
         assert_eq!(host.mods()[0].log_lines(), ["true"]);
+    }
+
+    /// Each turn host kind, with the handle's read and write under `pcall`: a read needs a host
+    /// (a `None` turn has none), a write needs a server host.
+    #[test]
+    fn the_turn_host_kind_decides_what_a_handle_may_do() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
+               local ok, p = pcall(function() return event.entity:position() end)\n\
+               horizon.log(tostring(ok) .. \" \" .. (ok and tostring(p.x) or tostring(p)))\n\
+               local wrote, w = pcall(function() return event.entity:set_velocity({x = 1, y = 1, z = 1}) end)\n\
+               horizon.log(tostring(wrote) .. \" \" .. tostring(w))\n\
+             end)";
+        let host = LuaHost::new(vec![load(root.path(), "hc_kinds", source)]);
+        let mut server = Fake::at([1.0, 0.0, 0.0]);
+        let mut client = Fake::at([1.0, 0.0, 0.0]);
+        let read_only = Fake::at([1.0, 0.0, 0.0]);
+        let cases: [(&str, TurnHost<'_>, [&str; 2]); 5] = [
+            (
+                "server",
+                TurnHost::Server(&mut server),
+                ["true 1", "true true"],
+            ),
+            (
+                "client",
+                TurnHost::Client(&mut client),
+                ["true 1", "NOT_HERE"],
+            ),
+            (
+                "client_read",
+                TurnHost::ClientRead(&read_only),
+                ["true 1", "NOT_HERE"],
+            ),
+            ("read", TurnHost::Read(&read_only), ["true 1", "NOT_HERE"]),
+            ("none", TurnHost::None, ["OUTSIDE", "OUTSIDE"]),
+        ];
+        for (kind, turn, [read, write]) in cases {
+            fire(&host, turn, 0);
+            let lines = host.mods()[0].log_lines();
+            let [got_read, got_write] = [
+                lines[lines.len() - 2].clone(),
+                lines[lines.len() - 1].clone(),
+            ];
+            let want = |expect: &'static str| -> &'static str {
+                match expect {
+                    "NOT_HERE" => NOT_HERE,
+                    "OUTSIDE" => OUTSIDE,
+                    other => other,
+                }
+            };
+            if read.starts_with("true") {
+                assert_eq!(got_read, read, "{kind}: read");
+            } else {
+                assert!(got_read.contains(want(read)), "{kind}: read: {got_read}");
+            }
+            if write.starts_with("true") {
+                assert_eq!(got_write, write, "{kind}: write");
+            } else {
+                assert!(
+                    got_write.contains(want(write)),
+                    "{kind}: write: {got_write}"
+                );
+            }
+        }
+        assert_eq!(server.velocity, Some([1.0, 1.0, 1.0]));
+        assert_eq!(client.velocity, None);
+        assert_eq!(client.writes, 0);
     }
 
     #[test]
@@ -443,7 +640,7 @@ mod tests {
         );
         let host = LuaHost::new(vec![m]);
         let mut fake = Fake::at([0.0; 3]);
-        fire(&host, TurnHost::Write(&mut fake), 0);
+        fire(&host, TurnHost::Server(&mut fake), 0);
         let lines = host.mods()[0].log_lines();
         assert_eq!(lines.len(), 3, "{lines:?}");
         for line in &lines {
@@ -605,7 +802,7 @@ mod tests {
         let host = LuaHost::new(vec![m]);
         let mut fake = Fake::at([0.0; 3]);
         assert_eq!(
-            fire(&host, TurnHost::Write(&mut fake), 0),
+            fire(&host, TurnHost::Server(&mut fake), 0),
             0,
             "the turn is void"
         );
@@ -634,7 +831,7 @@ mod tests {
     }
 
     /// Fires the same hook again from its handlers: a write whose vector has x = 999 fires
-    /// `dispatch_hosted` again with a new `Nesting` host, while `fires` is left.
+    /// `dispatch_turns` again with a new `Nesting` host, while `fires` is left.
     struct Nesting<'a> {
         host: &'a LuaHost,
         fires: &'a Cell<u32>,
@@ -642,19 +839,18 @@ mod tests {
         deepest: &'a Cell<u32>,
     }
 
-    impl HostLike for Nesting<'_> {
-        fn position(&self, _: Entity) -> Option<[f64; 3]> {
-            None
-        }
-        fn heavy(&self, _: Entity) -> Option<[f64; 3]> {
+    host_double!(Nesting<'_>);
+
+    impl EntitiesBackend for Nesting<'_> {
+        fn entity_position(&self, _: EntityRef) -> Option<[f64; 3]> {
             None
         }
     }
 
-    impl WriteHostLike for Nesting<'_> {
-        fn set_velocity(&mut self, _: Entity, velocity: [f64; 3]) -> Result<bool, String> {
+    impl EntitiesBackendMut for Nesting<'_> {
+        fn entity_set_velocity(&mut self, _: EntityRef, velocity: [f64; 3]) -> bool {
             if velocity[0] != 999.0 || self.fires.get() == 0 {
-                return Ok(true);
+                return true;
             }
             self.fires.set(self.fires.get() - 1);
             self.deepest
@@ -665,16 +861,17 @@ mod tests {
                 refused: self.refused,
                 deepest: self.deepest,
             };
-            match self.host.dispatch_hosted(
+            match self.host.dispatch_turns(
                 HOOK,
-                TurnHost::Write(&mut next),
+                TurnHost::Server(&mut next),
+                &|| false,
                 &build(0),
-                &mut |_, _| true,
+                &mut |_, _, _| true,
             ) {
-                Ok(()) => Ok(true),
-                Err(err) => {
+                Ok(()) => true,
+                Err(_) => {
                     self.refused.set(self.refused.get() + 1);
-                    Err(err)
+                    false
                 }
             }
         }
@@ -705,7 +902,7 @@ mod tests {
                 refused: &refused,
                 deepest: &deepest,
             };
-            let commits = fire(&host, TurnHost::Write(&mut turn), 0);
+            let commits = fire(&host, TurnHost::Server(&mut turn), 0);
             let a_skips = captured_with_prefix("hc_reentry_a: block_receive_game: skipped").len();
             let b_skips = captured_with_prefix("hc_reentry_b: block_receive_game: skipped").len();
             (
@@ -747,7 +944,7 @@ mod tests {
                 refused: &refused,
                 deepest: &deepest,
             };
-            fire(&host, TurnHost::Write(&mut turn), 0);
+            fire(&host, TurnHost::Server(&mut turn), 0);
             (refused.get(), deepest.get())
         });
         assert!(refused >= 1, "a call past the depth limit is refused");

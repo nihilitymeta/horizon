@@ -14,13 +14,13 @@
 use std::cell::RefCell;
 
 use event_horizon_lua_convert::scalar::FromLuaValue;
-use mlua::{Error, Function, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
+use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
-use crate::host::{LOG_TARGET, LuaHost, LuaMod, call_handler, call_handler_value};
-use crate::hostcall::{TurnHost, note_skipped, run_hosted};
+use crate::host::{LOG_TARGET, LuaHost, call_handler, call_handler_value};
+use crate::hostcall::{TurnHost, note_skipped, open_call, run_hosted, scoped};
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
 const LOCKED: bool = false;
@@ -324,31 +324,24 @@ impl LuaHost {
 impl LuaHost {
     /// Fires `hook` for every mod that declared it, for a hook with outputs. The order and the
     /// cancelled rule are `dispatch_cancellable`'s. A mod's turn is its handlers, run in order under
-    /// their budgets. `build` makes the mod's event after the earlier mods committed, so the mod
-    /// sees their accepted values. When the turn is over and none of its handlers failed, `commit`
-    /// takes the answers (the output keys the mod wrote, read with `Event::answer`); a turn with a
-    /// failing handler is void and is not committed. `commit` returns whether the chain goes on.
+    /// their budgets, with `host` open to them (see `hostcall`). `build` makes the mod's event after
+    /// the earlier mods committed, so the mod sees their accepted values; it gets the host too, for
+    /// the values it converts. When the turn is over and none of its handlers failed, `commit` takes
+    /// the answers (the output keys the mod wrote, read with `Event::answer`); a turn with a failing
+    /// handler is void and is not committed. `commit` returns whether the chain goes on.
+    ///
+    /// A hook call nested deeper than `MAX_DEPTH` is refused with `Err` and no mod runs. A mod whose
+    /// turn is already open on this thread is skipped there.
     pub fn dispatch_turns(
         &self,
         hook: &str,
+        host: TurnHost<'_>,
         is_cancelled: &dyn Fn() -> bool,
-        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
-        commit: &mut dyn FnMut(&str, &Event) -> bool,
-    ) {
-        self.run_turns(hook, is_cancelled, build, commit, None);
-    }
-
-    /// The loop behind `dispatch_turns` and `dispatch_hosted`. With `hosted` set (hostcall.rs), each
-    /// turn runs inside a scope that carries the hook's host, and a mod whose turn is already open
-    /// on this thread is skipped. Without it, a turn runs its handlers directly, as before.
-    pub(crate) fn run_turns(
-        &self,
-        hook: &str,
-        is_cancelled: &dyn Fn() -> bool,
-        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
-        commit: &mut dyn FnMut(&str, &Event) -> bool,
-        mut hosted: Option<&mut TurnHost<'_>>,
-    ) {
+        build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+        commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
+    ) -> Result<(), String> {
+        let _open = open_call(hook)?;
+        let mut host = host;
         let mods = self.mods();
         for &index in self.run_order(hook) {
             let m = &mods[index];
@@ -359,7 +352,7 @@ impl LuaHost {
             if server_hook && m.side() == Side::Client {
                 continue;
             }
-            if hosted.is_some() && m.turn().held_here() {
+            if m.turn().held_here() {
                 note_skipped(m.id(), hook);
                 continue;
             }
@@ -374,18 +367,14 @@ impl LuaHost {
             if handlers.is_empty() {
                 continue;
             }
-            let event = match build(m.lua()) {
+            let event = match build(m.lua(), &host) {
                 Ok(event) => event,
                 Err(err) => {
                     log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
                     continue;
                 }
             };
-            let failed = match hosted.as_mut() {
-                Some(host) => run_hosted(m, hook, host, &handlers, event.table()),
-                None => run_plain(m, hook, &handlers, event.table()),
-            };
-            if failed {
+            if run_hosted(m, hook, &mut host, &handlers, event.table()) {
                 log::warn!(
                     target: LOG_TARGET,
                     "{}: {hook}: a handler failed, so this mod's changes to the event are dropped",
@@ -393,43 +382,40 @@ impl LuaHost {
                 );
                 continue;
             }
-            if !commit(m.id(), &event) {
-                return;
+            if !commit(m.id(), &event, &host) {
+                return Ok(());
             }
         }
+        Ok(())
     }
-}
-
-/// Runs a mod's handlers with no host. Returns whether one of them failed.
-fn run_plain(m: &LuaMod, hook: &str, handlers: &[Function], event: &Table) -> bool {
-    let mut failed = false;
-    for handler in handlers {
-        if let Err(err) = call_handler(m.lua(), handler, event) {
-            log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
-            failed = true;
-        }
-    }
-    failed
 }
 
 impl LuaHost {
     /// Fires `hook`, a replace hook, for every mod that declared it. The order is the one
-    /// `dispatch` uses. A mod's turn runs all its handlers in order under their budgets, and the
-    /// mod's answer is the first return value of its handlers that is not nil. A failing handler
-    /// voids the turn: that mod gives no answer, whatever its other handlers returned. `answer`
-    /// takes the mod's id and the value and returns whether the value was answered (the chain stops
-    /// then); when it was refused, the chain goes on to the next mod.
+    /// `dispatch` uses. A mod's turn runs all its handlers in order under their budgets, with `host`
+    /// open to them, and the mod's answer is the first return value of its handlers that is not nil.
+    /// A failing handler voids the turn: that mod gives no answer, whatever its other handlers
+    /// returned. `answer` takes the mod's id, the value and the host, and returns whether the value
+    /// was answered (the chain stops then); when it was refused, the chain goes on to the next mod.
+    /// A call nested too deep is refused with `Err`, as `dispatch_turns` refuses it.
     pub fn dispatch_replace(
         &self,
         hook: &str,
-        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
-        answer: &mut dyn FnMut(&str, Value) -> bool,
-    ) {
+        host: TurnHost<'_>,
+        build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+        answer: &mut dyn FnMut(&str, Value, &TurnHost<'_>) -> bool,
+    ) -> Result<(), String> {
+        let _open = open_call(hook)?;
+        let mut host = host;
         let mods = self.mods();
         for &index in self.run_order(hook) {
             let m = &mods[index];
             let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
             if server_hook && m.side() == Side::Client {
+                continue;
+            }
+            if m.turn().held_here() {
+                note_skipped(m.id(), hook);
                 continue;
             }
             let _turn = m.turn().enter();
@@ -443,28 +429,37 @@ impl LuaHost {
             if handlers.is_empty() {
                 continue;
             }
-            let event = match build(m.lua()) {
+            let event = match build(m.lua(), &host) {
                 Ok(event) => event,
                 Err(err) => {
                     log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
                     continue;
                 }
             };
-            let mut found: Option<Value> = None;
-            let mut failed = false;
-            for handler in &handlers {
-                match call_handler_value(m.lua(), handler, event.table()) {
-                    Ok(value) => {
-                        if found.is_none() && !matches!(value, Value::Nil) {
-                            found = Some(value);
+            let (found, failed) = match scoped(m.lua(), &mut host, |lua| {
+                let mut found: Option<Value> = None;
+                let mut failed = false;
+                for handler in &handlers {
+                    match call_handler_value(lua, handler, event.table()) {
+                        Ok(value) => {
+                            if found.is_none() && !matches!(value, Value::Nil) {
+                                found = Some(value);
+                            }
+                        }
+                        Err(err) => {
+                            log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                            failed = true;
                         }
                     }
-                    Err(err) => {
-                        log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
-                        failed = true;
-                    }
                 }
-            }
+                (found, failed)
+            }) {
+                Ok(((found, failed), spent)) => (found, failed || spent),
+                Err(err) => {
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    (None, true)
+                }
+            };
             if failed {
                 log::warn!(
                     target: LOG_TARGET,
@@ -474,13 +469,14 @@ impl LuaHost {
                 continue;
             }
             let answered = match found {
-                Some(value) => answer(m.id(), value),
+                Some(value) => answer(m.id(), value, &host),
                 None => false,
             };
             if answered {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 }
 
@@ -798,15 +794,17 @@ mod tests {
         let refused = Cell::new(0);
         host.dispatch_turns(
             FOV,
+            TurnHost::None,
             &|| false,
-            &|lua| fov_event(lua, *slot.borrow()),
-            &mut |id, event| {
+            &|lua, _| fov_event(lua, *slot.borrow()),
+            &mut |id, event, _| {
                 if accept(&slot, id, FOV, "degrees", &event.answer("degrees")) {
                     refused.set(refused.get() + 1);
                 }
                 true
             },
-        );
+        )
+        .unwrap();
         (slot.into_inner(), refused.get())
     }
 
@@ -916,21 +914,23 @@ mod tests {
         let refused = Cell::new(0);
         host.dispatch_turns(
             FOV,
+            TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _| {
                 let data = lua.create_table()?;
                 if let Some(value) = *slot.borrow() {
                     data.raw_set("degrees", value)?;
                 }
                 new_event(lua, data, &["degrees"])
             },
-            &mut |id, event| {
+            &mut |id, event, _| {
                 if accept_opt(&slot, id, FOV, "degrees", &event.answer("degrees")) {
                     refused.set(refused.get() + 1);
                 }
                 true
             },
-        );
+        )
+        .unwrap();
         (slot.into_inner(), refused.get())
     }
 
@@ -1048,15 +1048,17 @@ mod tests {
         let mut out = Vec::new();
         host.dispatch_replace(
             HOOK,
-            &|lua| new_event(lua, pos_data(lua), &[]),
-            &mut |id, value| match answer_of::<String>(id, HOOK, &value) {
+            TurnHost::None,
+            &|lua, _| new_event(lua, pos_data(lua), &[]),
+            &mut |id, value, _| match answer_of::<String>(id, HOOK, &value) {
                 Some(text) => {
                     out.push((id.to_string(), text));
                     true
                 }
                 None => false,
             },
-        );
+        )
+        .unwrap();
         out
     }
 
@@ -1107,8 +1109,9 @@ mod tests {
         let mut got = Vec::new();
         host.dispatch_replace(
             HOOK,
-            &|lua| new_event(lua, pos_data(lua), &[]),
-            &mut |id, value| match answer_of::<String>(id, HOOK, &value) {
+            TurnHost::None,
+            &|lua, _| new_event(lua, pos_data(lua), &[]),
+            &mut |id, value, _| match answer_of::<String>(id, HOOK, &value) {
                 Some(text) => {
                     got.push(text);
                     true
@@ -1118,7 +1121,8 @@ mod tests {
                     false
                 }
             },
-        );
+        )
+        .unwrap();
         assert_eq!(refused, 1);
         assert_eq!(got, ["pass"]);
     }
@@ -1163,17 +1167,19 @@ mod tests {
         let slot = RefCell::new(start);
         host.dispatch_turns(
             LIST_HOOK,
+            TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _| {
                 let data = lua.create_table()?;
                 data.raw_set("types", slot.borrow().to_lua_value(lua)?)?;
                 new_event(lua, data, &["types"])
             },
-            &mut |id, event| {
+            &mut |id, event, _| {
                 accept(&slot, id, LIST_HOOK, "types", &event.answer("types"));
                 true
             },
-        );
+        )
+        .unwrap();
         slot.into_inner()
     }
 

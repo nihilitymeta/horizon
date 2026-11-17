@@ -88,8 +88,15 @@ struct Method<'a> {
     cancel: bool,
     /// The answer type `X` of a replace hook (`mod_api::X`, as the method's return type spells it).
     answer: Option<String>,
-    /// The host as the Lua crate takes it, when a carried value converts through it.
+    /// The host as the Lua crate takes it, when a carried value converts through it. Outside the
+    /// dispatch closures, which run while the turn holds the host.
     view: Option<String>,
+    /// The `TurnHost` variant the method opens its turns with (see [`turn_expr`]); `None` for a hook
+    /// that has no host the turns carry.
+    turn: Option<String>,
+    /// The host as the closures of the dispatch take it: the turn's own host for a hook whose turn
+    /// carries one (the closures run while the turn holds the host), else [`Method::view`].
+    turn_view: Option<String>,
     /// The pre-checks of the arguments that carry a stack or a block state: a call that is `None`
     /// when the host has no id for the value, so the hook is not delivered.
     checks: Vec<String>,
@@ -384,6 +391,12 @@ fn plan<'a>(
     let replace = matches!(hook.kind, Kind::Replace);
     let reach = carried::reach_of(sig.host_ty.as_deref());
     let view = carried::view(sig.host_name.as_deref(), sig.host_ty.as_deref(), reach);
+    let turn = turn_expr(sig.host_name.as_deref(), sig.host_ty.as_deref());
+    let turn_view = if turn.is_some() {
+        Some("turn.read_or_unavailable()".to_owned())
+    } else {
+        view.clone()
+    };
     let cancel = match hook.kind {
         Kind::Listen | Kind::Replace | Kind::Collect => false,
         Kind::Cancel => true,
@@ -438,9 +451,10 @@ fn plan<'a>(
             };
             let field = format!("{}.{}", sig.event_name, arg.name);
             checks.push(carried::input_check(shape, &arg.rust_type, &field, view));
+            let built = turn_view.as_deref().unwrap_or(view);
             fields.push((
                 arg.name.clone(),
-                carried::input_lua(shape, &arg.rust_type, &field, view),
+                carried::input_lua(shape, &arg.rust_type, &field, built),
             ));
             continue;
         }
@@ -478,6 +492,8 @@ fn plan<'a>(
         cancel,
         answer,
         view,
+        turn,
+        turn_view,
         checks,
     })
 }
@@ -663,23 +679,90 @@ fn method_text(method: &Method<'_>) -> String {
         out.push_str(&replace_body(method, answer));
     } else if method.outputs.is_empty() {
         out.push_str(&checks_text(method, false));
-        out.push_str("        self.dispatch(\n");
-        out.push_str(&format!("            {:?},\n", method.hook.name));
-        out.push_str("            &|lua| {\n");
-        out.push_str("                let data = lua.create_table()?;\n");
-        for (field, expr) in &method.fields {
-            out.push_str(&format!(
-                "                data.raw_set({field:?}, {expr})?;\n"
-            ));
-        }
-        out.push_str("                crate::dispatch::new_event(lua, data, &[])\n");
-        out.push_str("            },\n");
-        out.push_str("            &mut |_, _| true,\n");
-        out.push_str("        );\n");
+        out.push_str(&plain_body(method));
     } else {
         out.push_str(&turn_body(method));
     }
     out.push_str("    }\n");
+    out
+}
+
+/// The `TurnHost` a hook's method opens its turns with: the variant its host parameter is, or
+/// `TurnHost::None` for a hook that has no host the turns carry (its handles raise `no host call
+/// outside a hook`). `host` is moved into the turn, so the body does not use it after the call.
+fn turn_expr(host_name: Option<&str>, host_ty: Option<&str>) -> Option<String> {
+    let (name, ty) = (host_name?, host_ty?);
+    Some(match ty {
+        "&mut dyn ServerHost" => format!("Server({name})"),
+        "&mut dyn ClientHost" => format!("Client({name})"),
+        "&dyn ClientHost" => format!("ClientRead({name})"),
+        "&dyn Host" => format!("Read({name})"),
+        "HostSide" => format!("of_side({name})"),
+        _ => return None,
+    })
+}
+
+/// The `TurnHost` argument of a method's dispatch call.
+fn turn_text(method: &Method<'_>) -> String {
+    match &method.turn {
+        Some(variant) => format!("crate::hostcall::TurnHost::{variant}"),
+        None => "crate::hostcall::TurnHost::None".to_owned(),
+    }
+}
+
+/// The closure's parameter for the turn: `turn` when its body reads the turn's host, else `_turn`.
+/// Only the turn's own host view has that spelling, so no field name can match it.
+fn turn_param(body: &str) -> &'static str {
+    if body.contains("turn.read_or_unavailable()") {
+        "turn"
+    } else {
+        "_turn"
+    }
+}
+
+/// The `build` closure of a hook: the event table with its fields (and, for a hook with outputs,
+/// their current values), then the event. It reads the host through the turn, not the method's
+/// parameter, which the open turn holds.
+fn build_text(method: &Method<'_>, outputs: bool) -> String {
+    let mut body = String::from("                let data = lua.create_table()?;\n");
+    for (field, expr) in &method.fields {
+        body.push_str(&format!(
+            "                data.raw_set({field:?}, {expr})?;\n"
+        ));
+    }
+    let mut keys = Vec::new();
+    if outputs {
+        for output in &method.outputs {
+            let value = match (output.shape, method.turn_view.as_deref()) {
+                (Some(shape), Some(view)) => carried::output_lua(shape, &output.key, view),
+                _ => format!("out_{}.borrow().to_lua_value(lua)?", output.key),
+            };
+            body.push_str(&format!(
+                "                data.raw_set({key:?}, {value})?;\n",
+                key = output.key
+            ));
+            keys.push(format!("{:?}", output.key));
+        }
+    }
+    body.push_str(&format!(
+        "                crate::dispatch::new_event(lua, data, &[{}])\n",
+        keys.join(", ")
+    ));
+    format!(
+        "            &|lua, {}| {{\n{body}            }},\n",
+        turn_param(&body)
+    )
+}
+
+/// The body of a hook with no outputs: its handlers run in the turn, and nothing is committed.
+fn plain_body(method: &Method<'_>) -> String {
+    let mut out = String::from("        crate::hostcall::refused(self.dispatch_turns(\n");
+    out.push_str(&format!("            {:?},\n", method.hook.name));
+    out.push_str(&format!("            {},\n", turn_text(method)));
+    out.push_str("            &|| false,\n");
+    out.push_str(&build_text(method, false));
+    out.push_str("            &mut |_, _, _| true,\n");
+    out.push_str("        ));\n");
     out
 }
 
@@ -724,35 +807,31 @@ fn checks_text(method: &Method<'_>, outputs: bool) -> String {
 fn replace_body(method: &Method<'_>, answer: &str) -> String {
     let hook = &method.hook.name;
     let mut out = String::from("        let mut answer = None;\n");
-    out.push_str("        self.dispatch_replace(\n");
+    out.push_str("        crate::hostcall::refused(self.dispatch_replace(\n");
     out.push_str(&format!("            {hook:?},\n"));
-    out.push_str("            &|lua| {\n");
-    out.push_str("                let data = lua.create_table()?;\n");
-    for (field, expr) in &method.fields {
-        out.push_str(&format!(
-            "                data.raw_set({field:?}, {expr})?;\n"
-        ));
-    }
-    out.push_str("                crate::dispatch::new_event(lua, data, &[])\n");
-    out.push_str("            },\n");
-    out.push_str("            &mut |id, value| {\n");
-    match carried::shape_of(answer).zip(method.view.as_deref()) {
-        Some((shape, view)) => out.push_str(&format!(
+    out.push_str(&format!("            {},\n", turn_text(method)));
+    out.push_str(&build_text(method, false));
+    let mut body = String::new();
+    match carried::shape_of(answer).zip(method.turn_view.as_deref()) {
+        Some((shape, view)) => body.push_str(&format!(
             "                match crate::dispatch::answer_by(id, {hook:?}, &value, {}) {{\n",
             carried::converter(shape, view)
         )),
-        None => out.push_str(&format!(
+        None => body.push_str(&format!(
             "                match crate::dispatch::answer_of::<{answer}>(id, {hook:?}, &value) {{\n"
         )),
     }
-    out.push_str("                    Some(found) => {\n");
-    out.push_str("                        answer = Some(found);\n");
-    out.push_str("                        true\n");
-    out.push_str("                    }\n");
-    out.push_str("                    None => false,\n");
-    out.push_str("                }\n");
-    out.push_str("            },\n");
-    out.push_str("        );\n");
+    body.push_str("                    Some(found) => {\n");
+    body.push_str("                        answer = Some(found);\n");
+    body.push_str("                        true\n");
+    body.push_str("                    }\n");
+    body.push_str("                    None => false,\n");
+    body.push_str("                }\n");
+    out.push_str(&format!(
+        "            &mut |id, value, {}| {{\n{body}            }},\n",
+        turn_param(&body)
+    ));
+    out.push_str("        ));\n");
     out.push_str("        answer\n");
     out
 }
@@ -785,57 +864,13 @@ fn turn_body(method: &Method<'_>) -> String {
     } else {
         "&|| false"
     };
-    out.push_str("        self.dispatch_turns(\n");
+    out.push_str("        crate::hostcall::refused(self.dispatch_turns(\n");
     out.push_str(&format!("            {hook:?},\n"));
+    out.push_str(&format!("            {},\n", turn_text(method)));
     out.push_str(&format!("            {is_cancelled},\n"));
-    out.push_str("            &|lua| {\n");
-    out.push_str("                let data = lua.create_table()?;\n");
-    for (field, expr) in &method.fields {
-        out.push_str(&format!(
-            "                data.raw_set({field:?}, {expr})?;\n"
-        ));
-    }
-    for output in &method.outputs {
-        let value = match (output.shape, method.view.as_deref()) {
-            (Some(shape), Some(view)) => carried::output_lua(shape, &output.key, view),
-            _ => format!("out_{}.borrow().to_lua_value(lua)?", output.key),
-        };
-        out.push_str(&format!(
-            "                data.raw_set({key:?}, {value})?;\n",
-            key = output.key
-        ));
-    }
-    let keys: Vec<String> = method
-        .outputs
-        .iter()
-        .map(|output| format!("{:?}", output.key))
-        .collect();
-    out.push_str(&format!(
-        "                crate::dispatch::new_event(lua, data, &[{}])\n",
-        keys.join(", ")
-    ));
-    out.push_str("            },\n");
-    out.push_str("            &mut |id, answered| {\n");
-    for output in &method.outputs {
-        // An `Option` output takes `horizon.none` as None; any other output refuses it.
-        let optional = output.ty.starts_with("Option<");
-        match (output.shape, method.view.as_deref()) {
-            (Some(shape), Some(view)) => out.push_str(&format!(
-                "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {convert});\n",
-                accept = if optional { "accept_opt_by" } else { "accept_by" },
-                key = output.key,
-                convert = carried::converter(shape, view)
-            )),
-            _ => out.push_str(&format!(
-                "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
-                accept = if optional { "accept_opt" } else { "accept" },
-                key = output.key
-            )),
-        }
-    }
-    out.push_str("                true\n");
-    out.push_str("            },\n");
-    out.push_str("        );\n");
+    out.push_str(&build_text(method, true));
+    out.push_str(&commit_text(method));
+    out.push_str("        ));\n");
     for output in &method.outputs {
         let deref = if output.by_ref { "*" } else { "" };
         out.push_str(&format!(
@@ -849,6 +884,35 @@ fn turn_body(method: &Method<'_>) -> String {
         ));
     }
     out
+}
+
+/// The `commit` closure of a hook with outputs: each output the mod wrote is accepted if it
+/// converts, and the chain goes on.
+fn commit_text(method: &Method<'_>) -> String {
+    let hook = &method.hook.name;
+    let mut body = String::new();
+    for output in &method.outputs {
+        // An `Option` output takes `horizon.none` as None; any other output refuses it.
+        let optional = output.ty.starts_with("Option<");
+        match (output.shape, method.turn_view.as_deref()) {
+            (Some(shape), Some(view)) => body.push_str(&format!(
+                "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {convert});\n",
+                accept = if optional { "accept_opt_by" } else { "accept_by" },
+                key = output.key,
+                convert = carried::converter(shape, view)
+            )),
+            _ => body.push_str(&format!(
+                "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
+                accept = if optional { "accept_opt" } else { "accept" },
+                key = output.key
+            )),
+        }
+    }
+    body.push_str("                true\n");
+    format!(
+        "            &mut |id, answered, {}| {{\n{body}            }},\n",
+        turn_param(&body)
+    )
 }
 
 #[cfg(test)]
@@ -1028,17 +1092,19 @@ impl mod_api::Hooks for LuaHost {
     }
 
     fn block_step_on(&self, event: &mut BlockStepOnEvent<'_>) {
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_step_on",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("position", event.position.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 }
 "#;
@@ -1073,15 +1139,17 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("stack_seen");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "stack_seen",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 "#;
         assert!(out.text.contains(expected), "{}", out.text);
@@ -1171,7 +1239,7 @@ impl mod_api::Hooks for LuaHost {
             "    fn block_receive_game(&self, host: &mut dyn ServerHost, event_: &mut BlockReceiveGameEvent<'_>) -> Flow {\n",
             "        let _ = &host;\n",
             "        let out_cancelled = std::cell::RefCell::new(event_.cancelled);\n",
-            "        self.dispatch_turns(\n            \"block_receive_game\",\n            &|| *out_cancelled.borrow(),\n",
+            "        crate::hostcall::refused(self.dispatch_turns(\n            \"block_receive_game\",\n            crate::hostcall::TurnHost::Server(host),\n            &|| *out_cancelled.borrow(),\n",
             "                data.raw_set(\"cancelled\", out_cancelled.borrow().to_lua_value(lua)?)?;\n",
             "                crate::dispatch::new_event(lua, data, &[\"cancelled\"])\n",
             "                crate::dispatch::accept(&out_cancelled, id, \"block_receive_game\", \"cancelled\", &answered.answer(\"cancelled\"));\n",
@@ -1234,21 +1302,22 @@ impl mod_api::Hooks for LuaHost {
     fn compute_fov(&self, host: &dyn ClientHost, event: &mut ComputeFovEvent) {
         let _ = &host;
         let out_degrees = std::cell::RefCell::new(event.degrees);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "compute_fov",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("partial", event.partial.to_lua_value(lua)?)?;
                 data.raw_set("camera", event.camera.to_lua_value(lua)?)?;
                 data.raw_set("degrees", out_degrees.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["degrees"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_degrees, id, "compute_fov", "degrees", &answered.answer("degrees"));
                 true
             },
-        );
+        ));
         event.degrees = out_degrees.into_inner();
     }
 }
@@ -1618,14 +1687,15 @@ impl mod_api::Hooks for LuaHost {
         let expected = r#"    fn pick(&self, host: &dyn ClientHost, event: &mut PickEvent<'_>) -> Option<mod_api::TriState> {
         let _ = &host;
         let mut answer = None;
-        self.dispatch_replace(
+        crate::hostcall::refused(self.dispatch_replace(
             "pick",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |id, value| {
+            &mut |id, value, _turn| {
                 match crate::dispatch::answer_of::<mod_api::TriState>(id, "pick", &value) {
                     Some(found) => {
                         answer = Some(found);
@@ -1634,7 +1704,7 @@ impl mod_api::Hooks for LuaHost {
                     None => false,
                 }
             },
-        );
+        ));
         answer
     }
 "#;
@@ -1742,5 +1812,76 @@ impl mod_api::Hooks for LuaHost {
             out.skipped[0].1,
             "has an output: its listeners write back, not in this slice"
         );
+    }
+
+    #[test]
+    fn each_host_kind_opens_its_turn_with_its_own_host_and_a_hook_without_one_with_none() {
+        // One listen hook per host parameter kind the turn carries, and one for a level host, which
+        // the turn does not carry (its handles raise `no host call outside a hook`).
+        let kinds = [
+            (
+                "server_hook",
+                "&mut dyn ServerHost",
+                "crate::hostcall::TurnHost::Server(host)",
+            ),
+            (
+                "client_hook",
+                "&mut dyn ClientHost",
+                "crate::hostcall::TurnHost::Client(host)",
+            ),
+            (
+                "client_read_hook",
+                "&dyn ClientHost",
+                "crate::hostcall::TurnHost::ClientRead(host)",
+            ),
+            (
+                "read_hook",
+                "&dyn Host",
+                "crate::hostcall::TurnHost::Read(host)",
+            ),
+            (
+                "side_hook",
+                "HostSide",
+                "crate::hostcall::TurnHost::of_side(host)",
+            ),
+            (
+                "level_hook",
+                "&dyn LevelHost",
+                "crate::hostcall::TurnHost::None",
+            ),
+        ];
+        let ir = ir(kinds
+            .iter()
+            .map(|(name, _, _)| hook(name, Kind::Listen, vec![arg("x", "i32")]))
+            .collect());
+        let sigs: Vec<HookSig> = kinds
+            .iter()
+            .map(|(name, ty, _)| sig(name, Some(("host", ty)), "event_", "Ev<'_>", None))
+            .collect();
+        let names: Vec<&str> = kinds.iter().map(|(name, _, _)| *name).collect();
+        let out = emit_plain(&ir, &sigs, &names, &Plain::default());
+        assert!(out.skipped.is_empty(), "{:?}", out.skipped);
+        assert_eq!(out.emitted.len(), kinds.len());
+        for (name, _, variant) in kinds {
+            let start = out
+                .text
+                .find(&format!("    fn {name}("))
+                .unwrap_or_else(|| panic!("{name} is emitted:\n{}", out.text));
+            let body = &out.text[start..];
+            let body = &body[..body.find("\n    }\n").expect("the method ends")];
+            assert!(
+                body.contains(&format!("            {variant},\n")),
+                "{name} opens its turn with {variant}:\n{body}"
+            );
+            assert_eq!(
+                body.matches("crate::hostcall::TurnHost::").count(),
+                1,
+                "{name} names one turn host:\n{body}"
+            );
+            assert!(
+                body.contains("crate::hostcall::refused(self.dispatch_turns("),
+                "{name}"
+            );
+        }
     }
 }

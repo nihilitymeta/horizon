@@ -19,10 +19,11 @@ impl mod_api::Hooks for LuaHost {
     fn animal_tame(&self, host: &mut dyn ServerHost, event: &mut AnimalTameEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "animal_tame",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("tamer", event.tamer.to_lua_value(lua)?)?;
                 data.raw_set("tamer_entity_id", event.tamer_entity_id.to_lua_value(lua)?)?;
@@ -31,20 +32,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "animal_tame", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn anvil_damaged(&self, host: &mut dyn ServerHost, event: &mut AnvilDamagedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "anvil_damaged",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -52,17 +55,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("to", event.to.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn armor_stand_manipulate(&self, host: &mut dyn ServerHost, event: &mut ArmorStandManipulateEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "armor_stand_manipulate",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -71,11 +75,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "armor_stand_manipulate", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -91,23 +95,24 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("arrow_loose");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "arrow_loose",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("has_ammo", event.has_ammo.to_lua_value(lua)?)?;
                 data.raw_set("charge", out_charge.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["charge", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_charge, id, "arrow_loose", "charge", &answered.answer("charge"));
                 crate::dispatch::accept(&out_cancelled, id, "arrow_loose", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.charge = out_charge.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -123,24 +128,25 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("arrow_nock");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "arrow_nock",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
-                data.raw_set("bow", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.bow)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("bow", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.bow)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 data.raw_set("has_ammo", event.has_ammo.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "arrow_nock", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -148,10 +154,11 @@ impl mod_api::Hooks for LuaHost {
     fn attack_entity(&self, host: &mut dyn ServerHost, event: &mut AttackEntityEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "attack_entity",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -159,11 +166,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "attack_entity", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -171,10 +178,11 @@ impl mod_api::Hooks for LuaHost {
     fn baby_entity_spawn(&self, host: &mut dyn ServerHost, event: &mut BabyEntitySpawnEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "baby_entity_spawn",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("parent", event.parent.to_lua_value(lua)?)?;
                 data.raw_set("partner", event.partner.to_lua_value(lua)?)?;
@@ -184,37 +192,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "baby_entity_spawn", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn beacon_state_change(&self, host: &mut dyn ServerHost, event: &mut BeaconStateChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "beacon_state_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("active", event.active.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn bell_ring(&self, level: &dyn LevelHost, event: &mut BellRingEvent) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "bell_ring",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -222,20 +233,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "bell_ring", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_break_progress_update(&self, host: &mut dyn ServerHost, event: &mut BlockBreakProgressUpdateEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_break_progress_update",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -243,28 +256,29 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("progress", event.progress.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn block_burn(&self, level: &dyn LevelHost, event: &mut BlockBurnEvent) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_burn",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_burn", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -282,9 +296,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("block_changed");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_changed",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -292,45 +308,51 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("new", crate::stacks::state_in(level, Some(&event.new)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn block_cook(&self, host: &mut dyn ServerHost, event: &mut BlockCookEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_cook",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 data.raw_set("result", event.result.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn block_damage_abort(&self, host: &mut dyn ServerHost, event: &mut BlockDamageAbortEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_damage_abort",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn block_dispense_armor(&self, host: &mut dyn ServerHost, event: &mut BlockDispenseArmorEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_dispense_armor",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -338,8 +360,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("target", event.target.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn block_fade(&self, level: &dyn LevelHost, event: &mut BlockFadeEvent) -> Flow {
@@ -356,10 +378,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("block_fade");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_fade",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -368,28 +391,30 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_fade", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_failed_dispense(&self, host: &mut dyn ServerHost, event: &mut BlockFailedDispenseEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_failed_dispense",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn block_form(&self, level: &dyn LevelHost, event: &mut BlockFormEvent) -> Flow {
@@ -406,10 +431,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("block_form");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_form",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -418,11 +444,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_form", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -432,10 +458,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &level;
         let out_feature = std::cell::RefCell::new(event.feature.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_grow_feature",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -443,12 +470,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["feature", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_opt(&out_feature, id, "block_grow_feature", "feature", &answered.answer("feature"));
                 crate::dispatch::accept(&out_cancelled, id, "block_grow_feature", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.feature = out_feature.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -464,22 +491,23 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("block_highlight");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_highlight",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                data.raw_set("state", crate::stacks::state_in(host as &dyn mod_api::Host, Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("state", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("partial", event.partial.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_highlight", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -487,10 +515,11 @@ impl mod_api::Hooks for LuaHost {
     fn block_ignite(&self, level: &dyn LevelHost, event: &mut BlockIgniteEvent<'_>) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_ignite",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -499,11 +528,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_ignite", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -511,10 +540,11 @@ impl mod_api::Hooks for LuaHost {
     fn block_lock_check(&self, host: &mut dyn ServerHost, event: &mut BlockLockCheckEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_lock_check",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -522,11 +552,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_lock_check", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -534,10 +564,11 @@ impl mod_api::Hooks for LuaHost {
     fn block_receive_game(&self, host: &mut dyn ServerHost, event_: &mut BlockReceiveGameEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event_.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_receive_game",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event_.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event_.pos.to_lua_value(lua)?)?;
@@ -546,20 +577,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_receive_game", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event_.cancelled = out_cancelled.into_inner();
         if event_.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_shear_entity(&self, host: &mut dyn ServerHost, event: &mut BlockShearEntityEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_shear_entity",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -567,17 +600,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn block_spread(&self, level: &dyn LevelHost, event: &mut BlockSpreadEvent<'_>) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_spread",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -586,11 +620,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "block_spread", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -611,23 +645,24 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("block_tool_modification");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "block_tool_modification",
+            crate::hostcall::TurnHost::Read(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("tool", event.tool.to_lua_value(lua)?)?;
-                data.raw_set("final_state", crate::stacks::state_in(host, out_final_state.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("final_state", crate::stacks::state_in(turn.read_or_unavailable(), out_final_state.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["final_state", "cancelled"])
             },
-            &mut |id, answered| {
-                crate::dispatch::accept_opt_by(&out_final_state, id, "block_tool_modification", "final_state", &answered.answer("final_state"), |value| crate::stacks::state_value(host, value));
+            &mut |id, answered, turn| {
+                crate::dispatch::accept_opt_by(&out_final_state, id, "block_tool_modification", "final_state", &answered.answer("final_state"), |value| crate::stacks::state_value(turn.read_or_unavailable(), value));
                 crate::dispatch::accept(&out_cancelled, id, "block_tool_modification", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.final_state = out_final_state.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -645,23 +680,24 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("break_block");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "break_block",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                data.raw_set("state", crate::stacks::state_in(&*host as &dyn mod_api::Host, Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("state", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("exp_to_drop", out_exp_to_drop.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["exp_to_drop", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_opt(&out_exp_to_drop, id, "break_block", "exp_to_drop", &answered.answer("exp_to_drop"));
                 crate::dispatch::accept(&out_cancelled, id, "break_block", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.exp_to_drop = out_exp_to_drop.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -669,43 +705,49 @@ impl mod_api::Hooks for LuaHost {
 
     fn brewing_complete(&self, host: &mut dyn ServerHost, event: &mut BrewingCompleteEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "brewing_complete",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn brewing_fuel(&self, host: &mut dyn ServerHost, event: &mut BrewingFuelEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "brewing_fuel",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("fuel", event.fuel.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn brewing_start(&self, host: &mut dyn ServerHost, event: &mut BrewingStartEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "brewing_start",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("ingredient", event.ingredient.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -713,21 +755,22 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_line = std::cell::RefCell::new(event.line.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "broadcast_message",
+            crate::hostcall::TurnHost::Read(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("line", out_line.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["line", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_line, id, "broadcast_message", "line", &answered.answer("line"));
                 crate::dispatch::accept(&out_cancelled, id, "broadcast_message", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.line = out_line.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -736,10 +779,11 @@ impl mod_api::Hooks for LuaHost {
     fn bucket_empty(&self, host: &mut dyn ServerHost, event: &mut BucketEmptyEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "bucket_empty",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -748,11 +792,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "bucket_empty", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -768,21 +812,22 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("build_creative_mode_tab_contents");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "build_creative_mode_tab_contents",
+            crate::hostcall::TurnHost::Client(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("tab", event.tab.to_string().to_lua_value(lua)?)?;
                 data.raw_set("has_permissions", event.has_permissions.to_lua_value(lua)?)?;
-                data.raw_set("items", crate::stacks::stack_list_in(&*host as &dyn mod_api::Host, out_items.borrow().as_slice()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("items", crate::stacks::stack_list_in(turn.read_or_unavailable(), out_items.borrow().as_slice()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["items"])
             },
-            &mut |id, answered| {
-                crate::dispatch::accept_by(&out_items, id, "build_creative_mode_tab_contents", "items", &answered.answer("items"), |value| crate::stacks::stack_list_value(&*host as &dyn mod_api::Host, value));
+            &mut |id, answered, turn| {
+                crate::dispatch::accept_by(&out_items, id, "build_creative_mode_tab_contents", "items", &answered.answer("items"), |value| crate::stacks::stack_list_value(turn.read_or_unavailable(), value));
                 true
             },
-        );
+        ));
         *event.items = out_items.into_inner();
     }
 
@@ -790,10 +835,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_mouse_sensitivity = std::cell::RefCell::new(event.mouse_sensitivity);
         let out_cinematic_camera_enabled = std::cell::RefCell::new(event.cinematic_camera_enabled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "calculate_player_turn",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
                 data.raw_set("player_uuid", event.player_uuid.to_lua_value(lua)?)?;
@@ -801,12 +847,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cinematic_camera_enabled", out_cinematic_camera_enabled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["mouse_sensitivity", "cinematic_camera_enabled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_mouse_sensitivity, id, "calculate_player_turn", "mouse_sensitivity", &answered.answer("mouse_sensitivity"));
                 crate::dispatch::accept(&out_cinematic_camera_enabled, id, "calculate_player_turn", "cinematic_camera_enabled", &answered.answer("cinematic_camera_enabled"));
                 true
             },
-        );
+        ));
         event.mouse_sensitivity = out_mouse_sensitivity.into_inner();
         event.cinematic_camera_enabled = out_cinematic_camera_enabled.into_inner();
     }
@@ -817,10 +863,11 @@ impl mod_api::Hooks for LuaHost {
         let out_position = std::cell::RefCell::new(event.position.clone());
         let out_yaw = std::cell::RefCell::new(event.yaw);
         let out_pitch = std::cell::RefCell::new(event.pitch);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "camera_pose",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("partial", event.partial.to_lua_value(lua)?)?;
                 data.raw_set("position", out_position.borrow().to_lua_value(lua)?)?;
@@ -828,13 +875,13 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("pitch", out_pitch.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["position", "yaw", "pitch"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_position, id, "camera_pose", "position", &answered.answer("position"));
                 crate::dispatch::accept(&out_yaw, id, "camera_pose", "yaw", &answered.answer("yaw"));
                 crate::dispatch::accept(&out_pitch, id, "camera_pose", "pitch", &answered.answer("pitch"));
                 true
             },
-        );
+        ));
         *event.position = out_position.into_inner();
         event.yaw = out_yaw.into_inner();
         event.pitch = out_pitch.into_inner();
@@ -844,45 +891,49 @@ impl mod_api::Hooks for LuaHost {
     fn camera_type_cycle(&self, host: &mut dyn ClientHost, event: &mut CameraTypeCycleEvent<'_>) {
         let _ = &host;
         let out_next = std::cell::RefCell::new(event.next.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "camera_type_cycle",
+            crate::hostcall::TurnHost::Client(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("previous", event.previous.to_lua_value(lua)?)?;
                 data.raw_set("next", out_next.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["next"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_next, id, "camera_type_cycle", "next", &answered.answer("next"));
                 true
             },
-        );
+        ));
         *event.next = out_next.into_inner();
     }
 
     fn campfire_start(&self, host: &mut dyn ServerHost, event: &mut CampfireStartEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "campfire_start",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn can_player_sleep(&self, host: &mut dyn ServerHost, event: &mut CanPlayerSleepEvent<'_>) {
         let _ = &host;
         let out_problem = std::cell::RefCell::new(event.problem.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "can_player_sleep",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -890,21 +941,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("problem", out_problem.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["problem"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_opt(&out_problem, id, "can_player_sleep", "problem", &answered.answer("problem"));
                 true
             },
-        );
+        ));
         *event.problem = out_problem.into_inner();
     }
 
     fn cauldron_level_changed(&self, level: &dyn LevelHost, event: &mut CauldronLevelChangedEvent<'_>) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "cauldron_level_changed",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -915,11 +967,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "cauldron_level_changed", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -927,10 +979,11 @@ impl mod_api::Hooks for LuaHost {
     fn chat_recipient(&self, host: &mut dyn ServerHost, event: &mut ChatRecipientEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "chat_recipient",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("sender", event.sender.to_lua_value(lua)?)?;
                 data.raw_set("sender_name", event.sender_name.to_string().to_lua_value(lua)?)?;
@@ -939,20 +992,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "chat_recipient", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn chat_suggestion_applied(&self, host: &dyn ClientHost, event: &mut ChatSuggestionAppliedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "chat_suggestion_applied",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("original", event.original.to_string().to_lua_value(lua)?)?;
                 data.raw_set("start", event.start.to_lua_value(lua)?)?;
@@ -961,37 +1016,41 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("input", event.input.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn chunk_load(&self, host: &mut dyn ServerHost, event: &mut ChunkLoadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "chunk_load",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("chunk", event.chunk.to_lua_value(lua)?)?;
                 data.raw_set("new", event.new.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn chunk_unload(&self, host: &mut dyn ServerHost, event: &mut ChunkUnloadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "chunk_unload",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("chunk", event.chunk.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -999,10 +1058,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_message = std::cell::RefCell::new(event.message.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_chat",
+            crate::hostcall::TurnHost::Client(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player_id", event.player_id.to_lua_value(lua)?)?;
                 data.raw_set("player_uuid", event.player_uuid.to_lua_value(lua)?)?;
@@ -1011,12 +1071,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["message", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_message, id, "client_chat", "message", &answered.answer("message"));
                 crate::dispatch::accept(&out_cancelled, id, "client_chat", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.message = out_message.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -1024,50 +1084,58 @@ impl mod_api::Hooks for LuaHost {
 
     fn client_chunk_load(&self, host: &mut dyn ClientHost, event: &mut ClientChunkLoadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_chunk_load",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("chunk", event.chunk.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_chunk_unload(&self, host: &mut dyn ClientHost, event: &mut ClientChunkUnloadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_chunk_unload",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("chunk", event.chunk.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_disconnecting(&self, host: &dyn ClientHost, event: &mut ClientDisconnectingEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_disconnecting",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_information_updated(&self, host: &mut dyn ServerHost, event: &mut ClientInformationUpdatedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_information_updated",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
@@ -1076,96 +1144,106 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("new", event.new.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_level_load(&self, host: &mut dyn ClientHost, event: &mut ClientLevelLoadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_level_load",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_level_unload(&self, host: &mut dyn ClientHost, event: &mut ClientLevelUnloadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_level_unload",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_mining_predict(&self, host: &dyn ClientHost, event: &mut ClientMiningPredictEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_mining_predict",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("prediction", event.prediction.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "client_mining_predict", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn client_pause_change_post(&self, host: &mut dyn ClientHost, event: &mut ClientPauseChangePostEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_pause_change_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("paused", event.paused.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_pause_change_pre(&self, host: &mut dyn ClientHost, event: &mut ClientPauseChangePreEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_pause_change_pre",
+            crate::hostcall::TurnHost::Client(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("paused", event.paused.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "client_pause_change_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn client_player_change_game_type(&self, host: &mut dyn ClientHost, event: &mut ClientPlayerChangeGameTypeEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_player_change_game_type",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player_id", event.player_id.to_lua_value(lua)?)?;
                 data.raw_set("player_uuid", event.player_uuid.to_lua_value(lua)?)?;
@@ -1173,15 +1251,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("new_game_type", event.new_game_type.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_player_clone(&self, host: &mut dyn ClientHost, event: &mut ClientPlayerCloneEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_player_clone",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("old_id", event.old_id.to_lua_value(lua)?)?;
                 data.raw_set("new_id", event.new_id.to_lua_value(lua)?)?;
@@ -1190,133 +1270,150 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("dimension_changed", event.dimension_changed.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_player_logging_in(&self, host: &mut dyn ClientHost, event: &mut ClientPlayerLoggingInEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_player_logging_in",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player_id", event.player_id.to_lua_value(lua)?)?;
                 data.raw_set("uuid", event.uuid.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_player_logging_out(&self, host: &mut dyn ClientHost, event: &mut ClientPlayerLoggingOutEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_player_logging_out",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player_id", event.player_id.to_lua_value(lua)?)?;
                 data.raw_set("uuid", event.uuid.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_resources_reloaded(&self, host: &mut dyn ClientHost, event: &mut ClientResourcesReloadedEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_resources_reloaded",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_setup(&self, host: &mut dyn ClientHost, event: &mut ClientSetupEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_setup",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_stopped(&self, host: &mut dyn ClientHost, event: &mut ClientStoppedEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_stopped",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_stopping(&self, host: &mut dyn ClientHost, event: &mut ClientStoppingEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_stopping",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_tick_post(&self, host: &mut dyn ClientHost, event: &mut ClientTickPostEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_tick_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn client_tick_pre(&self, host: &mut dyn ClientHost, event: &mut ClientTickPreEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "client_tick_pre",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn command(&self, host: &mut dyn ClientHost, event: &mut CommandEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "command",
+            crate::hostcall::TurnHost::Client(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("command", event.command.to_string().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "command", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -1325,44 +1422,48 @@ impl mod_api::Hooks for LuaHost {
     fn component_types(&self, context: &RegistrationContext, event: &mut ComponentTypesEvent<'_>) {
         let _ = &context;
         let out_types = std::cell::RefCell::new(event.types.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "component_types",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("types", out_types.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["types"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_types, id, "component_types", "types", &answered.answer("types"));
                 true
             },
-        );
+        ));
         *event.types = out_types.into_inner();
     }
 
     fn compost_item(&self, host: &mut dyn ServerHost, event: &mut CompostItemEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "compost_item",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn compute_fog_color(&self, host: &dyn ClientHost, event: &mut ComputeFogColorEvent<'_>) {
         let _ = &host;
         let out_rgb = std::cell::RefCell::new(event.rgb.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "compute_fog_color",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("partial", event.partial.to_lua_value(lua)?)?;
                 data.raw_set("camera", event.camera.to_lua_value(lua)?)?;
@@ -1370,96 +1471,106 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("rgb", out_rgb.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["rgb"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_rgb, id, "compute_fog_color", "rgb", &answered.answer("rgb"));
                 true
             },
-        );
+        ));
         *event.rgb = out_rgb.into_inner();
     }
 
     fn compute_fov(&self, host: &dyn ClientHost, event: &mut ComputeFovEvent) {
         let _ = &host;
         let out_degrees = std::cell::RefCell::new(event.degrees);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "compute_fov",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("partial", event.partial.to_lua_value(lua)?)?;
                 data.raw_set("camera", event.camera.to_lua_value(lua)?)?;
                 data.raw_set("degrees", out_degrees.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["degrees"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_degrees, id, "compute_fov", "degrees", &answered.answer("degrees"));
                 true
             },
-        );
+        ));
         event.degrees = out_degrees.into_inner();
     }
 
     fn config_loading(&self, host: HostSide, event: &mut ConfigLoadingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "config_loading",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("config", event.config.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn config_reloading(&self, host: HostSide, event: &mut ConfigReloadingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "config_reloading",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("config", event.config.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn config_unloading(&self, host: &mut dyn ServerHost, event: &mut ConfigUnloadingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "config_unloading",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("config", event.config.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn console_line(&self, host: &mut dyn ServerHost, event: &mut ConsoleLineEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "console_line",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("level", event.level.to_string().to_lua_value(lua)?)?;
                 data.raw_set("thread", event.thread.to_string().to_lua_value(lua)?)?;
                 data.raw_set("message", event.message.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn container_opened(&self, host: &mut dyn ServerHost, event: &mut ContainerOpenedEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "container_opened",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -1468,27 +1579,29 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "container_opened", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn crafter_craft(&self, host: &mut dyn ServerHost, event: &mut CrafterCraftEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "crafter_craft",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("recipe", event.recipe.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn create_fluid_source(&self, level: &dyn LevelHost, event: &mut CreateFluidSourceEvent) {
@@ -1501,10 +1614,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("create_fluid_source");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "create_fluid_source",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -1512,21 +1626,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("can_convert", out_can_convert.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["can_convert"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_can_convert, id, "create_fluid_source", "can_convert", &answered.answer("can_convert"));
                 true
             },
-        );
+        ));
         event.can_convert = out_can_convert.into_inner();
     }
 
     fn creative_slot(&self, host: &mut dyn ServerHost, event: &mut CreativeSlotEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "creative_slot",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -1536,52 +1651,57 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "creative_slot", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn creeper_ignite(&self, host: &mut dyn ServerHost, event: &mut CreeperIgniteEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "creeper_ignite",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn creeper_power(&self, host: &mut dyn ServerHost, event: &mut CreeperPowerEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "creeper_power",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("lightning", event.lightning.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn critical_hit(&self, host: &mut dyn ServerHost, event: &mut CriticalHitEvent<'_>) {
         let _ = &host;
         let out_critical = std::cell::RefCell::new(event.critical);
         let out_damage_multiplier = std::cell::RefCell::new(event.damage_multiplier);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "critical_hit",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("target_kind", event.target_kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("vanilla_critical", event.vanilla_critical.to_lua_value(lua)?)?;
@@ -1589,12 +1709,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("damage_multiplier", out_damage_multiplier.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["critical", "damage_multiplier"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_critical, id, "critical_hit", "critical", &answered.answer("critical"));
                 crate::dispatch::accept(&out_damage_multiplier, id, "critical_hit", "damage_multiplier", &answered.answer("damage_multiplier"));
                 true
             },
-        );
+        ));
         event.critical = out_critical.into_inner();
         event.damage_multiplier = out_damage_multiplier.into_inner();
     }
@@ -1612,9 +1732,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("crop_grow_post");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "crop_grow_post",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -1622,8 +1744,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("state", crate::stacks::state_in(&*level as &dyn mod_api::LevelHost, Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -1637,10 +1759,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("crop_grow_pre");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "crop_grow_pre",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -1648,27 +1771,29 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("result", out_result.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["result"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_result, id, "crop_grow_pre", "result", &answered.answer("result"));
                 true
             },
-        );
+        ));
         *event.result = out_result.into_inner();
     }
 
     fn custom_spawner_tick(&self, host: &mut dyn ServerHost, event: &mut CustomSpawnerTickEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "custom_spawner_tick",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_lua_value(lua)?)?;
                 data.raw_set("spawn_enemies", event.spawn_enemies.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn customize_boss_event_progress(&self, host: &dyn ClientHost, event: &mut CustomizeBossEventProgressEvent<'_>) -> Flow {
@@ -1677,10 +1802,11 @@ impl mod_api::Hooks for LuaHost {
         let out_y = std::cell::RefCell::new(event.y);
         let out_increment = std::cell::RefCell::new(event.increment);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "customize_boss_event_progress",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("bar", event.bar.to_lua_value(lua)?)?;
                 data.raw_set("x", out_x.borrow().to_lua_value(lua)?)?;
@@ -1689,14 +1815,14 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["x", "y", "increment", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_x, id, "customize_boss_event_progress", "x", &answered.answer("x"));
                 crate::dispatch::accept(&out_y, id, "customize_boss_event_progress", "y", &answered.answer("y"));
                 crate::dispatch::accept(&out_increment, id, "customize_boss_event_progress", "increment", &answered.answer("increment"));
                 crate::dispatch::accept(&out_cancelled, id, "customize_boss_event_progress", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.x = out_x.into_inner();
         event.y = out_y.into_inner();
         event.increment = out_increment.into_inner();
@@ -1708,10 +1834,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_x = std::cell::RefCell::new(event.x);
         let out_y = std::cell::RefCell::new(event.y);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "customize_chat_overlay",
+            crate::hostcall::TurnHost::Client(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("gui_width", event.gui_width.to_lua_value(lua)?)?;
                 data.raw_set("gui_height", event.gui_height.to_lua_value(lua)?)?;
@@ -1720,96 +1847,104 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("y", out_y.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["x", "y"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_x, id, "customize_chat_overlay", "x", &answered.answer("x"));
                 crate::dispatch::accept(&out_y, id, "customize_chat_overlay", "y", &answered.answer("y"));
                 true
             },
-        );
+        ));
         event.x = out_x.into_inner();
         event.y = out_y.into_inner();
     }
 
     fn data_maps_updated(&self, host: HostSide, event: &mut DataMapsUpdatedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "data_maps_updated",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("registry", event.registry.to_string().to_lua_value(lua)?)?;
                 data.raw_set("cause", event.cause.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn debug_entry_lines(&self, host: &dyn ClientHost, event: &mut DebugEntryLinesEvent<'_>) {
         let _ = &host;
         let out_lines = std::cell::RefCell::new(event.lines.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "debug_entry_lines",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("id", event.id.to_string().to_lua_value(lua)?)?;
                 data.raw_set("lines", out_lines.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["lines"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_lines, id, "debug_entry_lines", "lines", &answered.answer("lines"));
                 true
             },
-        );
+        ));
         *event.lines = out_lines.into_inner();
     }
 
     fn default_components_bound(&self, host: HostSide, event: &mut DefaultComponentsBoundEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "default_components_bound",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("cause", event.cause.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn difficulty_changed(&self, host: &mut dyn ServerHost, event: &mut DifficultyChangedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "difficulty_changed",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("from", event.from.to_string().to_lua_value(lua)?)?;
                 data.raw_set("to", event.to.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn dragon_egg_form(&self, level: &dyn LevelHost, event: &mut DragonEggFormEvent) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "dragon_egg_form",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "dragon_egg_form", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -1823,28 +1958,31 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("enchant_item");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "enchant_item",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                data.raw_set("item", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.item)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("item", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.item)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("levels", event.levels.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn enchanted_entity_loot(&self, host: &mut dyn ServerHost, event: &mut EnchantedEntityLootEvent<'_>) {
         let _ = &host;
         let out_level = std::cell::RefCell::new(event.level);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "enchanted_entity_loot",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
@@ -1853,11 +1991,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("level", out_level.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["level"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_level, id, "enchanted_entity_loot", "level", &answered.answer("level"));
                 true
             },
-        );
+        ));
         event.level = out_level.into_inner();
     }
 
@@ -1866,10 +2004,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &context;
         let out_target = std::cell::RefCell::new(event.target.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "ender_entity_teleport",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -1878,12 +2017,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["target", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_target, id, "ender_entity_teleport", "target", &answered.answer("target"));
                 crate::dispatch::accept(&out_cancelled, id, "ender_entity_teleport", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.target = out_target.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -1891,69 +2030,79 @@ impl mod_api::Hooks for LuaHost {
 
     fn entities_load(&self, host: &mut dyn ServerHost, event: &mut EntitiesLoadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entities_load",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("chunk", event.chunk.to_lua_value(lua)?)?;
                 data.raw_set("count", event.count.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entities_unload(&self, host: &mut dyn ServerHost, event: &mut EntitiesUnloadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entities_unload",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("chunk", event.chunk.to_lua_value(lua)?)?;
                 data.raw_set("count", event.count.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_break_door(&self, host: &mut dyn ServerHost, event: &mut EntityBreakDoorEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_break_door",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_breed(&self, host: &mut dyn ServerHost, event: &mut EntityBreedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_breed",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("parent", event.parent.to_lua_value(lua)?)?;
                 data.raw_set("partner", event.partner.to_lua_value(lua)?)?;
                 data.raw_set("child", event.child.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_change_block(&self, host: &mut dyn ServerHost, event: &mut EntityChangeBlockEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_change_block",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -1962,8 +2111,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("to", event.to.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_change_block_pre(&self, host: &mut dyn ServerHost, event: &mut EntityChangeBlockPreEvent<'_>) -> Flow {
@@ -1980,48 +2129,53 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("entity_change_block_pre");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_change_block_pre",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                data.raw_set("from", crate::stacks::state_in(&*host as &dyn mod_api::Host, Some(&event.from)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
-                data.raw_set("to", crate::stacks::state_in(&*host as &dyn mod_api::Host, Some(&event.to)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("from", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.from)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("to", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.to)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "entity_change_block_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_constructing(&self, host: HostSide, event: &mut EntityConstructingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_constructing",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("holder", event.holder.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_drop_item(&self, host: &mut dyn ServerHost, event: &mut EntityDropItemEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_drop_item",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
@@ -2029,15 +2183,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_enter_block(&self, host: &mut dyn ServerHost, event: &mut EntityEnterBlockEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_enter_block",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -2045,30 +2201,34 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("block", event.block.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_enter_love_mode(&self, host: &mut dyn ServerHost, event: &mut EntityEnterLoveModeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_enter_love_mode",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_entering_section(&self, host: HostSide, event: &mut EntityEnteringSectionEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_entering_section",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("old_section", event.old_section.to_lua_value(lua)?)?;
@@ -2076,8 +2236,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("chunk_changed", event.chunk_changed.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_interact_specific(&self, host: &mut dyn ServerHost, event: &mut EntityInteractSpecificEvent<'_>) -> Flow {
@@ -2090,23 +2250,24 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("entity_interact_specific");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_interact_specific",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, event.stack).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), event.stack).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("location", event.location.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "entity_interact_specific", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -2114,10 +2275,11 @@ impl mod_api::Hooks for LuaHost {
     fn entity_invulnerability_check(&self, level: LevelSide, event: &mut EntityInvulnerabilityCheckEvent<'_>) {
         let _ = &level;
         let out_invulnerable = std::cell::RefCell::new(event.invulnerable);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_invulnerability_check",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -2126,21 +2288,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("invulnerable", out_invulnerable.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["invulnerable"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_invulnerable, id, "entity_invulnerability_check", "invulnerable", &answered.answer("invulnerable"));
                 true
             },
-        );
+        ));
         event.invulnerable = out_invulnerable.into_inner();
     }
 
     fn entity_join_level(&self, host: &mut dyn ServerHost, event: &mut EntityJoinLevelEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_join_level",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
@@ -2150,57 +2313,61 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "entity_join_level", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_leave_level(&self, host: &mut dyn ServerHost, event: &mut EntityLeaveLevelEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_leave_level",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_mob_griefing(&self, host: &dyn Host, event: &mut EntityMobGriefingEvent) {
         let _ = &host;
         let out_can_grief = std::cell::RefCell::new(event.can_grief);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_mob_griefing",
+            crate::hostcall::TurnHost::Read(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("can_grief", out_can_grief.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["can_grief"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_can_grief, id, "entity_mob_griefing", "can_grief", &answered.answer("can_grief"));
                 true
             },
-        );
+        ));
         event.can_grief = out_can_grief.into_inner();
     }
 
     fn entity_mount(&self, host: &mut dyn ServerHost, event: &mut EntityMountEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_mount",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
@@ -2211,11 +2378,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "entity_mount", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -2225,10 +2392,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &context;
         let out_delta = std::cell::RefCell::new(event.delta.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_move",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -2237,12 +2405,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["delta", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_delta, id, "entity_move", "delta", &answered.answer("delta"));
                 crate::dispatch::accept(&out_cancelled, id, "entity_move", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.delta = out_delta.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -2252,44 +2420,49 @@ impl mod_api::Hooks for LuaHost {
     fn entity_outline(&self, host: &dyn ClientHost, event: &mut EntityOutlineEvent<'_>) {
         let _ = &host;
         let out_outline = std::cell::RefCell::new(event.outline.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_outline",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("outline", out_outline.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["outline"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_opt(&out_outline, id, "entity_outline", "outline", &answered.answer("outline"));
                 true
             },
-        );
+        ));
         *event.outline = out_outline.into_inner();
     }
 
     fn entity_portal(&self, host: &mut dyn ServerHost, event: &mut EntityPortalEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_portal",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_pose_change(&self, host: &mut dyn ServerHost, event: &mut EntityPoseChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_pose_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -2297,15 +2470,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("to", event.to.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_shoot_bow(&self, host: &mut dyn ServerHost, event: &mut EntityShootBowEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_shoot_bow",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -2313,18 +2488,19 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("force", event.force.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn entity_size(&self, host: &dyn Host, event: &mut EntitySizeEvent<'_>) {
         let _ = &host;
         let out_size = std::cell::RefCell::new(event.size.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_size",
+            crate::hostcall::TurnHost::Read(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("pose", event.pose.to_lua_value(lua)?)?;
@@ -2332,56 +2508,61 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("size", out_size.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["size"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_size, id, "entity_size", "size", &answered.answer("size"));
                 true
             },
-        );
+        ));
         *event.size = out_size.into_inner();
     }
 
     fn entity_struck_by_lightning(&self, host: &mut dyn ServerHost, event: &mut EntityStruckByLightningEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_struck_by_lightning",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("bolt", event.bolt.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "entity_struck_by_lightning", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_tame(&self, host: &mut dyn ServerHost, event: &mut EntityTameEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_tame",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("owner", event.owner.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_teleport(&self, host: &mut dyn ServerHost, event: &mut EntityTeleportEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_teleport",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
@@ -2389,32 +2570,35 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_tick_post(&self, host: &mut dyn ServerHost, event: &mut EntityTickPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_tick_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_tick_pre(&self, host: &mut dyn ServerHost, event: &mut EntityTickPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_tick_pre",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
@@ -2422,37 +2606,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "entity_tick_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_toggle_glide(&self, host: &mut dyn ServerHost, event: &mut EntityToggleGlideEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_toggle_glide",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("gliding", event.gliding.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn entity_travel_to_dimension(&self, host: &mut dyn ServerHost, event: &mut EntityTravelToDimensionEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_travel_to_dimension",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
@@ -2460,50 +2647,55 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "entity_travel_to_dimension", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_unleash(&self, host: &mut dyn ServerHost, event: &mut EntityUnleashEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "entity_unleash",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn exp_bottle(&self, host: &mut dyn ServerHost, event: &mut ExpBottleEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "exp_bottle",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("experience", event.experience.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn experience_orb_can_merge(&self, host: &mut dyn ServerHost, event: &mut ExperienceOrbCanMergeEvent<'_>) {
         let _ = &host;
         let out_can_merge = std::cell::RefCell::new(event.can_merge);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "experience_orb_can_merge",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("into", event.into.to_lua_value(lua)?)?;
@@ -2513,21 +2705,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("can_merge", out_can_merge.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["can_merge"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_can_merge, id, "experience_orb_can_merge", "can_merge", &answered.answer("can_merge"));
                 true
             },
-        );
+        ));
         event.can_merge = out_can_merge.into_inner();
     }
 
     fn experience_orb_merge(&self, host: &mut dyn ServerHost, event: &mut ExperienceOrbMergeEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "experience_orb_merge",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("into", event.into.to_lua_value(lua)?)?;
@@ -2539,46 +2732,49 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "experience_orb_merge", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn explosion_prime(&self, host: &mut dyn ServerHost, event: &mut ExplosionPrimeEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "explosion_prime",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("center", event.center.to_lua_value(lua)?)?;
                 data.raw_set("radius", event.radius.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn explosion_start(&self, host: &mut dyn ServerHost, event: &mut ExplosionStartEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "explosion_start",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("explosion", event.explosion.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "explosion_start", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -2594,25 +2790,26 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("extract_block_screen_effect");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "extract_block_screen_effect",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("effect", event.effect.to_lua_value(lua)?)?;
-                data.raw_set("state", crate::stacks::state_in(host as &dyn mod_api::Host, Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("state", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("partial_tick", event.partial_tick.to_lua_value(lua)?)?;
                 data.raw_set("custom_draw", out_custom_draw.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["custom_draw", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_custom_draw, id, "extract_block_screen_effect", "custom_draw", &answered.answer("custom_draw"));
                 crate::dispatch::accept(&out_cancelled, id, "extract_block_screen_effect", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.custom_draw = out_custom_draw.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -2621,10 +2818,11 @@ impl mod_api::Hooks for LuaHost {
     fn farmland_trample(&self, context: &dyn LoopContext, event: &mut FarmlandTrampleEvent) -> Flow {
         let _ = &context;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "farmland_trample",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -2633,11 +2831,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "farmland_trample", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -2652,82 +2850,89 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("fill_bucket");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "fill_bucket",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "fill_bucket", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn firework_explode(&self, host: &mut dyn ServerHost, event: &mut FireworkExplodeEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "firework_explode",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("bursts", event.bursts.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn flip_frame(&self, host: &mut dyn ClientHost, event: &mut FlipFrameEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "flip_frame",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn fluid_flow(&self, context: &dyn LoopContext, event: &mut FluidFlowEvent<'_>) {
         let _ = &context;
         let out_flow = std::cell::RefCell::new(event.flow.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "fluid_flow",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("fluid", event.fluid.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("flow", out_flow.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["flow"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_flow, id, "fluid_flow", "flow", &answered.answer("flow"));
                 true
             },
-        );
+        ));
         *event.flow = out_flow.into_inner();
     }
 
     fn fluid_level_change(&self, level: &dyn LevelHost, event: &mut FluidLevelChangeEvent<'_>) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "fluid_level_change",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -2737,11 +2942,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "fluid_level_change", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -2762,10 +2967,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("fluid_place_block");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "fluid_place_block",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -2775,12 +2981,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["new_state", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_by(&out_new_state, id, "fluid_place_block", "new_state", &answered.answer("new_state"), |value| crate::stacks::state_value(level, value));
                 crate::dispatch::accept(&out_cancelled, id, "fluid_place_block", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.new_state = out_new_state.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -2789,10 +2995,11 @@ impl mod_api::Hooks for LuaHost {
     fn fluid_tick(&self, level: &dyn LevelHost, event: &mut FluidTickEvent<'_>) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "fluid_tick",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -2800,11 +3007,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "fluid_tick", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -2813,10 +3020,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_to = std::cell::RefCell::new(event.to);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "food_level_changed",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -2825,12 +3033,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["to", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_to, id, "food_level_changed", "to", &answered.answer("to"));
                 crate::dispatch::accept(&out_cancelled, id, "food_level_changed", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.to = out_to.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -2839,10 +3047,11 @@ impl mod_api::Hooks for LuaHost {
     fn framerate_limit(&self, host: &dyn ClientHost, event: &mut FramerateLimitEvent) {
         let _ = &host;
         let out_limit = std::cell::RefCell::new(event.limit);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "framerate_limit",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("focused", event.focused.to_lua_value(lua)?)?;
                 data.raw_set("minimized", event.minimized.to_lua_value(lua)?)?;
@@ -2850,33 +3059,37 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("limit", out_limit.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["limit"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_limit, id, "framerate_limit", "limit", &answered.answer("limit"));
                 true
             },
-        );
+        ));
         event.limit = out_limit.into_inner();
     }
 
     fn furnace_burn(&self, host: &mut dyn ServerHost, event: &mut FurnaceBurnEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "furnace_burn",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("fuel", event.fuel.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn furnace_extract(&self, host: &mut dyn ServerHost, event: &mut FurnaceExtractEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "furnace_extract",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -2885,50 +3098,56 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("count", event.count.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn furnace_smelt(&self, host: &mut dyn ServerHost, event: &mut FurnaceSmeltEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "furnace_smelt",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 data.raw_set("result", event.result.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn furnace_start_smelt(&self, host: &mut dyn ServerHost, event: &mut FurnaceStartSmeltEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "furnace_start_smelt",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn game_shutting_down(&self, host: HostSide, event: &mut GameShuttingDownEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "game_shutting_down",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn get_equipment_drop_chance(&self, host: &mut dyn ServerHost, event: &mut GetEquipmentDropChanceEvent<'_>) {
@@ -2940,32 +3159,35 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("get_equipment_drop_chance");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "get_equipment_drop_chance",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("slot", event.slot.to_lua_value(lua)?)?;
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
                 data.raw_set("recently_hit", event.recently_hit.to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("original_chance", event.original_chance.to_lua_value(lua)?)?;
                 data.raw_set("preserved", event.preserved.to_lua_value(lua)?)?;
                 data.raw_set("chance", event.chance.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn hanging_break(&self, host: &mut dyn ServerHost, event: &mut HangingBreakEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "hanging_break",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -2973,11 +3195,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "hanging_break", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -2985,10 +3207,11 @@ impl mod_api::Hooks for LuaHost {
     fn hanging_place(&self, host: &mut dyn ServerHost, event: &mut HangingPlaceEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "hanging_place",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -2997,37 +3220,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "hanging_place", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn hopper_inventory_search(&self, host: &mut dyn ServerHost, event: &mut HopperInventorySearchEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "hopper_inventory_search",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("hopper", event.hopper.to_lua_value(lua)?)?;
                 data.raw_set("container", event.container.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn hopper_pickup_item(&self, level: &dyn LevelHost, event: &mut HopperPickupItemEvent<'_>) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "hopper_pickup_item",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -3036,11 +3262,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "hopper_pickup_item", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3049,29 +3275,32 @@ impl mod_api::Hooks for LuaHost {
     fn ingredient(&self, context: &dyn DataLoadContext, event: &mut IngredientEvent<'_>) {
         let _ = &context;
         let out_items = std::cell::RefCell::new(event.items.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "ingredient",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("data", event.data.to_lua_value(lua)?)?;
                 data.raw_set("items", out_items.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["items"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_items, id, "ingredient", "items", &answered.answer("items"));
                 true
             },
-        );
+        ));
         *event.items = out_items.into_inner();
     }
 
     fn input_key(&self, host: &mut dyn ClientHost, event: &mut InputKeyEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "input_key",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
                 data.raw_set("layout_key", event.layout_key.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
@@ -3080,18 +3309,19 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn interaction_key_mapping_triggered(&self, host: &mut dyn ClientHost, event: &mut InteractionKeyMappingTriggeredEvent) -> Flow {
         let _ = &host;
         let out_swing_hand = std::cell::RefCell::new(event.swing_hand);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "interaction_key_mapping_triggered",
+            crate::hostcall::TurnHost::Client(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("key", event.key.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
@@ -3100,12 +3330,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["swing_hand", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_swing_hand, id, "interaction_key_mapping_triggered", "swing_hand", &answered.answer("swing_hand"));
                 crate::dispatch::accept(&out_cancelled, id, "interaction_key_mapping_triggered", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.swing_hand = out_swing_hand.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -3114,10 +3344,11 @@ impl mod_api::Hooks for LuaHost {
     fn inventory_block_start(&self, host: &mut dyn ServerHost, event: &mut InventoryBlockStartEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "inventory_block_start",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -3125,11 +3356,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "inventory_block_start", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3137,10 +3368,11 @@ impl mod_api::Hooks for LuaHost {
     fn inventory_move_item(&self, host: &dyn Host, event: &mut InventoryMoveItemEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "inventory_move_item",
+            crate::hostcall::TurnHost::Read(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
                 data.raw_set("destination", event.destination.to_lua_value(lua)?)?;
@@ -3148,11 +3380,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "inventory_move_item", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3169,24 +3401,25 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("item_consumption_teleport");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_consumption_teleport",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("consumer", event.consumer.to_lua_value(lua)?)?;
-                data.raw_set("consumed", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.consumed)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("consumed", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.consumed)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
                 data.raw_set("target", out_target.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["target", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_target, id, "item_consumption_teleport", "target", &answered.answer("target"));
                 crate::dispatch::accept(&out_cancelled, id, "item_consumption_teleport", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.target = out_target.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -3194,9 +3427,11 @@ impl mod_api::Hooks for LuaHost {
 
     fn item_despawn(&self, host: &mut dyn ServerHost, event: &mut ItemDespawnEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_despawn",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
@@ -3204,8 +3439,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn item_expire(&self, host: &mut dyn ServerHost, event: &mut ItemExpireEvent<'_>) {
@@ -3218,21 +3453,22 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("item_expire");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_expire",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("extra_life", out_extra_life.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["extra_life"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_extra_life, id, "item_expire", "extra_life", &answered.answer("extra_life"));
                 true
             },
-        );
+        ));
         event.extra_life = out_extra_life.into_inner();
     }
 
@@ -3246,22 +3482,23 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("item_model_property");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_model_property",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("property", event.property.to_string().to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("bundle_selected", event.bundle_selected.to_lua_value(lua)?)?;
                 data.raw_set("value", out_value.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["value"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_value, id, "item_model_property", "value", &answered.answer("value"));
                 true
             },
-        );
+        ));
         event.value = out_value.into_inner();
     }
 
@@ -3275,22 +3512,23 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("item_model_range_property");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_model_range_property",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("property", event.property.to_string().to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("bundle_selected", event.bundle_selected.to_lua_value(lua)?)?;
                 data.raw_set("value", out_value.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["value"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_value, id, "item_model_range_property", "value", &answered.answer("value"));
                 true
             },
-        );
+        ));
         event.value = out_value.into_inner();
     }
 
@@ -3305,22 +3543,23 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("item_model_select_property");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_model_select_property",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("property", event.property.to_string().to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("bundle_selected", event.bundle_selected.to_lua_value(lua)?)?;
                 data.raw_set("value", out_value.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["value"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_opt(&out_value, id, "item_model_select_property", "value", &answered.answer("value"));
                 true
             },
-        );
+        ));
         *event.value = out_value.into_inner();
     }
 
@@ -3339,21 +3578,22 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("item_picked_up_partial");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_picked_up_partial",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
-                data.raw_set("original", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.original)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
-                data.raw_set("remaining", crate::stacks::stack_in(&*host as &dyn mod_api::Host, out_remaining.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("original", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.original)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("remaining", crate::stacks::stack_in(turn.read_or_unavailable(), out_remaining.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["remaining"])
             },
-            &mut |id, answered| {
-                crate::dispatch::accept_opt_by(&out_remaining, id, "item_picked_up_partial", "remaining", &answered.answer("remaining"), |value| crate::stacks::stack_value(&*host as &dyn mod_api::Host, value));
+            &mut |id, answered, turn| {
+                crate::dispatch::accept_opt_by(&out_remaining, id, "item_picked_up_partial", "remaining", &answered.answer("remaining"), |value| crate::stacks::stack_value(turn.read_or_unavailable(), value));
                 true
             },
-        );
+        ));
         *event.remaining = out_remaining.into_inner();
     }
 
@@ -3366,25 +3606,29 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("item_smelted");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_smelted",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, event.stack).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), event.stack).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("amount_removed", event.amount_removed.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn item_spawn(&self, host: &mut dyn ServerHost, event: &mut ItemSpawnEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "item_spawn",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
@@ -3392,28 +3636,29 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn key_mapping_pre(&self, host: &mut dyn ClientHost, event: &mut KeyMappingPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "key_mapping_pre",
+            crate::hostcall::TurnHost::Client(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("mapping", event.mapping.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pressed", event.pressed.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "key_mapping_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3421,21 +3666,22 @@ impl mod_api::Hooks for LuaHost {
     fn leaves_decay(&self, level: &dyn LevelHost, event: &mut LeavesDecayEvent) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "leaves_decay",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "leaves_decay", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3450,22 +3696,23 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("left_click_block");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "left_click_block",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("face", event.face.to_lua_value(lua)?)?;
-                data.raw_set("state", crate::stacks::state_in(&*host as &dyn mod_api::Host, Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("state", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "left_click_block", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3473,62 +3720,71 @@ impl mod_api::Hooks for LuaHost {
     fn left_click_empty(&self, host: &mut dyn ClientHost, event: &mut LeftClickEmptyEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "left_click_empty",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn level_load(&self, host: &mut dyn ServerHost, event: &mut LevelLoadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "level_load",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn level_save(&self, host: &mut dyn ServerHost, event: &mut LevelSaveEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "level_save",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn level_unload(&self, host: &mut dyn ServerHost, event: &mut LevelUnloadEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "level_unload",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn lightning_strike(&self, host: &mut dyn ServerHost, event: &mut LightningStrikeEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "lightning_strike",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -3536,11 +3792,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "lightning_strike", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3550,10 +3806,11 @@ impl mod_api::Hooks for LuaHost {
         let out_can_breathe = std::cell::RefCell::new(event.can_breathe);
         let out_consume = std::cell::RefCell::new(event.consume);
         let out_refill = std::cell::RefCell::new(event.refill);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_breathe",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -3562,13 +3819,13 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("refill", out_refill.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["can_breathe", "consume", "refill"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_can_breathe, id, "living_breathe", "can_breathe", &answered.answer("can_breathe"));
                 crate::dispatch::accept(&out_consume, id, "living_breathe", "consume", &answered.answer("consume"));
                 crate::dispatch::accept(&out_refill, id, "living_breathe", "refill", &answered.answer("refill"));
                 true
             },
-        );
+        ));
         event.can_breathe = out_can_breathe.into_inner();
         event.consume = out_consume.into_inner();
         event.refill = out_refill.into_inner();
@@ -3576,9 +3833,11 @@ impl mod_api::Hooks for LuaHost {
 
     fn living_conversion_post(&self, host: &mut dyn ServerHost, event: &mut LivingConversionPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_conversion_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -3586,17 +3845,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("converted_kind", event.converted_kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn living_conversion_pre(&self, host: &mut dyn ServerHost, event: &mut LivingConversionPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_conversion_pre",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -3604,11 +3864,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "living_conversion_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3623,40 +3883,43 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_death");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_death",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
-                data.raw_set("weapon", crate::stacks::stack_in(&*host as &dyn mod_api::Host, event.weapon).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("weapon", crate::stacks::stack_in(turn.read_or_unavailable(), event.weapon).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "living_death", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_death_post(&self, host: &mut dyn ServerHost, event: &mut LivingDeathPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_death_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("damage_type", event.damage_type.to_string().to_lua_value(lua)?)?;
                 data.raw_set("attacker", event.attacker.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn living_destroy_block(&self, host: &mut dyn ServerHost, event: &mut LivingDestroyBlockEvent<'_>) -> Flow {
@@ -3669,23 +3932,24 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_destroy_block");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_destroy_block",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                data.raw_set("state", crate::stacks::state_in(&*host as &dyn mod_api::Host, Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("state", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "living_destroy_block", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3696,10 +3960,11 @@ impl mod_api::Hooks for LuaHost {
         let out_damage_amount = std::cell::RefCell::new(event.damage_amount);
         let out_bubble_count = std::cell::RefCell::new(event.bubble_count);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_drown",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -3709,14 +3974,14 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["is_drowning", "damage_amount", "bubble_count", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_is_drowning, id, "living_drown", "is_drowning", &answered.answer("is_drowning"));
                 crate::dispatch::accept(&out_damage_amount, id, "living_drown", "damage_amount", &answered.answer("damage_amount"));
                 crate::dispatch::accept(&out_bubble_count, id, "living_drown", "bubble_count", &answered.answer("bubble_count"));
                 crate::dispatch::accept(&out_cancelled, id, "living_drown", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.is_drowning = out_is_drowning.into_inner();
         event.damage_amount = out_damage_amount.into_inner();
         event.bubble_count = out_bubble_count.into_inner();
@@ -3739,23 +4004,24 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_entity_use_item_finish");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_entity_use_item_finish",
+            crate::hostcall::TurnHost::of_side(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(crate::stacks::side_host(&host), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 data.raw_set("duration", event.duration.to_lua_value(lua)?)?;
-                data.raw_set("result", crate::stacks::stack_in(crate::stacks::side_host(&host), out_result.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("result", crate::stacks::stack_in(turn.read_or_unavailable(), out_result.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["result"])
             },
-            &mut |id, answered| {
-                crate::dispatch::accept_opt_by(&out_result, id, "living_entity_use_item_finish", "result", &answered.answer("result"), |value| crate::stacks::stack_value(crate::stacks::side_host(&host), value));
+            &mut |id, answered, turn| {
+                crate::dispatch::accept_opt_by(&out_result, id, "living_entity_use_item_finish", "result", &answered.answer("result"), |value| crate::stacks::stack_value(turn.read_or_unavailable(), value));
                 true
             },
-        );
+        ));
         *event.result = out_result.into_inner();
     }
 
@@ -3770,24 +4036,25 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_entity_use_item_start");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_entity_use_item_start",
+            crate::hostcall::TurnHost::of_side(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(crate::stacks::side_host(&host), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 data.raw_set("duration", out_duration.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["duration", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_duration, id, "living_entity_use_item_start", "duration", &answered.answer("duration"));
                 crate::dispatch::accept(&out_cancelled, id, "living_entity_use_item_start", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.duration = out_duration.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -3803,23 +4070,24 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_entity_use_item_stop");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_entity_use_item_stop",
+            crate::hostcall::TurnHost::of_side(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(crate::stacks::side_host(&host), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 data.raw_set("duration", event.duration.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "living_entity_use_item_stop", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -3835,24 +4103,25 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_entity_use_item_tick");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_entity_use_item_tick",
+            crate::hostcall::TurnHost::of_side(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
-                data.raw_set("stack", crate::stacks::stack_in(crate::stacks::side_host(&host), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 data.raw_set("duration", out_duration.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["duration", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_duration, id, "living_entity_use_item_tick", "duration", &answered.answer("duration"));
                 crate::dispatch::accept(&out_cancelled, id, "living_entity_use_item_tick", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.duration = out_duration.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -3871,29 +4140,32 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_equipment_change");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_equipment_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("slot", event.slot.to_string().to_lua_value(lua)?)?;
-                data.raw_set("from", crate::stacks::stack_in(&*host as &dyn mod_api::Host, event.from).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
-                data.raw_set("to", crate::stacks::stack_in(&*host as &dyn mod_api::Host, event.to).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("from", crate::stacks::stack_in(turn.read_or_unavailable(), event.from).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("to", crate::stacks::stack_in(turn.read_or_unavailable(), event.to).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn living_experience_drop(&self, host: &mut dyn ServerHost, event: &mut LivingExperienceDropEvent<'_>) -> Flow {
         let _ = &host;
         let out_amount = std::cell::RefCell::new(event.amount);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_experience_drop",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -3903,12 +4175,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["amount", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_amount, id, "living_experience_drop", "amount", &answered.answer("amount"));
                 crate::dispatch::accept(&out_cancelled, id, "living_experience_drop", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.amount = out_amount.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -3919,10 +4191,11 @@ impl mod_api::Hooks for LuaHost {
         let out_distance = std::cell::RefCell::new(event.distance);
         let out_multiplier = std::cell::RefCell::new(event.multiplier);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_fall",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -3931,13 +4204,13 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["distance", "multiplier", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_distance, id, "living_fall", "distance", &answered.answer("distance"));
                 crate::dispatch::accept(&out_multiplier, id, "living_fall", "multiplier", &answered.answer("multiplier"));
                 crate::dispatch::accept(&out_cancelled, id, "living_fall", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.distance = out_distance.into_inner();
         event.multiplier = out_multiplier.into_inner();
         event.cancelled = out_cancelled.into_inner();
@@ -3947,21 +4220,22 @@ impl mod_api::Hooks for LuaHost {
     fn living_flying_speed(&self, context: &dyn LoopContext, event: &mut LivingFlyingSpeedEvent<'_>) {
         let _ = &context;
         let out_speed = std::cell::RefCell::new(event.speed);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_flying_speed",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("speed", out_speed.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["speed"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_speed, id, "living_flying_speed", "speed", &answered.answer("speed"));
                 true
             },
-        );
+        ));
         event.speed = out_speed.into_inner();
     }
 
@@ -3980,24 +4254,25 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("living_get_projectile");
             return;
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_get_projectile",
+            crate::hostcall::TurnHost::of_side(host),
             &|| false,
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("weapon", crate::stacks::stack_in(crate::stacks::side_host(&host), Some(event.weapon)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
-                data.raw_set("projectile", crate::stacks::stack_in(crate::stacks::side_host(&host), out_projectile.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("weapon", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.weapon)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("projectile", crate::stacks::stack_in(turn.read_or_unavailable(), out_projectile.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["projectile"])
             },
-            &mut |id, answered| {
-                crate::dispatch::accept_opt_by(&out_projectile, id, "living_get_projectile", "projectile", &answered.answer("projectile"), |value| crate::stacks::stack_value(crate::stacks::side_host(&host), value));
+            &mut |id, answered, turn| {
+                crate::dispatch::accept_opt_by(&out_projectile, id, "living_get_projectile", "projectile", &answered.answer("projectile"), |value| crate::stacks::stack_value(turn.read_or_unavailable(), value));
                 true
             },
-        );
+        ));
         *event.projectile = out_projectile.into_inner();
     }
 
@@ -4005,22 +4280,23 @@ impl mod_api::Hooks for LuaHost {
         let _ = &context;
         let out_amount = std::cell::RefCell::new(event.amount);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_heal",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("amount", out_amount.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["amount", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_amount, id, "living_heal", "amount", &answered.answer("amount"));
                 crate::dispatch::accept(&out_cancelled, id, "living_heal", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.amount = out_amount.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -4028,67 +4304,72 @@ impl mod_api::Hooks for LuaHost {
 
     fn living_jump(&self, context: &dyn LoopContext, event: &mut LivingJumpEvent<'_>) {
         let _ = &context;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_jump",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn living_jump_power(&self, context: &dyn LoopContext, event: &mut LivingJumpPowerEvent<'_>) {
         let _ = &context;
         let out_power = std::cell::RefCell::new(event.power);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_jump_power",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("power", out_power.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["power"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_power, id, "living_jump_power", "power", &answered.answer("power"));
                 true
             },
-        );
+        ));
         event.power = out_power.into_inner();
     }
 
     fn living_speed(&self, context: &dyn LoopContext, event: &mut LivingSpeedEvent<'_>) {
         let _ = &context;
         let out_speed = std::cell::RefCell::new(event.speed);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_speed",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("speed", out_speed.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["speed"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_speed, id, "living_speed", "speed", &answered.answer("speed"));
                 true
             },
-        );
+        ));
         event.speed = out_speed.into_inner();
     }
 
     fn living_use_totem(&self, level: &mut dyn LevelRandomHost, event: &mut LivingUseTotemEvent<'_>) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_use_totem",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -4098,11 +4379,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "living_use_totem", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -4110,21 +4391,22 @@ impl mod_api::Hooks for LuaHost {
     fn living_visibility(&self, host: &dyn Host, event: &mut LivingVisibilityEvent) {
         let _ = &host;
         let out_visibility = std::cell::RefCell::new(event.visibility);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "living_visibility",
+            crate::hostcall::TurnHost::Read(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("looking", event.looking.to_lua_value(lua)?)?;
                 data.raw_set("visibility", out_visibility.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["visibility"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_visibility, id, "living_visibility", "visibility", &answered.answer("visibility"));
                 true
             },
-        );
+        ));
         event.visibility = out_visibility.into_inner();
     }
 
@@ -4132,27 +4414,30 @@ impl mod_api::Hooks for LuaHost {
     fn menu_background(&self, host: &dyn ClientHost, event: &mut MenuBackgroundEvent<'_>) {
         let _ = &host;
         let out_radius = std::cell::RefCell::new(event.radius.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "menu_background",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("radius", out_radius.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["radius"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_opt(&out_radius, id, "menu_background", "radius", &answered.answer("radius"));
                 true
             },
-        );
+        ));
         *event.radius = out_radius.into_inner();
     }
 
     fn menu_clicked(&self, host: &mut dyn ServerHost, event: &mut MenuClickedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "menu_clicked",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("uuid", event.uuid.to_lua_value(lua)?)?;
                 data.raw_set("window", event.window.to_lua_value(lua)?)?;
@@ -4161,32 +4446,35 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("mode", event.mode.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn menu_closed(&self, host: &mut dyn ServerHost, event: &mut MenuClosedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "menu_closed",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("uuid", event.uuid.to_lua_value(lua)?)?;
                 data.raw_set("window", event.window.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn menu_links(&self, host: &mut dyn ServerHost, event: &mut MenuLinksEvent<'_>) {
         let _ = &host;
         let out_links = std::cell::RefCell::new(event.links.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "menu_links",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("menu", event.menu.to_string().to_lua_value(lua)?)?;
@@ -4194,34 +4482,38 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("links", out_links.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["links"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_links, id, "menu_links", "links", &answered.answer("links"));
                 true
             },
-        );
+        ));
         *event.links = out_links.into_inner();
     }
 
     fn mob_killed(&self, host: &mut dyn ServerHost, event: &mut MobKilledEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "mob_killed",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn mob_spawned(&self, host: &mut dyn ServerHost, event: &mut MobSpawnedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "mob_spawned",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -4229,18 +4521,19 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("natural", event.natural.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn mob_split(&self, host: &mut dyn ServerHost, event: &mut MobSplitEvent<'_>) -> Flow {
         let _ = &host;
         let out_count = std::cell::RefCell::new(event.count);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "mob_split",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("parent", event.parent.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -4250,12 +4543,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["count", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_count, id, "mob_split", "count", &answered.answer("count"));
                 crate::dispatch::accept(&out_cancelled, id, "mob_split", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.count = out_count.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -4263,9 +4556,11 @@ impl mod_api::Hooks for LuaHost {
 
     fn mod_container_viewers(&self, host: &mut dyn ServerHost, event: &mut ModContainerViewersEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "mod_container_viewers",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -4273,30 +4568,33 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("previous", event.previous.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn model_baking_completed(&self, host: &mut dyn ClientHost, event: &mut ModelBakingCompletedEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "model_baking_completed",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn moisture_change(&self, level: &dyn LevelHost, event: &mut MoistureChangeEvent) -> Flow {
         let _ = &level;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "moisture_change",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -4305,37 +4603,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "moisture_change", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn mouse_button_post(&self, host: &mut dyn ClientHost, event: &mut MouseButtonPostEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "mouse_button_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("pressed", event.pressed.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn mouse_button_pre(&self, host: &mut dyn ClientHost, event: &mut MouseButtonPreEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "mouse_button_pre",
+            crate::hostcall::TurnHost::Client(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("pressed", event.pressed.to_lua_value(lua)?)?;
@@ -4343,11 +4644,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "mouse_button_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -4355,10 +4656,11 @@ impl mod_api::Hooks for LuaHost {
     fn mouse_scrolling(&self, host: &mut dyn ClientHost, event: &mut MouseScrollingEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "mouse_scrolling",
+            crate::hostcall::TurnHost::Client(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("scroll", event.scroll.to_lua_value(lua)?)?;
                 data.raw_set("accumulated", event.accumulated.to_lua_value(lua)?)?;
@@ -4368,20 +4670,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "mouse_scrolling", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn movement_input(&self, host: &dyn ClientHost, event: &mut MovementInputEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "movement_input",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("forward", event.forward.to_lua_value(lua)?)?;
                 data.raw_set("strafe", event.strafe.to_lua_value(lua)?)?;
@@ -4394,8 +4698,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("sprint", event.sprint.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn neighbor_notify(&self, level: &dyn LevelHost, event: &mut NeighborNotifyEvent) -> Flow {
@@ -4408,10 +4712,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("neighbor_notify");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "neighbor_notify",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -4420,11 +4725,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "neighbor_notify", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -4433,22 +4738,23 @@ impl mod_api::Hooks for LuaHost {
         let _ = &level;
         let out_new_note = std::cell::RefCell::new(event.new_note);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "note_block_change",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("context", event.context.to_lua_value(lua)?)?;
                 data.raw_set("new_note", out_new_note.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["new_note", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_new_note, id, "note_block_change", "new_note", &answered.answer("new_note"));
                 crate::dispatch::accept(&out_cancelled, id, "note_block_change", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.new_note = out_new_note.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -4463,25 +4769,28 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("on_equip");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "on_equip",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("slot", event.slot.to_string().to_lua_value(lua)?)?;
-                data.raw_set("new", crate::stacks::stack_in(&*host as &dyn mod_api::Host, event.new).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("new", crate::stacks::stack_in(turn.read_or_unavailable(), event.new).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn permissions_changed(&self, host: &mut dyn ServerHost, event: &mut PermissionsChangedEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "permissions_changed",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
@@ -4491,11 +4800,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "permissions_changed", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -4505,10 +4814,11 @@ impl mod_api::Hooks for LuaHost {
         let out_value = std::cell::RefCell::new(event.value);
         let out_count = std::cell::RefCell::new(event.count);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "pickup_xp",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
@@ -4518,13 +4828,13 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["value", "count", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_value, id, "pickup_xp", "value", &answered.answer("value"));
                 crate::dispatch::accept(&out_count, id, "pickup_xp", "count", &answered.answer("count"));
                 crate::dispatch::accept(&out_cancelled, id, "pickup_xp", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.value = out_value.into_inner();
         event.count = out_count.into_inner();
         event.cancelled = out_cancelled.into_inner();
@@ -4533,83 +4843,94 @@ impl mod_api::Hooks for LuaHost {
 
     fn play_sound_source(&self, context: &dyn LoopContext, event: &mut PlaySoundSourceEvent<'_>) {
         let _ = &context;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "play_sound_source",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("sound", event.sound.to_lua_value(lua)?)?;
                 data.raw_set("channel", event.channel.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn play_streaming_source(&self, context: &dyn LoopContext, event: &mut PlayStreamingSourceEvent<'_>) {
         let _ = &context;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "play_streaming_source",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("sound", event.sound.to_lua_value(lua)?)?;
                 data.raw_set("channel", event.channel.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_advancement_done(&self, host: &mut dyn ServerHost, event: &mut PlayerAdvancementDoneEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_advancement_done",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("advancement", event.advancement.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_arm_swing(&self, host: &mut dyn ServerHost, event: &mut PlayerArmSwingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_arm_swing",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_attack_cooldown_reset(&self, host: &mut dyn ServerHost, event: &mut PlayerAttackCooldownResetEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_attack_cooldown_reset",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_bed_enter(&self, host: &mut dyn ServerHost, event: &mut PlayerBedEnterEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_bed_enter",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4617,20 +4938,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_bed_enter", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_bed_leave(&self, host: &mut dyn ServerHost, event: &mut PlayerBedLeaveEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_bed_leave",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4639,18 +4962,19 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("update_level", event.update_level.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_break_speed(&self, host: HostSide, event: &mut PlayerBreakSpeedEvent) -> Flow {
         let _ = &host;
         let out_new_speed = std::cell::RefCell::new(event.new_speed);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_break_speed",
+            crate::hostcall::TurnHost::of_side(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -4660,12 +4984,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["new_speed", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_new_speed, id, "player_break_speed", "new_speed", &answered.answer("new_speed"));
                 crate::dispatch::accept(&out_cancelled, id, "player_break_speed", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.new_speed = out_new_speed.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -4680,24 +5004,28 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("player_brewed_potion");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_brewed_potion",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_bucket_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerBucketEntityEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_bucket_entity",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4705,15 +5033,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("entity", event.entity.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_bundle_item_select(&self, host: &mut dyn ServerHost, event: &mut PlayerBundleItemSelectEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_bundle_item_select",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4721,15 +5051,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("index", event.index.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_changed_dimension(&self, host: &mut dyn ServerHost, event: &mut PlayerChangedDimensionEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_changed_dimension",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4737,51 +5069,56 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("to", event.to.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_client_loaded_world(&self, host: &mut dyn ServerHost, event: &mut PlayerClientLoadedWorldEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_client_loaded_world",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn player_commands_sent(&self, host: &mut dyn ServerHost, event: &mut PlayerCommandsSentEvent<'_>) {
         let _ = &host;
         let out_names = std::cell::RefCell::new(event.names.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_commands_sent",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("names", out_names.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["names"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_names, id, "player_commands_sent", "names", &answered.answer("names"));
                 true
             },
-        );
+        ));
         *event.names = out_names.into_inner();
     }
 
     fn player_container_close(&self, host: &mut dyn ServerHost, event: &mut PlayerContainerCloseEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_container_close",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4790,15 +5127,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_container_open(&self, host: &mut dyn ServerHost, event: &mut PlayerContainerOpenEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_container_open",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4807,29 +5146,33 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_deep_sleep(&self, host: &mut dyn ServerHost, event: &mut PlayerDeepSleepEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_deep_sleep",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_destroy_item(&self, host: &mut dyn ServerHost, event: &mut PlayerDestroyItemEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_destroy_item",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4837,8 +5180,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("slot", event.slot.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_destroyed_block(&self, host: &mut dyn ServerHost, event: &mut PlayerDestroyedBlockEvent) {
@@ -4850,40 +5193,45 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("player_destroyed_block");
             return;
         }
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_destroyed_block",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                data.raw_set("state", crate::stacks::state_in(&*host as &dyn mod_api::Host, Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("state", crate::stacks::state_in(turn.read_or_unavailable(), Some(&event.state)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("block_entity", event.block_entity.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_died(&self, host: &mut dyn ServerHost, event: &mut PlayerDiedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_died",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("cause", event.cause.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_edit_book(&self, host: &mut dyn ServerHost, event: &mut PlayerEditBookEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_edit_book",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4892,65 +5240,72 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_edit_book", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_egg_throw(&self, host: &mut dyn ServerHost, event: &mut PlayerEggThrowEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_egg_throw",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_elytra_boost(&self, host: &mut dyn ServerHost, event: &mut PlayerElytraBoostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_elytra_boost",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_exp_cooldown_change(&self, host: &mut dyn ServerHost, event: &mut PlayerExpCooldownChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_exp_cooldown_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("ticks", event.ticks.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_fish(&self, host: &mut dyn ServerHost, event: &mut PlayerFishEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_fish",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4958,20 +5313,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_fish", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_flower_pot_manipulate(&self, host: &mut dyn ServerHost, event: &mut PlayerFlowerPotManipulateEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_flower_pot_manipulate",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -4979,15 +5336,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("plant", event.plant.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_flyable_fall(&self, host: &mut dyn ServerHost, event: &mut PlayerFlyableFallEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_flyable_fall",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
@@ -4996,8 +5355,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("multiplier", event.multiplier.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -5005,10 +5364,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_to = std::cell::RefCell::new(event.to.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_game_mode_changed",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5017,12 +5377,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["to", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_to, id, "player_game_mode_changed", "to", &answered.answer("to"));
                 crate::dispatch::accept(&out_cancelled, id, "player_game_mode_changed", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.to = out_to.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -5030,24 +5390,28 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_input(&self, host: &mut dyn ServerHost, event: &mut PlayerInputEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_input",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("flags", event.flags.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_insert_lectern_book(&self, host: &mut dyn ServerHost, event: &mut PlayerInsertLecternBookEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_insert_lectern_book",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5055,17 +5419,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("book", event.book.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_item_cooldown(&self, host: &mut dyn ServerHost, event: &mut PlayerItemCooldownEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_item_cooldown",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5074,20 +5439,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_item_cooldown", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_item_frame_change(&self, host: &mut dyn ServerHost, event: &mut PlayerItemFrameChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_item_frame_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5097,15 +5464,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("rotation", event.rotation.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_item_mend(&self, host: &mut dyn ServerHost, event: &mut PlayerItemMendEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_item_mend",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5114,59 +5483,67 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("experience", event.experience.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_jump(&self, host: &mut dyn ServerHost, event: &mut PlayerJumpEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_jump",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_kicked(&self, host: &mut dyn ServerHost, event: &mut PlayerKickedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_kicked",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("reason", event.reason.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_launch_projectile(&self, host: &mut dyn ServerHost, event: &mut PlayerLaunchProjectileEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_launch_projectile",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_lectern_page_change(&self, host: &mut dyn ServerHost, event: &mut PlayerLecternPageChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_lectern_page_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5174,15 +5551,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("page", event.page.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_level_change(&self, host: &mut dyn ServerHost, event: &mut PlayerLevelChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_level_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5190,51 +5569,57 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_load_from_file(&self, host: &mut dyn ServerHost, event: &mut PlayerLoadFromFileEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_load_from_file",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("directory", event.directory.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_logged_in(&self, host: &mut dyn ServerHost, event: &mut PlayerLoggedInEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_logged_in",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_logged_out(&self, host: &mut dyn ServerHost, event: &mut PlayerLoggedOutEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_logged_out",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -5242,10 +5627,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_reason = std::cell::RefCell::new(event.reason.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_login",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5253,12 +5639,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["reason", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept_opt(&out_reason, id, "player_login", "reason", &answered.answer("reason"));
                 crate::dispatch::accept(&out_cancelled, id, "player_login", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.reason = out_reason.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -5266,41 +5652,46 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_loom_pattern_select(&self, host: &mut dyn ServerHost, event: &mut PlayerLoomPatternSelectEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_loom_pattern_select",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pattern", event.pattern.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_map_filled(&self, host: &mut dyn ServerHost, event: &mut PlayerMapFilledEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_map_filled",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("map_id", event.map_id.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_move(&self, host: &mut dyn ServerHost, event: &mut PlayerMoveEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_move",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
@@ -5310,20 +5701,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_move", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_name_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerNameEntityEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_name_entity",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5331,15 +5724,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("entity_name", event.entity_name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_open_sign(&self, host: &mut dyn ServerHost, event: &mut PlayerOpenSignEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_open_sign",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5347,17 +5742,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("front", event.front.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_pick_item(&self, host: &mut dyn ServerHost, event: &mut PlayerPickItemEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_pick_item",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5367,20 +5763,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_pick_item", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_pickup_arrow(&self, host: &mut dyn ServerHost, event: &mut PlayerPickupArrowEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_pickup_arrow",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5388,30 +5786,34 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_ready_arrow(&self, host: &mut dyn ServerHost, event: &mut PlayerReadyArrowEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_ready_arrow",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("arrow", event.arrow.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_recipe_book_click(&self, host: &mut dyn ServerHost, event: &mut PlayerRecipeBookClickEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_recipe_book_click",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5419,15 +5821,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("all", event.all.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_recipe_book_settings_change(&self, host: &mut dyn ServerHost, event: &mut PlayerRecipeBookSettingsChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_recipe_book_settings_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5436,17 +5840,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("filtering", event.filtering.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_recipe_discovered(&self, host: &mut dyn ServerHost, event: &mut PlayerRecipeDiscoveredEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_recipe_discovered",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5454,65 +5859,72 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_recipe_discovered", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_respawned(&self, host: &mut dyn ServerHost, event: &mut PlayerRespawnedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_respawned",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_riptide(&self, host: &mut dyn ServerHost, event: &mut PlayerRiptideEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_riptide",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_save_to_file(&self, host: &mut dyn ServerHost, event: &mut PlayerSaveToFileEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_save_to_file",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("directory", event.directory.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_set_spawn(&self, host: &mut dyn ServerHost, event: &mut PlayerSetSpawnEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_set_spawn",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
@@ -5523,11 +5935,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_set_spawn", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -5535,10 +5947,11 @@ impl mod_api::Hooks for LuaHost {
     fn player_shear_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerShearEntityEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_shear_entity",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5547,65 +5960,73 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_shear_entity", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_shield_disable(&self, host: &mut dyn ServerHost, event: &mut PlayerShieldDisableEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_shield_disable",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("ticks", event.ticks.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_sprint(&self, host: &mut dyn ServerHost, event: &mut PlayerSprintEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_sprint",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("sprinting", event.sprinting.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_start_spectating_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerStartSpectatingEntityEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_start_spectating_entity",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_start_tracking(&self, host: &mut dyn ServerHost, event: &mut PlayerStartTrackingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_start_tracking",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5614,8 +6035,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -5625,10 +6046,11 @@ impl mod_api::Hooks for LuaHost {
         let out_stat = std::cell::RefCell::new(event.stat.clone());
         let out_value = std::cell::RefCell::new(event.value);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_stat_award",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5638,14 +6060,14 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["stat_type", "stat", "value", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_stat_type, id, "player_stat_award", "stat_type", &answered.answer("stat_type"));
                 crate::dispatch::accept(&out_stat, id, "player_stat_award", "stat", &answered.answer("stat"));
                 crate::dispatch::accept(&out_value, id, "player_stat_award", "value", &answered.answer("value"));
                 crate::dispatch::accept(&out_cancelled, id, "player_stat_award", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.stat_type = out_stat_type.into_inner();
         *event.stat = out_stat.into_inner();
         event.value = out_value.into_inner();
@@ -5656,58 +6078,65 @@ impl mod_api::Hooks for LuaHost {
     fn player_stays_on_ground_surface(&self, context: &dyn LoopContext, event: &mut PlayerStaysOnGroundSurfaceEvent) {
         let _ = &context;
         let out_staying = std::cell::RefCell::new(event.staying);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_stays_on_ground_surface",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("staying", out_staying.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["staying"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_staying, id, "player_stays_on_ground_surface", "staying", &answered.answer("staying"));
                 true
             },
-        );
+        ));
         event.staying = out_staying.into_inner();
     }
 
     fn player_stonecutter_recipe_select(&self, host: &mut dyn ServerHost, event: &mut PlayerStonecutterRecipeSelectEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_stonecutter_recipe_select",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("recipe", event.recipe.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_stop_spectating_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerStopSpectatingEntityEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_stop_spectating_entity",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_stop_tracking(&self, host: &mut dyn ServerHost, event: &mut PlayerStopTrackingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_stop_tracking",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5716,22 +6145,24 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_stop_using_item(&self, host: &mut dyn ServerHost, event: &mut PlayerStopUsingItemEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_stop_using_item",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -5751,25 +6182,26 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("player_swap_hands");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_swap_hands",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
-                data.raw_set("to_main_hand", crate::stacks::stack_in(&*host as &dyn mod_api::Host, out_to_main_hand.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
-                data.raw_set("to_off_hand", crate::stacks::stack_in(&*host as &dyn mod_api::Host, out_to_off_hand.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("to_main_hand", crate::stacks::stack_in(turn.read_or_unavailable(), out_to_main_hand.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("to_off_hand", crate::stacks::stack_in(turn.read_or_unavailable(), out_to_off_hand.borrow().as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["to_main_hand", "to_off_hand", "cancelled"])
             },
-            &mut |id, answered| {
-                crate::dispatch::accept_opt_by(&out_to_main_hand, id, "player_swap_hands", "to_main_hand", &answered.answer("to_main_hand"), |value| crate::stacks::stack_value(&*host as &dyn mod_api::Host, value));
-                crate::dispatch::accept_opt_by(&out_to_off_hand, id, "player_swap_hands", "to_off_hand", &answered.answer("to_off_hand"), |value| crate::stacks::stack_value(&*host as &dyn mod_api::Host, value));
+            &mut |id, answered, turn| {
+                crate::dispatch::accept_opt_by(&out_to_main_hand, id, "player_swap_hands", "to_main_hand", &answered.answer("to_main_hand"), |value| crate::stacks::stack_value(turn.read_or_unavailable(), value));
+                crate::dispatch::accept_opt_by(&out_to_off_hand, id, "player_swap_hands", "to_off_hand", &answered.answer("to_off_hand"), |value| crate::stacks::stack_value(turn.read_or_unavailable(), value));
                 crate::dispatch::accept(&out_cancelled, id, "player_swap_hands", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.to_main_hand = out_to_main_hand.into_inner();
         *event.to_off_hand = out_to_off_hand.into_inner();
         event.cancelled = out_cancelled.into_inner();
@@ -5778,24 +6210,28 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_swap_with_equipment_slot(&self, host: &mut dyn ServerHost, event: &mut PlayerSwapWithEquipmentSlotEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_swap_with_equipment_slot",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("slot", event.slot.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_switch_hotbar_slot_post(&self, host: &mut dyn ServerHost, event: &mut PlayerSwitchHotbarSlotPostEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_switch_hotbar_slot_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
@@ -5803,17 +6239,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("new_slot", event.new_slot.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_switch_hotbar_slot_pre(&self, host: &mut dyn ServerHost, event: &mut PlayerSwitchHotbarSlotPreEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_switch_hotbar_slot_pre",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
@@ -5822,20 +6259,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_switch_hotbar_slot_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_take_lectern_book(&self, host: &mut dyn ServerHost, event: &mut PlayerTakeLecternBookEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_take_lectern_book",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5843,17 +6282,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("book", event.book.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_teleport_end_gateway(&self, host: &mut dyn ServerHost, event: &mut PlayerTeleportEndGatewayEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_teleport_end_gateway",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5861,20 +6301,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_teleport_end_gateway", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_teleported(&self, host: &mut dyn ServerHost, event: &mut PlayerTeleportedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_teleported",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5883,15 +6325,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_toggle_entity_age_lock(&self, host: &mut dyn ServerHost, event: &mut PlayerToggleEntityAgeLockEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_toggle_entity_age_lock",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5899,17 +6343,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("locked", event.locked.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_toggle_flight(&self, host: &mut dyn ServerHost, event: &mut PlayerToggleFlightEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_toggle_flight",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -5917,97 +6362,108 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "player_toggle_flight", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_toggle_sneak(&self, host: &mut dyn ServerHost, event: &mut PlayerToggleSneakEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_toggle_sneak",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("sneaking", event.sneaking.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_totem(&self, host: &mut dyn ServerHost, event: &mut PlayerTotemEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_totem",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_trade(&self, host: &mut dyn ServerHost, event: &mut PlayerTradeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_trade",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_unleash_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerUnleashEntityEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_unleash_entity",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_velocity(&self, host: &mut dyn ServerHost, event: &mut PlayerVelocityEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_velocity",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("velocity", event.velocity.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn player_xp_change(&self, host: &mut dyn ServerHost, event: &mut PlayerXpChangeEvent<'_>) -> Flow {
         let _ = &host;
         let out_amount = std::cell::RefCell::new(event.amount);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_xp_change",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
@@ -6016,12 +6472,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["amount", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_amount, id, "player_xp_change", "amount", &answered.answer("amount"));
                 crate::dispatch::accept(&out_cancelled, id, "player_xp_change", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.amount = out_amount.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -6031,10 +6487,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_levels = std::cell::RefCell::new(event.levels);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "player_xp_level_change",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -6042,12 +6499,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["levels", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_levels, id, "player_xp_level_change", "levels", &answered.answer("levels"));
                 crate::dispatch::accept(&out_cancelled, id, "player_xp_level_change", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.levels = out_levels.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -6055,16 +6512,18 @@ impl mod_api::Hooks for LuaHost {
 
     fn portal_create(&self, host: &mut dyn ServerHost, event: &mut PortalCreateEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "portal_create",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn portal_spawn(&self, level: &dyn LevelHost, event: &mut PortalSpawnEvent) -> Flow {
@@ -6077,10 +6536,11 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("portal_spawn");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "portal_spawn",
+            crate::hostcall::TurnHost::None,
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -6089,50 +6549,55 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "portal_spawn", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn potion_splash(&self, host: &mut dyn ServerHost, event: &mut PotionSplashEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "potion_splash",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn prepare_hopper_transfer(&self, host: &mut dyn ServerHost, event: &mut PrepareHopperTransferEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "prepare_hopper_transfer",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn prepare_item_enchant(&self, host: &mut dyn ServerHost, event: &mut PrepareItemEnchantEvent<'_>) {
         let _ = &host;
         let out_costs = std::cell::RefCell::new(event.costs.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "prepare_item_enchant",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -6140,21 +6605,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("costs", out_costs.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["costs"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_costs, id, "prepare_item_enchant", "costs", &answered.answer("costs"));
                 true
             },
-        );
+        ));
         *event.costs = out_costs.into_inner();
     }
 
     fn projectile_impact(&self, host: &mut dyn ServerHost, event: &mut ProjectileImpactEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "projectile_impact",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("projectile", event.projectile.to_lua_value(lua)?)?;
@@ -6168,20 +6634,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "projectile_impact", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn projectile_launch(&self, host: &mut dyn ServerHost, event: &mut ProjectileLaunchEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "projectile_launch",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -6189,15 +6657,17 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn raid_spawn_wave(&self, host: &mut dyn ServerHost, event: &mut RaidSpawnWaveEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "raid_spawn_wave",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("raid", event.raid.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
@@ -6205,33 +6675,36 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("raiders", event.raiders.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn raid_state_change(&self, host: &mut dyn ServerHost, event: &mut RaidStateChangeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "raid_state_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("raid", event.raid.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("state", event.state.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn recipe_sources(&self, host: &mut dyn ServerHost, event: &mut RecipeSourcesEvent<'_>) {
         let _ = &host;
         let out_sources = std::cell::RefCell::new(event.sources.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "recipe_sources",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("menu", event.menu.to_string().to_lua_value(lua)?)?;
@@ -6239,11 +6712,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("sources", out_sources.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["sources"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_sources, id, "recipe_sources", "sources", &answered.answer("sources"));
                 true
             },
-        );
+        ));
         *event.sources = out_sources.into_inner();
     }
 
@@ -6251,19 +6724,20 @@ impl mod_api::Hooks for LuaHost {
     fn register_block_state_models(&self, context: &RegistrationContext, event: &mut RegisterBlockStateModelsEvent<'_>) {
         let _ = &context;
         let out_definitions = std::cell::RefCell::new(event.definitions.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "register_block_state_models",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("definitions", out_definitions.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["definitions"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_definitions, id, "register_block_state_models", "definitions", &answered.answer("definitions"));
                 true
             },
-        );
+        ));
         *event.definitions = out_definitions.into_inner();
     }
 
@@ -6271,19 +6745,20 @@ impl mod_api::Hooks for LuaHost {
     fn register_item_models(&self, context: &RegistrationContext, event: &mut RegisterItemModelsEvent<'_>) {
         let _ = &context;
         let out_models = std::cell::RefCell::new(event.models.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "register_item_models",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("models", out_models.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["models"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_models, id, "register_item_models", "models", &answered.answer("models"));
                 true
             },
-        );
+        ));
         *event.models = out_models.into_inner();
     }
 
@@ -6291,19 +6766,20 @@ impl mod_api::Hooks for LuaHost {
     fn register_item_tint_sources(&self, context: &RegistrationContext, event: &mut RegisterItemTintSourcesEvent<'_>) {
         let _ = &context;
         let out_sources = std::cell::RefCell::new(event.sources.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "register_item_tint_sources",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("sources", out_sources.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["sources"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_sources, id, "register_item_tint_sources", "sources", &answered.answer("sources"));
                 true
             },
-        );
+        ));
         *event.sources = out_sources.into_inner();
     }
 
@@ -6311,19 +6787,20 @@ impl mod_api::Hooks for LuaHost {
     fn register_model_loaders(&self, context: &RegistrationContext, event: &mut RegisterModelLoadersEvent<'_>) {
         let _ = &context;
         let out_loaders = std::cell::RefCell::new(event.loaders.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "register_model_loaders",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("loaders", out_loaders.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["loaders"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_loaders, id, "register_model_loaders", "loaders", &answered.answer("loaders"));
                 true
             },
-        );
+        ));
         *event.loaders = out_loaders.into_inner();
     }
 
@@ -6331,19 +6808,20 @@ impl mod_api::Hooks for LuaHost {
     fn register_range_select_item_model_property(&self, context: &RegistrationContext, event: &mut RegisterRangeSelectItemModelPropertyEvent<'_>) {
         let _ = &context;
         let out_properties = std::cell::RefCell::new(event.properties.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "register_range_select_item_model_property",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("properties", out_properties.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["properties"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_properties, id, "register_range_select_item_model_property", "properties", &answered.answer("properties"));
                 true
             },
-        );
+        ));
         *event.properties = out_properties.into_inner();
     }
 
@@ -6351,19 +6829,20 @@ impl mod_api::Hooks for LuaHost {
     fn register_select_item_model_property(&self, context: &RegistrationContext, event: &mut RegisterSelectItemModelPropertyEvent<'_>) {
         let _ = &context;
         let out_properties = std::cell::RefCell::new(event.properties.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "register_select_item_model_property",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("properties", out_properties.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["properties"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_properties, id, "register_select_item_model_property", "properties", &answered.answer("properties"));
                 true
             },
-        );
+        ));
         *event.properties = out_properties.into_inner();
     }
 
@@ -6371,68 +6850,74 @@ impl mod_api::Hooks for LuaHost {
     fn register_sprite_sources(&self, context: &RegistrationContext, event: &mut RegisterSpriteSourcesEvent<'_>) {
         let _ = &context;
         let out_sources = std::cell::RefCell::new(event.sources.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "register_sprite_sources",
+            crate::hostcall::TurnHost::None,
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("sources", out_sources.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["sources"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_sources, id, "register_sprite_sources", "sources", &answered.answer("sources"));
                 true
             },
-        );
+        ));
         *event.sources = out_sources.into_inner();
     }
 
     fn render_frame_post(&self, host: &mut dyn ClientHost, event: &mut RenderFramePostEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "render_frame_post",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("elapsed", event.elapsed.to_lua_value(lua)?)?;
                 data.raw_set("world_partial_tick", event.world_partial_tick.to_lua_value(lua)?)?;
                 data.raw_set("partial_tick", event.partial_tick.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn render_frame_pre(&self, host: &mut dyn ClientHost, event: &mut RenderFramePreEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "render_frame_pre",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("elapsed", event.elapsed.to_lua_value(lua)?)?;
                 data.raw_set("world_partial_tick", event.world_partial_tick.to_lua_value(lua)?)?;
                 data.raw_set("partial_tick", event.partial_tick.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn render_gui_pre(&self, host: &dyn ClientHost, event: &mut RenderGuiPreEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "render_gui_pre",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "render_gui_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -6447,22 +6932,23 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("render_item_in_frame");
             return if event.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "render_item_in_frame",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                data.raw_set("stack", crate::stacks::stack_in(host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("stack", crate::stacks::stack_in(turn.read_or_unavailable(), Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "render_item_in_frame", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -6472,10 +6958,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_visible = std::cell::RefCell::new(event.visible);
         let out_text = std::cell::RefCell::new(event.text.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "render_name_tag",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -6484,66 +6971,73 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("text", out_text.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["visible", "text"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_visible, id, "render_name_tag", "visible", &answered.answer("visible"));
                 crate::dispatch::accept_opt(&out_text, id, "render_name_tag", "text", &answered.answer("text"));
                 true
             },
-        );
+        ));
         event.visible = out_visible.into_inner();
         *event.text = out_text.into_inner();
     }
 
     fn resource_pack_status(&self, host: &mut dyn ServerHost, event: &mut ResourcePackStatusEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "resource_pack_status",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("status", event.status.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn right_click_empty(&self, host: &mut dyn ClientHost, event: &mut RightClickEmptyEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "right_click_empty",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn scheduled_task(&self, host: &mut dyn ServerHost, event: &mut ScheduledTaskEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "scheduled_task",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("id", event.id.to_lua_value(lua)?)?;
                 data.raw_set("owner", event.owner.to_string().to_lua_value(lua)?)?;
                 data.raw_set("token", event.token.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn screen_char_typed_post(&self, host: &dyn ClientHost, event: &mut ScreenCharTypedPostEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_char_typed_post",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("c", event.c.to_lua_value(lua)?)?;
@@ -6551,48 +7045,53 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_char_typed_post", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_closing(&self, host: &dyn ClientHost, event: &mut ScreenClosingEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_closing",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn screen_init_post(&self, host: &dyn ClientHost, event: &mut ScreenInitPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_init_post",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn screen_key_pressed_post(&self, host: &dyn ClientHost, event: &mut ScreenKeyPressedPostEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_key_pressed_post",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
@@ -6601,11 +7100,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_key_pressed_post", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -6613,10 +7112,11 @@ impl mod_api::Hooks for LuaHost {
     fn screen_key_pressed_pre(&self, host: &dyn ClientHost, event: &mut ScreenKeyPressedPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_key_pressed_pre",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
@@ -6625,11 +7125,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_key_pressed_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -6637,10 +7137,11 @@ impl mod_api::Hooks for LuaHost {
     fn screen_key_released_post(&self, host: &dyn ClientHost, event: &mut ScreenKeyReleasedPostEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_key_released_post",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
@@ -6648,11 +7149,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_key_released_post", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -6660,10 +7161,11 @@ impl mod_api::Hooks for LuaHost {
     fn screen_key_released_pre(&self, host: &dyn ClientHost, event: &mut ScreenKeyReleasedPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_key_released_pre",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
@@ -6671,37 +7173,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_key_released_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_button_pressed_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonPressedPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_button_pressed_post",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn screen_mouse_button_pressed_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonPressedPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_button_pressed_pre",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
@@ -6709,37 +7214,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_mouse_button_pressed_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_button_released_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonReleasedPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_button_released_post",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn screen_mouse_button_released_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonReleasedPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_button_released_pre",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
@@ -6747,20 +7255,22 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_mouse_button_released_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_dragged_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseDraggedPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_dragged_post",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
@@ -6768,17 +7278,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn screen_mouse_dragged_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseDraggedPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_dragged_pre",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
@@ -6787,37 +7298,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_mouse_dragged_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_scrolled_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseScrolledPostEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_scrolled_post",
-            &|lua| {
+            crate::hostcall::TurnHost::ClientRead(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("scroll", event.scroll.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn screen_mouse_scrolled_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseScrolledPreEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_mouse_scrolled_pre",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("scroll", event.scroll.to_lua_value(lua)?)?;
@@ -6825,11 +7339,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "screen_mouse_scrolled_pre", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -6839,10 +7353,11 @@ impl mod_api::Hooks for LuaHost {
         let out_compact = std::cell::RefCell::new(event.compact);
         let out_horizontal_offset = std::cell::RefCell::new(event.horizontal_offset);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "screen_render_inventory_mob_effects",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("available_space", event.available_space.to_lua_value(lua)?)?;
@@ -6851,13 +7366,13 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["compact", "horizontal_offset", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_compact, id, "screen_render_inventory_mob_effects", "compact", &answered.answer("compact"));
                 crate::dispatch::accept(&out_horizontal_offset, id, "screen_render_inventory_mob_effects", "horizontal_offset", &answered.answer("horizontal_offset"));
                 crate::dispatch::accept(&out_cancelled, id, "screen_render_inventory_mob_effects", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.compact = out_compact.into_inner();
         event.horizontal_offset = out_horizontal_offset.into_inner();
         event.cancelled = out_cancelled.into_inner();
@@ -6866,163 +7381,187 @@ impl mod_api::Hooks for LuaHost {
 
     fn sculk_bloom(&self, host: &mut dyn ServerHost, event: &mut SculkBloomEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "sculk_bloom",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn server_about_to_start(&self, host: &mut dyn ServerHost, event: &mut ServerAboutToStartEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "server_about_to_start",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dedicated", event.dedicated.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn server_started(&self, host: &mut dyn ServerHost, event: &mut ServerStartedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "server_started",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dedicated", event.dedicated.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn server_starting(&self, host: &mut dyn ServerHost, event: &mut ServerStartingEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "server_starting",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dedicated", event.dedicated.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn server_stopped(&self, host: &mut dyn ServerHost, event: &mut ServerStoppedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "server_stopped",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dedicated", event.dedicated.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn server_stopping(&self, host: &mut dyn ServerHost, event: &mut ServerStoppingEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "server_stopping",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dedicated", event.dedicated.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn server_tick(&self, host: &mut dyn ServerHost, event: &mut ServerTickEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "server_tick",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("context", event.context.to_lua_value(lua)?)?;
                 data.raw_set("phase", event.phase.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn server_tick_rate_changed(&self, host: &mut dyn ServerHost, event: &mut ServerTickRateChangedEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "server_tick_rate_changed",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn setting_changed(&self, host: &mut dyn ClientHost, event: &mut SettingChangedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "setting_changed",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("mod_id", event.mod_id.to_string().to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn sound_engine_load(&self, context: &dyn LoopContext, event: &mut SoundEngineLoadEvent) {
         let _ = &context;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "sound_engine_load",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn spawn_change(&self, host: &mut dyn ServerHost, event: &mut SpawnChangeEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "spawn_change",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("angle", event.angle.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn sponge_absorb(&self, level: &dyn LevelHost, event: &mut SpongeAbsorbEvent) {
         let _ = &level;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "sponge_absorb",
-            &|lua| {
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -7030,10 +7569,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_target = std::cell::RefCell::new(event.target.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "spread_players_teleport",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
@@ -7043,12 +7583,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["target", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_target, id, "spread_players_teleport", "target", &answered.answer("target"));
                 crate::dispatch::accept(&out_cancelled, id, "spread_players_teleport", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.target = out_target.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -7058,10 +7598,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_sweeping = std::cell::RefCell::new(event.sweeping);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "sweep_attack",
+            crate::hostcall::TurnHost::of_side(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("target", event.target.to_string().to_lua_value(lua)?)?;
                 data.raw_set("vanilla_sweep", event.vanilla_sweep.to_lua_value(lua)?)?;
@@ -7069,12 +7610,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["sweeping", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_sweeping, id, "sweep_attack", "sweeping", &answered.answer("sweeping"));
                 crate::dispatch::accept(&out_cancelled, id, "sweep_attack", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.sweeping = out_sweeping.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -7082,30 +7623,34 @@ impl mod_api::Hooks for LuaHost {
 
     fn tags_updated(&self, host: HostSide, event: &mut TagsUpdatedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "tags_updated",
-            &|lua| {
+            crate::hostcall::TurnHost::of_side(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("cause", event.cause.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn target_hit(&self, host: &mut dyn ServerHost, event: &mut TargetHitEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "target_hit",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("strength", event.strength.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
@@ -7113,10 +7658,11 @@ impl mod_api::Hooks for LuaHost {
         let _ = &host;
         let out_to = std::cell::RefCell::new(event.to.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "teleport_command",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
@@ -7125,12 +7671,12 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["to", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_to, id, "teleport_command", "to", &answered.answer("to"));
                 crate::dispatch::accept(&out_cancelled, id, "teleport_command", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.to = out_to.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -7138,35 +7684,38 @@ impl mod_api::Hooks for LuaHost {
 
     fn texture_atlas_stitched(&self, host: &mut dyn ClientHost, event: &mut TextureAtlasStitchedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "texture_atlas_stitched",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("atlas", event.atlas.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn thunder_change(&self, host: &mut dyn ServerHost, event: &mut ThunderChangeEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "thunder_change",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("thundering", event.thundering.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "thunder_change", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -7174,29 +7723,31 @@ impl mod_api::Hooks for LuaHost {
     fn tick_target_millis(&self, host: &dyn ClientHost, event: &mut TickTargetMillisEvent) {
         let _ = &host;
         let out_millis = std::cell::RefCell::new(event.millis);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "tick_target_millis",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("millis", out_millis.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["millis"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_millis, id, "tick_target_millis", "millis", &answered.answer("millis"));
                 true
             },
-        );
+        ));
         event.millis = out_millis.into_inner();
     }
 
     fn time_skip(&self, host: &mut dyn ServerHost, event: &mut TimeSkipEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "time_skip",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
@@ -7205,11 +7756,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "time_skip", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -7217,21 +7768,22 @@ impl mod_api::Hooks for LuaHost {
     fn tnt_primed(&self, host: &mut dyn ServerHost, event: &mut TntPrimedEvent) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "tnt_primed",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "tnt_primed", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -7242,10 +7794,11 @@ impl mod_api::Hooks for LuaHost {
         let out_title = std::cell::RefCell::new(event.title.clone());
         let out_description = std::cell::RefCell::new(event.description.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "toast_add",
+            crate::hostcall::TurnHost::ClientRead(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("kind", event.kind.to_lua_value(lua)?)?;
                 data.raw_set("title", out_title.borrow().to_lua_value(lua)?)?;
@@ -7253,13 +7806,13 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["title", "description", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_title, id, "toast_add", "title", &answered.answer("title"));
                 crate::dispatch::accept_opt(&out_description, id, "toast_add", "description", &answered.answer("description"));
                 crate::dispatch::accept(&out_cancelled, id, "toast_add", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         *event.title = out_title.into_inner();
         *event.description = out_description.into_inner();
         event.cancelled = out_cancelled.into_inner();
@@ -7268,9 +7821,11 @@ impl mod_api::Hooks for LuaHost {
 
     fn trade_select(&self, host: &mut dyn ServerHost, event: &mut TradeSelectEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "trade_select",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
@@ -7278,8 +7833,8 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("index", event.index.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn vanilla_game_event(&self, host: &mut dyn ServerHost, event_: &mut VanillaGameEventEvent<'_>) -> Flow {
@@ -7292,91 +7847,99 @@ impl mod_api::Hooks for LuaHost {
             crate::stacks::undelivered("vanilla_game_event");
             return if event_.cancelled { Flow::Cancel } else { Flow::Continue };
         }
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "vanilla_game_event",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event_.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("event", event_.event.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event_.pos.to_lua_value(lua)?)?;
                 data.raw_set("cause", event_.cause.to_lua_value(lua)?)?;
-                data.raw_set("affected_state", crate::stacks::state_in(&*host as &dyn mod_api::Host, event_.affected_state.as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                data.raw_set("affected_state", crate::stacks::state_in(turn.read_or_unavailable(), event_.affected_state.as_ref()).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "vanilla_game_event", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event_.cancelled = out_cancelled.into_inner();
         if event_.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn vault_change_state(&self, host: &mut dyn ServerHost, event: &mut VaultChangeStateEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "vault_change_state",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("state", event.state.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn vault_loot(&self, host: &mut dyn ServerHost, event: &mut VaultLootEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "vault_loot",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn vehicle_create(&self, host: &mut dyn ServerHost, event: &mut VehicleCreateEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "vehicle_create",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn vehicle_damage(&self, host: &mut dyn ServerHost, event: &mut VehicleDamageEvent<'_>) -> Flow {
         let _ = &host;
         let out_damage = std::cell::RefCell::new(event.damage);
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "vehicle_damage",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("damage", out_damage.borrow().to_lua_value(lua)?)?;
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["damage", "cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_damage, id, "vehicle_damage", "damage", &answered.answer("damage"));
                 crate::dispatch::accept(&out_cancelled, id, "vehicle_damage", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.damage = out_damage.into_inner();
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
@@ -7384,23 +7947,27 @@ impl mod_api::Hooks for LuaHost {
 
     fn vehicle_destroy(&self, host: &mut dyn ServerHost, event: &mut VehicleDestroyEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "vehicle_destroy",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn vehicle_moved(&self, host: &mut dyn ServerHost, event: &mut VehicleMovedEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "vehicle_moved",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
@@ -7408,17 +7975,18 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn village_siege(&self, host: &mut dyn ServerHost, event: &mut VillageSiegeEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "village_siege",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -7426,11 +7994,11 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "village_siege", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
@@ -7438,10 +8006,11 @@ impl mod_api::Hooks for LuaHost {
     fn weather_change(&self, host: &mut dyn ServerHost, event: &mut WeatherChangeEvent<'_>) -> Flow {
         let _ = &host;
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "weather_change",
+            crate::hostcall::TurnHost::Server(host),
             &|| *out_cancelled.borrow(),
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("raining", event.raining.to_lua_value(lua)?)?;
@@ -7449,55 +8018,60 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_cancelled, id, "weather_change", "cancelled", &answered.answer("cancelled"));
                 true
             },
-        );
+        ));
         event.cancelled = out_cancelled.into_inner();
         if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn whitelist_state_update(&self, host: &mut dyn ServerHost, event: &mut WhitelistStateUpdateEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "whitelist_state_update",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("enabled", event.enabled.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     #[allow(clippy::clone_on_copy)]
     fn wind_burst(&self, host: &mut dyn ServerHost, event: &mut WindBurstEvent<'_>) {
         let _ = &host;
         let out_blocks = std::cell::RefCell::new(event.blocks.clone());
-        self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns(
             "wind_burst",
+            crate::hostcall::TurnHost::Server(host),
             &|| false,
-            &|lua| {
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("center", event.center.to_lua_value(lua)?)?;
                 data.raw_set("blocks", out_blocks.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["blocks"])
             },
-            &mut |id, answered| {
+            &mut |id, answered, _turn| {
                 crate::dispatch::accept(&out_blocks, id, "wind_burst", "blocks", &answered.answer("blocks"));
                 true
             },
-        );
+        ));
         *event.blocks = out_blocks.into_inner();
     }
 
     fn window_resize(&self, host: &mut dyn ClientHost, event: &mut WindowResizeEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "window_resize",
-            &|lua| {
+            crate::hostcall::TurnHost::Client(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("width", event.width.to_lua_value(lua)?)?;
                 data.raw_set("height", event.height.to_lua_value(lua)?)?;
@@ -7505,74 +8079,84 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("gui_height", event.gui_height.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn world_border_bounds_change_finish(&self, host: &mut dyn ServerHost, event: &mut WorldBorderBoundsChangeFinishEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "world_border_bounds_change_finish",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn world_border_bounds_changed(&self, host: &mut dyn ServerHost, event: &mut WorldBorderBoundsChangedEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "world_border_bounds_changed",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn world_border_center_changed(&self, host: &mut dyn ServerHost, event: &mut WorldBorderCenterChangedEvent) {
         let _ = &host;
         let _ = &event;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "world_border_center_changed",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn world_lifecycle(&self, host: &mut dyn ServerHost, event: &mut WorldLifecycleEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "world_lifecycle",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("context", event.context.to_lua_value(lua)?)?;
                 data.raw_set("phase", event.phase.to_lua_value(lua)?)?;
                 data.raw_set("error_text", event.error_text.to_string().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 
     fn world_saved(&self, host: &mut dyn ServerHost, event: &mut WorldSavedEvent) {
         let _ = &host;
-        self.dispatch(
+        crate::hostcall::refused(self.dispatch_turns(
             "world_saved",
-            &|lua| {
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
                 let data = lua.create_table()?;
                 data.raw_set("wait", event.wait.to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &[])
             },
-            &mut |_, _| true,
-        );
+            &mut |_, _, _| true,
+        ));
     }
 }
