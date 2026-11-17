@@ -363,13 +363,31 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
 }
 
 /// Reads a mod's `main.luau`, reading at most `MAX_SOURCE + 1` bytes. A symlink is refused.
+///
+/// The file is opened, then the opened file and the path are checked, and only then read, so a
+/// path swapped for a symlink or another file in between is refused (see `same_file`). The path
+/// is also checked before the open, so a FIFO is not opened in the normal case: opening one
+/// blocks until a writer appears.
 fn read_source(dir: &Path) -> Result<String, String> {
+    let dir_meta = std::fs::symlink_metadata(dir).map_err(|_| format!("no {ENTRY}"))?;
+    if dir_meta.file_type().is_symlink() || !dir_meta.is_dir() {
+        return Err("mod folder is not a plain folder".to_string());
+    }
     let path = dir.join(ENTRY);
-    let meta = std::fs::symlink_metadata(&path).map_err(|_| format!("no {ENTRY}"))?;
-    if meta.file_type().is_symlink() || !meta.is_file() {
+    let before = std::fs::symlink_metadata(&path).map_err(|_| format!("no {ENTRY}"))?;
+    if before.file_type().is_symlink() || !before.is_file() {
         return Err(format!("{ENTRY} is not a plain file"));
     }
     let file = std::fs::File::open(&path).map_err(|_| format!("{ENTRY} cannot be read"))?;
+    let opened = file
+        .metadata()
+        .map_err(|_| format!("{ENTRY} cannot be read"))?;
+    if !opened.is_file() {
+        return Err(format!("{ENTRY} is not a plain file"));
+    }
+    if !same_file(&file, &path) {
+        return Err(format!("{ENTRY} changed while it was opened"));
+    }
     let mut bytes = Vec::new();
     file.take(MAX_SOURCE + 1)
         .read_to_end(&mut bytes)
@@ -378,6 +396,33 @@ fn read_source(dir: &Path) -> Result<String, String> {
         return Err(format!("{ENTRY} is over {} KiB", MAX_SOURCE / 1024));
     }
     String::from_utf8(bytes).map_err(|_| format!("{ENTRY} is not UTF-8"))
+}
+
+/// Whether `path` still names the file that `opened` was opened from. A path that is now a
+/// symlink, or not a plain file, never does.
+fn same_file(opened: &std::fs::File, path: &Path) -> bool {
+    let Ok(now) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    if now.file_type().is_symlink() || !now.is_file() {
+        return false;
+    }
+    same_inode(opened, &now)
+}
+
+/// Whether the opened file and the path's current metadata are the same device and inode.
+#[cfg(unix)]
+fn same_inode(opened: &std::fs::File, now: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    opened
+        .metadata()
+        .is_ok_and(|o| o.dev() == now.dev() && o.ino() == now.ino())
+}
+
+/// Other platforms have no inode to compare: the symlink and plain-file checks are all there is.
+#[cfg(not(unix))]
+fn same_inode(_opened: &std::fs::File, _now: &std::fs::Metadata) -> bool {
+    true
 }
 
 /// Appends `line` to a mod's buffer, dropping the oldest lines past `MAX_LOG_LINES`.
@@ -585,6 +630,64 @@ mod tests {
             side: Side::Both,
         };
         assert!(LuaMod::load(&found).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_main_luau_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside.luau");
+        std::fs::write(&outside, "horizon.on(\"server_tick\", function() end)").unwrap();
+        let dir = root.path().join("mod_a");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join(ENTRY)).unwrap();
+        let err = read_source(&dir).err().unwrap();
+        assert!(err.contains("not a plain file"), "got {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_mod_folder_is_refused_at_load() {
+        let root = tempfile::tempdir().unwrap();
+        let real = mod_folder(
+            root.path(),
+            "real",
+            "horizon.on(\"server_tick\", function() end)",
+            Side::Both,
+        );
+        let link = root.path().join("linked");
+        std::os::unix::fs::symlink(&real.dir, &link).unwrap();
+        let found = Discovered {
+            dir: link,
+            id: "linked".into(),
+            version: "1".into(),
+            side: Side::Both,
+        };
+        let err = LuaMod::load(&found).err().unwrap();
+        assert!(err.contains("not a plain folder"), "got {err}");
+    }
+
+    #[test]
+    fn a_file_swapped_after_open_is_detected() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join(ENTRY);
+        std::fs::write(&path, "first").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        assert!(same_file(&file, &path));
+
+        // The open handle keeps the old inode alive, so the new file cannot reuse its number.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::write(&path, "second").unwrap();
+        assert!(!same_file(&file, &path));
+
+        #[cfg(unix)]
+        {
+            let outside = root.path().join("outside.luau");
+            std::fs::write(&outside, "third").unwrap();
+            std::fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(&outside, &path).unwrap();
+            assert!(!same_file(&file, &path));
+        }
     }
 
     #[test]
