@@ -6,7 +6,9 @@
 //! double and a string is a string. The tags Lua cannot infer are tagged tables
 //! `{__nbt = "byte", value = n}`, made by `nbt.byte`, `nbt.short`, `nbt.long`, `nbt.float` and the
 //! arrays `nbt.byte_array`, `nbt.int_array` and `nbt.long_array` (see [`install_constructors`]).
-//! Output writes the same tagged tables for those tags, so a byte comes back as a byte. An integral
+//! Output writes the same tagged tables for those tags, so a byte comes back as a byte. A long past
+//! 2^53 in magnitude is not exact as a Lua number, so it is written and read as a decimal string
+//! (`{__nbt = "long", value = "9007199254740993"}`). An integral
 //! double is written as `{__nbt = "double", value = n}` (a plain number would read back as an int),
 //! and an empty list as `{__nbt = "empty_list", value = {}}` (a plain empty table reads as a compound).
 //!
@@ -50,6 +52,8 @@ const NAMES: [&str; 13] = [
 ];
 /// 2^63: Lua numbers at or past it are not an i64.
 const TWO_POW_63: f64 = 9_223_372_036_854_775_808.0;
+/// 2^53: the longs a Lua number holds exactly. Longs past it travel as decimal strings.
+const MAX_EXACT_LONG: u64 = 1 << 53;
 
 /// Counts the tags of one value against [`MAX_ENTRIES`].
 #[derive(Default)]
@@ -244,7 +248,7 @@ fn tagged_from(name: &str, value: &Value) -> Result<Tag, ConvertError> {
     match name {
         "byte" => Ok(Tag::Byte(i8::from_lua_value(value)?)),
         "short" => Ok(Tag::Short(i16::from_lua_value(value)?)),
-        "long" => Ok(Tag::Long(i64::from_lua_value(value)?)),
+        "long" => long_from(value).map(Tag::Long),
         "float" => Ok(Tag::Float(f32::from_lua_value(value)?.to_bits())),
         "double" => Ok(Tag::Double(f64::from_lua_value(value)?.to_bits())),
         // A list tag holds no element type, so an empty list is the same whatever it was in Java.
@@ -262,6 +266,41 @@ fn tagged_from(name: &str, value: &Value) -> Result<Tag, ConvertError> {
         "long_array" => array(value, i64::from_lua_value).map(Tag::LongArray),
         other => Err(ConvertError::new(format!("unknown NBT tag {other:?}"))),
     }
+}
+
+/// The value of a long: a Lua number up to 2^53 in magnitude, or a decimal string of any i64.
+fn long_from(value: &Value) -> Result<i64, ConvertError> {
+    match value {
+        Value::String(_) => parse_long(&read_string(value)?),
+        Value::Integer(_) | Value::Number(_) => {
+            let long = i64::from_lua_value(value)?;
+            if long.unsigned_abs() > MAX_EXACT_LONG {
+                return Err(ConvertError::new(format!(
+                    "long {long} is not exact as a Lua number; pass it as a string, nbt.long(\"{long}\")"
+                )));
+            }
+            Ok(long)
+        }
+        other => Err(ConvertError::expected("integer or decimal string", other)),
+    }
+}
+
+/// A decimal i64 string: an optional `-`, then digits with no leading zero (`0` alone is fine,
+/// `-0` is not).
+fn parse_long(text: &str) -> Result<i64, ConvertError> {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(ConvertError::new(
+            "a long string is an optional - and decimal digits only",
+        ));
+    }
+    if (digits.len() > 1 && digits.starts_with('0')) || text == "-0" {
+        return Err(ConvertError::new(
+            "a long string has no leading zeros and is not -0",
+        ));
+    }
+    text.parse::<i64>()
+        .map_err(|_| ConvertError::new("long string is outside the i64 range"))
 }
 
 /// The elements of an array table, each converted, at most [`MAX_ARRAY`].
@@ -372,7 +411,14 @@ fn write_tag(lua: &Lua, tag: &Tag, parent: usize, budget: &mut Budget) -> mlua::
         Tag::Byte(b) => tagged(lua, "byte", b.to_lua_value(lua)?),
         Tag::Short(s) => tagged(lua, "short", s.to_lua_value(lua)?),
         Tag::Int(i) => i.to_lua_value(lua),
-        Tag::Long(l) => tagged(lua, "long", l.to_lua_value(lua)?),
+        Tag::Long(l) => {
+            let value = if l.unsigned_abs() <= MAX_EXACT_LONG {
+                l.to_lua_value(lua)?
+            } else {
+                Value::String(lua.create_string(l.to_string())?)
+            };
+            tagged(lua, "long", value)
+        }
         Tag::Float(bits) => tagged(lua, "float", f32::from_bits(*bits).to_lua_value(lua)?),
         Tag::Double(bits) => {
             let n = f64::from_bits(*bits);
@@ -415,7 +461,7 @@ impl ToLuaValue for Compound {
 }
 
 /// The read-only `nbt` table of constructors, to set as a global: `nbt.byte(n)`, `nbt.short(n)`,
-/// `nbt.long(n)`, `nbt.float(n)`, `nbt.double(n)`, `nbt.empty_list()` and `nbt.byte_array(t)`, `nbt.int_array(t)`, `nbt.long_array(t)`.
+/// `nbt.long(n)` (a number up to 2^53, or a decimal string), `nbt.float(n)`, `nbt.double(n)`, `nbt.empty_list()` and `nbt.byte_array(t)`, `nbt.int_array(t)`, `nbt.long_array(t)`.
 /// Each checks its value now and returns a tagged table.
 pub fn install_constructors(lua: &Lua) -> mlua::Result<Table> {
     let nbt = lua.create_table()?;
@@ -730,5 +776,102 @@ mod tests {
         assert!(mixed.to_lua_value(&lua).is_err());
         let reserved = Tag::compound([(TAG_KEY, Tag::Int(1))]);
         assert!(reserved.to_lua_value(&lua).is_err());
+    }
+
+    #[test]
+    fn longs_round_trip_exactly_at_every_magnitude() {
+        let longs: [i64; 8] = [
+            0,
+            1,
+            -1,
+            1 << 53,
+            (1 << 53) + 1,
+            i64::MAX,
+            i64::MIN,
+            -(1 << 53) - 1,
+        ];
+        let mut map = Compound::new();
+        for (index, long) in longs.iter().enumerate() {
+            map.insert(format!("l{index}").as_str().into(), Tag::Long(*long));
+        }
+        let lua = Lua::new();
+        let value = map.to_lua_value(&lua).expect("to lua");
+        assert_eq!(Compound::from_lua_value(&value), Ok(map));
+    }
+
+    #[test]
+    fn longs_up_to_2_53_are_plain_numbers_and_longer_ones_are_strings() {
+        let lua = Lua::new();
+        let inner = |long: i64| {
+            let value = Tag::Long(long).to_lua_value(&lua).expect("to lua");
+            let Value::Table(table) = value else {
+                panic!("a tagged table")
+            };
+            table.raw_get::<Value>(VALUE_KEY).expect("value")
+        };
+        assert!(matches!(inner(1 << 53), Value::Integer(i) if i == 1 << 53));
+        assert!(matches!(inner(-(1 << 53)), Value::Integer(i) if i == -(1 << 53)));
+        let Value::String(text) = inner((1 << 53) + 1) else {
+            panic!("a string")
+        };
+        assert_eq!(text.to_str().expect("utf8"), "9007199254740993");
+        let Value::String(text) = inner(i64::MIN) else {
+            panic!("a string")
+        };
+        assert_eq!(text.to_str().expect("utf8"), "-9223372036854775808");
+    }
+
+    #[test]
+    fn long_strings_must_be_a_strict_decimal_i64() {
+        for text in [
+            "+5",
+            " 5",
+            "05",
+            "-05",
+            "-0",
+            "",
+            "-",
+            "--5",
+            "1e3",
+            "9223372036854775808",
+            "-9223372036854775809",
+            "abc",
+        ] {
+            let source = format!("return {{a = {{__nbt = \"long\", value = \"{text}\"}}}}");
+            assert!(read(&source).is_err(), "{text:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn long_strings_in_range_are_read() {
+        let map = read(
+            "return {a = {__nbt = \"long\", value = \"-9223372036854775808\"}, \
+             b = {__nbt = \"long\", value = \"9223372036854775807\"}, \
+             c = {__nbt = \"long\", value = \"0\"}, \
+             d = {__nbt = \"long\", value = \"-42\"}}",
+        )
+        .expect("compound");
+        assert_eq!(get(&map, "a"), Some(&Tag::Long(i64::MIN)));
+        assert_eq!(get(&map, "b"), Some(&Tag::Long(i64::MAX)));
+        assert_eq!(get(&map, "c"), Some(&Tag::Long(0)));
+        assert_eq!(get(&map, "d"), Some(&Tag::Long(-42)));
+    }
+
+    #[test]
+    fn long_number_above_2_53_is_refused_and_suggests_the_string() {
+        let err =
+            read("return {a = {__nbt = \"long\", value = 9007199254740994}}").expect_err("refused");
+        assert!(err.to_string().contains("pass it as a string"), "{err}");
+        assert!(read("return {a = {__nbt = \"long\", value = -9007199254740994}}").is_err());
+        assert!(read("return {a = nbt.long(9007199254740994)}").is_err());
+        let map = read("return {a = nbt.long(9007199254740992)}").expect("compound");
+        assert_eq!(get(&map, "a"), Some(&Tag::Long(1 << 53)));
+    }
+
+    #[test]
+    fn nbt_long_takes_a_decimal_string() {
+        let map = read("return {a = nbt.long(\"9007199254740993\")}").expect("compound");
+        assert_eq!(get(&map, "a"), Some(&Tag::Long((1 << 53) + 1)));
+        assert!(read("return {a = nbt.long(\"+5\")}").is_err());
     }
 }
