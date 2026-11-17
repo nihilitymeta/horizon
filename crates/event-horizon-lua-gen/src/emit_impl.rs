@@ -9,9 +9,11 @@
 //! with outputs (its `&mut` dispatch parameters, see [`crate::dispatch_sigs`]) also builds the
 //! outputs' values into the table, as writable keys, and after `dispatch_turns` each mod's answer
 //! is converted and kept by [`crate::dispatch::accept`]. A cancel hook's one output is the bool
-//! `cancelled`: its method returns the [`Flow`] that the final value gives. Nothing here compiles
-//! the text: the tests check that it parses with `syn`, and the first compile against the mod API
-//! is a later step.
+//! `cancelled`: its method returns the [`Flow`] that the final value gives. A replace hook (its
+//! method returns `Option<X>`, no outputs) takes the first mod's return value that is not nil, through
+//! `dispatch_replace` and [`crate::dispatch::answer_of`]; it returns `Some` or `None`. Nothing here
+//! compiles the text: the tests check that it parses with `syn`, and the first compile against the
+//! mod API is a later step.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,6 +34,15 @@ pub struct Emitted {
     pub skipped: Vec<(String, String)>,
     /// How many outputs of the emitted hooks have each type, by the type's spelling.
     pub output_types: BTreeMap<String, usize>,
+    /// The answer and output types of the emitted hooks (`mod_api::` removed from an answer), which
+    /// the type emitter decides: a unit enum among them gets its `FromLuaValue`.
+    pub decisions: Vec<String>,
+    /// How many emitted hooks are replace hooks (their method returns an answer).
+    pub replace: usize,
+    /// How many emitted hooks have a unit enum among their answer or outputs.
+    pub decided_enum: usize,
+    /// How many emitted hooks have a list or a vector among their outputs.
+    pub lists: usize,
 }
 
 /// The `impl` header and the two methods every file has. `subscribed_slice` and `on_register` are
@@ -57,6 +68,9 @@ impl mod_api::Hooks for LuaHost {
 struct Output {
     key: String,
     ty: String,
+    /// The event field is a `&mut` reference (`pub lines: &'a mut Vec<String>`), read and written
+    /// through it.
+    by_ref: bool,
 }
 
 /// One hook that is emitted, with what its method needs.
@@ -69,6 +83,8 @@ struct Method<'a> {
     /// The outputs, in the dispatch function's parameter order. Empty for a listen hook with none.
     outputs: Vec<Output>,
     cancel: bool,
+    /// The answer type `X` of a replace hook (`mod_api::X`, as the method's return type spells it).
+    answer: Option<String>,
 }
 
 /// Emits the methods of the hooks named in `hooks`, sorted by name. `plain` is the set of plain
@@ -110,6 +126,44 @@ pub fn emit(
     for output in methods.iter().flat_map(|method| &method.outputs) {
         *output_types.entry(output.ty.clone()).or_default() += 1;
     }
+    let answer_of = |method: &Method<'_>| {
+        method
+            .answer
+            .as_deref()
+            .map(|answer| answer.replace("mod_api::", ""))
+    };
+    let decisions: Vec<String> = methods
+        .iter()
+        .flat_map(|method| {
+            method
+                .outputs
+                .iter()
+                .map(|output| output.ty.clone())
+                .chain(answer_of(method))
+        })
+        .collect();
+    let decided_enum = methods
+        .iter()
+        .filter(|method| {
+            let outputs = method.outputs.iter().map(|output| output.ty.clone());
+            outputs
+                .chain(answer_of(method))
+                .any(|ty| plain.decides(ty.trim_start_matches("Option<").trim_end_matches('>')))
+        })
+        .count();
+    let lists = methods
+        .iter()
+        .filter(|method| {
+            method
+                .outputs
+                .iter()
+                .any(|output| output.ty.starts_with("Vec<") || output.ty.starts_with("["))
+        })
+        .count();
+    let replace = methods
+        .iter()
+        .filter(|method| method.answer.is_some())
+        .count();
 
     Emitted {
         text,
@@ -119,20 +173,71 @@ pub fn emit(
             .collect(),
         skipped,
         output_types,
+        decisions,
+        replace,
+        decided_enum,
+        lists,
     }
 }
 
-/// Whether a dispatch output of type `ty` (without spaces) has a Lua conversion in this slice:
-/// the cancel flag, numbers, strings, `Text`, `[f64; 3]`, and an `Option` of a scalar, a string or
-/// `Text` (only a value of the inner type can be assigned: see [`turn_body`]).
-pub fn output_supported(ty: &str) -> bool {
-    const INNER: [&str; 7] = ["bool", "i32", "u32", "f32", "f64", "String", "Text"];
-    if INNER.contains(&ty) || ty == "[f64;3]" {
+/// Whether a dispatch output of type `ty` (without spaces) has a Lua conversion in this slice: the
+/// cancel flag, numbers, strings, `Text`, a unit enum the file decides, a vector or a list of
+/// scalars (`[f64; 3]`, `[f32; 3]`, `[i32; 3]`, `Vec<String>`, `Vec<[i32; 3]>`), and an `Option` of
+/// a value (only a value of the inner type can be assigned: see [`turn_body`]).
+pub fn output_supported(ty: &str, plain: &Plain) -> bool {
+    if is_list_kind(ty) || value_supported(ty, plain) {
         return true;
     }
     ty.strip_prefix("Option<")
         .and_then(|rest| rest.strip_suffix('>'))
-        .is_some_and(|inner| INNER.contains(&inner))
+        .is_some_and(|inner| value_supported(inner, plain))
+}
+
+/// Whether a value of type `ty` (without spaces, not `mod_api::`) converts both ways in this slice:
+/// a bool, a number, a string, `Text`, or a unit enum with its `FromLuaValue` in the file.
+fn value_supported(ty: &str, plain: &Plain) -> bool {
+    const SCALARS: [&str; 7] = ["bool", "i32", "u32", "f32", "f64", "String", "Text"];
+    SCALARS.contains(&ty) || plain.decides(ty)
+}
+
+/// The answer type of a replace hook: its method returns `Option<X>` and `X` converts from Lua.
+/// Returns `mod_api::X` (as the method spells it) for the generated code.
+fn replace_answer(sig: &HookSig, plain: &Plain) -> Result<String, String> {
+    let ret = sig
+        .ret
+        .as_deref()
+        .unwrap_or_default()
+        .replace("mod_api::", "");
+    let Some(inner) = ret
+        .strip_prefix("Option<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    else {
+        return Err(format!("replace hook does not return an Option: `{ret}`"));
+    };
+    if !value_supported(inner, plain) {
+        return Err(format!("answer: {inner}"));
+    }
+    Ok(format!("mod_api::{inner}"))
+}
+
+/// The type of a collect hook's output argument (`&'a mut Vec<String>`), without spaces: `Vec<String>`.
+fn collect_type(rust_type: &str) -> String {
+    rust_type
+        .split_once("mut")
+        .map(|(_, rest)| rest.chars().filter(|ch| !ch.is_whitespace()).collect())
+        .unwrap_or_default()
+}
+
+/// Whether `ty` (without spaces) is one of the list kinds a hook may write back in this slice.
+fn is_list_kind(ty: &str) -> bool {
+    [
+        "[f64;3]",
+        "[f32;3]",
+        "[i32;3]",
+        "Vec<String>",
+        "Vec<[i32;3]>",
+    ]
+    .contains(&ty)
 }
 
 /// Whether a dispatch parameter is a cancel hook's flag: the bool its body copies the event's
@@ -151,15 +256,18 @@ fn outputs_of(
     sig: &HookSig,
     cancel: bool,
     dispatch: &DispatchSigs,
+    plain: &Plain,
 ) -> Result<Vec<Output>, String> {
     let params = match dispatch.hooks.get(&hook.name) {
         None => return Err("no dispatch function for it".to_owned()),
         Some(None) => return Err("two dispatch functions name it".to_owned()),
         Some(Some(params)) => params,
     };
+    // The spelling a dispatch function gives a type may carry the mod API's path (`mod_api::X`).
+    let shown = |ty: &str| ty.replace("mod_api::", "");
     for param in params {
-        if !output_supported(&param.ty) {
-            return Err(format!("output: {}", param.ty));
+        if !output_supported(&shown(&param.ty), plain) {
+            return Err(format!("output: {}", shown(&param.ty)));
         }
     }
     if cancel && params.iter().filter(|param| is_cancel_flag(param)).count() > 1 {
@@ -175,11 +283,20 @@ fn outputs_of(
         } else {
             param.param.clone()
         };
-        if fields
+        let field = fields
             .and_then(|fields| fields.get(&key))
-            .map(String::as_str)
-            != Some(param.ty.as_str())
-        {
+            .map(String::as_str);
+        // An output field is a `&mut` reference in the event struct (`&'a mut Vec<String>`), or a
+        // plain value; the reference's referent is the output's type.
+        let by_ref = field.is_some_and(|text| text.starts_with('&'));
+        let field_ty = field.map(|text| {
+            if by_ref {
+                collect_type(text)
+            } else {
+                text.to_owned()
+            }
+        });
+        if field_ty.as_deref() != Some(param.ty.as_str()) {
             return Err(format!(
                 "output `{key}`: `{event}` has no `{}` field of that name",
                 param.ty
@@ -187,7 +304,8 @@ fn outputs_of(
         }
         outputs.push(Output {
             key,
-            ty: param.ty.clone(),
+            ty: shown(&param.ty),
+            by_ref,
         });
     }
     if cancel && !outputs.iter().any(|output| output.key == "cancelled") {
@@ -201,6 +319,7 @@ fn outputs_of(
         outputs.push(Output {
             key: "cancelled".to_owned(),
             ty: "bool".to_owned(),
+            by_ref: false,
         });
     }
     Ok(outputs)
@@ -223,14 +342,23 @@ fn plan<'a>(
     if hook.scope.is_some() {
         return Err("scoped: fired through a Part trait, not Hooks".to_owned());
     }
-    if hook.output.is_some() {
-        return Err("has an output: its listeners write back, not in this slice".to_owned());
+    // A collect hook's `&mut` output is one of its dispatch outputs. A list kind is taken here: the
+    // mod assigns the list, which replaces the current value. Any other output stays out.
+    if let Some(output) = &hook.output {
+        let list = hook.kind == Kind::Collect && is_list_kind(&collect_type(&output.rust_type));
+        if !list {
+            return Err("has an output: its listeners write back, not in this slice".to_owned());
+        }
     }
+    let replace = matches!(hook.kind, Kind::Replace);
     let cancel = match hook.kind {
-        Kind::Listen => false,
+        Kind::Listen | Kind::Replace | Kind::Collect => false,
         Kind::Cancel => true,
-        Kind::Collect => return Err("collect hook: not in this slice".to_owned()),
-        Kind::Replace => return Err("replace hook: not in this slice".to_owned()),
+    };
+    let answer = if replace {
+        Some(replace_answer(sig, plain)?)
+    } else {
+        None
     };
     if cancel {
         if sig.ret.as_deref() != Some("Flow") {
@@ -243,13 +371,16 @@ fn plan<'a>(
         if !answers {
             return Err("cancel hook has no `cancelled: bool` argument".to_owned());
         }
-    } else if let Some(ret) = &sig.ret {
+    } else if let (false, Some(ret)) = (replace, &sig.ret) {
         return Err(format!(
             "listen hook returns `{ret}`: its listeners answer nothing"
         ));
     }
 
-    let outputs = outputs_of(hook, sig, cancel, dispatch)?;
+    let outputs = outputs_of(hook, sig, cancel, dispatch, plain)?;
+    if replace && !outputs.is_empty() {
+        return Err("replace hook with a mutable output: not in this slice".to_owned());
+    }
     let mut fields = Vec::new();
     for arg in &hook.arguments {
         if cancel && arg.name == "cancelled" {
@@ -291,6 +422,7 @@ fn plan<'a>(
         fields,
         outputs,
         cancel,
+        answer,
     })
 }
 
@@ -457,14 +589,22 @@ pub fn group_key(reason: &str) -> String {
 /// One method, with its leading blank line, as the file spells it.
 fn method_text(method: &Method<'_>) -> String {
     let sig = method.sig;
-    let mut out = format!("\n    {} {{\n", sig.signature());
+    // A reference field is cloned out (its type may be `Copy`, which clippy reports): one allow.
+    let allow = if method.outputs.iter().any(|output| output.by_ref) {
+        "    #[allow(clippy::clone_on_copy)]\n"
+    } else {
+        ""
+    };
+    let mut out = format!("\n{allow}    {} {{\n", sig.signature());
     if let Some(host) = &sig.host_name {
         out.push_str(&format!("        let _ = &{host};\n"));
     }
     if method.fields.is_empty() && method.outputs.is_empty() {
         out.push_str(&format!("        let _ = &{};\n", sig.event_name));
     }
-    if method.outputs.is_empty() {
+    if let Some(answer) = &method.answer {
+        out.push_str(&replace_body(method, answer));
+    } else if method.outputs.is_empty() {
         out.push_str("        self.dispatch(\n");
         out.push_str(&format!("            {:?},\n", method.hook.name));
         out.push_str("            &|lua| {\n");
@@ -485,6 +625,38 @@ fn method_text(method: &Method<'_>) -> String {
     out
 }
 
+/// The body of a replace hook: `dispatch_replace` gives the first mod's answer that is not nil, and
+/// `answer_of` converts it. A refused answer is logged there and the chain goes on.
+fn replace_body(method: &Method<'_>, answer: &str) -> String {
+    let hook = &method.hook.name;
+    let mut out = String::from("        let mut answer = None;\n");
+    out.push_str("        self.dispatch_replace(\n");
+    out.push_str(&format!("            {hook:?},\n"));
+    out.push_str("            &|lua| {\n");
+    out.push_str("                let data = lua.create_table()?;\n");
+    for (field, expr) in &method.fields {
+        out.push_str(&format!(
+            "                data.raw_set({field:?}, {expr})?;\n"
+        ));
+    }
+    out.push_str("                crate::dispatch::new_event(lua, data, &[])\n");
+    out.push_str("            },\n");
+    out.push_str("            &mut |id, value| {\n");
+    out.push_str(&format!(
+        "                match crate::dispatch::answer_of::<{answer}>(id, {hook:?}, &value) {{\n"
+    ));
+    out.push_str("                    Some(found) => {\n");
+    out.push_str("                        answer = Some(found);\n");
+    out.push_str("                        true\n");
+    out.push_str("                    }\n");
+    out.push_str("                    None => false,\n");
+    out.push_str("                }\n");
+    out.push_str("            },\n");
+    out.push_str("        );\n");
+    out.push_str("        answer\n");
+    out
+}
+
 /// The body of a hook with outputs. Each output's current value is a `RefCell` that starts as the
 /// event's field. The event table gets the current values as data and the output keys as writable
 /// keys. After each mod's turn `accept` takes the value the mod wrote, if it converts. A cancel
@@ -501,8 +673,15 @@ fn turn_body(method: &Method<'_>) -> String {
                 output.key
             ));
         }
+        // A list, or a value behind a reference, is copied out of the event: the event keeps its own
+        // value until the write back.
+        let copy = if output.by_ref || output.ty.starts_with("Vec<") {
+            ".clone()"
+        } else {
+            ""
+        };
         out.push_str(&format!(
-            "        let out_{key} = std::cell::RefCell::new({event}.{key});\n",
+            "        let out_{key} = std::cell::RefCell::new({event}.{key}{copy});\n",
             key = output.key
         ));
     }
@@ -548,8 +727,9 @@ fn turn_body(method: &Method<'_>) -> String {
     out.push_str("            },\n");
     out.push_str("        );\n");
     for output in &method.outputs {
+        let deref = if output.by_ref { "*" } else { "" };
         out.push_str(&format!(
-            "        {event}.{key} = out_{key}.into_inner();\n",
+            "        {deref}{event}.{key} = out_{key}.into_inner();\n",
             key = output.key
         ));
     }
@@ -905,7 +1085,7 @@ impl mod_api::Hooks for LuaHost {
                 Some(vec![OutputSig {
                     copies_cancel: false,
                     param: "lines".to_owned(),
-                    ty: "Vec<String>".to_owned(),
+                    ty: "Vec<(Text,u32)>".to_owned(),
                 }]),
             )]
             .into(),
@@ -913,7 +1093,7 @@ impl mod_api::Hooks for LuaHost {
         };
         let out = emit(&ir, &sigs, &dispatch, &["vec_out"], &Plain::default());
         assert!(out.emitted.is_empty());
-        assert_eq!(out.skipped[0].1, "output: Vec<String>");
+        assert_eq!(out.skipped[0].1, "output: Vec<(Text,u32)>");
     }
 
     #[test]
@@ -955,19 +1135,30 @@ impl mod_api::Hooks for LuaHost {
             "Option<u32>",
             "Option<Text>",
             "Option<bool>",
+            "Vec<String>",
+            "Vec<[i32;3]>",
+            "[i32;3]",
+            "[f32;3]",
         ] {
-            assert!(output_supported(ty), "{ty}");
+            assert!(output_supported(ty, &Plain::default()), "{ty}");
         }
         for ty in [
-            "Vec<String>",
+            "Vec<(Text,u32)>",
             "Option<Option<u32>>",
             "TriState",
             "&mut dyn Host",
             "Option<ItemStack>",
             "u64",
         ] {
-            assert!(!output_supported(ty), "{ty}");
+            assert!(!output_supported(ty, &Plain::default()), "{ty}");
         }
+        let decided = Plain::deciding(["TriState"], ["TriState"]);
+        assert!(output_supported("TriState", &decided));
+        assert!(output_supported("Option<TriState>", &decided));
+        assert!(!output_supported(
+            "TriState",
+            &Plain::from_paths(["TriState"])
+        ));
     }
 
     #[test]
@@ -1033,12 +1224,10 @@ impl mod_api::Hooks for LuaHost {
     }
 
     #[test]
-    fn a_hook_outside_the_trait_outside_the_surface_or_collecting_is_skipped_each_with_its_reason()
-    {
-        let ir = ir(vec![
-            hook("only_surface", Kind::Listen, vec![]),
-            hook("collects", Kind::Collect, vec![]),
-        ]);
+    fn a_hook_outside_the_trait_or_the_surface_is_skipped_each_with_its_reason() {
+        let mut collects = hook("collects", Kind::Collect, vec![]);
+        collects.output = Some(arg("lines", "&'a mut Vec<(Text,u32)>"));
+        let ir = ir(vec![hook("only_surface", Kind::Listen, vec![]), collects]);
         let sigs = [
             sig("only_trait", None, "event", "OnlyTraitEvent<'_>", None),
             sig("collects", None, "event", "CollectsEvent<'_>", None),
@@ -1058,7 +1247,10 @@ impl mod_api::Hooks for LuaHost {
                 .collect::<Vec<_>>(),
             ["collects", "only_surface", "only_trait"]
         );
-        assert_eq!(reasons[0], "collect hook: not in this slice");
+        assert_eq!(
+            reasons[0],
+            "has an output: its listeners write back, not in this slice"
+        );
         assert_eq!(reasons[1], "not a method of the Hooks trait");
         assert_eq!(reasons[2], "not in the surface");
         assert_eq!(
@@ -1173,5 +1365,163 @@ impl mod_api::Hooks for LuaHost {
         for (reason, count) in &table {
             println!("{count:5}  {reason}");
         }
+    }
+
+    /// The shape of a replace hook: `pick` answers with a `TriState` from its handlers' returns.
+    fn replace_sig() -> HookSig {
+        sig(
+            "pick",
+            Some(("host", "&dyn ClientHost")),
+            "event",
+            "PickEvent<'_>",
+            Some("Option<mod_api::TriState>"),
+        )
+    }
+
+    #[test]
+    fn a_replace_hook_gets_a_golden_method_that_returns_its_first_answer() {
+        let ir = ir(vec![hook(
+            "pick",
+            Kind::Replace,
+            vec![arg("entity", "i32")],
+        )]);
+        let plain = Plain::deciding(["TriState"], ["TriState"]);
+        let out = emit(
+            &ir,
+            &[replace_sig()],
+            &DispatchSigs {
+                hooks: [("pick".to_owned(), Some(Vec::new()))].into(),
+                structs: BTreeMap::new(),
+            },
+            &["pick"],
+            &plain,
+        );
+        let expected = r#"    fn pick(&self, host: &dyn ClientHost, event: &mut PickEvent<'_>) -> Option<mod_api::TriState> {
+        let _ = &host;
+        let mut answer = None;
+        self.dispatch_replace(
+            "pick",
+            &|lua| {
+                let data = lua.create_table()?;
+                data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &[])
+            },
+            &mut |id, value| {
+                match crate::dispatch::answer_of::<mod_api::TriState>(id, "pick", &value) {
+                    Some(found) => {
+                        answer = Some(found);
+                        true
+                    }
+                    None => false,
+                }
+            },
+        );
+        answer
+    }
+"#;
+        assert!(out.text.contains(expected), "{}", out.text);
+        assert_eq!(out.emitted, ["pick"]);
+        assert_eq!(out.replace, 1);
+        assert_eq!(out.decisions, ["TriState"]);
+        syn::parse_file(&out.text).expect("the golden text parses");
+    }
+
+    #[test]
+    fn a_replace_answer_without_a_from_impl_skips_its_hook() {
+        let ir = ir(vec![hook("pick", Kind::Replace, vec![])]);
+        let dispatch = DispatchSigs {
+            hooks: [("pick".to_owned(), Some(Vec::new()))].into(),
+            structs: BTreeMap::new(),
+        };
+        let out = emit(
+            &ir,
+            &[replace_sig()],
+            &dispatch,
+            &["pick"],
+            &Plain::from_paths(["TriState"]),
+        );
+        assert!(out.emitted.is_empty());
+        assert_eq!(out.skipped[0].1, "answer: TriState");
+        let not_an_option = sig("pick", None, "event", "PickEvent<'_>", Some("TriState"));
+        let out = emit(
+            &ir,
+            &[not_an_option],
+            &dispatch,
+            &["pick"],
+            &Plain::deciding(["TriState"], ["TriState"]),
+        );
+        assert_eq!(
+            out.skipped[0].1,
+            "replace hook does not return an Option: `TriState`"
+        );
+    }
+
+    #[test]
+    fn a_collect_hook_with_a_list_output_assigns_the_list_and_reads_it_back() {
+        let mut collects = hook("lines_hook", Kind::Collect, vec![arg("x", "i32")]);
+        collects.output = Some(arg("lines", "&'a mut Vec<String>"));
+        let lines_ir = ir(vec![collects]);
+        let dispatch = DispatchSigs {
+            hooks: [(
+                "lines_hook".to_owned(),
+                Some(vec![OutputSig {
+                    copies_cancel: false,
+                    param: "lines".to_owned(),
+                    ty: "Vec<String>".to_owned(),
+                }]),
+            )]
+            .into(),
+            structs: [(
+                "LinesHookEvent".to_owned(),
+                [("lines".to_owned(), "Vec<String>".to_owned())].into(),
+            )]
+            .into(),
+        };
+        let sigs = [sig("lines_hook", None, "event", "LinesHookEvent<'_>", None)];
+        let out = emit(
+            &lines_ir,
+            &sigs,
+            &dispatch,
+            &["lines_hook"],
+            &Plain::default(),
+        );
+        for piece in [
+            "let out_lines = std::cell::RefCell::new(event.lines.clone());\n",
+            "data.raw_set(\"lines\", out_lines.borrow().to_lua_value(lua)?)?;\n",
+            "crate::dispatch::accept(&out_lines, id, \"lines_hook\", \"lines\", &answered.answer(\"lines\"));\n",
+            "event.lines = out_lines.into_inner();\n",
+        ] {
+            assert!(
+                out.text.contains(piece),
+                "missing {piece:?} in:\n{}",
+                out.text
+            );
+        }
+        assert_eq!(out.emitted, ["lines_hook"]);
+        assert_eq!(out.lists, 1);
+        syn::parse_file(&out.text).expect("the text parses");
+
+        let mut other = hook("tuples_hook", Kind::Collect, vec![]);
+        other.output = Some(arg("pairs", "&'a mut Vec<(Text,u32)>"));
+        let out = emit(
+            &ir(vec![other]),
+            &[sig(
+                "tuples_hook",
+                None,
+                "event",
+                "TuplesHookEvent<'_>",
+                None,
+            )],
+            &DispatchSigs {
+                hooks: [("tuples_hook".to_owned(), Some(Vec::new()))].into(),
+                structs: BTreeMap::new(),
+            },
+            &["tuples_hook"],
+            &Plain::default(),
+        );
+        assert_eq!(
+            out.skipped[0].1,
+            "has an output: its listeners write back, not in this slice"
+        );
     }
 }

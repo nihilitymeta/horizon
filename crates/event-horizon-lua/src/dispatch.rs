@@ -19,7 +19,7 @@ use mlua::{Error, Lua, Table, Value};
 use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
-use crate::host::{LOG_TARGET, LuaHost, call_handler};
+use crate::host::{LOG_TARGET, LuaHost, call_handler, call_handler_value};
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
 const LOCKED: bool = false;
@@ -74,6 +74,21 @@ pub fn accept<T: FromLuaValue>(
                 "{id}: {hook}: output `{output}` refused, the previous value is kept: {err}"
             );
             true
+        }
+    }
+}
+
+/// Converts a replace hook's answer, a mod's return value, to `T`. A value that does not convert is
+/// refused: one warning names the mod, the hook and the error, and the mod gives no answer.
+pub fn answer_of<T: FromLuaValue>(id: &str, hook: &str, value: &Value) -> Option<T> {
+    match T::from_lua_value(value) {
+        Ok(answer) => Some(answer),
+        Err(err) => {
+            log::warn!(
+                target: LOG_TARGET,
+                "{id}: {hook}: answer refused, the mod gives no answer: {err}"
+            );
+            None
         }
     }
 }
@@ -248,6 +263,78 @@ impl LuaHost {
                 continue;
             }
             if !commit(m.id(), &event) {
+                return;
+            }
+        }
+    }
+}
+
+impl LuaHost {
+    /// Fires `hook`, a replace hook, for every mod that declared it. The order is the one
+    /// `dispatch` uses. A mod's turn runs all its handlers in order under their budgets, and the
+    /// mod's answer is the first return value of its handlers that is not nil. A failing handler
+    /// voids the turn: that mod gives no answer, whatever its other handlers returned. `answer`
+    /// takes the mod's id and the value and returns whether the value was answered (the chain stops
+    /// then); when it was refused, the chain goes on to the next mod.
+    pub fn dispatch_replace(
+        &self,
+        hook: &str,
+        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
+        answer: &mut dyn FnMut(&str, Value) -> bool,
+    ) {
+        let mods = self.mods();
+        for &index in self.run_order(hook) {
+            let m = &mods[index];
+            let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
+            if server_hook && m.side() == Side::Client {
+                continue;
+            }
+            let _turn = m.turn().enter();
+            let handlers = match declare::handlers(m.lua(), hook) {
+                Ok(handlers) => handlers,
+                Err(err) => {
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    continue;
+                }
+            };
+            if handlers.is_empty() {
+                continue;
+            }
+            let event = match build(m.lua()) {
+                Ok(event) => event,
+                Err(err) => {
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    continue;
+                }
+            };
+            let mut found: Option<Value> = None;
+            let mut failed = false;
+            for handler in &handlers {
+                match call_handler_value(m.lua(), handler, event.table()) {
+                    Ok(value) => {
+                        if found.is_none() && !matches!(value, Value::Nil) {
+                            found = Some(value);
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                        failed = true;
+                    }
+                }
+            }
+            if failed {
+                log::warn!(
+                    target: LOG_TARGET,
+                    "{}: {hook}: a handler failed, so this mod gives no answer",
+                    m.id()
+                );
+                continue;
+            }
+            let answered = match found {
+                Some(value) => answer(m.id(), value),
+                None => false,
+            };
+            if answered {
                 return;
             }
         }
@@ -675,5 +762,183 @@ mod tests {
         assert!(!accept(&good, "m", FOV, "x", &Value::Integer(4)));
         assert!(!accept(&good, "m", FOV, "x", &Value::Nil));
         assert_eq!(good.into_inner(), 4);
+    }
+
+    /// The `(mod, answer)` pairs a replace fire of `HOOK` gives, read as strings.
+    fn replies(host: &LuaHost) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        host.dispatch_replace(
+            HOOK,
+            &|lua| new_event(lua, pos_data(lua), &[]),
+            &mut |id, value| match answer_of::<String>(id, HOOK, &value) {
+                Some(text) => {
+                    out.push((id.to_string(), text));
+                    true
+                }
+                None => false,
+            },
+        );
+        out
+    }
+
+    /// A mod whose one handler returns `value` (a Lua expression).
+    fn replying(root: &Path, id: &str, value: &str) -> LuaMod {
+        load(
+            root,
+            id,
+            &format!("horizon.on(\"{HOOK}\", function(event) return {value} end)"),
+            Side::Both,
+        )
+    }
+
+    #[test]
+    fn the_first_mod_that_returns_a_value_answers_and_a_nil_mod_does_not() {
+        let root = tempfile::tempdir().unwrap();
+        let silent = load(
+            root.path(),
+            "mod_a",
+            "horizon.on(\"block_receive_game\", function(event) end)",
+            Side::Both,
+        );
+        let host = LuaHost::new(vec![silent, replying(root.path(), "mod_b", "\"pass\"")]);
+        assert_eq!(replies(&host), [("mod_b".to_owned(), "pass".to_owned())]);
+    }
+
+    #[test]
+    fn an_answer_stops_the_later_mods() {
+        let root = tempfile::tempdir().unwrap();
+        let counted =
+            "horizon.on(\"block_receive_game\", function(event) horizon.log(\"ran\") end)";
+        let host = LuaHost::new(vec![
+            replying(root.path(), "mod_a", "\"first\""),
+            load(root.path(), "mod_b", counted, Side::Both),
+        ]);
+        assert_eq!(replies(&host), [("mod_a".to_owned(), "first".to_owned())]);
+        assert!(host.mods()[1].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_value_that_does_not_convert_gives_no_answer_and_the_chain_goes_on() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            replying(root.path(), "mod_a", "5"),
+            replying(root.path(), "mod_b", "\"pass\""),
+        ]);
+        let mut refused = 0;
+        let mut got = Vec::new();
+        host.dispatch_replace(
+            HOOK,
+            &|lua| new_event(lua, pos_data(lua), &[]),
+            &mut |id, value| match answer_of::<String>(id, HOOK, &value) {
+                Some(text) => {
+                    got.push(text);
+                    true
+                }
+                None => {
+                    refused += 1;
+                    false
+                }
+            },
+        );
+        assert_eq!(refused, 1);
+        assert_eq!(got, ["pass"]);
+    }
+
+    #[test]
+    fn a_failing_handler_voids_the_mod_even_after_another_handler_returned_a_value() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"block_receive_game\", function(event) error(\"boom\") end)\n\
+                      horizon.on(\"block_receive_game\", function(event) return \"a\" end)";
+        let host = LuaHost::new(vec![
+            load(root.path(), "mod_a", source, Side::Both),
+            replying(root.path(), "mod_b", "\"b\""),
+        ]);
+        assert_eq!(replies(&host), [("mod_b".to_owned(), "b".to_owned())]);
+    }
+
+    #[test]
+    fn of_two_values_from_one_mod_the_first_answers() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"block_receive_game\", function(event) return \"first\" end)\n\
+                      horizon.on(\"block_receive_game\", function(event) return \"second\" end)";
+        let host = LuaHost::new(vec![load(root.path(), "mod_a", source, Side::Both)]);
+        assert_eq!(replies(&host), [("mod_a".to_owned(), "first".to_owned())]);
+    }
+
+    #[test]
+    fn answer_of_refuses_a_value_of_the_wrong_type() {
+        assert_eq!(
+            answer_of::<bool>("m", HOOK, &Value::Boolean(true)),
+            Some(true)
+        );
+        assert_eq!(answer_of::<bool>("m", HOOK, &Value::Integer(1)), None);
+    }
+
+    /// The hook the list tests fire: `component_types`, a client hook whose output is `types`.
+    const LIST_HOOK: &str = "component_types";
+
+    /// Fires `LIST_HOOK` once from `start`, with `types` as the writable list, as the generated
+    /// method does for a list output. Returns the final list.
+    fn fire_list(host: &LuaHost, start: Vec<String>) -> Vec<String> {
+        use event_horizon_lua_convert::scalar::ToLuaValue;
+        let slot = RefCell::new(start);
+        host.dispatch_turns(
+            LIST_HOOK,
+            &|| false,
+            &|lua| {
+                let data = lua.create_table()?;
+                data.raw_set("types", slot.borrow().to_lua_value(lua)?)?;
+                new_event(lua, data, &["types"])
+            },
+            &mut |id, event| {
+                accept(&slot, id, LIST_HOOK, "types", &event.answer("types"));
+                true
+            },
+        );
+        slot.into_inner()
+    }
+
+    fn list_mod(root: &Path, id: &str, body: &str) -> LuaMod {
+        load(
+            root,
+            id,
+            &format!("horizon.on(\"{LIST_HOOK}\", function(event)\n{body}\nend)"),
+            Side::Both,
+        )
+    }
+
+    #[test]
+    fn a_later_mod_reads_the_list_an_earlier_mod_assigned_and_the_assignment_replaces_it() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            list_mod(root.path(), "mod_a", "event.types = {\"a\", \"b\"}"),
+            list_mod(
+                root.path(),
+                "mod_b",
+                "local t = {}\nfor _, v in ipairs(event.types) do t[#t + 1] = v end\nt[#t + 1] = \"c\"\nevent.types = t",
+            ),
+        ]);
+        assert_eq!(fire_list(&host, vec!["start".to_owned()]), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_bad_list_is_refused_whole_and_the_previous_list_is_kept() {
+        let root = tempfile::tempdir().unwrap();
+        for bad in [
+            "local t = {} for i = 1, 1025 do t[i] = \"x\" end event.types = t",
+            "event.types = {[1] = \"a\", [3] = \"b\"}",
+            "event.types = {\"a\", 2}",
+        ] {
+            let host = LuaHost::new(vec![list_mod(root.path(), "mod_a", bad)]);
+            assert_eq!(fire_list(&host, vec!["kept".to_owned()]), ["kept"], "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_list_of_exactly_the_cap_is_taken() {
+        let root = tempfile::tempdir().unwrap();
+        let body = "local t = {} for i = 1, 1024 do t[i] = \"x\" end event.types = t";
+        let host = LuaHost::new(vec![list_mod(root.path(), "mod_a", body)]);
+        assert_eq!(fire_list(&host, Vec::new()).len(), 1024);
     }
 }

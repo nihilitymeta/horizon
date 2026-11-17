@@ -83,13 +83,37 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .iter()
         .flat_map(|hook| hook.arguments.iter().map(|arg| arg.rust_type.clone()))
         .collect();
-    let types = emit_types::plan_with(
+    // Two passes: the first decides every unit enum any hook could answer or output with, and its
+    // skip reasons are the ones reported (they are not skewed by the second pass); the second
+    // decides only the enums of the hooks the first pass emits, and must emit the same hooks.
+    let candidates: Vec<String> = dispatch
+        .hooks
+        .values()
+        .flatten()
+        .flatten()
+        .map(|output| output.ty.clone())
+        .chain(sigs.iter().filter_map(|sig| sig.ret.clone()))
+        .collect();
+    let first = emit_types::plan_decided(
         &document.types,
         &document.handles,
         &document.hash,
         &hook_types,
+        &candidates,
+    );
+    let first_methods = emit_impl::emit(&surface, &sigs, &dispatch, &names, &first.plain);
+    let decided = first_methods.decisions.clone();
+    let types = emit_types::plan_decided(
+        &document.types,
+        &document.handles,
+        &document.hash,
+        &hook_types,
+        &decided,
     );
     let methods = emit_impl::emit(&surface, &sigs, &dispatch, &names, &types.plain);
+    if methods.emitted != first_methods.emitted {
+        return Err("the two passes emit different hooks".to_owned());
+    }
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(&surface, &emitted);
 
@@ -132,9 +156,18 @@ fn run(args: Args) -> Result<ExitCode, String> {
 
     println!("hooks in the surface: {}", surface.hooks.len());
     println!("methods emitted: {}", methods.emitted.len());
-    println!("hooks skipped: {}", methods.skipped.len());
+    println!(
+        "  replace hooks (answer from a return value): {}",
+        methods.replace
+    );
+    println!(
+        "  hooks with a unit enum answer or output: {}",
+        methods.decided_enum
+    );
+    println!("  hooks with a list or vector output: {}", methods.lists);
+    println!("hooks skipped: {}", first_methods.skipped.len());
     let mut by_reason = BTreeMap::<String, usize>::new();
-    for (_, reason) in &methods.skipped {
+    for (_, reason) in &first_methods.skipped {
         *by_reason.entry(emit_impl::group_key(reason)).or_default() += 1;
     }
     for (reason, count) in &by_reason {

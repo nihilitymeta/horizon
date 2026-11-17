@@ -229,6 +229,66 @@ impl<T: ToLuaValue> ToLuaValue for Option<T> {
     }
 }
 
+/// The most items a list converts to or from a Lua array.
+pub const MAX_LIST_ITEMS: usize = 1024;
+
+/// A list is a Lua array table: its keys are 1 to n with no hole and no other key, and it holds at
+/// most [`MAX_LIST_ITEMS`] items. A bad item refuses the whole list, and the error names the item.
+impl<T: FromLuaValue> FromLuaValue for Vec<T> {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let Value::Table(table) = value else {
+            return Err(ConvertError::expected("array table", value));
+        };
+        let mut entries: Vec<(i64, Value)> = Vec::new();
+        for pair in table.pairs::<Value, Value>() {
+            let (key, item) =
+                pair.map_err(|err| ConvertError::new(format!("cannot read the list: {err}")))?;
+            let index = match key {
+                Value::Integer(i) => i,
+                Value::Number(n) if n.is_finite() && n.fract() == 0.0 && n.abs() < 1e15 => n as i64,
+                _ => return Err(ConvertError::new("a list has a key that is not an index")),
+            };
+            if entries.len() == MAX_LIST_ITEMS {
+                return Err(ConvertError::new(format!(
+                    "a list is over the cap of {MAX_LIST_ITEMS} items"
+                )));
+            }
+            entries.push((index, item));
+        }
+        entries.sort_unstable_by_key(|(index, _)| *index);
+        entries
+            .into_iter()
+            .enumerate()
+            .map(|(position, (index, item))| {
+                if index != position as i64 + 1 {
+                    return Err(ConvertError::new(format!(
+                        "a list has a hole at item {}",
+                        position + 1
+                    )));
+                }
+                T::from_lua_value(&item)
+                    .map_err(|err| ConvertError::new(format!("item {index}: {err}")))
+            })
+            .collect()
+    }
+}
+
+impl<T: ToLuaValue> ToLuaValue for Vec<T> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        if self.len() > MAX_LIST_ITEMS {
+            return Err(mlua::Error::runtime(format!(
+                "a list of {} items is over the cap of {MAX_LIST_ITEMS}",
+                self.len()
+            )));
+        }
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
 /// A Duration is a number of seconds: finite, from 0 to 1e9.
 impl FromLuaValue for Duration {
     fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
@@ -448,5 +508,72 @@ mod tests {
             "{message}"
         );
         assert!(Shade::from_lua_value(&num(1.0)).is_err());
+    }
+
+    #[test]
+    fn a_string_list_is_an_array_and_a_hole_or_a_number_element_refuses_it() {
+        let lua = Lua::new();
+        let items = vec!["a".to_owned(), "b".to_owned()];
+        let value = items.to_lua_value(&lua).expect("converts");
+        assert_eq!(<Vec<String>>::from_lua_value(&value), Ok(items));
+        let holed = lua
+            .load("return {[1]=\"a\",[3]=\"b\"}")
+            .eval::<Value>()
+            .expect("chunk");
+        let err = <Vec<String>>::from_lua_value(&holed).expect_err("hole");
+        assert!(err.to_string().contains("hole at item 2"), "{err}");
+        let number = lua
+            .load("return {\"a\", 2}")
+            .eval::<Value>()
+            .expect("chunk");
+        let err = <Vec<String>>::from_lua_value(&number).expect_err("number");
+        assert!(err.to_string().starts_with("item 2:"), "{err}");
+        let named = lua
+            .load("return {\"a\", n = 1}")
+            .eval::<Value>()
+            .expect("chunk");
+        assert!(<Vec<String>>::from_lua_value(&named).is_err());
+        assert_eq!(
+            <Vec<String>>::from_lua_value(&Value::Table(lua.create_table().expect("t"))),
+            Ok(Vec::new())
+        );
+        assert!(<Vec<String>>::from_lua_value(&Value::Nil).is_err());
+    }
+
+    #[test]
+    fn a_list_of_1024_converts_and_1025_is_refused_keeping_nothing() {
+        let lua = Lua::new();
+        let full = lua.create_table().expect("t");
+        for i in 1..=MAX_LIST_ITEMS {
+            full.raw_set(i, i as i64).expect("set");
+        }
+        assert_eq!(
+            <Vec<i32>>::from_lua_value(&Value::Table(full.clone()))
+                .expect("at the cap")
+                .len(),
+            MAX_LIST_ITEMS
+        );
+        full.raw_set(MAX_LIST_ITEMS + 1, 0).expect("set");
+        let err = <Vec<i32>>::from_lua_value(&Value::Table(full)).expect_err("over the cap");
+        assert!(err.to_string().contains("over the cap of 1024"), "{err}");
+    }
+
+    #[test]
+    fn a_list_of_block_positions_reads_tables_and_vectors() {
+        let lua = Lua::new();
+        let value = lua
+            .load("return { {x = 1, y = 2, z = 3}, vector.create(4, 5, 6) }")
+            .eval::<Value>()
+            .expect("chunk");
+        assert_eq!(
+            <Vec<[i32; 3]>>::from_lua_value(&value),
+            Ok(vec![[1, 2, 3], [4, 5, 6]])
+        );
+        let short = lua
+            .load("return { {x = 1, y = 2} }")
+            .eval::<Value>()
+            .expect("chunk");
+        let err = <Vec<[i32; 3]>>::from_lua_value(&short).expect_err("short");
+        assert!(err.to_string().starts_with("item 1:"), "{err}");
     }
 }

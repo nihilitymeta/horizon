@@ -350,6 +350,21 @@ pub(crate) fn call_handler(lua: &Lua, handler: &Function, event: &Table) -> mlua
     )
 }
 
+/// Runs one handler under `HANDLER_BUDGET` and returns what it returned: its first value, or `nil`
+/// when it returned nothing. A replace hook's answer is this value.
+pub(crate) fn call_handler_value(
+    lua: &Lua,
+    handler: &Function,
+    event: &Table,
+) -> mlua::Result<Value> {
+    budget::within_with(
+        lua,
+        HANDLER_BUDGET,
+        "the handler ran over its time budget",
+        || handler.call::<Value>(event.clone()),
+    )
+}
+
 /// The `horizon` table a mod's handlers see: `log`, and nothing else yet. Any other field errors,
 /// and `on` only refuses, because hooks are declared while the mod loads.
 fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Result<Table> {
