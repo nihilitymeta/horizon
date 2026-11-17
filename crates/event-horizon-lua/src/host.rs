@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use horizon_client::save::level_mods::{self, ModRecord};
 use mlua::{Error, Function, Lua, Table, Value, VmState};
 
 use crate::declare;
@@ -42,6 +43,7 @@ pub fn hook_id(name: &str) -> Option<mod_api::HookId> {
 /// One loaded Lua mod: its own sandboxed state, the hooks it declared, and its log lines.
 pub struct LuaMod {
     id: String,
+    version: String,
     side: Side,
     hooks: Vec<String>,
     lua: Lua,
@@ -66,6 +68,7 @@ impl LuaMod {
 
         Ok(LuaMod {
             id: found.id.clone(),
+            version: found.version.clone(),
             side: found.side,
             hooks: declaration.hooks,
             lua,
@@ -75,6 +78,10 @@ impl LuaMod {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
     }
 
     pub fn side(&self) -> Side {
@@ -89,6 +96,26 @@ impl LuaMod {
     pub fn log_lines(&self) -> Vec<String> {
         lock(&self.log).clone()
     }
+}
+
+/// `existing` (the code mods already recorded, in their order), then one record for each Lua mod
+/// that runs on the server (`Server` or `Both`), in load order. An id already in the list is not
+/// added again, so merging the same mods twice changes nothing. A client-only mod does not
+/// affect a world, so it is not recorded.
+pub fn merged_records(existing: Option<Vec<ModRecord>>, mods: &[LuaMod]) -> Vec<ModRecord> {
+    let mut records = existing.unwrap_or_default();
+    for m in mods
+        .iter()
+        .filter(|m| matches!(m.side, Side::Server | Side::Both))
+    {
+        if !records.iter().any(|r| r.id == m.id) {
+            records.push(ModRecord {
+                id: m.id.clone(),
+                version: m.version.clone(),
+            });
+        }
+    }
+    records
 }
 
 /// The one `Hooks` implementation the game installs: it fans each hook out to the Lua mods.
@@ -112,6 +139,18 @@ impl LuaHost {
             mods,
             subscribed: Box::leak(subscribed.into_boxed_slice()),
         }
+    }
+
+    /// Adds the server-side Lua mods to the code mods the world records (`level_mods::set_loaded`),
+    /// so a world saved with them remembers them. Nothing changes when there are no such mods
+    /// and the list was never set.
+    pub fn record_loaded(&self) {
+        let existing = level_mods::loaded();
+        let merged = merged_records(existing.clone(), &self.mods);
+        if existing.is_none() && merged.is_empty() {
+            return;
+        }
+        level_mods::set_loaded(Some(merged));
     }
 
     /// Calls every handler of `hook` in every mod that declared it. A client-only mod is skipped
@@ -140,6 +179,10 @@ impl LuaHost {
 impl mod_api::Hooks for LuaHost {
     fn subscribed(&self) -> &'static [Option<mod_api::HookId>] {
         self.subscribed
+    }
+
+    fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+        self.record_loaded();
     }
 
     fn server_tick(
@@ -429,5 +472,90 @@ mod tests {
         let started = Instant::now();
         host.fire(SERVER_TICK);
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    /// A loaded mod with `id`, `version` and `side`, with no hooks.
+    fn lua_mod(root: &Path, id: &str, version: &str, side: Side) -> LuaMod {
+        let mut found = mod_folder(root, id, "", side);
+        found.version = version.to_string();
+        LuaMod::load(&found).unwrap()
+    }
+
+    fn record(id: &str, version: &str) -> ModRecord {
+        ModRecord {
+            id: id.into(),
+            version: version.into(),
+        }
+    }
+
+    #[test]
+    fn server_and_both_mods_are_added_and_client_mods_are_not() {
+        let root = tempfile::tempdir().unwrap();
+        let mods = [
+            lua_mod(root.path(), "client_mod", "1.0.0", Side::Client),
+            lua_mod(root.path(), "server_mod", "2.0.0", Side::Server),
+            lua_mod(root.path(), "both_mod", "3.0.0", Side::Both),
+        ];
+        assert_eq!(
+            merged_records(None, &mods),
+            [record("server_mod", "2.0.0"), record("both_mod", "3.0.0")]
+        );
+    }
+
+    #[test]
+    fn existing_records_come_first_and_ids_are_not_repeated() {
+        let root = tempfile::tempdir().unwrap();
+        let mods = [
+            lua_mod(root.path(), "alpha_mod", "1.0.0", Side::Both),
+            lua_mod(root.path(), "beta_mod", "2.0.0", Side::Server),
+        ];
+        let existing = Some(vec![
+            record("native_mod", "0.1.0"),
+            record("alpha_mod", "1.0.0"),
+        ]);
+        assert_eq!(
+            merged_records(existing, &mods),
+            [
+                record("native_mod", "0.1.0"),
+                record("alpha_mod", "1.0.0"),
+                record("beta_mod", "2.0.0"),
+            ]
+        );
+    }
+
+    #[test]
+    fn merging_twice_changes_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let mods = [
+            lua_mod(root.path(), "alpha_mod", "1.0.0", Side::Both),
+            lua_mod(root.path(), "beta_mod", "2.0.0", Side::Server),
+        ];
+        let first = merged_records(None, &mods);
+        assert_eq!(merged_records(Some(first.clone()), &mods), first);
+    }
+
+    /// The loaded list is the process's, so this runs under nextest (one process per test), where
+    /// no other test sees it.
+    #[test]
+    fn record_loaded_updates_the_process_list() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = level_mods::set_loaded(None);
+        let host = LuaHost::new(vec![lua_mod(root.path(), "both_mod", "3.0.0", Side::Both)]);
+        host.record_loaded();
+        let loaded = level_mods::loaded().unwrap();
+        assert!(loaded.contains(&record("both_mod", "3.0.0")));
+        level_mods::set_loaded(previous);
+    }
+
+    #[test]
+    fn a_second_record_loaded_is_a_no_op() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = level_mods::set_loaded(None);
+        let host = LuaHost::new(vec![lua_mod(root.path(), "both_mod", "3.0.0", Side::Both)]);
+        host.record_loaded();
+        host.record_loaded();
+        let loaded = level_mods::loaded().unwrap();
+        assert_eq!(loaded.iter().filter(|m| m.id == "both_mod").count(), 1);
+        level_mods::set_loaded(previous);
     }
 }
