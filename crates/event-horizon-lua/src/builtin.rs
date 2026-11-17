@@ -27,6 +27,21 @@ pub struct Loaded {
 /// Scans `<game_dir>/lua-mods/` and loads each mod that passes. A mod that fails is refused and
 /// the others still load. A missing folder is fine: the entry then subscribes to nothing.
 pub fn builtin(game_dir: &Path) -> Loaded {
+    let (mods, refused) = load_mods(game_dir);
+    let loaded = mods.len();
+    Loaded {
+        entry: ModEntry::new(
+            package::ID,
+            Box::new(LuaHost::new(mods).with_report(refused.clone())),
+        ),
+        loaded,
+        refused,
+    }
+}
+
+/// The mods under `game_dir` that load, and one line per folder or mod that does not. Nothing is
+/// logged here: this runs before the game's logger is up, and `LuaHost::register` reports them.
+fn load_mods(game_dir: &Path) -> (Vec<LuaMod>, Vec<String>) {
     let found = discover::scan(game_dir);
     let mut refused: Vec<String> = found
         .refused
@@ -47,16 +62,7 @@ pub fn builtin(game_dir: &Path) -> Loaded {
             Err(reason) => refused.push(format!("{}: {reason}", found_mod.id)),
         }
     }
-    let loaded = mods.len();
-    log::info!("Lua mods: {loaded} loaded, {} refused", refused.len());
-    for line in &refused {
-        log::warn!("Lua mod refused: {line}");
-    }
-    Loaded {
-        entry: ModEntry::new(package::ID, Box::new(LuaHost::new(mods))),
-        loaded,
-        refused,
-    }
+    (mods, refused)
 }
 
 #[cfg(test)]
@@ -134,6 +140,22 @@ mod tests {
         let built = builtin(root.path());
         assert_eq!(built.loaded, 0);
         assert!(built.refused.is_empty());
+    }
+
+    #[test]
+    fn the_refusals_are_handed_to_the_host() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(
+            root.path(),
+            "a_bad",
+            "bad_mod",
+            "horizon.on(\"nope\", function() end)\n",
+        );
+        let (mods, refused) = load_mods(root.path());
+        assert!(mods.is_empty());
+        assert_eq!(refused.len(), 1);
+        let host = LuaHost::new(mods).with_report(refused.clone());
+        assert_eq!(host.report_lines(), refused.as_slice());
     }
 
     #[test]

@@ -6,4 +6,5 @@ pub mod declare;
 pub mod discover;
 pub mod host;
 pub mod package;
+pub mod ratelimit;
 pub mod state;

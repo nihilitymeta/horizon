@@ -7,9 +7,10 @@
 
 use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, ThreadId};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use horizon_client::save::level_mods::{self, ModRecord};
 use mlua::{Error, Function, Lua, Table, Value};
@@ -17,6 +18,7 @@ use mlua::{Error, Function, Lua, Table, Value};
 use crate::budget;
 use crate::declare;
 use crate::discover::{Discovered, ENTRY, Side};
+use crate::ratelimit::{RateLimit, Verdict};
 use crate::state;
 
 /// The hook a Lua mod may use for each server tick.
@@ -30,6 +32,10 @@ pub const MAX_LOG_LINE: usize = 1000;
 /// The time one handler may run for one hook call. A handler that runs longer is stopped, so one
 /// mod cannot hold up the server's tick or the handlers of the other mods.
 pub const HANDLER_BUDGET: Duration = Duration::from_millis(50);
+/// The log lines one mod may write at once.
+pub const LOG_BURST: u32 = 20;
+/// The log lines one mod may add each second, after its burst.
+pub const LOG_PER_SECOND: u32 = 20;
 
 const LATE_ON: &str = "horizon.on can only be used while the mod loads";
 const LOG_TARGET: &str = "event_horizon_lua";
@@ -181,6 +187,10 @@ pub fn merged_records(existing: Option<Vec<ModRecord>>, mods: &[LuaMod]) -> Vec<
 pub struct LuaHost {
     mods: Vec<LuaMod>,
     subscribed: &'static [Option<mod_api::HookId>],
+    /// One line per folder or mod that did not load, from `builtin`.
+    report: Vec<String>,
+    /// Set once the report is written, so a second `register` writes nothing.
+    reported: AtomicBool,
 }
 
 impl LuaHost {
@@ -197,6 +207,34 @@ impl LuaHost {
         LuaHost {
             mods,
             subscribed: Box::leak(subscribed.into_boxed_slice()),
+            report: Vec::new(),
+            reported: AtomicBool::new(false),
+        }
+    }
+
+    /// The lines about the folders and mods that did not load, written by `register`.
+    pub fn with_report(mut self, lines: Vec<String>) -> LuaHost {
+        self.report = lines;
+        self
+    }
+
+    pub fn report_lines(&self) -> &[String] {
+        &self.report
+    }
+
+    /// Writes the loaded and refused counts and one line per refusal. The game's logger is up by
+    /// `register`, unlike when the mods are read, so this is where the player sees them.
+    fn report(&self) {
+        if self.reported.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        log::info!(
+            "Lua mods: {} loaded, {} refused",
+            self.mods.len(),
+            self.report.len()
+        );
+        for line in &self.report {
+            log::warn!("Lua mod refused: {line}");
         }
     }
 
@@ -242,6 +280,7 @@ impl mod_api::Hooks for LuaHost {
     }
 
     fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+        self.report();
         self.record_loaded();
     }
 
@@ -290,25 +329,31 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
         })?,
     )?;
     let id = id.to_string();
+    let limit = Mutex::new(RateLimit::new(LOG_BURST, LOG_PER_SECOND));
     horizon.raw_set(
         "log",
         lua.create_function(move |_, message: Value| -> mlua::Result<()> {
             let Value::String(message) = message else {
                 return Err(Error::runtime("horizon.log needs the message as a string"));
             };
+            // A line over the rate is dropped without an error: the mod is not told.
+            let verdict = limit
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .allow(Instant::now());
+            match verdict {
+                Verdict::Dropped => return Ok(()),
+                Verdict::AllowedAfter(n) => {
+                    log::warn!(target: LOG_TARGET, "{id}: {n} log lines were dropped");
+                }
+                Verdict::Allowed => {}
+            }
             let line: String = message
                 .to_string_lossy()
                 .chars()
                 .take(MAX_LOG_LINE)
                 .collect();
-            {
-                let mut lines = lock(&log);
-                lines.push(line.clone());
-                if lines.len() > MAX_LOG_LINES {
-                    let excess = lines.len() - MAX_LOG_LINES;
-                    lines.drain(..excess);
-                }
-            }
+            keep_line(&log, line.clone());
             log::info!(target: LOG_TARGET, "{id}: {line}");
             Ok(())
         })?,
@@ -333,6 +378,16 @@ fn read_source(dir: &Path) -> Result<String, String> {
         return Err(format!("{ENTRY} is over {} KiB", MAX_SOURCE / 1024));
     }
     String::from_utf8(bytes).map_err(|_| format!("{ENTRY} is not UTF-8"))
+}
+
+/// Appends `line` to a mod's buffer, dropping the oldest lines past `MAX_LOG_LINES`.
+fn keep_line(log: &Mutex<Vec<String>>, line: String) {
+    let mut lines = lock(log);
+    lines.push(line);
+    if lines.len() > MAX_LOG_LINES {
+        let excess = lines.len() - MAX_LOG_LINES;
+        lines.drain(..excess);
+    }
 }
 
 /// The log buffer's lock. A poisoned lock still holds the lines, so it is taken anyway.
@@ -492,20 +547,33 @@ mod tests {
     }
 
     #[test]
-    fn the_log_keeps_the_newest_lines_and_cuts_long_ones() {
+    fn the_log_keeps_the_newest_lines() {
+        // The rate limit lets a burst through, so the cap is checked on the buffer itself.
+        let log = Mutex::new(Vec::new());
+        for i in 1..=MAX_LOG_LINES + 49 {
+            keep_line(&log, format!("line {i}"));
+        }
+        let lines = lock(&log).clone();
+        assert_eq!(lines.len(), MAX_LOG_LINES);
+        assert_eq!(lines[0], "line 50");
+        assert_eq!(
+            lines[MAX_LOG_LINES - 1],
+            format!("line {}", MAX_LOG_LINES + 49)
+        );
+    }
+
+    #[test]
+    fn a_long_line_is_cut() {
         let root = tempfile::tempdir().unwrap();
         let source = "horizon.on(\"server_tick\", function()\n\
-                      for i = 1, 149 do horizon.log(\"line \" .. i) end\n\
                       horizon.log(string.rep(\"x\", 2000))\n\
                       end)";
         let found = mod_folder(root.path(), "mod_a", source, Side::Both);
-        let loaded = LuaMod::load(&found).unwrap();
-        let host = LuaHost::new(vec![loaded]);
+        let host = LuaHost::new(vec![LuaMod::load(&found).unwrap()]);
         host.fire(SERVER_TICK);
         let lines = host.mods[0].log_lines();
-        assert_eq!(lines.len(), MAX_LOG_LINES);
-        assert_eq!(lines[0], "line 51");
-        assert_eq!(lines[MAX_LOG_LINES - 1].chars().count(), MAX_LOG_LINE);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].chars().count(), MAX_LOG_LINE);
     }
 
     #[test]
@@ -632,8 +700,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let runaway = "horizon.on(\"server_tick\", function() while true do end end)";
         let m = LuaMod::load(&mod_folder(root.path(), "mod_a", runaway, Side::Both)).unwrap();
-        add_hook_for_test(&m, "other", "return function() horizon.log(\"other\") end");
-        let log = Arc::clone(&m.log);
+        // The other hook counts in a Lua global rather than logging: log lines are rate limited.
+        add_hook_for_test(&m, "other", "return function() n = (n or 0) + 1 end");
         let host = LuaHost::new(vec![m]);
         let started = Instant::now();
         thread::scope(|s| {
@@ -654,10 +722,8 @@ mod tests {
             );
         });
         assert!(started.elapsed() < Duration::from_secs(10));
-        let others = lock(&log)
-            .iter()
-            .filter(|line| line.as_str() == "other")
-            .count();
+        let env = declare::environment(&host.mods[0].lua).unwrap();
+        let others: i64 = env.get("n").unwrap();
         assert_eq!(others, 50, "every other call must have run");
     }
 
@@ -719,5 +785,86 @@ mod tests {
         entered_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("the panicking thread kept the turn");
+    }
+
+    /// Every line the process logs, for the tests that check what is reported.
+    static CAPTURED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    struct Capture;
+
+    static CAPTURE: Capture = Capture;
+
+    impl log::Log for Capture {
+        fn enabled(&self, _: &log::Metadata) -> bool {
+            true
+        }
+
+        fn log(&self, record: &log::Record) {
+            lock_captured().push(record.args().to_string());
+        }
+
+        fn flush(&self) {}
+    }
+
+    fn lock_captured() -> MutexGuard<'static, Vec<String>> {
+        CAPTURED.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Installs the capturing logger once for the process.
+    fn install_capture() {
+        static INSTALL: std::sync::Once = std::sync::Once::new();
+        INSTALL.call_once(|| {
+            let _ = log::set_logger(&CAPTURE);
+            log::set_max_level(log::LevelFilter::Info);
+        });
+    }
+
+    fn captured_with_prefix(prefix: &str) -> Vec<String> {
+        install_capture();
+        lock_captured()
+            .iter()
+            .filter(|line| line.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn a_tight_loop_cannot_flood_the_log() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"server_tick\", function()\n\
+                      for i = 1, 10000 do horizon.log(\"line \" .. i) end\n\
+                      end)";
+        let found = mod_folder(root.path(), "flood_mod", source, Side::Both);
+        let host = LuaHost::new(vec![LuaMod::load(&found).unwrap()]);
+        host.fire(SERVER_TICK);
+        let lines = host.mods[0].log_lines();
+        assert!(
+            lines.len() >= LOG_BURST as usize,
+            "the loop did not run: {} lines",
+            lines.len()
+        );
+        assert!(
+            lines.len() <= LOG_BURST as usize + 3,
+            "{} lines got through",
+            lines.len()
+        );
+        // A dropped line is not an error: the handler ran to its end.
+        assert!(captured_with_prefix("flood_mod: server_tick").is_empty());
+    }
+
+    #[test]
+    fn the_report_is_emitted_once_at_register() {
+        install_capture();
+        let host = LuaHost::new(Vec::new()).with_report(vec!["report_mod: nope".into()]);
+        host.report();
+        host.report();
+        assert_eq!(
+            captured_with_prefix("Lua mods: "),
+            ["Lua mods: 0 loaded, 1 refused"]
+        );
+        assert_eq!(
+            captured_with_prefix("Lua mod refused: "),
+            ["Lua mod refused: report_mod: nope"]
+        );
     }
 }
