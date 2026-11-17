@@ -25,7 +25,8 @@ event-horizon-lua = { path = "../event-horizon-lua" }
 event-horizon-dev-tools = { path = "../event-horizon-dev-tools" }
 log = "0.4"
 
-[target.'cfg(windows)'.build-dependencies]
+[build-dependencies]
+# The build script runs on the host, but embeds resources based on the target OS.
 winresource = "0.1"
 
 [lints]
