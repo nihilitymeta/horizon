@@ -13,7 +13,8 @@ use mlua::{Error, Lua, Table, Value};
 
 use crate::declare;
 use crate::discover::Side;
-use crate::host::{LOG_TARGET, LuaHost, SERVER_TICK, call_handler};
+use crate::generated::hooks::{HookSide, hook_info};
+use crate::host::{LOG_TARGET, LuaHost, call_handler};
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
 const LOCKED: bool = false;
@@ -103,7 +104,8 @@ impl LuaHost {
         answers: &mut dyn FnMut(&str, &Event) -> bool,
     ) {
         for m in self.mods() {
-            if hook == SERVER_TICK && m.side() == Side::Client {
+            let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
+            if server_hook && m.side() == Side::Client {
                 continue;
             }
             let _turn = m.turn().enter();
@@ -141,6 +143,9 @@ mod tests {
     use super::*;
     use crate::discover::{Discovered, ENTRY};
     use crate::host::{LuaHost, LuaMod};
+
+    /// A server hook the generated impl has, with a cancel answer: the tests fire it by name.
+    const HOOK: &str = "block_receive_game";
     use std::cell::Cell;
     use std::path::Path;
     use std::time::{Duration, Instant};
@@ -168,12 +173,12 @@ mod tests {
         data
     }
 
-    /// Fires `server_tick` with `build` and a callback that always continues.
+    /// Fires `HOOK` with `build` and a callback that always continues.
     fn fire_tick(host: &LuaHost, build: &dyn Fn(&Lua) -> mlua::Result<Event>) {
-        host.dispatch(SERVER_TICK, build, &mut |_, _| true);
+        host.dispatch(HOOK, build, &mut |_, _| true);
     }
 
-    /// Fires `server_tick` with pos data and the writable keys the tests use.
+    /// Fires `HOOK` with pos data and the writable keys the tests use.
     fn fire_with_pos(host: &LuaHost) {
         fire_tick(host, &|lua| {
             new_event(lua, pos_data(lua), &["cancel", "result"])
@@ -186,7 +191,7 @@ mod tests {
         let m = load(
             root.path(),
             "mod_a",
-            "horizon.on(\"server_tick\", function(event) horizon.log(tostring(event.pos.x)) end)",
+            "horizon.on(\"block_receive_game\", function(event) horizon.log(tostring(event.pos.x)) end)",
             Side::Both,
         );
         let host = LuaHost::new(vec![m]);
@@ -197,8 +202,8 @@ mod tests {
     #[test]
     fn a_data_field_cannot_be_replaced() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function(event) event.pos = 1 end)\n\
-                      horizon.on(\"server_tick\", function(event) horizon.log(tostring(event.pos.x)) end)";
+        let source = "horizon.on(\"block_receive_game\", function(event) event.pos = 1 end)\n\
+                      horizon.on(\"block_receive_game\", function(event) horizon.log(tostring(event.pos.x)) end)";
         let host = LuaHost::new(vec![load(root.path(), "mod_a", source, Side::Both)]);
         fire_with_pos(&host);
         assert_eq!(host.mods()[0].log_lines(), ["1"]);
@@ -207,7 +212,7 @@ mod tests {
     #[test]
     fn only_writable_keys_are_accepted_and_read_back() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function(event)\n\
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
                       event.cancel = true\n\
                       local ok, err = pcall(function() event.other = 1 end)\n\
                       horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
@@ -215,7 +220,7 @@ mod tests {
         let host = LuaHost::new(vec![load(root.path(), "mod_a", source, Side::Both)]);
         let mut seen = Vec::new();
         host.dispatch(
-            SERVER_TICK,
+            HOOK,
             &|lua| new_event(lua, pos_data(lua), &["cancel", "result"]),
             &mut |_, event| {
                 seen.push((event.answer("cancel"), event.answer("other")));
@@ -234,8 +239,8 @@ mod tests {
     #[test]
     fn a_writable_key_shadows_data_for_later_handlers() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function(event) event.result = 5 end)\n\
-                      horizon.on(\"server_tick\", function(event) horizon.log(tostring(event.result == 5)) end)";
+        let source = "horizon.on(\"block_receive_game\", function(event) event.result = 5 end)\n\
+                      horizon.on(\"block_receive_game\", function(event) horizon.log(tostring(event.result == 5)) end)";
         let host = LuaHost::new(vec![load(root.path(), "mod_a", source, Side::Both)]);
         fire_with_pos(&host);
         assert_eq!(host.mods()[0].log_lines(), ["true"]);
@@ -244,7 +249,7 @@ mod tests {
     #[test]
     fn the_metatable_cannot_be_reached() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function(event)\n\
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
                       horizon.log(tostring(getmetatable(event)))\n\
                       local ok, err = pcall(setmetatable, event, {})\n\
                       horizon.log(tostring(ok))\n\
@@ -257,7 +262,7 @@ mod tests {
     #[test]
     fn rawset_cannot_shadow_the_data() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function(event)\n\
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
                       local ok = pcall(rawset, event, \"pos\", 1)\n\
                       horizon.log(tostring(ok) .. \" \" .. tostring(event.pos.x))\n\
                       end)";
@@ -269,7 +274,7 @@ mod tests {
     #[test]
     fn nested_data_cannot_be_changed_either() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function(event)\n\
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
                       local ok = pcall(function() event.pos.x = 9 end)\n\
                       horizon.log(tostring(ok) .. \" \" .. tostring(event.pos.x))\n\
                       end)";
@@ -281,14 +286,14 @@ mod tests {
     #[test]
     fn the_answers_callback_can_stop_the_chain() {
         let root = tempfile::tempdir().unwrap();
-        let a = "horizon.on(\"server_tick\", function(event) event.cancel = true; horizon.log(\"a1\") end)\n\
-                 horizon.on(\"server_tick\", function(event) horizon.log(\"a2\") end)";
-        let b = "horizon.on(\"server_tick\", function(event) horizon.log(\"b1\") end)";
+        let a = "horizon.on(\"block_receive_game\", function(event) event.cancel = true; horizon.log(\"a1\") end)\n\
+                 horizon.on(\"block_receive_game\", function(event) horizon.log(\"a2\") end)";
+        let b = "horizon.on(\"block_receive_game\", function(event) horizon.log(\"b1\") end)";
         let mod_a = load(root.path(), "mod_a", a, Side::Both);
         let mod_b = load(root.path(), "mod_b", b, Side::Both);
         let host = LuaHost::new(vec![mod_a, mod_b]);
         host.dispatch(
-            SERVER_TICK,
+            HOOK,
             &|lua| new_event(lua, pos_data(lua), &["cancel"]),
             &mut |_, event| !matches!(event.answer("cancel"), Value::Boolean(true)),
         );
@@ -299,14 +304,15 @@ mod tests {
     #[test]
     fn a_build_error_skips_only_that_mod() {
         let root = tempfile::tempdir().unwrap();
-        let logging = "horizon.on(\"server_tick\", function(event) horizon.log(\"ran\") end)";
+        let logging =
+            "horizon.on(\"block_receive_game\", function(event) horizon.log(\"ran\") end)";
         let host = LuaHost::new(vec![
             load(root.path(), "mod_a", logging, Side::Both),
             load(root.path(), "mod_b", logging, Side::Both),
         ]);
         let calls = Cell::new(0);
         host.dispatch(
-            SERVER_TICK,
+            HOOK,
             &|lua| {
                 calls.set(calls.get() + 1);
                 if calls.get() == 1 {
@@ -323,16 +329,15 @@ mod tests {
     #[test]
     fn two_mods_have_separate_events() {
         let root = tempfile::tempdir().unwrap();
-        let a = "horizon.on(\"server_tick\", function(event) event.result = 7 end)";
-        let b =
-            "horizon.on(\"server_tick\", function(event) horizon.log(tostring(event.result)) end)";
+        let a = "horizon.on(\"block_receive_game\", function(event) event.result = 7 end)";
+        let b = "horizon.on(\"block_receive_game\", function(event) horizon.log(tostring(event.result)) end)";
         let host = LuaHost::new(vec![
             load(root.path(), "mod_a", a, Side::Both),
             load(root.path(), "mod_b", b, Side::Both),
         ]);
         let mut results = Vec::new();
         host.dispatch(
-            SERVER_TICK,
+            HOOK,
             &|lua| new_event(lua, pos_data(lua), &["result"]),
             &mut |id, event| {
                 results.push((id.to_string(), event.answer("result")));
@@ -353,8 +358,9 @@ mod tests {
     #[test]
     fn a_runaway_handler_is_still_budgeted() {
         let root = tempfile::tempdir().unwrap();
-        let runaway = "horizon.on(\"server_tick\", function(event) while true do end end)";
-        let logging = "horizon.on(\"server_tick\", function(event) horizon.log(\"ran\") end)";
+        let runaway = "horizon.on(\"block_receive_game\", function(event) while true do end end)";
+        let logging =
+            "horizon.on(\"block_receive_game\", function(event) horizon.log(\"ran\") end)";
         let host = LuaHost::new(vec![
             load(root.path(), "mod_a", runaway, Side::Both),
             load(root.path(), "mod_b", logging, Side::Both),

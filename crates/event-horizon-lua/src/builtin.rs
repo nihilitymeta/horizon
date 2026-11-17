@@ -105,7 +105,9 @@ mod tests {
             root.path(),
             "alpha",
             "alpha_mod",
-            "horizon.on(\"server_tick\", function() end)\n",
+            // Lua `server_tick` is unavailable until the generator converts `ServerTickPhase`;
+            // this fixture uses `block_receive_game`, which the generated impl has.
+            "horizon.on(\"block_receive_game\", function() end)\n",
         );
         let built = builtin(root.path());
         assert_eq!(built.loaded, 1);
@@ -125,7 +127,9 @@ mod tests {
             root.path(),
             "b_good",
             "good_mod",
-            "horizon.on(\"server_tick\", function() end)\n",
+            // Lua `server_tick` is unavailable until the generator converts `ServerTickPhase`;
+            // this fixture uses `block_receive_game`, which the generated impl has.
+            "horizon.on(\"block_receive_game\", function() end)\n",
         );
         let built = builtin(root.path());
         assert_eq!(built.loaded, 1);

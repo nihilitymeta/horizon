@@ -19,11 +19,10 @@ use crate::budget;
 use crate::declare;
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::new_event;
+use crate::generated::hooks::{hook_id, is_emitted};
 use crate::ratelimit::{RateLimit, Verdict};
 use crate::state;
 
-/// The hook a Lua mod may use for each server tick.
-pub const SERVER_TICK: &str = "server_tick";
 /// The largest `main.luau` that is read.
 pub const MAX_SOURCE: u64 = 1024 * 1024;
 /// The lines kept per mod.
@@ -40,14 +39,6 @@ pub const LOG_PER_SECOND: u32 = 20;
 
 const LATE_ON: &str = "horizon.on can only be used while the mod loads";
 pub(crate) const LOG_TARGET: &str = "event_horizon_lua";
-
-/// The game's hook id for a hook name a Lua mod may use. Only `server_tick` for now.
-pub fn hook_id(name: &str) -> Option<mod_api::HookId> {
-    match name {
-        SERVER_TICK => Some(mod_api::HookId::ServerTick),
-        _ => None,
-    }
-}
 
 /// One loaded Lua mod: its own sandboxed state, the hooks it declared, its log lines, and the turn
 /// that serialises the threads calling into its state.
@@ -122,7 +113,7 @@ impl LuaMod {
         let source = read_source(&found.dir)?;
         let lua = state::new_state().map_err(|e| e.to_string())?;
         let chunk_name = format!("@{}", found.dir.join(ENTRY).display());
-        let declaration = declare::declare(&lua, &source, &chunk_name, &|n| hook_id(n).is_some())?;
+        let declaration = declare::declare(&lua, &source, &chunk_name, &|n| is_emitted(n))?;
 
         let log = Arc::new(Mutex::new(Vec::new()));
         let runtime =
@@ -277,22 +268,17 @@ impl LuaHost {
     }
 }
 
-impl mod_api::Hooks for LuaHost {
-    fn subscribed(&self) -> &'static [Option<mod_api::HookId>] {
+impl LuaHost {
+    /// The hook ids the game subscribes to, read by the generated `Hooks::subscribed`.
+    pub(crate) fn subscribed_slice(&self) -> &'static [Option<mod_api::HookId>] {
         self.subscribed
     }
 
-    fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+    /// What `register` does: writes the report and records the loaded mods. The generated
+    /// `Hooks::register` calls it.
+    pub(crate) fn on_register(&self) {
         self.report();
         self.record_loaded();
-    }
-
-    fn server_tick(
-        &self,
-        _host: &mut dyn mod_api::ServerHost,
-        _event: &mut mod_api::ServerTickEvent<'_>,
-    ) {
-        self.fire(SERVER_TICK);
     }
 }
 
@@ -450,6 +436,9 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Instant;
 
+    /// A server hook the generated impl has, with a cancel answer: the tests fire it by name.
+    const HOOK: &str = "block_receive_game";
+
     /// A mod folder with `source` as its main.luau; returns what discovery would have reported.
     fn mod_folder(root: &Path, name: &str, source: &str, side: Side) -> Discovered {
         let dir = root.join(name);
@@ -475,11 +464,11 @@ mod tests {
         let found = mod_folder(
             root.path(),
             "mod_a",
-            "horizon.on(\"server_tick\", function() horizon.log(\"tick\") end)",
+            "horizon.on(\"block_receive_game\", function() horizon.log(\"tick\") end)",
             Side::Both,
         );
         let loaded = LuaMod::load(&found).unwrap();
-        assert_eq!(loaded.hooks(), ["server_tick"]);
+        assert_eq!(loaded.hooks(), ["block_receive_game"]);
         assert_eq!(loaded.id(), "mod_a");
         assert_eq!(loaded.side(), Side::Both);
     }
@@ -487,7 +476,7 @@ mod tests {
     #[test]
     fn the_host_subscribes_to_the_union_once() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function() end)";
+        let source = "horizon.on(\"block_receive_game\", function() end)";
         let a = LuaMod::load(&mod_folder(root.path(), "mod_a", source, Side::Both)).unwrap();
         let b = LuaMod::load(&mod_folder(root.path(), "mod_b", source, Side::Server)).unwrap();
         let host = LuaHost::new(vec![a, b]);
@@ -495,21 +484,21 @@ mod tests {
         assert_eq!(subscribed.len(), 1);
         assert_eq!(
             subscribed[0].map(|id| id as usize),
-            Some(mod_api::HookId::ServerTick as usize)
+            Some(mod_api::HookId::BlockReceiveGame as usize)
         );
     }
 
     #[test]
     fn fire_runs_the_handlers() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function() horizon.log(\"tick\") end)";
+        let source = "horizon.on(\"block_receive_game\", function() horizon.log(\"tick\") end)";
         let found = mod_folder(root.path(), "mod_a", source, Side::Both);
         let loaded = LuaMod::load(&found).unwrap();
         let log = Arc::clone(&loaded.log);
         let host = LuaHost::new(vec![loaded]);
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         assert_eq!(lock(&log).clone(), ["tick"]);
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         assert_eq!(lock(&log).clone(), ["tick", "tick"]);
     }
 
@@ -522,41 +511,92 @@ mod tests {
     }
 
     #[test]
+    fn a_hook_without_a_generated_method_is_refused() {
+        let err = load_one("horizon.on(\"server_tick\", function() end)")
+            .err()
+            .unwrap();
+        assert!(err.contains("unknown hook 'server_tick'"), "got {err}");
+    }
+
+    /// The host argument of a server hook: it has no state the Lua hooks read.
+    struct NoHost;
+    impl mod_api::Host for NoHost {}
+    mod_api::impl_host_areas!(NoHost);
+    impl mod_api::ServerHost for NoHost {}
+    mod_api::impl_server_host_areas!(NoHost);
+
+    /// A block the game received, as the generated `block_receive_game` gets it.
+    fn received(cancelled: bool) -> mod_api::BlockReceiveGameEvent<'static> {
+        mod_api::BlockReceiveGameEvent {
+            dimension: "minecraft:overworld",
+            pos: [1, 64, 2],
+            block: "minecraft:stone",
+            event: "minecraft:block_event",
+            cancelled,
+        }
+    }
+
+    #[test]
+    fn a_generated_cancel_hook_returns_cancel_when_a_mod_cancels() {
+        let m =
+            load_one("horizon.on(\"block_receive_game\", function(event) event.cancel = true end)")
+                .unwrap();
+        let host = LuaHost::new(vec![m]);
+        let mut event = received(false);
+        let flow = mod_api::Hooks::block_receive_game(&host, &mut NoHost, &mut event);
+        assert!(matches!(flow, mod_api::Flow::Cancel));
+    }
+
+    #[test]
+    fn a_generated_cancel_hook_returns_continue_when_no_mod_cancels() {
+        let m = load_one(
+            "horizon.on(\"block_receive_game\", function(event) horizon.log(event.block) end)",
+        )
+        .unwrap();
+        let host = LuaHost::new(vec![m]);
+        let mut event = received(false);
+        let flow = mod_api::Hooks::block_receive_game(&host, &mut NoHost, &mut event);
+        assert!(matches!(flow, mod_api::Flow::Continue));
+        assert_eq!(host.mods()[0].log_lines(), ["minecraft:stone"]);
+    }
+
+    #[test]
     fn a_client_mod_is_not_fired_for_a_server_hook() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function() horizon.log(\"tick\") end)";
+        let source = "horizon.on(\"block_receive_game\", function() horizon.log(\"tick\") end)";
         let found = mod_folder(root.path(), "mod_a", source, Side::Client);
         let loaded = LuaMod::load(&found).unwrap();
         let log = Arc::clone(&loaded.log);
         let host = LuaHost::new(vec![loaded]);
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         assert!(lock(&log).is_empty());
     }
 
     #[test]
     fn a_failing_handler_does_not_stop_the_others() {
         let root = tempfile::tempdir().unwrap();
-        let failing = "horizon.on(\"server_tick\", function() error(\"boom\") end)";
-        let logging = "horizon.on(\"server_tick\", function() horizon.log(\"still here\") end)";
+        let failing = "horizon.on(\"block_receive_game\", function() error(\"boom\") end)";
+        let logging =
+            "horizon.on(\"block_receive_game\", function() horizon.log(\"still here\") end)";
         let a = LuaMod::load(&mod_folder(root.path(), "mod_a", failing, Side::Both)).unwrap();
         let b = LuaMod::load(&mod_folder(root.path(), "mod_b", logging, Side::Both)).unwrap();
         let b_log = Arc::clone(&b.log);
         let host = LuaHost::new(vec![a, b]);
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         assert_eq!(lock(&b_log).clone(), ["still here"]);
     }
 
     #[test]
     fn a_runaway_handler_is_stopped_and_the_others_run() {
         let root = tempfile::tempdir().unwrap();
-        let runaway = "horizon.on(\"server_tick\", function() while true do end end)";
-        let logging = "horizon.on(\"server_tick\", function() horizon.log(\"ran\") end)";
+        let runaway = "horizon.on(\"block_receive_game\", function() while true do end end)";
+        let logging = "horizon.on(\"block_receive_game\", function() horizon.log(\"ran\") end)";
         let a = LuaMod::load(&mod_folder(root.path(), "mod_a", runaway, Side::Both)).unwrap();
         let b = LuaMod::load(&mod_folder(root.path(), "mod_b", logging, Side::Both)).unwrap();
         let b_log = Arc::clone(&b.log);
         let host = LuaHost::new(vec![a, b]);
         let started = Instant::now();
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         assert!(started.elapsed() < Duration::from_secs(2));
         assert_eq!(lock(&b_log).clone(), ["ran"]);
     }
@@ -573,7 +613,7 @@ mod tests {
     #[test]
     fn a_runtime_field_that_does_not_exist_errors() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function()\n\
+        let source = "horizon.on(\"block_receive_game\", function()\n\
                       local ok = pcall(function() return horizon.world end)\n\
                       horizon.log(tostring(ok))\n\
                       end)";
@@ -581,7 +621,7 @@ mod tests {
         let loaded = LuaMod::load(&found).unwrap();
         let log = Arc::clone(&loaded.log);
         let host = LuaHost::new(vec![loaded]);
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         assert_eq!(lock(&log).clone(), ["false"]);
     }
 
@@ -613,12 +653,12 @@ mod tests {
     #[test]
     fn a_long_line_is_cut() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function()\n\
+        let source = "horizon.on(\"block_receive_game\", function()\n\
                       horizon.log(string.rep(\"x\", 2000))\n\
                       end)";
         let found = mod_folder(root.path(), "mod_a", source, Side::Both);
         let host = LuaHost::new(vec![LuaMod::load(&found).unwrap()]);
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         let lines = host.mods[0].log_lines();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].chars().count(), MAX_LOG_LINE);
@@ -640,7 +680,11 @@ mod tests {
     fn a_symlinked_main_luau_is_refused() {
         let root = tempfile::tempdir().unwrap();
         let outside = root.path().join("outside.luau");
-        std::fs::write(&outside, "horizon.on(\"server_tick\", function() end)").unwrap();
+        std::fs::write(
+            &outside,
+            "horizon.on(\"block_receive_game\", function() end)",
+        )
+        .unwrap();
         let dir = root.path().join("mod_a");
         std::fs::create_dir_all(&dir).unwrap();
         std::os::unix::fs::symlink(&outside, dir.join(ENTRY)).unwrap();
@@ -655,7 +699,7 @@ mod tests {
         let real = mod_folder(
             root.path(),
             "real",
-            "horizon.on(\"server_tick\", function() end)",
+            "horizon.on(\"block_receive_game\", function() end)",
             Side::Both,
         );
         let link = root.path().join("linked");
@@ -697,11 +741,11 @@ mod tests {
     fn pcall_cannot_swallow_a_handlers_budget() {
         // The interrupt keeps failing after the deadline, so catching one error does not help.
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function() while true do pcall(function() while true do end end) end end)";
+        let source = "horizon.on(\"block_receive_game\", function() while true do pcall(function() while true do end end) end end)";
         let m = LuaMod::load(&mod_folder(root.path(), "stubborn", source, Side::Both)).unwrap();
         let host = LuaHost::new(vec![m]);
         let started = Instant::now();
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         assert!(started.elapsed() < Duration::from_secs(2));
     }
 
@@ -804,7 +848,7 @@ mod tests {
     #[test]
     fn two_threads_calling_one_state_each_keep_their_own_limit() {
         let root = tempfile::tempdir().unwrap();
-        let runaway = "horizon.on(\"server_tick\", function() while true do end end)";
+        let runaway = "horizon.on(\"block_receive_game\", function() while true do end end)";
         let m = LuaMod::load(&mod_folder(root.path(), "mod_a", runaway, Side::Both)).unwrap();
         // The other hook counts in a Lua global rather than logging: log lines are rate limited.
         add_hook_for_test(&m, "other", "return function() n = (n or 0) + 1 end");
@@ -813,7 +857,7 @@ mod tests {
         thread::scope(|s| {
             let a = s.spawn(|| {
                 let began = Instant::now();
-                host.fire(SERVER_TICK);
+                host.fire(HOOK);
                 began.elapsed()
             });
             s.spawn(|| {
@@ -937,12 +981,12 @@ mod tests {
     #[test]
     fn a_tight_loop_cannot_flood_the_log() {
         let root = tempfile::tempdir().unwrap();
-        let source = "horizon.on(\"server_tick\", function()\n\
+        let source = "horizon.on(\"block_receive_game\", function()\n\
                       for i = 1, 10000 do horizon.log(\"line \" .. i) end\n\
                       end)";
         let found = mod_folder(root.path(), "flood_mod", source, Side::Both);
         let host = LuaHost::new(vec![LuaMod::load(&found).unwrap()]);
-        host.fire(SERVER_TICK);
+        host.fire(HOOK);
         let lines = host.mods[0].log_lines();
         assert!(
             lines.len() >= LOG_BURST as usize,

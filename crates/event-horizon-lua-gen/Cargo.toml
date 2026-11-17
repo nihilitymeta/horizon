@@ -9,6 +9,10 @@ autobins = false
 autoexamples = false
 autotests = false
 
+[[bin]]
+name = "event-horizon-lua-gen"
+path = "src/main.rs"
+
 [dependencies]
 horizon-mod-surface = { path = "../horizon-mod-surface" }
 serde = { version = "1", features = ["derive"] }

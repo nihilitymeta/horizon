@@ -357,9 +357,9 @@ mod tests {
             surface.difference(&names).collect::<Vec<_>>()
         );
         println!("render hooks: {render:?}");
+        let outside_trait = non_render.difference(&names).count();
         println!(
-            "surface hooks not in the Hooks trait (the other traits hold them): {}",
-            surface.difference(&names).count()
+            "surface hooks minus render not in the Hooks trait (the other traits hold them): {outside_trait}"
         );
         assert!(
             names.is_subset(&surface),

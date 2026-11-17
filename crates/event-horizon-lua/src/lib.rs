@@ -5,6 +5,7 @@ pub mod builtin;
 pub mod declare;
 pub mod discover;
 pub mod dispatch;
+pub mod generated;
 pub mod host;
 pub mod package;
 pub mod ratelimit;
