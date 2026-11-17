@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod emit_hooks;
+pub mod emit_impl;
 pub mod handles;
 pub mod ir;
 pub mod trait_sigs;
