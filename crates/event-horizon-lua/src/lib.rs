@@ -9,4 +9,5 @@ pub mod generated;
 pub mod host;
 pub mod package;
 pub mod ratelimit;
+pub mod stacks;
 pub mod state;

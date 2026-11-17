@@ -17,6 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::carried::{self, Reach, Shape};
 use crate::dispatch_sigs::{DispatchSigs, OutputSig};
 use crate::emit_types::Plain;
 use crate::ir::{HookIr, Ir, Kind};
@@ -71,6 +72,8 @@ struct Output {
     /// The event field is a `&mut` reference (`pub lines: &'a mut Vec<String>`), read and written
     /// through it.
     by_ref: bool,
+    /// The carried shape (a stack or a block state, see [`carried`]), which converts through the host.
+    shape: Option<Shape>,
 }
 
 /// One hook that is emitted, with what its method needs.
@@ -85,6 +88,11 @@ struct Method<'a> {
     cancel: bool,
     /// The answer type `X` of a replace hook (`mod_api::X`, as the method's return type spells it).
     answer: Option<String>,
+    /// The host as the Lua crate takes it, when a carried value converts through it.
+    view: Option<String>,
+    /// The pre-checks of the arguments that carry a stack or a block state: a call that is `None`
+    /// when the host has no id for the value, so the hook is not delivered.
+    checks: Vec<String>,
 }
 
 /// Emits the methods of the hooks named in `hooks`, sorted by name. `plain` is the set of plain
@@ -202,7 +210,7 @@ fn value_supported(ty: &str, plain: &Plain) -> bool {
 
 /// The answer type of a replace hook: its method returns `Option<X>` and `X` converts from Lua.
 /// Returns `mod_api::X` (as the method spells it) for the generated code.
-fn replace_answer(sig: &HookSig, plain: &Plain) -> Result<String, String> {
+fn replace_answer(sig: &HookSig, plain: &Plain, reach: Reach) -> Result<String, String> {
     let ret = sig
         .ret
         .as_deref()
@@ -214,6 +222,17 @@ fn replace_answer(sig: &HookSig, plain: &Plain) -> Result<String, String> {
     else {
         return Err(format!("replace hook does not return an Option: `{ret}`"));
     };
+    if let Some(shape) = carried::shape_of(inner) {
+        // A stack or a block state answer converts through the host; a list or an option of one
+        // does not answer a replace hook.
+        return match shape {
+            Shape::Stack | Shape::State if carried::allowed(shape, reach) => {
+                Ok(format!("mod_api::{inner}"))
+            }
+            Shape::Stack | Shape::State => Err(carried::refusal(shape)),
+            _ => Err(format!("answer: {inner}")),
+        };
+    }
     if !value_supported(inner, plain) {
         return Err(format!("answer: {inner}"));
     }
@@ -257,6 +276,7 @@ fn outputs_of(
     cancel: bool,
     dispatch: &DispatchSigs,
     plain: &Plain,
+    reach: Reach,
 ) -> Result<Vec<Output>, String> {
     let params = match dispatch.hooks.get(&hook.name) {
         None => return Err("no dispatch function for it".to_owned()),
@@ -266,8 +286,15 @@ fn outputs_of(
     // The spelling a dispatch function gives a type may carry the mod API's path (`mod_api::X`).
     let shown = |ty: &str| ty.replace("mod_api::", "");
     for param in params {
-        if !output_supported(&shown(&param.ty), plain) {
-            return Err(format!("output: {}", shown(&param.ty)));
+        match carried::shape_of(&param.ty) {
+            Some(shape) if !carried::allowed(shape, reach) => {
+                return Err(carried::refusal(shape));
+            }
+            Some(_) => {}
+            None if !output_supported(&shown(&param.ty), plain) => {
+                return Err(format!("output: {}", shown(&param.ty)));
+            }
+            None => {}
         }
     }
     if cancel && params.iter().filter(|param| is_cancel_flag(param)).count() > 1 {
@@ -306,6 +333,7 @@ fn outputs_of(
             key,
             ty: shown(&param.ty),
             by_ref,
+            shape: carried::shape_of(&param.ty),
         });
     }
     if cancel && !outputs.iter().any(|output| output.key == "cancelled") {
@@ -320,6 +348,7 @@ fn outputs_of(
             key: "cancelled".to_owned(),
             ty: "bool".to_owned(),
             by_ref: false,
+            shape: None,
         });
     }
     Ok(outputs)
@@ -345,18 +374,22 @@ fn plan<'a>(
     // A collect hook's `&mut` output is one of its dispatch outputs. A list kind is taken here: the
     // mod assigns the list, which replaces the current value. Any other output stays out.
     if let Some(output) = &hook.output {
-        let list = hook.kind == Kind::Collect && is_list_kind(&collect_type(&output.rust_type));
+        let list = hook.kind == Kind::Collect
+            && (is_list_kind(&collect_type(&output.rust_type))
+                || carried::shape_of(&output.rust_type).is_some());
         if !list {
             return Err("has an output: its listeners write back, not in this slice".to_owned());
         }
     }
     let replace = matches!(hook.kind, Kind::Replace);
+    let reach = carried::reach_of(sig.host_ty.as_deref());
+    let view = carried::view(sig.host_name.as_deref(), sig.host_ty.as_deref(), reach);
     let cancel = match hook.kind {
         Kind::Listen | Kind::Replace | Kind::Collect => false,
         Kind::Cancel => true,
     };
     let answer = if replace {
-        Some(replace_answer(sig, plain)?)
+        Some(replace_answer(sig, plain, reach)?)
     } else {
         None
     };
@@ -377,17 +410,38 @@ fn plan<'a>(
         ));
     }
 
-    let outputs = outputs_of(hook, sig, cancel, dispatch, plain)?;
+    let outputs = outputs_of(hook, sig, cancel, dispatch, plain, reach)?;
     if replace && !outputs.is_empty() {
         return Err("replace hook with a mutable output: not in this slice".to_owned());
     }
     let mut fields = Vec::new();
+    let mut checks = Vec::new();
     for arg in &hook.arguments {
         if cancel && arg.name == "cancelled" {
             continue;
         }
         if outputs.iter().any(|output| output.key == arg.name) {
             // An output is read from its state (see `turn_body`), not from the argument's value.
+            continue;
+        }
+        // A stack or a block state (not a `&mut`) converts through the host, when it has one.
+        let carried_shape = carried::shape_of(&arg.rust_type);
+        if let Some(shape) = carried_shape.filter(|shape| *shape != Shape::StackList) {
+            if arg.rust_type.contains("mut") {
+                return Err(format!(
+                    "argument `{}`: a mutable argument writes back, not in this slice",
+                    arg.name
+                ));
+            }
+            let (Some(view), true) = (view.as_deref(), carried::allowed(shape, reach)) else {
+                return Err(carried::refusal(shape));
+            };
+            let field = format!("{}.{}", sig.event_name, arg.name);
+            checks.push(carried::input_check(shape, &arg.rust_type, &field, view));
+            fields.push((
+                arg.name.clone(),
+                carried::input_lua(shape, &arg.rust_type, &field, view),
+            ));
             continue;
         }
         let mapped = map_type(&arg.rust_type)
@@ -423,6 +477,8 @@ fn plan<'a>(
         outputs,
         cancel,
         answer,
+        view,
+        checks,
     })
 }
 
@@ -603,8 +659,10 @@ fn method_text(method: &Method<'_>) -> String {
         out.push_str(&format!("        let _ = &{};\n", sig.event_name));
     }
     if let Some(answer) = &method.answer {
+        out.push_str(&checks_text(method, false));
         out.push_str(&replace_body(method, answer));
     } else if method.outputs.is_empty() {
+        out.push_str(&checks_text(method, false));
         out.push_str("        self.dispatch(\n");
         out.push_str(&format!("            {:?},\n", method.hook.name));
         out.push_str("            &|lua| {\n");
@@ -625,6 +683,42 @@ fn method_text(method: &Method<'_>) -> String {
     out
 }
 
+/// The pre-checks of a hook: each stack or block state in it must have an id, or the hook is not
+/// delivered (one log line, and the hook returns as if no mod listened). `outputs` adds the outputs'
+/// current values; they are read from their cells, so it runs after the cells are made.
+fn checks_text(method: &Method<'_>, outputs: bool) -> String {
+    let mut calls = method.checks.clone();
+    if let (true, Some(view)) = (outputs, method.view.as_deref()) {
+        for output in &method.outputs {
+            if let Some(shape) = output.shape {
+                calls.push(carried::output_check(shape, &output.key, view));
+            }
+        }
+    }
+    let event = &method.sig.event_name;
+    let ret = if method.cancel {
+        format!(" if {event}.cancelled {{ Flow::Cancel }} else {{ Flow::Continue }}")
+    } else if method.answer.is_some() {
+        " None".to_owned()
+    } else {
+        String::new()
+    };
+    let hook = &method.hook.name;
+    if calls.is_empty() {
+        return String::new();
+    }
+    // No mod handles the hook: nothing is converted, and the hook returns as if nothing listened.
+    let mut out = format!(
+        "        if !self.has_handlers({hook:?}) {{\n            return{ret};\n        }}\n"
+    );
+    for call in calls {
+        out.push_str(&format!(
+            "        if {call}.is_none() {{\n            crate::stacks::undelivered({hook:?});\n            return{ret};\n        }}\n"
+        ));
+    }
+    out
+}
+
 /// The body of a replace hook: `dispatch_replace` gives the first mod's answer that is not nil, and
 /// `answer_of` converts it. A refused answer is logged there and the chain goes on.
 fn replace_body(method: &Method<'_>, answer: &str) -> String {
@@ -642,9 +736,15 @@ fn replace_body(method: &Method<'_>, answer: &str) -> String {
     out.push_str("                crate::dispatch::new_event(lua, data, &[])\n");
     out.push_str("            },\n");
     out.push_str("            &mut |id, value| {\n");
-    out.push_str(&format!(
-        "                match crate::dispatch::answer_of::<{answer}>(id, {hook:?}, &value) {{\n"
-    ));
+    match carried::shape_of(answer).zip(method.view.as_deref()) {
+        Some((shape, view)) => out.push_str(&format!(
+            "                match crate::dispatch::answer_by(id, {hook:?}, &value, {}) {{\n",
+            carried::converter(shape, view)
+        )),
+        None => out.push_str(&format!(
+            "                match crate::dispatch::answer_of::<{answer}>(id, {hook:?}, &value) {{\n"
+        )),
+    }
     out.push_str("                    Some(found) => {\n");
     out.push_str("                        answer = Some(found);\n");
     out.push_str("                        true\n");
@@ -673,9 +773,9 @@ fn turn_body(method: &Method<'_>) -> String {
                 output.key
             ));
         }
-        // A list, or a value behind a reference, is copied out of the event: the event keeps its own
-        // value until the write back.
-        let copy = if output.by_ref || output.ty.starts_with("Vec<") {
+        // A list, a carried value or a value behind a reference is copied out of the event: the event
+        // keeps its own value until the write back.
+        let copy = if output.by_ref || output.shape.is_some() || output.ty.starts_with("Vec<") {
             ".clone()"
         } else {
             ""
@@ -685,6 +785,7 @@ fn turn_body(method: &Method<'_>) -> String {
             key = output.key
         ));
     }
+    out.push_str(&checks_text(method, true));
     let is_cancelled = if method.cancel {
         "&|| *out_cancelled.borrow()"
     } else {
@@ -701,8 +802,12 @@ fn turn_body(method: &Method<'_>) -> String {
         ));
     }
     for output in &method.outputs {
+        let value = match (output.shape, method.view.as_deref()) {
+            (Some(shape), Some(view)) => carried::output_lua(shape, &output.key, view),
+            _ => format!("out_{}.borrow().to_lua_value(lua)?", output.key),
+        };
         out.push_str(&format!(
-            "                data.raw_set({key:?}, out_{key}.borrow().to_lua_value(lua)?)?;\n",
+            "                data.raw_set({key:?}, {value})?;\n",
             key = output.key
         ));
     }
@@ -718,10 +823,17 @@ fn turn_body(method: &Method<'_>) -> String {
     out.push_str("            },\n");
     out.push_str("            &mut |id, answered| {\n");
     for output in &method.outputs {
-        out.push_str(&format!(
-            "                crate::dispatch::accept(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
-            key = output.key
-        ));
+        match (output.shape, method.view.as_deref()) {
+            (Some(shape), Some(view)) => out.push_str(&format!(
+                "                crate::dispatch::accept_by(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {convert});\n",
+                key = output.key,
+                convert = carried::converter(shape, view)
+            )),
+            _ => out.push_str(&format!(
+                "                crate::dispatch::accept(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
+                key = output.key
+            )),
+        }
     }
     out.push_str("                true\n");
     out.push_str("            },\n");
@@ -936,6 +1048,114 @@ impl mod_api::Hooks for LuaHost {
         assert_eq!(out.emitted, ["block_step_on"]);
         assert!(out.skipped.is_empty());
         syn::parse_file(&out.text).expect("the golden text parses");
+    }
+
+    #[test]
+    fn a_stack_in_hook_converts_its_stack_through_the_host_and_is_pre_checked() {
+        let ir = ir(vec![hook(
+            "stack_seen",
+            Kind::Listen,
+            vec![arg("stack", "&'a item::item_stack::ItemStack")],
+        )]);
+        let sigs = [sig(
+            "stack_seen",
+            Some(("host", "&mut dyn ServerHost")),
+            "event",
+            "StackSeenEvent<'_>",
+            None,
+        )];
+        let out = emit_plain(&ir, &sigs, &["stack_seen"], &Plain::default());
+        assert!(out.skipped.is_empty(), "{:?}", out.skipped);
+        let expected = r#"    fn stack_seen(&self, host: &mut dyn ServerHost, event: &mut StackSeenEvent<'_>) {
+        let _ = &host;
+        if !self.has_handlers("stack_seen") {
+            return;
+        }
+        if crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).is_none() {
+            crate::stacks::undelivered("stack_seen");
+            return;
+        }
+        self.dispatch(
+            "stack_seen",
+            &|lua| {
+                let data = lua.create_table()?;
+                data.raw_set("stack", crate::stacks::stack_in(&*host as &dyn mod_api::Host, Some(event.stack)).ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?.to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &[])
+            },
+            &mut |_, _| true,
+        );
+    }
+"#;
+        assert!(out.text.contains(expected), "{}", out.text);
+        // The gate precedes every conversion of the hook: a hook no mod handles converts nothing.
+        let gate = out
+            .text
+            .find("has_handlers(\"stack_seen\")")
+            .expect("gated");
+        let first = out.text.find("stack_in(").expect("converted");
+        assert!(
+            gate < first,
+            "the gate must come before the first conversion"
+        );
+    }
+
+    #[test]
+    fn a_state_out_cancel_hook_reads_its_state_and_writes_it_back_through_the_level() {
+        let place = hook(
+            "place_state",
+            Kind::Cancel,
+            vec![arg("cancelled", "bool"), arg("state", "&'a mut BlockState")],
+        );
+        let ir = ir(vec![place]);
+        let sigs = [sig(
+            "place_state",
+            Some(("level", "&dyn LevelHost")),
+            "event_",
+            "PlaceStateEvent<'_>",
+            Some("Flow"),
+        )];
+        let dispatch = DispatchSigs {
+            hooks: [(
+                "place_state".to_owned(),
+                Some(vec![
+                    OutputSig {
+                        param: "state".to_owned(),
+                        ty: "BlockState".to_owned(),
+                        copies_cancel: false,
+                    },
+                    OutputSig {
+                        param: "cancel".to_owned(),
+                        ty: "bool".to_owned(),
+                        copies_cancel: true,
+                    },
+                ]),
+            )]
+            .into(),
+            structs: [(
+                "PlaceStateEvent".to_owned(),
+                [
+                    ("state".to_owned(), "&'a mut BlockState".to_owned()),
+                    ("cancelled".to_owned(), "bool".to_owned()),
+                ]
+                .into(),
+            )]
+            .into(),
+        };
+        let out = emit(&ir, &sigs, &dispatch, &["place_state"], &Plain::default());
+        assert!(out.skipped.is_empty(), "{:?}", out.skipped);
+        for piece in [
+            "    fn place_state(&self, level: &dyn LevelHost, event_: &mut PlaceStateEvent<'_>) -> Flow {\n",
+            "        if crate::stacks::state_in(level, Some(&*out_state.borrow())).is_none() {\n            crate::stacks::undelivered(\"place_state\");\n            return if event_.cancelled { Flow::Cancel } else { Flow::Continue };\n        }\n",
+            "                data.raw_set(\"state\", crate::stacks::state_in(level, Some(&*out_state.borrow())).ok_or_else(|| mlua::Error::runtime(\"a carried value has no id\"))?.to_lua_value(lua)?)?;\n",
+            "                crate::dispatch::accept_by(&out_state, id, \"place_state\", \"state\", &answered.answer(\"state\"), |value| crate::stacks::state_value(level, value));\n",
+            "        *event_.state = out_state.into_inner();\n",
+        ] {
+            assert!(
+                out.text.contains(piece),
+                "missing:\n{piece}\nin:\n{}",
+                out.text
+            );
+        }
     }
 
     #[test]

@@ -9869,6 +9869,20 @@ impl ToLuaValue for mod_api::TriState {
     }
 }
 
+const TRI_STATE_NAMES: &[&str] = &["false", "default", "true"];
+
+impl FromLuaValue for mod_api::TriState {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "false" => Ok(mod_api::TriState::False),
+            "default" => Ok(mod_api::TriState::Default),
+            "true" => Ok(mod_api::TriState::True),
+            _ => Err(ConvertError::unknown_variant(&name, TRI_STATE_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::TriggerCriterionError {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -10921,5 +10935,11 @@ mod unit_enum_tests {
     fn game_mode_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::GAME_MODE_NAMES, vec![mod_api::GameMode::Survival, mod_api::GameMode::Creative, mod_api::GameMode::Adventure, mod_api::GameMode::Spectator]);
+    }
+
+    #[test]
+    fn tri_state_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::TRI_STATE_NAMES, vec![mod_api::TriState::False, mod_api::TriState::Default, mod_api::TriState::True]);
     }
 }

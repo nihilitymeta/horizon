@@ -1,6 +1,7 @@
 //! Generator of the Lua host's bindings and type definitions from the mod API's surface.json
 #![forbid(unsafe_code)]
 
+pub mod carried;
 pub mod dispatch_sigs;
 pub mod emit_hooks;
 pub mod emit_impl;

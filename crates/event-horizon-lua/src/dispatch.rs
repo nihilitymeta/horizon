@@ -60,10 +60,25 @@ pub fn accept<T: FromLuaValue>(
     output: &str,
     value: &Value,
 ) -> bool {
+    accept_by(slot, id, hook, output, value, |value| {
+        T::from_lua_value(value).map_err(|err| err.to_string())
+    })
+}
+
+/// The same as [`accept`], with the conversion given: a stack or a block state converts through
+/// its host, so it cannot be a `FromLuaValue` impl. The same warning and the same kept value.
+pub fn accept_by<T>(
+    slot: &RefCell<T>,
+    id: &str,
+    hook: &str,
+    output: &str,
+    value: &Value,
+    convert: impl FnOnce(&Value) -> Result<T, String>,
+) -> bool {
     if matches!(value, Value::Nil) {
         return false;
     }
-    match T::from_lua_value(value) {
+    match convert(value) {
         Ok(next) => {
             *slot.borrow_mut() = next;
             false
@@ -81,7 +96,20 @@ pub fn accept<T: FromLuaValue>(
 /// Converts a replace hook's answer, a mod's return value, to `T`. A value that does not convert is
 /// refused: one warning names the mod, the hook and the error, and the mod gives no answer.
 pub fn answer_of<T: FromLuaValue>(id: &str, hook: &str, value: &Value) -> Option<T> {
-    match T::from_lua_value(value) {
+    answer_by(id, hook, value, |value| {
+        T::from_lua_value(value).map_err(|err| err.to_string())
+    })
+}
+
+/// The same as [`answer_of`], with the conversion given (a stack or a block state converts through
+/// its host).
+pub fn answer_by<T>(
+    id: &str,
+    hook: &str,
+    value: &Value,
+    convert: impl FnOnce(&Value) -> Result<T, String>,
+) -> Option<T> {
+    match convert(value) {
         Ok(answer) => Some(answer),
         Err(err) => {
             log::warn!(
@@ -158,6 +186,16 @@ impl LuaHost {
     /// The same as `dispatch`, in the order the mods' priorities give (`run_order`). Before each
     /// mod, if `is_cancelled()` says the event is already cancelled, a mod that did not declare
     /// `receive_cancelled` for this hook is skipped; the others see the event as it is.
+    /// Whether any mod that declared `hook` will run its handlers for it: the same side rule the
+    /// dispatch loops apply. A hook no mod handles converts nothing (see the generated pre-checks).
+    pub(crate) fn has_handlers(&self, hook: &str) -> bool {
+        let mods = self.mods();
+        let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
+        self.run_order(hook)
+            .iter()
+            .any(|&index| !(server_hook && mods[index].side() == Side::Client))
+    }
+
     pub fn dispatch_cancellable(
         &self,
         hook: &str,
@@ -354,7 +392,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     /// Loads a mod named `id` whose main.luau is `source`.
-    fn load(root: &Path, id: &str, source: &str, side: Side) -> LuaMod {
+    pub(super) fn load(root: &Path, id: &str, source: &str, side: Side) -> LuaMod {
         let dir = root.join(id);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(ENTRY), source).unwrap();
@@ -940,5 +978,70 @@ mod tests {
         let body = "local t = {} for i = 1, 1024 do t[i] = \"x\" end event.types = t";
         let host = LuaHost::new(vec![list_mod(root.path(), "mod_a", body)]);
         assert_eq!(fire_list(&host, Vec::new()).len(), 1024);
+    }
+}
+
+#[cfg(test)]
+mod handler_gate_tests {
+    use super::tests::load;
+    use super::*;
+
+    #[test]
+    fn a_hook_is_handled_only_when_a_mod_declared_it() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "mod_a",
+            "horizon.on(\"compute_fov\", function() end)",
+            Side::Both,
+        )]);
+        assert!(host.has_handlers("compute_fov"));
+        assert!(!host.has_handlers("block_step_on"), "no mod declared it");
+        let none = LuaHost::new(Vec::new());
+        assert!(!none.has_handlers("compute_fov"));
+    }
+
+    #[test]
+    fn a_client_mod_does_not_handle_a_server_hook() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "mod_a",
+            "horizon.on(\"block_receive_game\", function() end)",
+            Side::Client,
+        )]);
+        assert!(!host.has_handlers("block_receive_game"));
+    }
+}
+
+#[cfg(test)]
+mod accept_by_tests {
+    use std::cell::RefCell;
+
+    use mlua::Value;
+
+    use super::accept_by;
+
+    #[test]
+    fn a_refused_value_keeps_the_previous_one_and_nil_is_no_answer() {
+        let slot = RefCell::new(5u32);
+        assert!(!accept_by(&slot, "m", "h", "o", &Value::Nil, |_| Ok(9)));
+        assert_eq!(*slot.borrow(), 5, "nil assigns nothing");
+
+        let refused = accept_by(&slot, "m", "h", "o", &Value::Boolean(true), |_| {
+            Err("an unknown item id".to_owned())
+        });
+        assert!(refused);
+        assert_eq!(*slot.borrow(), 5, "a refused value keeps the previous one");
+
+        assert!(!accept_by(
+            &slot,
+            "m",
+            "h",
+            "o",
+            &Value::Boolean(true),
+            |_| Ok(7)
+        ));
+        assert_eq!(*slot.borrow(), 7);
     }
 }
