@@ -1,5 +1,5 @@
 //! Event Horizon's game executable: the platform's game, started with Event Horizon's built-in
-//! mods (none yet; a later chunk passes them to `horizon_mod_host::main_with`).
+//! mods (the Lua host, which runs the mods in the game folder's `lua-mods/`).
 #![forbid(unsafe_code)]
 
 /// Identifies the executable as the game for launcher imports, as `horizon-official` does.
@@ -11,6 +11,11 @@ fn main() {
     horizon_mod_host::exit_if_compile_child();
     let startup = horizon_client::entry::prepare();
     std::hint::black_box(&horizon_mod_package::holder::CAPABILITY);
-    // Built-in mods are added here in a later chunk; until then the lists are empty.
-    horizon_mod_host::main_with(Vec::new(), &[], &[], startup);
+    let lua = event_horizon_lua::builtin::builtin(&startup.launch().context.game_dir);
+    horizon_mod_host::main_with(
+        vec![lua.entry],
+        &[],
+        event_horizon_lua::builtin::BUILT,
+        startup,
+    );
 }
