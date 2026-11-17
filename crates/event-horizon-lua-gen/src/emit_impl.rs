@@ -5,13 +5,17 @@
 //! method, the surface has it unscoped with no output, it is a listen or a cancel hook, and every
 //! argument has a Lua conversion ([`to_lua_expr`]). Any other hook is skipped with its reason.
 //!
-//! A listen hook builds its event table from the arguments and takes no answer. A cancel hook does
-//! the same, lets the mod answer with the writable key `cancel`, and returns the [`Flow`] that the
-//! answer gives. Nothing here compiles the text: the tests check that it parses with `syn`, and
-//! the first compile against the mod API is a later step.
+//! A hook with no outputs builds its event table from the arguments and takes no answer. A hook
+//! with outputs (its `&mut` dispatch parameters, see [`crate::dispatch_sigs`]) also builds the
+//! outputs' values into the table, as writable keys, and after `dispatch_turns` each mod's answer
+//! is converted and kept by [`crate::dispatch::accept`]. A cancel hook's one output is the bool
+//! `cancelled`: its method returns the [`Flow`] that the final value gives. Nothing here compiles
+//! the text: the tests check that it parses with `syn`, and the first compile against the mod API
+//! is a later step.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::dispatch_sigs::{DispatchSigs, OutputSig};
 use crate::emit_types::Plain;
 use crate::ir::{HookIr, Ir, Kind};
 use crate::trait_sigs::HookSig;
@@ -26,6 +30,8 @@ pub struct Emitted {
     pub emitted: Vec<String>,
     /// Each hook asked for that is not emitted, with its reason, in name order.
     pub skipped: Vec<(String, String)>,
+    /// How many outputs of the emitted hooks have each type, by the type's spelling.
+    pub output_types: BTreeMap<String, usize>,
 }
 
 /// The `impl` header and the two methods every file has. `subscribed_slice` and `on_register` are
@@ -45,22 +51,37 @@ impl mod_api::Hooks for LuaHost {
     }
 ";
 
-/// The comment written above a cancel hook's body.
-const CANCEL_NOTE: &str = "        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.\n";
+/// One output of a hook: the Lua key the mod writes (the event field it is copied to), and its
+/// type without spaces.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Output {
+    key: String,
+    ty: String,
+}
 
 /// One hook that is emitted, with what its method needs.
 struct Method<'a> {
     hook: &'a HookIr,
     sig: &'a HookSig,
-    /// `(field, Lua value expression)` for each argument, in the surface's order.
+    /// `(field, Lua value expression)` for each argument that is not an output, in the surface's
+    /// order.
     fields: Vec<(String, String)>,
+    /// The outputs, in the dispatch function's parameter order. Empty for a listen hook with none.
+    outputs: Vec<Output>,
     cancel: bool,
 }
 
 /// Emits the methods of the hooks named in `hooks`, sorted by name. `plain` is the set of plain
-/// surface types, whose `ToLuaValue` impls the convert crate's `generated_types` has. The same
-/// inputs always give the same text.
-pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str], plain: &Plain) -> Emitted {
+/// surface types, whose `ToLuaValue` impls the convert crate's `generated_types` has. `dispatch`
+/// holds each hook's outputs and the event structs' fields. The same inputs always give the same
+/// text.
+pub fn emit(
+    ir: &Ir,
+    sigs: &[HookSig],
+    dispatch: &DispatchSigs,
+    hooks: &[&str],
+    plain: &Plain,
+) -> Emitted {
     let mut names = hooks.to_vec();
     names.sort_unstable();
     names.dedup();
@@ -68,7 +89,7 @@ pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str], plain: &Plain) -> Emitted
     let mut methods = Vec::new();
     let mut skipped = Vec::new();
     for name in names {
-        match plan(ir, sigs, name, plain) {
+        match plan(ir, sigs, dispatch, name, plain) {
             Ok(method) => methods.push(method),
             Err(reason) => skipped.push((name.to_owned(), reason)),
         }
@@ -85,6 +106,11 @@ pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str], plain: &Plain) -> Emitted
     }
     text.push_str("}\n");
 
+    let mut output_types = BTreeMap::new();
+    for output in methods.iter().flat_map(|method| &method.outputs) {
+        *output_types.entry(output.ty.clone()).or_default() += 1;
+    }
+
     Emitted {
         text,
         emitted: methods
@@ -92,13 +118,99 @@ pub fn emit(ir: &Ir, sigs: &[HookSig], hooks: &[&str], plain: &Plain) -> Emitted
             .map(|method| method.hook.name.clone())
             .collect(),
         skipped,
+        output_types,
     }
+}
+
+/// Whether a dispatch output of type `ty` (without spaces) has a Lua conversion in this slice:
+/// the cancel flag, numbers, strings, `Text`, `[f64; 3]`, and an `Option` of a scalar, a string or
+/// `Text` (only a value of the inner type can be assigned: see [`turn_body`]).
+pub fn output_supported(ty: &str) -> bool {
+    const INNER: [&str; 7] = ["bool", "i32", "u32", "f32", "f64", "String", "Text"];
+    if INNER.contains(&ty) || ty == "[f64;3]" {
+        return true;
+    }
+    ty.strip_prefix("Option<")
+        .and_then(|rest| rest.strip_suffix('>'))
+        .is_some_and(|inner| INNER.contains(&inner))
+}
+
+/// Whether a dispatch parameter is a cancel hook's flag: the bool its body copies the event's
+/// `cancelled` into. A cancel hook's other bools (`is_drowning`) are ordinary outputs.
+fn is_cancel_flag(param: &OutputSig) -> bool {
+    param.ty == "bool" && param.copies_cancel
+}
+
+/// The outputs of `hook`, from its dispatch function, in parameter order, with the cancel flag
+/// keyed `cancelled`. A cancel hook always has the flag as an output: a dispatch that names no
+/// flag gets it added last, and its answer reaches the game through the `Flow` the method returns.
+/// A reason when an output cannot be converted, when the flag is ambiguous, or when an output does
+/// not match the event struct the method writes back to.
+fn outputs_of(
+    hook: &HookIr,
+    sig: &HookSig,
+    cancel: bool,
+    dispatch: &DispatchSigs,
+) -> Result<Vec<Output>, String> {
+    let params = match dispatch.hooks.get(&hook.name) {
+        None => return Err("no dispatch function for it".to_owned()),
+        Some(None) => return Err("two dispatch functions name it".to_owned()),
+        Some(Some(params)) => params,
+    };
+    for param in params {
+        if !output_supported(&param.ty) {
+            return Err(format!("output: {}", param.ty));
+        }
+    }
+    if cancel && params.iter().filter(|param| is_cancel_flag(param)).count() > 1 {
+        return Err("cancel hook: two `&mut bool` cancel flags".to_owned());
+    }
+    // The event's type name is the sig's event type up to its generic arguments.
+    let event = sig.event_ty.split('<').next().unwrap_or_default().trim();
+    let fields = dispatch.structs.get(event);
+    let mut outputs = Vec::new();
+    for param in params {
+        let key = if cancel && is_cancel_flag(param) {
+            "cancelled".to_owned()
+        } else {
+            param.param.clone()
+        };
+        if fields
+            .and_then(|fields| fields.get(&key))
+            .map(String::as_str)
+            != Some(param.ty.as_str())
+        {
+            return Err(format!(
+                "output `{key}`: `{event}` has no `{}` field of that name",
+                param.ty
+            ));
+        }
+        outputs.push(Output {
+            key,
+            ty: param.ty.clone(),
+        });
+    }
+    if cancel && !outputs.iter().any(|output| output.key == "cancelled") {
+        if fields
+            .and_then(|fields| fields.get("cancelled"))
+            .map(String::as_str)
+            != Some("bool")
+        {
+            return Err(format!("`{event}` has no `cancelled: bool` field"));
+        }
+        outputs.push(Output {
+            key: "cancelled".to_owned(),
+            ty: "bool".to_owned(),
+        });
+    }
+    Ok(outputs)
 }
 
 /// Decides whether the hook `name` can be emitted, and what its method contains.
 fn plan<'a>(
     ir: &'a Ir,
     sigs: &'a [HookSig],
+    dispatch: &DispatchSigs,
     name: &str,
     plain: &Plain,
 ) -> Result<Method<'a>, String> {
@@ -137,9 +249,14 @@ fn plan<'a>(
         ));
     }
 
+    let outputs = outputs_of(hook, sig, cancel, dispatch)?;
     let mut fields = Vec::new();
     for arg in &hook.arguments {
         if cancel && arg.name == "cancelled" {
+            continue;
+        }
+        if outputs.iter().any(|output| output.key == arg.name) {
+            // An output is read from its state (see `turn_body`), not from the argument's value.
             continue;
         }
         let mapped = map_type(&arg.rust_type)
@@ -172,6 +289,7 @@ fn plan<'a>(
         hook,
         sig,
         fields,
+        outputs,
         cancel,
     })
 }
@@ -250,7 +368,10 @@ pub fn convertible(ty: &TypeIr, plain: &Plain) -> bool {
 /// API, and every type the signatures name from the mod API.
 fn imports(methods: &[Method<'_>]) -> String {
     let mut out = String::from("use crate::host::LuaHost;\n");
-    if methods.iter().any(|method| !method.fields.is_empty()) {
+    if methods
+        .iter()
+        .any(|method| !method.fields.is_empty() || !method.outputs.is_empty())
+    {
         out.push_str("use event_horizon_lua_convert::scalar::ToLuaValue;\n");
     }
 
@@ -340,15 +461,59 @@ fn method_text(method: &Method<'_>) -> String {
     if let Some(host) = &sig.host_name {
         out.push_str(&format!("        let _ = &{host};\n"));
     }
-    if method.fields.is_empty() {
+    if method.fields.is_empty() && method.outputs.is_empty() {
         out.push_str(&format!("        let _ = &{};\n", sig.event_name));
     }
-    if method.cancel {
-        out.push_str(CANCEL_NOTE);
-        out.push_str("        let mut cancel = false;\n");
+    if method.outputs.is_empty() {
+        out.push_str("        self.dispatch(\n");
+        out.push_str(&format!("            {:?},\n", method.hook.name));
+        out.push_str("            &|lua| {\n");
+        out.push_str("                let data = lua.create_table()?;\n");
+        for (field, expr) in &method.fields {
+            out.push_str(&format!(
+                "                data.raw_set({field:?}, {expr})?;\n"
+            ));
+        }
+        out.push_str("                crate::dispatch::new_event(lua, data, &[])\n");
+        out.push_str("            },\n");
+        out.push_str("            &mut |_, _| true,\n");
+        out.push_str("        );\n");
+    } else {
+        out.push_str(&turn_body(method));
     }
-    out.push_str("        self.dispatch(\n");
-    out.push_str(&format!("            {:?},\n", method.hook.name));
+    out.push_str("    }\n");
+    out
+}
+
+/// The body of a hook with outputs. Each output's current value is a `RefCell` that starts as the
+/// event's field. The event table gets the current values as data and the output keys as writable
+/// keys. After each mod's turn `accept` takes the value the mod wrote, if it converts. A cancel
+/// hook's flag is also the value its `is_cancelled` test reads. At the end the final values are
+/// written back, and a cancel hook returns the [`Flow`] of its final flag.
+fn turn_body(method: &Method<'_>) -> String {
+    let event = &method.sig.event_name;
+    let hook = &method.hook.name;
+    let mut out = String::new();
+    for output in &method.outputs {
+        if output.ty.starts_with("Option<") {
+            out.push_str(&format!(
+                "        // `{}` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).\n",
+                output.key
+            ));
+        }
+        out.push_str(&format!(
+            "        let out_{key} = std::cell::RefCell::new({event}.{key});\n",
+            key = output.key
+        ));
+    }
+    let is_cancelled = if method.cancel {
+        "&|| *out_cancelled.borrow()"
+    } else {
+        "&|| false"
+    };
+    out.push_str("        self.dispatch_turns(\n");
+    out.push_str(&format!("            {hook:?},\n"));
+    out.push_str(&format!("            {is_cancelled},\n"));
     out.push_str("            &|lua| {\n");
     out.push_str("                let data = lua.create_table()?;\n");
     for (field, expr) in &method.fields {
@@ -356,32 +521,53 @@ fn method_text(method: &Method<'_>) -> String {
             "                data.raw_set({field:?}, {expr})?;\n"
         ));
     }
-    if method.cancel {
-        out.push_str("                crate::dispatch::new_event(lua, data, &[\"cancel\"])\n");
-        out.push_str("            },\n");
-        out.push_str("            &mut |_, answered| {\n");
-        out.push_str("                if matches!(answered.answer(\"cancel\"), mlua::Value::Boolean(true)) {\n");
-        out.push_str("                    cancel = true;\n");
-        out.push_str("                }\n");
-        out.push_str("                !cancel\n");
-        out.push_str("            },\n");
-        out.push_str("        );\n");
-        out.push_str("        if cancel { Flow::Cancel } else { Flow::Continue }\n");
-    } else {
-        out.push_str("                crate::dispatch::new_event(lua, data, &[])\n");
-        out.push_str("            },\n");
-        out.push_str("            &mut |_, _| true,\n");
-        out.push_str("        );\n");
+    for output in &method.outputs {
+        out.push_str(&format!(
+            "                data.raw_set({key:?}, out_{key}.borrow().to_lua_value(lua)?)?;\n",
+            key = output.key
+        ));
     }
-    out.push_str("    }\n");
+    let keys: Vec<String> = method
+        .outputs
+        .iter()
+        .map(|output| format!("{:?}", output.key))
+        .collect();
+    out.push_str(&format!(
+        "                crate::dispatch::new_event(lua, data, &[{}])\n",
+        keys.join(", ")
+    ));
+    out.push_str("            },\n");
+    out.push_str("            &mut |id, answered| {\n");
+    for output in &method.outputs {
+        out.push_str(&format!(
+            "                crate::dispatch::accept(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
+            key = output.key
+        ));
+    }
+    out.push_str("                true\n");
+    out.push_str("            },\n");
+    out.push_str("        );\n");
+    for output in &method.outputs {
+        out.push_str(&format!(
+            "        {event}.{key} = out_{key}.into_inner();\n",
+            key = output.key
+        ));
+    }
+    if method.cancel {
+        out.push_str(&format!(
+            "        if {event}.cancelled {{ Flow::Cancel }} else {{ Flow::Continue }}\n"
+        ));
+    }
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dispatch_sigs::OutputSig;
     use crate::emit_types::Plain;
     use crate::ir::{ArgIr, Side};
+    use std::collections::BTreeMap;
 
     fn arg(name: &str, ty: &str) -> ArgIr {
         ArgIr {
@@ -423,6 +609,19 @@ mod tests {
         }
     }
 
+    /// `emit` for hooks that have no outputs: each hook of `ir` is given an empty output list.
+    fn emit_plain(ir: &Ir, sigs: &[HookSig], hooks: &[&str], plain: &Plain) -> Emitted {
+        let dispatch = DispatchSigs {
+            hooks: ir
+                .hooks
+                .iter()
+                .map(|hook| (hook.name.clone(), Some(Vec::new())))
+                .collect(),
+            structs: BTreeMap::new(),
+        };
+        emit(ir, sigs, &dispatch, hooks, plain)
+    }
+
     fn ir(hooks: Vec<HookIr>) -> Ir {
         Ir {
             hooks,
@@ -462,6 +661,46 @@ mod tests {
         )])
     }
 
+    /// The dispatch of `block_receive_game`: its `cancel` output and the `cancelled` field.
+    fn receive_dispatch() -> DispatchSigs {
+        DispatchSigs {
+            hooks: [(
+                "block_receive_game".to_owned(),
+                Some(vec![OutputSig {
+                    copies_cancel: true,
+                    param: "cancel".to_owned(),
+                    ty: "bool".to_owned(),
+                }]),
+            )]
+            .into(),
+            structs: [(
+                "BlockReceiveGameEvent".to_owned(),
+                [("cancelled".to_owned(), "bool".to_owned())].into(),
+            )]
+            .into(),
+        }
+    }
+
+    /// The dispatch of `compute_fov`: its `degrees` output and the event's field.
+    fn compute_fov_dispatch() -> DispatchSigs {
+        DispatchSigs {
+            hooks: [(
+                "compute_fov".to_owned(),
+                Some(vec![OutputSig {
+                    copies_cancel: false,
+                    param: "degrees".to_owned(),
+                    ty: "f32".to_owned(),
+                }]),
+            )]
+            .into(),
+            structs: [(
+                "ComputeFovEvent".to_owned(),
+                [("degrees".to_owned(), "f32".to_owned())].into(),
+            )]
+            .into(),
+        }
+    }
+
     fn receive_sig() -> HookSig {
         sig(
             "block_receive_game",
@@ -474,7 +713,7 @@ mod tests {
 
     #[test]
     fn a_listen_hook_gets_a_golden_method() {
-        let out = emit(
+        let out = emit_plain(
             &step_ir(),
             &[step_sig()],
             &["block_step_on"],
@@ -520,10 +759,11 @@ impl mod_api::Hooks for LuaHost {
     }
 
     #[test]
-    fn a_cancel_hook_answers_with_cancel_and_returns_flow() {
+    fn a_cancel_hook_answers_with_cancelled_and_returns_flow() {
         let out = emit(
             &receive_ir(),
             &[receive_sig()],
+            &receive_dispatch(),
             &["block_receive_game"],
             &Plain::default(),
         );
@@ -532,20 +772,202 @@ impl mod_api::Hooks for LuaHost {
             "use mod_api::{BlockReceiveGameEvent, Flow, ServerHost};\n",
             "    fn block_receive_game(&self, host: &mut dyn ServerHost, event_: &mut BlockReceiveGameEvent<'_>) -> Flow {\n",
             "        let _ = &host;\n",
-            "        let mut cancel = false;\n",
-            "                crate::dispatch::new_event(lua, data, &[\"cancel\"])\n",
-            "                if matches!(answered.answer(\"cancel\"), mlua::Value::Boolean(true)) {\n",
-            "                !cancel\n",
-            "        if cancel { Flow::Cancel } else { Flow::Continue }\n",
+            "        let out_cancelled = std::cell::RefCell::new(event_.cancelled);\n",
+            "        self.dispatch_turns(\n            \"block_receive_game\",\n            &|| *out_cancelled.borrow(),\n",
+            "                data.raw_set(\"cancelled\", out_cancelled.borrow().to_lua_value(lua)?)?;\n",
+            "                crate::dispatch::new_event(lua, data, &[\"cancelled\"])\n",
+            "                crate::dispatch::accept(&out_cancelled, id, \"block_receive_game\", \"cancelled\", &answered.answer(\"cancelled\"));\n",
+            "        event_.cancelled = out_cancelled.into_inner();\n",
+            "        if event_.cancelled { Flow::Cancel } else { Flow::Continue }\n",
         ] {
             assert!(text.contains(piece), "missing {piece:?} in:\n{text}");
         }
         assert!(
-            !text.contains("raw_set(\"cancelled\""),
-            "the answer is not a table field"
+            !text.contains("\"cancel\""),
+            "the answer key is `cancelled`:\n{text}"
         );
         assert!(text.contains("data.raw_set(\"pos\", event_.pos.to_lua_value(lua)?)?;"));
         syn::parse_file(text).expect("the cancel text parses");
+    }
+
+    #[test]
+    fn a_scalar_output_hook_gets_a_golden_method() {
+        let ir = ir(vec![hook(
+            "compute_fov",
+            Kind::Listen,
+            vec![
+                arg("partial", "f32"),
+                arg("camera", "[f64; 3]"),
+                arg("degrees", "f32"),
+            ],
+        )]);
+        let sigs = [sig(
+            "compute_fov",
+            Some(("host", "&dyn ClientHost")),
+            "event",
+            "ComputeFovEvent",
+            None,
+        )];
+        let out = emit(
+            &ir,
+            &sigs,
+            &compute_fov_dispatch(),
+            &["compute_fov"],
+            &Plain::default(),
+        );
+        let expected = r#"// @generated by event-horizon-lua-gen from surface abc123: do not edit.
+use crate::host::LuaHost;
+use event_horizon_lua_convert::scalar::ToLuaValue;
+use mod_api::{ClientHost, ComputeFovEvent};
+
+impl mod_api::Hooks for LuaHost {
+    fn subscribed(&self) -> &'static [Option<mod_api::HookId>] {
+        self.subscribed_slice()
+    }
+
+    fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+        self.on_register()
+    }
+
+    fn listeners(&self) -> &'static [mod_api::Listener] {
+        self.listeners_slice()
+    }
+
+    fn compute_fov(&self, host: &dyn ClientHost, event: &mut ComputeFovEvent) {
+        let _ = &host;
+        let out_degrees = std::cell::RefCell::new(event.degrees);
+        self.dispatch_turns(
+            "compute_fov",
+            &|| false,
+            &|lua| {
+                let data = lua.create_table()?;
+                data.raw_set("partial", event.partial.to_lua_value(lua)?)?;
+                data.raw_set("camera", event.camera.to_lua_value(lua)?)?;
+                data.raw_set("degrees", out_degrees.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["degrees"])
+            },
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_degrees, id, "compute_fov", "degrees", &answered.answer("degrees"));
+                true
+            },
+        );
+        event.degrees = out_degrees.into_inner();
+    }
+}
+"#;
+        assert_eq!(out.text, expected);
+        assert_eq!(out.emitted, ["compute_fov"]);
+        assert_eq!(out.output_types.get("f32"), Some(&1));
+        syn::parse_file(&out.text).expect("the golden text parses");
+    }
+
+    #[test]
+    fn an_option_output_is_documented_as_assign_only() {
+        let ir = ir(vec![hook(
+            "pick_thing",
+            Kind::Listen,
+            vec![arg("value", "Option<u32>")],
+        )]);
+        let sigs = [sig("pick_thing", None, "event", "PickThingEvent<'_>", None)];
+        let dispatch = DispatchSigs {
+            hooks: [(
+                "pick_thing".to_owned(),
+                Some(vec![OutputSig {
+                    copies_cancel: false,
+                    param: "value".to_owned(),
+                    ty: "Option<u32>".to_owned(),
+                }]),
+            )]
+            .into(),
+            structs: [(
+                "PickThingEvent".to_owned(),
+                [("value".to_owned(), "Option<u32>".to_owned())].into(),
+            )]
+            .into(),
+        };
+        let out = emit(&ir, &sigs, &dispatch, &["pick_thing"], &Plain::default());
+        assert!(
+            out.text.contains("setting None is not supported yet"),
+            "{}",
+            out.text
+        );
+        assert!(out.text.contains("event.value = out_value.into_inner();"));
+        syn::parse_file(&out.text).expect("the text parses");
+    }
+
+    #[test]
+    fn an_output_the_conversion_layer_lacks_skips_its_hook_with_the_type() {
+        let ir = ir(vec![hook("vec_out", Kind::Listen, vec![])]);
+        let sigs = [sig("vec_out", None, "event", "VecOutEvent", None)];
+        let dispatch = DispatchSigs {
+            hooks: [(
+                "vec_out".to_owned(),
+                Some(vec![OutputSig {
+                    copies_cancel: false,
+                    param: "lines".to_owned(),
+                    ty: "Vec<String>".to_owned(),
+                }]),
+            )]
+            .into(),
+            structs: BTreeMap::new(),
+        };
+        let out = emit(&ir, &sigs, &dispatch, &["vec_out"], &Plain::default());
+        assert!(out.emitted.is_empty());
+        assert_eq!(out.skipped[0].1, "output: Vec<String>");
+    }
+
+    #[test]
+    fn an_output_without_a_matching_event_field_skips_its_hook() {
+        let ir = ir(vec![hook("mismatch", Kind::Listen, vec![])]);
+        let sigs = [sig("mismatch", None, "event", "MismatchEvent", None)];
+        let dispatch = DispatchSigs {
+            hooks: [(
+                "mismatch".to_owned(),
+                Some(vec![OutputSig {
+                    copies_cancel: false,
+                    param: "ratio".to_owned(),
+                    ty: "f32".to_owned(),
+                }]),
+            )]
+            .into(),
+            structs: [(
+                "MismatchEvent".to_owned(),
+                [("ratio".to_owned(), "f64".to_owned())].into(),
+            )]
+            .into(),
+        };
+        let out = emit(&ir, &sigs, &dispatch, &["mismatch"], &Plain::default());
+        assert!(out.emitted.is_empty());
+        assert!(out.skipped[0].1.contains("`ratio`"), "{:?}", out.skipped);
+    }
+
+    #[test]
+    fn output_types_are_the_supported_set() {
+        for ty in [
+            "bool",
+            "i32",
+            "u32",
+            "f32",
+            "f64",
+            "String",
+            "Text",
+            "[f64;3]",
+            "Option<u32>",
+            "Option<Text>",
+            "Option<bool>",
+        ] {
+            assert!(output_supported(ty), "{ty}");
+        }
+        for ty in [
+            "Vec<String>",
+            "Option<Option<u32>>",
+            "TriState",
+            "&mut dyn Host",
+            "Option<ItemStack>",
+            "u64",
+        ] {
+            assert!(!output_supported(ty), "{ty}");
+        }
     }
 
     #[test]
@@ -555,7 +977,7 @@ impl mod_api::Hooks for LuaHost {
             Kind::Listen,
             vec![arg("level", "&'a LevelRef"), arg("kind_name", "&'a str")],
         )]);
-        let out = emit(
+        let out = emit_plain(
             &ir,
             &[sig(
                 "level_thing",
@@ -590,7 +1012,7 @@ impl mod_api::Hooks for LuaHost {
             "ServerThingEvent<'_>",
             None,
         )];
-        let without = emit(&ir, &sigs, &["server_thing"], &Plain::default());
+        let without = emit_plain(&ir, &sigs, &["server_thing"], &Plain::default());
         assert!(without.emitted.is_empty());
         assert!(
             without.skipped[0].1.contains("no Lua conversion"),
@@ -599,7 +1021,7 @@ impl mod_api::Hooks for LuaHost {
         );
 
         let plain = Plain::from_paths(["LifecycleContext"]);
-        let with = emit(&ir, &sigs, &["server_thing"], &plain);
+        let with = emit_plain(&ir, &sigs, &["server_thing"], &plain);
         assert_eq!(with.emitted, ["server_thing"]);
         assert!(
             with.text
@@ -621,7 +1043,7 @@ impl mod_api::Hooks for LuaHost {
             sig("only_trait", None, "event", "OnlyTraitEvent<'_>", None),
             sig("collects", None, "event", "CollectsEvent<'_>", None),
         ];
-        let out = emit(
+        let out = emit_plain(
             &ir,
             &sigs,
             &["only_surface", "only_trait", "collects"],
@@ -647,7 +1069,7 @@ impl mod_api::Hooks for LuaHost {
 
     #[test]
     fn a_cancel_hook_that_returns_nothing_is_skipped() {
-        let out = emit(
+        let out = emit_plain(
             &receive_ir(),
             &[sig(
                 "block_receive_game",
@@ -673,13 +1095,13 @@ impl mod_api::Hooks for LuaHost {
             sig("a_step", None, "event", "AStepEvent<'_>", None),
             sig("b_step", None, "event", "BStepEvent<'_>", None),
         ];
-        let forward = emit(
+        let forward = emit_plain(
             &ir,
             &sigs,
             &["a_step", "b_step", "z_missing", "y_missing"],
             &Plain::default(),
         );
-        let backward = emit(
+        let backward = emit_plain(
             &ir,
             &sigs,
             &["y_missing", "z_missing", "b_step", "a_step"],
@@ -688,7 +1110,7 @@ impl mod_api::Hooks for LuaHost {
         assert_eq!(forward, backward);
         assert_eq!(
             forward,
-            emit(
+            emit_plain(
                 &ir,
                 &sigs,
                 &["a_step", "b_step", "z_missing", "y_missing"],
@@ -705,7 +1127,7 @@ impl mod_api::Hooks for LuaHost {
 
     #[test]
     fn a_hook_with_no_arguments_keeps_its_event_in_use() {
-        let out = emit(
+        let out = emit_plain(
             &ir(vec![hook("bare", Kind::Listen, vec![])]),
             &[sig("bare", None, "event", "BareEvent<'_>", None)],
             &["bare"],
@@ -732,12 +1154,18 @@ impl mod_api::Hooks for LuaHost {
         let sigs = crate::trait_sigs::parse(&source).expect("the trait parses");
         let names: Vec<&str> = ir.hooks.iter().map(|hook| hook.name.as_str()).collect();
 
-        let out = emit(&ir, &sigs, &names, &Plain::default());
+        let dispatch = crate::dispatch_sigs::parse(&source).expect("the dispatch functions parse");
+        let out = emit(&ir, &sigs, &dispatch, &names, &Plain::default());
         syn::parse_file(&out.text).expect("the emitted file parses");
 
         let mut table = std::collections::BTreeMap::<String, usize>::new();
         for (_, reason) in &out.skipped {
             *table.entry(group_key(reason)).or_default() += 1;
+        }
+        for (name, reason) in &out.skipped {
+            if reason.contains("field of that name") {
+                println!("no matching event field: {name}: {reason}");
+            }
         }
         println!("hooks asked: {}", names.len());
         println!("emitted: {}", out.emitted.len());

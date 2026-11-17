@@ -18,26 +18,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn animal_tame(&self, host: &mut dyn ServerHost, event: &mut AnimalTameEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "animal_tame",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("tamer", event.tamer.to_lua_value(lua)?)?;
                 data.raw_set("tamer_entity_id", event.tamer_entity_id.to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "animal_tame", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn anvil_damaged(&self, host: &mut dyn ServerHost, event: &mut AnvilDamagedEvent<'_>) {
@@ -58,57 +58,57 @@ impl mod_api::Hooks for LuaHost {
 
     fn armor_stand_manipulate(&self, host: &mut dyn ServerHost, event: &mut ArmorStandManipulateEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "armor_stand_manipulate",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("stand_id", event.stand_id.to_lua_value(lua)?)?;
                 data.raw_set("slot", event.slot.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "armor_stand_manipulate", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn attack_entity(&self, host: &mut dyn ServerHost, event: &mut AttackEntityEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "attack_entity",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "attack_entity", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn baby_entity_spawn(&self, host: &mut dyn ServerHost, event: &mut BabyEntitySpawnEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "baby_entity_spawn",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("parent", event.parent.to_lua_value(lua)?)?;
@@ -116,16 +116,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "baby_entity_spawn", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn beacon_state_change(&self, host: &mut dyn ServerHost, event: &mut BeaconStateChangeEvent<'_>) {
@@ -145,25 +145,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn bell_ring(&self, level: &dyn LevelHost, event: &mut BellRingEvent) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "bell_ring",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "bell_ring", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_break_progress_update(&self, host: &mut dyn ServerHost, event: &mut BlockBreakProgressUpdateEvent<'_>) {
@@ -184,24 +184,24 @@ impl mod_api::Hooks for LuaHost {
 
     fn block_burn(&self, level: &dyn LevelHost, event: &mut BlockBurnEvent) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "block_burn",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "block_burn", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_cook(&self, host: &mut dyn ServerHost, event: &mut BlockCookEvent<'_>) {
@@ -267,73 +267,73 @@ impl mod_api::Hooks for LuaHost {
 
     fn block_ignite(&self, level: &dyn LevelHost, event: &mut BlockIgniteEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "block_ignite",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("cause", event.cause.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "block_ignite", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_lock_check(&self, host: &mut dyn ServerHost, event: &mut BlockLockCheckEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "block_lock_check",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "block_lock_check", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_receive_game(&self, host: &mut dyn ServerHost, event_: &mut BlockReceiveGameEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event_.cancelled);
+        self.dispatch_turns(
             "block_receive_game",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event_.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event_.pos.to_lua_value(lua)?)?;
                 data.raw_set("block", event_.block.to_string().to_lua_value(lua)?)?;
                 data.raw_set("event", event_.event.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "block_receive_game", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event_.cancelled = out_cancelled.into_inner();
+        if event_.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn block_shear_entity(&self, host: &mut dyn ServerHost, event: &mut BlockShearEntityEvent<'_>) {
@@ -354,26 +354,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn block_spread(&self, level: &dyn LevelHost, event: &mut BlockSpreadEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "block_spread",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "block_spread", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn brewing_complete(&self, host: &mut dyn ServerHost, event: &mut BrewingCompleteEvent) {
@@ -419,42 +419,51 @@ impl mod_api::Hooks for LuaHost {
 
     fn bucket_empty(&self, host: &mut dyn ServerHost, event: &mut BucketEmptyEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "bucket_empty",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("fluid", event.fluid.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "bucket_empty", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn calculate_player_turn(&self, host: &dyn ClientHost, event: &mut CalculatePlayerTurnEvent) {
         let _ = &host;
-        self.dispatch(
+        let out_mouse_sensitivity = std::cell::RefCell::new(event.mouse_sensitivity);
+        let out_cinematic_camera_enabled = std::cell::RefCell::new(event.cinematic_camera_enabled);
+        self.dispatch_turns(
             "calculate_player_turn",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
                 data.raw_set("player_uuid", event.player_uuid.to_lua_value(lua)?)?;
-                data.raw_set("mouse_sensitivity", event.mouse_sensitivity.to_lua_value(lua)?)?;
-                data.raw_set("cinematic_camera_enabled", event.cinematic_camera_enabled.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("mouse_sensitivity", out_mouse_sensitivity.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cinematic_camera_enabled", out_cinematic_camera_enabled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["mouse_sensitivity", "cinematic_camera_enabled"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_mouse_sensitivity, id, "calculate_player_turn", "mouse_sensitivity", &answered.answer("mouse_sensitivity"));
+                crate::dispatch::accept(&out_cinematic_camera_enabled, id, "calculate_player_turn", "cinematic_camera_enabled", &answered.answer("cinematic_camera_enabled"));
+                true
+            },
         );
+        event.mouse_sensitivity = out_mouse_sensitivity.into_inner();
+        event.cinematic_camera_enabled = out_cinematic_camera_enabled.into_inner();
     }
 
     fn campfire_start(&self, host: &mut dyn ServerHost, event: &mut CampfireStartEvent<'_>) {
@@ -473,10 +482,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn cauldron_level_changed(&self, level: &dyn LevelHost, event: &mut CauldronLevelChangedEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "cauldron_level_changed",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
@@ -485,40 +494,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("from_level", event.from_level.to_lua_value(lua)?)?;
                 data.raw_set("to_level", event.to_level.to_lua_value(lua)?)?;
                 data.raw_set("reason", event.reason.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "cauldron_level_changed", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn chat_recipient(&self, host: &mut dyn ServerHost, event: &mut ChatRecipientEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "chat_recipient",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("sender", event.sender.to_lua_value(lua)?)?;
                 data.raw_set("sender_name", event.sender_name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("message", event.message.to_string().to_lua_value(lua)?)?;
                 data.raw_set("recipient", event.recipient.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "chat_recipient", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn chat_suggestion_applied(&self, host: &dyn ClientHost, event: &mut ChatSuggestionAppliedEvent<'_>) {
@@ -653,23 +662,23 @@ impl mod_api::Hooks for LuaHost {
 
     fn client_mining_predict(&self, host: &dyn ClientHost, event: &mut ClientMiningPredictEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "client_mining_predict",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("prediction", event.prediction.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "client_mining_predict", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn client_pause_change_post(&self, host: &mut dyn ClientHost, event: &mut ClientPauseChangePostEvent) {
@@ -687,23 +696,23 @@ impl mod_api::Hooks for LuaHost {
 
     fn client_pause_change_pre(&self, host: &mut dyn ClientHost, event: &mut ClientPauseChangePreEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "client_pause_change_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("paused", event.paused.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "client_pause_change_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn client_player_change_game_type(&self, host: &mut dyn ClientHost, event: &mut ClientPlayerChangeGameTypeEvent) {
@@ -847,23 +856,23 @@ impl mod_api::Hooks for LuaHost {
 
     fn command(&self, host: &mut dyn ClientHost, event: &mut CommandEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "command",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("command", event.command.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "command", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn compost_item(&self, host: &mut dyn ServerHost, event: &mut CompostItemEvent<'_>) {
@@ -882,17 +891,23 @@ impl mod_api::Hooks for LuaHost {
 
     fn compute_fov(&self, host: &dyn ClientHost, event: &mut ComputeFovEvent) {
         let _ = &host;
-        self.dispatch(
+        let out_degrees = std::cell::RefCell::new(event.degrees);
+        self.dispatch_turns(
             "compute_fov",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("partial", event.partial.to_lua_value(lua)?)?;
                 data.raw_set("camera", event.camera.to_lua_value(lua)?)?;
-                data.raw_set("degrees", event.degrees.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("degrees", out_degrees.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["degrees"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_degrees, id, "compute_fov", "degrees", &answered.answer("degrees"));
+                true
+            },
         );
+        event.degrees = out_degrees.into_inner();
     }
 
     fn config_loading(&self, host: HostSide, event: &mut ConfigLoadingEvent<'_>) {
@@ -951,26 +966,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn container_opened(&self, host: &mut dyn ServerHost, event: &mut ContainerOpenedEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "container_opened",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "container_opened", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn crafter_craft(&self, host: &mut dyn ServerHost, event: &mut CrafterCraftEvent<'_>) {
@@ -989,10 +1004,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn creative_slot(&self, host: &mut dyn ServerHost, event: &mut CreativeSlotEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "creative_slot",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -1000,16 +1015,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("slot", event.slot.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 data.raw_set("count", event.count.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "creative_slot", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn creeper_ignite(&self, host: &mut dyn ServerHost, event: &mut CreeperIgniteEvent<'_>) {
@@ -1043,18 +1058,27 @@ impl mod_api::Hooks for LuaHost {
 
     fn critical_hit(&self, host: &mut dyn ServerHost, event: &mut CriticalHitEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        let out_critical = std::cell::RefCell::new(event.critical);
+        let out_damage_multiplier = std::cell::RefCell::new(event.damage_multiplier);
+        self.dispatch_turns(
             "critical_hit",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("target_kind", event.target_kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("vanilla_critical", event.vanilla_critical.to_lua_value(lua)?)?;
-                data.raw_set("critical", event.critical.to_lua_value(lua)?)?;
-                data.raw_set("damage_multiplier", event.damage_multiplier.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("critical", out_critical.borrow().to_lua_value(lua)?)?;
+                data.raw_set("damage_multiplier", out_damage_multiplier.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["critical", "damage_multiplier"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_critical, id, "critical_hit", "critical", &answered.answer("critical"));
+                crate::dispatch::accept(&out_damage_multiplier, id, "critical_hit", "damage_multiplier", &answered.answer("damage_multiplier"));
+                true
+            },
         );
+        event.critical = out_critical.into_inner();
+        event.damage_multiplier = out_damage_multiplier.into_inner();
     }
 
     fn custom_spawner_tick(&self, host: &mut dyn ServerHost, event: &mut CustomSpawnerTickEvent<'_>) {
@@ -1074,43 +1098,61 @@ impl mod_api::Hooks for LuaHost {
 
     fn customize_boss_event_progress(&self, host: &dyn ClientHost, event: &mut CustomizeBossEventProgressEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_x = std::cell::RefCell::new(event.x);
+        let out_y = std::cell::RefCell::new(event.y);
+        let out_increment = std::cell::RefCell::new(event.increment);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "customize_boss_event_progress",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("bar", event.bar.to_lua_value(lua)?)?;
-                data.raw_set("x", event.x.to_lua_value(lua)?)?;
-                data.raw_set("y", event.y.to_lua_value(lua)?)?;
-                data.raw_set("increment", event.increment.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("x", out_x.borrow().to_lua_value(lua)?)?;
+                data.raw_set("y", out_y.borrow().to_lua_value(lua)?)?;
+                data.raw_set("increment", out_increment.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["x", "y", "increment", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_x, id, "customize_boss_event_progress", "x", &answered.answer("x"));
+                crate::dispatch::accept(&out_y, id, "customize_boss_event_progress", "y", &answered.answer("y"));
+                crate::dispatch::accept(&out_increment, id, "customize_boss_event_progress", "increment", &answered.answer("increment"));
+                crate::dispatch::accept(&out_cancelled, id, "customize_boss_event_progress", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.x = out_x.into_inner();
+        event.y = out_y.into_inner();
+        event.increment = out_increment.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn customize_chat_overlay(&self, host: &mut dyn ClientHost, event: &mut CustomizeChatOverlayEvent) {
         let _ = &host;
-        self.dispatch(
+        let out_x = std::cell::RefCell::new(event.x);
+        let out_y = std::cell::RefCell::new(event.y);
+        self.dispatch_turns(
             "customize_chat_overlay",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("gui_width", event.gui_width.to_lua_value(lua)?)?;
                 data.raw_set("gui_height", event.gui_height.to_lua_value(lua)?)?;
                 data.raw_set("focused", event.focused.to_lua_value(lua)?)?;
-                data.raw_set("x", event.x.to_lua_value(lua)?)?;
-                data.raw_set("y", event.y.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("x", out_x.borrow().to_lua_value(lua)?)?;
+                data.raw_set("y", out_y.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["x", "y"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_x, id, "customize_chat_overlay", "x", &answered.answer("x"));
+                crate::dispatch::accept(&out_y, id, "customize_chat_overlay", "y", &answered.answer("y"));
+                true
+            },
         );
+        event.x = out_x.into_inner();
+        event.y = out_y.into_inner();
     }
 
     fn data_maps_updated(&self, host: HostSide, event: &mut DataMapsUpdatedEvent<'_>) {
@@ -1156,41 +1198,47 @@ impl mod_api::Hooks for LuaHost {
 
     fn dragon_egg_form(&self, level: &dyn LevelHost, event: &mut DragonEggFormEvent) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "dragon_egg_form",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "dragon_egg_form", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn enchanted_entity_loot(&self, host: &mut dyn ServerHost, event: &mut EnchantedEntityLootEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        let out_level = std::cell::RefCell::new(event.level);
+        self.dispatch_turns(
             "enchanted_entity_loot",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
                 data.raw_set("attacker", event.attacker.to_lua_value(lua)?)?;
                 data.raw_set("enchantment", event.enchantment.to_lua_value(lua)?)?;
-                data.raw_set("level", event.level.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("level", out_level.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["level"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_level, id, "enchanted_entity_loot", "level", &answered.answer("level"));
+                true
+            },
         );
+        event.level = out_level.into_inner();
     }
 
     fn entities_load(&self, host: &mut dyn ServerHost, event: &mut EntitiesLoadEvent<'_>) {
@@ -1349,27 +1397,33 @@ impl mod_api::Hooks for LuaHost {
 
     fn entity_invulnerability_check(&self, level: LevelSide, event: &mut EntityInvulnerabilityCheckEvent<'_>) {
         let _ = &level;
-        self.dispatch(
+        let out_invulnerable = std::cell::RefCell::new(event.invulnerable);
+        self.dispatch_turns(
             "entity_invulnerability_check",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
                 data.raw_set("original_invulnerability", event.original_invulnerability.to_lua_value(lua)?)?;
-                data.raw_set("invulnerable", event.invulnerable.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("invulnerable", out_invulnerable.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["invulnerable"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_invulnerable, id, "entity_invulnerability_check", "invulnerable", &answered.answer("invulnerable"));
+                true
+            },
         );
+        event.invulnerable = out_invulnerable.into_inner();
     }
 
     fn entity_join_level(&self, host: &mut dyn ServerHost, event: &mut EntityJoinLevelEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "entity_join_level",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
@@ -1377,16 +1431,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("loaded_from_disk", event.loaded_from_disk.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "entity_join_level", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_leave_level(&self, host: &mut dyn ServerHost, event: &mut EntityLeaveLevelEvent<'_>) {
@@ -1406,24 +1460,30 @@ impl mod_api::Hooks for LuaHost {
 
     fn entity_mob_griefing(&self, host: &dyn Host, event: &mut EntityMobGriefingEvent) {
         let _ = &host;
-        self.dispatch(
+        let out_can_grief = std::cell::RefCell::new(event.can_grief);
+        self.dispatch_turns(
             "entity_mob_griefing",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
-                data.raw_set("can_grief", event.can_grief.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("can_grief", out_can_grief.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["can_grief"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_can_grief, id, "entity_mob_griefing", "can_grief", &answered.answer("can_grief"));
+                true
+            },
         );
+        event.can_grief = out_can_grief.into_inner();
     }
 
     fn entity_mount(&self, host: &mut dyn ServerHost, event: &mut EntityMountEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "entity_mount",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
@@ -1432,16 +1492,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("vehicle", event.vehicle.to_lua_value(lua)?)?;
                 data.raw_set("vehicle_kind", event.vehicle_kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("mounting", event.mounting.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "entity_mount", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_portal(&self, host: &mut dyn ServerHost, event: &mut EntityPortalEvent<'_>) {
@@ -1493,24 +1553,24 @@ impl mod_api::Hooks for LuaHost {
 
     fn entity_struck_by_lightning(&self, host: &mut dyn ServerHost, event: &mut EntityStruckByLightningEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "entity_struck_by_lightning",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("bolt", event.bolt.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "entity_struck_by_lightning", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_tame(&self, host: &mut dyn ServerHost, event: &mut EntityTameEvent<'_>) {
@@ -1561,25 +1621,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn entity_tick_pre(&self, host: &mut dyn ServerHost, event: &mut EntityTickPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "entity_tick_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "entity_tick_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_toggle_glide(&self, host: &mut dyn ServerHost, event: &mut EntityToggleGlideEvent<'_>) {
@@ -1599,25 +1659,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn entity_travel_to_dimension(&self, host: &mut dyn ServerHost, event: &mut EntityTravelToDimensionEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "entity_travel_to_dimension",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("cause", event.cause.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "entity_travel_to_dimension", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn entity_unleash(&self, host: &mut dyn ServerHost, event: &mut EntityUnleashEvent<'_>) {
@@ -1650,8 +1710,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn experience_orb_can_merge(&self, host: &mut dyn ServerHost, event: &mut ExperienceOrbCanMergeEvent<'_>) {
         let _ = &host;
-        self.dispatch(
+        let out_can_merge = std::cell::RefCell::new(event.can_merge);
+        self.dispatch_turns(
             "experience_orb_can_merge",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
@@ -1659,19 +1721,23 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
                 data.raw_set("into_value", event.into_value.to_lua_value(lua)?)?;
                 data.raw_set("from_value", event.from_value.to_lua_value(lua)?)?;
-                data.raw_set("can_merge", event.can_merge.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("can_merge", out_can_merge.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["can_merge"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_can_merge, id, "experience_orb_can_merge", "can_merge", &answered.answer("can_merge"));
+                true
+            },
         );
+        event.can_merge = out_can_merge.into_inner();
     }
 
     fn experience_orb_merge(&self, host: &mut dyn ServerHost, event: &mut ExperienceOrbMergeEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "experience_orb_merge",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
@@ -1681,16 +1747,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("into_count", event.into_count.to_lua_value(lua)?)?;
                 data.raw_set("from_value", event.from_value.to_lua_value(lua)?)?;
                 data.raw_set("from_count", event.from_count.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "experience_orb_merge", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn explosion_prime(&self, host: &mut dyn ServerHost, event: &mut ExplosionPrimeEvent) {
@@ -1709,47 +1775,47 @@ impl mod_api::Hooks for LuaHost {
 
     fn explosion_start(&self, host: &mut dyn ServerHost, event: &mut ExplosionStartEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "explosion_start",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("explosion", event.explosion.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "explosion_start", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn farmland_trample(&self, context: &dyn LoopContext, event: &mut FarmlandTrampleEvent) -> Flow {
         let _ = &context;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "farmland_trample",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("state", event.state.to_lua_value(lua)?)?;
                 data.raw_set("distance", event.distance.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "farmland_trample", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn firework_explode(&self, host: &mut dyn ServerHost, event: &mut FireworkExplodeEvent) {
@@ -1782,10 +1848,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn fluid_level_change(&self, level: &dyn LevelHost, event: &mut FluidLevelChangeEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "fluid_level_change",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
@@ -1793,79 +1859,88 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("fluid", event.fluid.to_string().to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "fluid_level_change", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn fluid_tick(&self, level: &dyn LevelHost, event: &mut FluidTickEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "fluid_tick",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("fluid", event.fluid.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "fluid_tick", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn food_level_changed(&self, host: &mut dyn ServerHost, event: &mut FoodLevelChangedEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_to = std::cell::RefCell::new(event.to);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "food_level_changed",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
-                data.raw_set("to", event.to.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("to", out_to.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["to", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_to, id, "food_level_changed", "to", &answered.answer("to"));
+                crate::dispatch::accept(&out_cancelled, id, "food_level_changed", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.to = out_to.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn framerate_limit(&self, host: &dyn ClientHost, event: &mut FramerateLimitEvent) {
         let _ = &host;
-        self.dispatch(
+        let out_limit = std::cell::RefCell::new(event.limit);
+        self.dispatch_turns(
             "framerate_limit",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("focused", event.focused.to_lua_value(lua)?)?;
                 data.raw_set("minimized", event.minimized.to_lua_value(lua)?)?;
                 data.raw_set("in_world", event.in_world.to_lua_value(lua)?)?;
-                data.raw_set("limit", event.limit.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("limit", out_limit.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["limit"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_limit, id, "framerate_limit", "limit", &answered.answer("limit"));
+                true
+            },
         );
+        event.limit = out_limit.into_inner();
     }
 
     fn furnace_burn(&self, host: &mut dyn ServerHost, event: &mut FurnaceBurnEvent<'_>) {
@@ -1943,49 +2018,49 @@ impl mod_api::Hooks for LuaHost {
 
     fn hanging_break(&self, host: &mut dyn ServerHost, event: &mut HangingBreakEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "hanging_break",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "hanging_break", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn hanging_place(&self, host: &mut dyn ServerHost, event: &mut HangingPlaceEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "hanging_place",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "hanging_place", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn hopper_inventory_search(&self, host: &mut dyn ServerHost, event: &mut HopperInventorySearchEvent) {
@@ -2005,26 +2080,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn hopper_pickup_item(&self, level: &dyn LevelHost, event: &mut HopperPickupItemEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "hopper_pickup_item",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 data.raw_set("count", event.count.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "hopper_pickup_item", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn input_key(&self, host: &mut dyn ClientHost, event: &mut InputKeyEvent<'_>) {
@@ -2046,72 +2121,75 @@ impl mod_api::Hooks for LuaHost {
 
     fn interaction_key_mapping_triggered(&self, host: &mut dyn ClientHost, event: &mut InteractionKeyMappingTriggeredEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_swing_hand = std::cell::RefCell::new(event.swing_hand);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "interaction_key_mapping_triggered",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("key", event.key.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 data.raw_set("attempt", event.attempt.to_lua_value(lua)?)?;
-                data.raw_set("swing_hand", event.swing_hand.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("swing_hand", out_swing_hand.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["swing_hand", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_swing_hand, id, "interaction_key_mapping_triggered", "swing_hand", &answered.answer("swing_hand"));
+                crate::dispatch::accept(&out_cancelled, id, "interaction_key_mapping_triggered", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.swing_hand = out_swing_hand.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn inventory_block_start(&self, host: &mut dyn ServerHost, event: &mut InventoryBlockStartEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "inventory_block_start",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "inventory_block_start", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn inventory_move_item(&self, host: &dyn Host, event: &mut InventoryMoveItemEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "inventory_move_item",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
                 data.raw_set("destination", event.destination.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "inventory_move_item", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn item_despawn(&self, host: &mut dyn ServerHost, event: &mut ItemDespawnEvent<'_>) {
@@ -2148,46 +2226,46 @@ impl mod_api::Hooks for LuaHost {
 
     fn key_mapping_pre(&self, host: &mut dyn ClientHost, event: &mut KeyMappingPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "key_mapping_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("mapping", event.mapping.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pressed", event.pressed.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "key_mapping_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn leaves_decay(&self, level: &dyn LevelHost, event: &mut LeavesDecayEvent) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "leaves_decay",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "leaves_decay", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn left_click_empty(&self, host: &mut dyn ClientHost, event: &mut LeftClickEmptyEvent) {
@@ -2244,42 +2322,54 @@ impl mod_api::Hooks for LuaHost {
 
     fn lightning_strike(&self, host: &mut dyn ServerHost, event: &mut LightningStrikeEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "lightning_strike",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("cause", event.cause.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "lightning_strike", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_breathe(&self, context: &dyn LoopContext, event: &mut LivingBreatheEvent<'_>) {
         let _ = &context;
-        self.dispatch(
+        let out_can_breathe = std::cell::RefCell::new(event.can_breathe);
+        let out_consume = std::cell::RefCell::new(event.consume);
+        let out_refill = std::cell::RefCell::new(event.refill);
+        self.dispatch_turns(
             "living_breathe",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("can_breathe", event.can_breathe.to_lua_value(lua)?)?;
-                data.raw_set("consume", event.consume.to_lua_value(lua)?)?;
-                data.raw_set("refill", event.refill.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("can_breathe", out_can_breathe.borrow().to_lua_value(lua)?)?;
+                data.raw_set("consume", out_consume.borrow().to_lua_value(lua)?)?;
+                data.raw_set("refill", out_refill.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["can_breathe", "consume", "refill"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_can_breathe, id, "living_breathe", "can_breathe", &answered.answer("can_breathe"));
+                crate::dispatch::accept(&out_consume, id, "living_breathe", "consume", &answered.answer("consume"));
+                crate::dispatch::accept(&out_refill, id, "living_breathe", "refill", &answered.answer("refill"));
+                true
+            },
         );
+        event.can_breathe = out_can_breathe.into_inner();
+        event.consume = out_consume.into_inner();
+        event.refill = out_refill.into_inner();
     }
 
     fn living_conversion_post(&self, host: &mut dyn ServerHost, event: &mut LivingConversionPostEvent<'_>) {
@@ -2300,25 +2390,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn living_conversion_pre(&self, host: &mut dyn ServerHost, event: &mut LivingConversionPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "living_conversion_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("outcome", event.outcome.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "living_conversion_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_death_post(&self, host: &mut dyn ServerHost, event: &mut LivingDeathPostEvent<'_>) {
@@ -2338,113 +2428,140 @@ impl mod_api::Hooks for LuaHost {
 
     fn living_drown(&self, context: &dyn LoopContext, event: &mut LivingDrownEvent<'_>) -> Flow {
         let _ = &context;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_is_drowning = std::cell::RefCell::new(event.is_drowning);
+        let out_damage_amount = std::cell::RefCell::new(event.damage_amount);
+        let out_bubble_count = std::cell::RefCell::new(event.bubble_count);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "living_drown",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("is_drowning", event.is_drowning.to_lua_value(lua)?)?;
-                data.raw_set("damage_amount", event.damage_amount.to_lua_value(lua)?)?;
-                data.raw_set("bubble_count", event.bubble_count.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("is_drowning", out_is_drowning.borrow().to_lua_value(lua)?)?;
+                data.raw_set("damage_amount", out_damage_amount.borrow().to_lua_value(lua)?)?;
+                data.raw_set("bubble_count", out_bubble_count.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["is_drowning", "damage_amount", "bubble_count", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_is_drowning, id, "living_drown", "is_drowning", &answered.answer("is_drowning"));
+                crate::dispatch::accept(&out_damage_amount, id, "living_drown", "damage_amount", &answered.answer("damage_amount"));
+                crate::dispatch::accept(&out_bubble_count, id, "living_drown", "bubble_count", &answered.answer("bubble_count"));
+                crate::dispatch::accept(&out_cancelled, id, "living_drown", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.is_drowning = out_is_drowning.into_inner();
+        event.damage_amount = out_damage_amount.into_inner();
+        event.bubble_count = out_bubble_count.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_experience_drop(&self, host: &mut dyn ServerHost, event: &mut LivingExperienceDropEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_amount = std::cell::RefCell::new(event.amount);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "living_experience_drop",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("attacking_player", event.attacking_player.to_lua_value(lua)?)?;
                 data.raw_set("original", event.original.to_lua_value(lua)?)?;
-                data.raw_set("amount", event.amount.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("amount", out_amount.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["amount", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_amount, id, "living_experience_drop", "amount", &answered.answer("amount"));
+                crate::dispatch::accept(&out_cancelled, id, "living_experience_drop", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.amount = out_amount.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_fall(&self, context: &dyn LoopContext, event: &mut LivingFallEvent<'_>) -> Flow {
         let _ = &context;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_distance = std::cell::RefCell::new(event.distance);
+        let out_multiplier = std::cell::RefCell::new(event.multiplier);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "living_fall",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("distance", event.distance.to_lua_value(lua)?)?;
-                data.raw_set("multiplier", event.multiplier.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("distance", out_distance.borrow().to_lua_value(lua)?)?;
+                data.raw_set("multiplier", out_multiplier.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["distance", "multiplier", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_distance, id, "living_fall", "distance", &answered.answer("distance"));
+                crate::dispatch::accept(&out_multiplier, id, "living_fall", "multiplier", &answered.answer("multiplier"));
+                crate::dispatch::accept(&out_cancelled, id, "living_fall", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.distance = out_distance.into_inner();
+        event.multiplier = out_multiplier.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_flying_speed(&self, context: &dyn LoopContext, event: &mut LivingFlyingSpeedEvent<'_>) {
         let _ = &context;
-        self.dispatch(
+        let out_speed = std::cell::RefCell::new(event.speed);
+        self.dispatch_turns(
             "living_flying_speed",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("speed", event.speed.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("speed", out_speed.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["speed"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_speed, id, "living_flying_speed", "speed", &answered.answer("speed"));
+                true
+            },
         );
+        event.speed = out_speed.into_inner();
     }
 
     fn living_heal(&self, context: &dyn LoopContext, event: &mut LivingHealEvent) -> Flow {
         let _ = &context;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_amount = std::cell::RefCell::new(event.amount);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "living_heal",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
-                data.raw_set("amount", event.amount.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("amount", out_amount.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["amount", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_amount, id, "living_heal", "amount", &answered.answer("amount"));
+                crate::dispatch::accept(&out_cancelled, id, "living_heal", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.amount = out_amount.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_jump(&self, context: &dyn LoopContext, event: &mut LivingJumpEvent<'_>) {
@@ -2463,40 +2580,52 @@ impl mod_api::Hooks for LuaHost {
 
     fn living_jump_power(&self, context: &dyn LoopContext, event: &mut LivingJumpPowerEvent<'_>) {
         let _ = &context;
-        self.dispatch(
+        let out_power = std::cell::RefCell::new(event.power);
+        self.dispatch_turns(
             "living_jump_power",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("power", event.power.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("power", out_power.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["power"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_power, id, "living_jump_power", "power", &answered.answer("power"));
+                true
+            },
         );
+        event.power = out_power.into_inner();
     }
 
     fn living_speed(&self, context: &dyn LoopContext, event: &mut LivingSpeedEvent<'_>) {
         let _ = &context;
-        self.dispatch(
+        let out_speed = std::cell::RefCell::new(event.speed);
+        self.dispatch_turns(
             "living_speed",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("speed", event.speed.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("speed", out_speed.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["speed"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_speed, id, "living_speed", "speed", &answered.answer("speed"));
+                true
+            },
         );
+        event.speed = out_speed.into_inner();
     }
 
     fn living_use_totem(&self, level: &mut dyn LevelRandomHost, event: &mut LivingUseTotemEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "living_use_totem",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
@@ -2504,31 +2633,37 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("source", event.source.to_lua_value(lua)?)?;
                 data.raw_set("hand", event.hand.to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "living_use_totem", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn living_visibility(&self, host: &dyn Host, event: &mut LivingVisibilityEvent) {
         let _ = &host;
-        self.dispatch(
+        let out_visibility = std::cell::RefCell::new(event.visibility);
+        self.dispatch_turns(
             "living_visibility",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
                 data.raw_set("looking", event.looking.to_lua_value(lua)?)?;
-                data.raw_set("visibility", event.visibility.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("visibility", out_visibility.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["visibility"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_visibility, id, "living_visibility", "visibility", &answered.answer("visibility"));
+                true
+            },
         );
+        event.visibility = out_visibility.into_inner();
     }
 
     fn menu_clicked(&self, host: &mut dyn ServerHost, event: &mut MenuClickedEvent) {
@@ -2595,27 +2730,30 @@ impl mod_api::Hooks for LuaHost {
 
     fn mob_split(&self, host: &mut dyn ServerHost, event: &mut MobSplitEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_count = std::cell::RefCell::new(event.count);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "mob_split",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("parent", event.parent.to_lua_value(lua)?)?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
                 data.raw_set("size", event.size.to_lua_value(lua)?)?;
                 data.raw_set("child_size", event.child_size.to_lua_value(lua)?)?;
-                data.raw_set("count", event.count.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("count", out_count.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["count", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_count, id, "mob_split", "count", &answered.answer("count"));
+                crate::dispatch::accept(&out_cancelled, id, "mob_split", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.count = out_count.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn mod_container_viewers(&self, host: &mut dyn ServerHost, event: &mut ModContainerViewersEvent<'_>) {
@@ -2649,26 +2787,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn moisture_change(&self, level: &dyn LevelHost, event: &mut MoistureChangeEvent) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "moisture_change",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "moisture_change", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn mouse_button_post(&self, host: &mut dyn ClientHost, event: &mut MouseButtonPostEvent) {
@@ -2688,33 +2826,33 @@ impl mod_api::Hooks for LuaHost {
 
     fn mouse_button_pre(&self, host: &mut dyn ClientHost, event: &mut MouseButtonPreEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "mouse_button_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("pressed", event.pressed.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "mouse_button_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn mouse_scrolling(&self, host: &mut dyn ClientHost, event: &mut MouseScrollingEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "mouse_scrolling",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("scroll", event.scroll.to_lua_value(lua)?)?;
@@ -2722,16 +2860,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("buttons", event.buttons.to_lua_value(lua)?)?;
                 data.raw_set("cursor", event.cursor.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "mouse_scrolling", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn movement_input(&self, host: &dyn ClientHost, event: &mut MovementInputEvent) {
@@ -2757,32 +2895,35 @@ impl mod_api::Hooks for LuaHost {
 
     fn note_block_change(&self, level: &dyn LevelHost, event: &mut NoteBlockChangeEvent<'_>) -> Flow {
         let _ = &level;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_new_note = std::cell::RefCell::new(event.new_note);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "note_block_change",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("context", event.context.to_lua_value(lua)?)?;
-                data.raw_set("new_note", event.new_note.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("new_note", out_new_note.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["new_note", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_new_note, id, "note_block_change", "new_note", &answered.answer("new_note"));
+                crate::dispatch::accept(&out_cancelled, id, "note_block_change", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.new_note = out_new_note.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn permissions_changed(&self, host: &mut dyn ServerHost, event: &mut PermissionsChangedEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "permissions_changed",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -2790,41 +2931,47 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("old", event.old.to_lua_value(lua)?)?;
                 data.raw_set("new", event.new.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "permissions_changed", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn pickup_xp(&self, host: &mut dyn ServerHost, event: &mut PickupXpEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_value = std::cell::RefCell::new(event.value);
+        let out_count = std::cell::RefCell::new(event.count);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "pickup_xp",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("orb", event.orb.to_lua_value(lua)?)?;
-                data.raw_set("value", event.value.to_lua_value(lua)?)?;
-                data.raw_set("count", event.count.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("value", out_value.borrow().to_lua_value(lua)?)?;
+                data.raw_set("count", out_count.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["value", "count", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_value, id, "pickup_xp", "value", &answered.answer("value"));
+                crate::dispatch::accept(&out_count, id, "pickup_xp", "count", &answered.answer("count"));
+                crate::dispatch::accept(&out_cancelled, id, "pickup_xp", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.value = out_value.into_inner();
+        event.count = out_count.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn play_sound_source(&self, context: &dyn LoopContext, event: &mut PlaySoundSourceEvent<'_>) {
@@ -2901,25 +3048,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_bed_enter(&self, host: &mut dyn ServerHost, event: &mut PlayerBedEnterEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_bed_enter",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_bed_enter", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_bed_leave(&self, host: &mut dyn ServerHost, event: &mut PlayerBedLeaveEvent<'_>) {
@@ -2941,27 +3088,30 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_break_speed(&self, host: HostSide, event: &mut PlayerBreakSpeedEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_new_speed = std::cell::RefCell::new(event.new_speed);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_break_speed",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("state", event.state.to_lua_value(lua)?)?;
                 data.raw_set("original_speed", event.original_speed.to_lua_value(lua)?)?;
-                data.raw_set("new_speed", event.new_speed.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("new_speed", out_new_speed.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["new_speed", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_new_speed, id, "player_break_speed", "new_speed", &answered.answer("new_speed"));
+                crate::dispatch::accept(&out_cancelled, id, "player_break_speed", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.new_speed = out_new_speed.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_bucket_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerBucketEntityEvent<'_>) {
@@ -3106,26 +3256,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_edit_book(&self, host: &mut dyn ServerHost, event: &mut PlayerEditBookEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_edit_book",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pages", event.pages.to_lua_value(lua)?)?;
                 data.raw_set("signing", event.signing.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_edit_book", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_egg_throw(&self, host: &mut dyn ServerHost, event: &mut PlayerEggThrowEvent<'_>) {
@@ -3173,25 +3323,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_fish(&self, host: &mut dyn ServerHost, event: &mut PlayerFishEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_fish",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("state", event.state.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_fish", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_flower_pot_manipulate(&self, host: &mut dyn ServerHost, event: &mut PlayerFlowerPotManipulateEvent<'_>) {
@@ -3260,26 +3410,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_item_cooldown(&self, host: &mut dyn ServerHost, event: &mut PlayerItemCooldownEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_item_cooldown",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("item", event.item.to_string().to_lua_value(lua)?)?;
                 data.raw_set("ticks", event.ticks.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_item_cooldown", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_item_frame_change(&self, host: &mut dyn ServerHost, event: &mut PlayerItemFrameChangeEvent<'_>) {
@@ -3468,10 +3618,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_move(&self, host: &mut dyn ServerHost, event: &mut PlayerMoveEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_move",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -3479,16 +3629,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("from_rotation", event.from_rotation.to_lua_value(lua)?)?;
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
                 data.raw_set("to_rotation", event.to_rotation.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_move", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_name_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerNameEntityEvent<'_>) {
@@ -3525,10 +3675,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_pick_item(&self, host: &mut dyn ServerHost, event: &mut PlayerPickItemEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_pick_item",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -3536,16 +3686,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("from_entity", event.from_entity.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_pick_item", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_pickup_arrow(&self, host: &mut dyn ServerHost, event: &mut PlayerPickupArrowEvent<'_>) {
@@ -3614,25 +3764,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_recipe_discovered(&self, host: &mut dyn ServerHost, event: &mut PlayerRecipeDiscoveredEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_recipe_discovered",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("recipe", event.recipe.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_recipe_discovered", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_respawned(&self, host: &mut dyn ServerHost, event: &mut PlayerRespawnedEvent<'_>) {
@@ -3680,10 +3830,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_set_spawn(&self, host: &mut dyn ServerHost, event: &mut PlayerSetSpawnEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_set_spawn",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
@@ -3692,40 +3842,40 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
                 data.raw_set("forced", event.forced.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_set_spawn", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_shear_entity(&self, host: &mut dyn ServerHost, event: &mut PlayerShearEntityEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_shear_entity",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("entity_id", event.entity_id.to_lua_value(lua)?)?;
                 data.raw_set("off_hand", event.off_hand.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_shear_entity", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_shield_disable(&self, host: &mut dyn ServerHost, event: &mut PlayerShieldDisableEvent<'_>) {
@@ -3792,16 +3942,22 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_stays_on_ground_surface(&self, context: &dyn LoopContext, event: &mut PlayerStaysOnGroundSurfaceEvent) {
         let _ = &context;
-        self.dispatch(
+        let out_staying = std::cell::RefCell::new(event.staying);
+        self.dispatch_turns(
             "player_stays_on_ground_surface",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("entity", event.entity.to_lua_value(lua)?)?;
-                data.raw_set("staying", event.staying.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("staying", out_staying.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["staying"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_staying, id, "player_stays_on_ground_surface", "staying", &answered.answer("staying"));
+                true
+            },
         );
+        event.staying = out_staying.into_inner();
     }
 
     fn player_stonecutter_recipe_select(&self, host: &mut dyn ServerHost, event: &mut PlayerStonecutterRecipeSelectEvent<'_>) {
@@ -3898,26 +4054,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_switch_hotbar_slot_pre(&self, host: &mut dyn ServerHost, event: &mut PlayerSwitchHotbarSlotPreEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_switch_hotbar_slot_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
                 data.raw_set("old_slot", event.old_slot.to_lua_value(lua)?)?;
                 data.raw_set("new_slot", event.new_slot.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_switch_hotbar_slot_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_take_lectern_book(&self, host: &mut dyn ServerHost, event: &mut PlayerTakeLecternBookEvent<'_>) {
@@ -3938,25 +4094,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_teleport_end_gateway(&self, host: &mut dyn ServerHost, event: &mut PlayerTeleportEndGatewayEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_teleport_end_gateway",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("gateway", event.gateway.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_teleport_end_gateway", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_teleported(&self, host: &mut dyn ServerHost, event: &mut PlayerTeleportedEvent<'_>) {
@@ -3994,25 +4150,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_toggle_flight(&self, host: &mut dyn ServerHost, event: &mut PlayerToggleFlightEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_toggle_flight",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
                 data.raw_set("flying", event.flying.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "player_toggle_flight", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_toggle_sneak(&self, host: &mut dyn ServerHost, event: &mut PlayerToggleSneakEvent<'_>) {
@@ -4091,49 +4247,55 @@ impl mod_api::Hooks for LuaHost {
 
     fn player_xp_change(&self, host: &mut dyn ServerHost, event: &mut PlayerXpChangeEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_amount = std::cell::RefCell::new(event.amount);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_xp_change",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("player_entity_id", event.player_entity_id.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
-                data.raw_set("amount", event.amount.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("amount", out_amount.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["amount", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_amount, id, "player_xp_change", "amount", &answered.answer("amount"));
+                crate::dispatch::accept(&out_cancelled, id, "player_xp_change", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.amount = out_amount.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn player_xp_level_change(&self, host: &mut dyn ServerHost, event: &mut PlayerXpLevelChangeEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_levels = std::cell::RefCell::new(event.levels);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "player_xp_level_change",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("name", event.name.to_string().to_lua_value(lua)?)?;
-                data.raw_set("levels", event.levels.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("levels", out_levels.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["levels", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_levels, id, "player_xp_level_change", "levels", &answered.answer("levels"));
+                crate::dispatch::accept(&out_cancelled, id, "player_xp_level_change", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.levels = out_levels.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn portal_create(&self, host: &mut dyn ServerHost, event: &mut PortalCreateEvent<'_>) {
@@ -4179,10 +4341,10 @@ impl mod_api::Hooks for LuaHost {
 
     fn projectile_impact(&self, host: &mut dyn ServerHost, event: &mut ProjectileImpactEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "projectile_impact",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
@@ -4194,16 +4356,16 @@ impl mod_api::Hooks for LuaHost {
                 data.raw_set("block", event.block.to_lua_value(lua)?)?;
                 data.raw_set("face", event.face.to_lua_value(lua)?)?;
                 data.raw_set("at", event.at.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "projectile_impact", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn projectile_launch(&self, host: &mut dyn ServerHost, event: &mut ProjectileLaunchEvent<'_>) {
@@ -4285,23 +4447,22 @@ impl mod_api::Hooks for LuaHost {
 
     fn render_gui_pre(&self, host: &dyn ClientHost, event: &mut RenderGuiPreEvent) -> Flow {
         let _ = &host;
-        let _ = &event;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "render_gui_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "render_gui_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn resource_pack_status(&self, host: &mut dyn ServerHost, event: &mut ResourcePackStatusEvent<'_>) {
@@ -4349,25 +4510,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn screen_char_typed_post(&self, host: &dyn ClientHost, event: &mut ScreenCharTypedPostEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_char_typed_post",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("c", event.c.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_char_typed_post", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_closing(&self, host: &dyn ClientHost, event: &mut ScreenClosingEvent<'_>) {
@@ -4398,96 +4559,96 @@ impl mod_api::Hooks for LuaHost {
 
     fn screen_key_pressed_post(&self, host: &dyn ClientHost, event: &mut ScreenKeyPressedPostEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_key_pressed_post",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
                 data.raw_set("repeat", event.repeat.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_key_pressed_post", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_key_pressed_pre(&self, host: &dyn ClientHost, event: &mut ScreenKeyPressedPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_key_pressed_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
                 data.raw_set("repeat", event.repeat.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_key_pressed_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_key_released_post(&self, host: &dyn ClientHost, event: &mut ScreenKeyReleasedPostEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_key_released_post",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_key_released_post", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_key_released_pre(&self, host: &dyn ClientHost, event: &mut ScreenKeyReleasedPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_key_released_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("key", event.key.to_string().to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_key_released_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_button_pressed_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonPressedPostEvent<'_>) {
@@ -4507,25 +4668,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn screen_mouse_button_pressed_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonPressedPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_mouse_button_pressed_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_mouse_button_pressed_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_button_released_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonReleasedPostEvent<'_>) {
@@ -4545,25 +4706,25 @@ impl mod_api::Hooks for LuaHost {
 
     fn screen_mouse_button_released_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseButtonReleasedPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_mouse_button_released_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_mouse_button_released_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_dragged_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseDraggedPostEvent<'_>) {
@@ -4584,26 +4745,26 @@ impl mod_api::Hooks for LuaHost {
 
     fn screen_mouse_dragged_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseDraggedPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_mouse_dragged_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("button", event.button.to_lua_value(lua)?)?;
                 data.raw_set("delta", event.delta.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_mouse_dragged_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_mouse_scrolled_post(&self, host: &dyn ClientHost, event: &mut ScreenMouseScrolledPostEvent<'_>) {
@@ -4623,49 +4784,55 @@ impl mod_api::Hooks for LuaHost {
 
     fn screen_mouse_scrolled_pre(&self, host: &dyn ClientHost, event: &mut ScreenMouseScrolledPreEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_mouse_scrolled_pre",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("scroll", event.scroll.to_lua_value(lua)?)?;
                 data.raw_set("modifiers", event.modifiers.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "screen_mouse_scrolled_pre", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn screen_render_inventory_mob_effects(&self, host: &dyn ClientHost, event: &mut ScreenRenderInventoryMobEffectsEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_compact = std::cell::RefCell::new(event.compact);
+        let out_horizontal_offset = std::cell::RefCell::new(event.horizontal_offset);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "screen_render_inventory_mob_effects",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("screen", event.screen.to_lua_value(lua)?)?;
                 data.raw_set("available_space", event.available_space.to_lua_value(lua)?)?;
-                data.raw_set("compact", event.compact.to_lua_value(lua)?)?;
-                data.raw_set("horizontal_offset", event.horizontal_offset.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("compact", out_compact.borrow().to_lua_value(lua)?)?;
+                data.raw_set("horizontal_offset", out_horizontal_offset.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["compact", "horizontal_offset", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_compact, id, "screen_render_inventory_mob_effects", "compact", &answered.answer("compact"));
+                crate::dispatch::accept(&out_horizontal_offset, id, "screen_render_inventory_mob_effects", "horizontal_offset", &answered.answer("horizontal_offset"));
+                crate::dispatch::accept(&out_cancelled, id, "screen_render_inventory_mob_effects", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.compact = out_compact.into_inner();
+        event.horizontal_offset = out_horizontal_offset.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn sculk_bloom(&self, host: &mut dyn ServerHost, event: &mut SculkBloomEvent<'_>) {
@@ -4831,25 +4998,28 @@ impl mod_api::Hooks for LuaHost {
 
     fn sweep_attack(&self, host: HostSide, event: &mut SweepAttackEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_sweeping = std::cell::RefCell::new(event.sweeping);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "sweep_attack",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("target", event.target.to_string().to_lua_value(lua)?)?;
                 data.raw_set("vanilla_sweep", event.vanilla_sweep.to_lua_value(lua)?)?;
-                data.raw_set("sweeping", event.sweeping.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("sweeping", out_sweeping.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["sweeping", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_sweeping, id, "sweep_attack", "sweeping", &answered.answer("sweeping"));
+                crate::dispatch::accept(&out_cancelled, id, "sweep_attack", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.sweeping = out_sweeping.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn tags_updated(&self, host: HostSide, event: &mut TagsUpdatedEvent) {
@@ -4895,83 +5065,89 @@ impl mod_api::Hooks for LuaHost {
 
     fn thunder_change(&self, host: &mut dyn ServerHost, event: &mut ThunderChangeEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "thunder_change",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("thundering", event.thundering.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "thunder_change", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn tick_target_millis(&self, host: &dyn ClientHost, event: &mut TickTargetMillisEvent) {
         let _ = &host;
-        self.dispatch(
+        let out_millis = std::cell::RefCell::new(event.millis);
+        self.dispatch_turns(
             "tick_target_millis",
+            &|| false,
             &|lua| {
                 let data = lua.create_table()?;
-                data.raw_set("millis", event.millis.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &[])
+                data.raw_set("millis", out_millis.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["millis"])
             },
-            &mut |_, _| true,
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_millis, id, "tick_target_millis", "millis", &answered.answer("millis"));
+                true
+            },
         );
+        event.millis = out_millis.into_inner();
     }
 
     fn time_skip(&self, host: &mut dyn ServerHost, event: &mut TimeSkipEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "time_skip",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("from", event.from.to_lua_value(lua)?)?;
                 data.raw_set("to", event.to.to_lua_value(lua)?)?;
                 data.raw_set("cause", event.cause.to_string().to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "time_skip", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn tnt_primed(&self, host: &mut dyn ServerHost, event: &mut TntPrimedEvent) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "tnt_primed",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("pos", event.pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "tnt_primed", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn trade_select(&self, host: &mut dyn ServerHost, event: &mut TradeSelectEvent<'_>) {
@@ -5035,24 +5211,27 @@ impl mod_api::Hooks for LuaHost {
 
     fn vehicle_damage(&self, host: &mut dyn ServerHost, event: &mut VehicleDamageEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_damage = std::cell::RefCell::new(event.damage);
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "vehicle_damage",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("kind", event.kind.to_string().to_lua_value(lua)?)?;
-                data.raw_set("damage", event.damage.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("damage", out_damage.borrow().to_lua_value(lua)?)?;
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["damage", "cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_damage, id, "vehicle_damage", "damage", &answered.answer("damage"));
+                crate::dispatch::accept(&out_cancelled, id, "vehicle_damage", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.damage = out_damage.into_inner();
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn vehicle_destroy(&self, host: &mut dyn ServerHost, event: &mut VehicleDestroyEvent<'_>) {
@@ -5087,48 +5266,48 @@ impl mod_api::Hooks for LuaHost {
 
     fn village_siege(&self, host: &mut dyn ServerHost, event: &mut VillageSiegeEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "village_siege",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("player", event.player.to_lua_value(lua)?)?;
                 data.raw_set("attempted_pos", event.attempted_pos.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "village_siege", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn weather_change(&self, host: &mut dyn ServerHost, event: &mut WeatherChangeEvent<'_>) -> Flow {
         let _ = &host;
-        // A mod answers by writing `event.cancel`. The incoming `cancelled` flag is not passed on, so the dispatch runs even when that flag is already set.
-        let mut cancel = false;
-        self.dispatch(
+        let out_cancelled = std::cell::RefCell::new(event.cancelled);
+        self.dispatch_turns(
             "weather_change",
+            &|| *out_cancelled.borrow(),
             &|lua| {
                 let data = lua.create_table()?;
                 data.raw_set("dimension", event.dimension.to_string().to_lua_value(lua)?)?;
                 data.raw_set("raining", event.raining.to_lua_value(lua)?)?;
                 data.raw_set("thundering", event.thundering.to_lua_value(lua)?)?;
-                crate::dispatch::new_event(lua, data, &["cancel"])
+                data.raw_set("cancelled", out_cancelled.borrow().to_lua_value(lua)?)?;
+                crate::dispatch::new_event(lua, data, &["cancelled"])
             },
-            &mut |_, answered| {
-                if matches!(answered.answer("cancel"), mlua::Value::Boolean(true)) {
-                    cancel = true;
-                }
-                !cancel
+            &mut |id, answered| {
+                crate::dispatch::accept(&out_cancelled, id, "weather_change", "cancelled", &answered.answer("cancelled"));
+                true
             },
         );
-        if cancel { Flow::Cancel } else { Flow::Continue }
+        event.cancelled = out_cancelled.into_inner();
+        if event.cancelled { Flow::Cancel } else { Flow::Continue }
     }
 
     fn whitelist_state_update(&self, host: &mut dyn ServerHost, event: &mut WhitelistStateUpdateEvent) {

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use event_horizon_lua_gen::{emit_hooks, emit_impl, emit_types, ir, trait_sigs};
+use event_horizon_lua_gen::{dispatch_sigs, emit_hooks, emit_impl, emit_types, ir, trait_sigs};
 use mod_surface::Surface;
 
 /// The parsed command line.
@@ -70,6 +70,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
     let sigs = trait_sigs::parse(&trait_text)
         .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
+    let dispatch = dispatch_sigs::parse(&trait_text)
+        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
 
     let names: Vec<&str> = surface
         .hooks
@@ -87,7 +89,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         &document.hash,
         &hook_types,
     );
-    let methods = emit_impl::emit(&surface, &sigs, &names, &types.plain);
+    let methods = emit_impl::emit(&surface, &sigs, &dispatch, &names, &types.plain);
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(&surface, &emitted);
 
@@ -137,6 +139,10 @@ fn run(args: Args) -> Result<ExitCode, String> {
     }
     for (reason, count) in &by_reason {
         println!("{count:5}  {reason}");
+    }
+    println!("output types of the emitted hooks:");
+    for (ty, count) in &methods.output_types {
+        println!("{count:5}  {ty}");
     }
     println!("plain types emitted: {}", types.emitted.len());
     println!("types refused: {}", types.refused.len());

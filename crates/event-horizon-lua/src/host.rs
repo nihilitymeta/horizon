@@ -602,9 +602,10 @@ mod tests {
 
     #[test]
     fn a_generated_cancel_hook_returns_cancel_when_a_mod_cancels() {
-        let m =
-            load_one("horizon.on(\"block_receive_game\", function(event) event.cancel = true end)")
-                .unwrap();
+        let m = load_one(
+            "horizon.on(\"block_receive_game\", function(event) event.cancelled = true end)",
+        )
+        .unwrap();
         let host = LuaHost::new(vec![m]);
         let mut event = received(false);
         let flow = mod_api::Hooks::block_receive_game(&host, &mut NoHost, &mut event);
@@ -1190,5 +1191,88 @@ mod tests {
     fn a_host_with_no_mods_gives_the_game_no_listeners() {
         let host = LuaHost::new(Vec::new());
         assert!(mod_api::Hooks::listeners(&host).is_empty());
+    }
+
+    /// The client host the generated `compute_fov` gets: it has no state the Lua hooks read.
+    struct NoClientHost;
+    impl mod_api::Host for NoClientHost {}
+    mod_api::impl_host_areas!(NoClientHost);
+    impl mod_api::ClientHost for NoClientHost {}
+    mod_api::impl_client_host_areas!(NoClientHost);
+
+    /// A field of view the game is about to use, as the generated `compute_fov` gets it.
+    fn fov(degrees: f32) -> mod_api::ComputeFovEvent {
+        mod_api::ComputeFovEvent {
+            partial: 0.5,
+            camera: [0.0, 64.0, 0.0],
+            degrees,
+        }
+    }
+
+    #[test]
+    fn a_generated_number_output_is_the_value_the_mods_leave() {
+        let a = load_one("horizon.on(\"compute_fov\", function(event) event.degrees = 2.0 end)")
+            .unwrap();
+        let b = load_one(
+            "horizon.on(\"compute_fov\", function(event) event.degrees = event.degrees * 3 end)",
+        )
+        .unwrap();
+        let host = LuaHost::new(vec![a, b]);
+        let mut event = fov(1.0);
+        mod_api::Hooks::compute_fov(&host, &NoClientHost, &mut event);
+        assert_eq!(event.degrees, 6.0);
+    }
+
+    #[test]
+    fn a_refused_number_keeps_the_game_value_and_the_other_mods_answer() {
+        let a =
+            load_one("horizon.on(\"compute_fov\", function(event) event.degrees = \"wide\" end)")
+                .unwrap();
+        let b = load_one("horizon.on(\"compute_fov\", function(event) event.degrees = 90.0 end)")
+            .unwrap();
+        let host = LuaHost::new(vec![a, b]);
+        let mut event = fov(70.0);
+        mod_api::Hooks::compute_fov(&host, &NoClientHost, &mut event);
+        assert_eq!(event.degrees, 90.0);
+    }
+
+    #[test]
+    fn a_cancelled_event_is_uncancelled_by_a_receiving_mod_and_the_flow_continues() {
+        let root = tempfile::tempdir().unwrap();
+        let cancel =
+            "horizon.on(\"block_receive_game\", function(event) event.cancelled = true end)";
+        let plain = "horizon.on(\"block_receive_game\", function() horizon.log(\"plain\") end)";
+        let receive = "horizon.on(\"block_receive_game\", function(event)\n\
+                       horizon.log(tostring(event.cancelled))\n\
+                       event.cancelled = false\n\
+                       end, {receive_cancelled = true})";
+        let host = LuaHost::new(vec![
+            LuaMod::load(&mod_folder(root.path(), "mod_a", cancel, Side::Both)).unwrap(),
+            LuaMod::load(&mod_folder(root.path(), "mod_b", plain, Side::Both)).unwrap(),
+            LuaMod::load(&mod_folder(root.path(), "mod_c", receive, Side::Both)).unwrap(),
+        ]);
+        let mut event = received(false);
+        let flow = mod_api::Hooks::block_receive_game(&host, &mut NoHost, &mut event);
+        assert!(matches!(flow, mod_api::Flow::Continue));
+        assert!(!event.cancelled);
+        assert!(host.mods()[1].log_lines().is_empty());
+        assert_eq!(host.mods()[2].log_lines(), ["true"]);
+    }
+
+    #[test]
+    fn a_failing_turn_that_cancelled_does_not_cancel() {
+        let host = LuaHost::new(vec![
+            load_one(
+                "horizon.on(\"block_receive_game\", function(event)\n\
+                      event.cancelled = true\n\
+                      error(\"boom\")\n\
+                      end)",
+            )
+            .unwrap(),
+        ]);
+        let mut event = received(false);
+        let flow = mod_api::Hooks::block_receive_game(&host, &mut NoHost, &mut event);
+        assert!(matches!(flow, mod_api::Flow::Continue));
+        assert!(!event.cancelled);
     }
 }

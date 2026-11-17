@@ -2,13 +2,18 @@
 //!
 //! A handler gets ONE argument, the event. Its data fields are read-only: the host copies them in
 //! when it builds the event, and the mod can read them but not change them. The mod's answers go
-//! through a few writable keys (`cancel`, `result`, ...) named by the caller. The host reads them
+//! through a few writable keys (`cancelled`, `result`, ...) named by the caller. The host reads them
 //! back with `Event::answer` after each handler, and decides from them whether the chain goes on.
+//! A hook with outputs goes through `LuaHost::dispatch_turns`: a mod's answers are kept only when
+//! its whole turn succeeded, and each one is converted by `accept` before it is kept.
 //!
 //! The handler sees an empty proxy table with a locked metatable. Reads go to the answers the mod
 //! has written, then to the data. Writes go through a host function that accepts only the writable
 //! keys. The proxy is read-only too, so `rawset` cannot store a field on it and shadow the data.
 
+use std::cell::RefCell;
+
+use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{Error, Lua, Table, Value};
 
 use crate::declare;
@@ -41,6 +46,35 @@ impl Event {
     /// The raw value the mod wrote to `key` (nil if it wrote nothing there).
     pub fn answer(&self, key: &str) -> Value {
         self.answers.raw_get(key).unwrap_or(Value::Nil)
+    }
+}
+
+/// Takes the value a mod wrote to one output key, if it wrote one (`nil` is no answer). A value that
+/// does not convert to the output's type is refused: the slot keeps its previous value, and one
+/// warning names the mod, the hook and the output. Other outputs of the same turn are not affected.
+/// Returns whether the value was refused.
+pub fn accept<T: FromLuaValue>(
+    slot: &RefCell<T>,
+    id: &str,
+    hook: &str,
+    output: &str,
+    value: &Value,
+) -> bool {
+    if matches!(value, Value::Nil) {
+        return false;
+    }
+    match T::from_lua_value(value) {
+        Ok(next) => {
+            *slot.borrow_mut() = next;
+            false
+        }
+        Err(err) => {
+            log::warn!(
+                target: LOG_TARGET,
+                "{id}: {hook}: output `{output}` refused, the previous value is kept: {err}"
+            );
+            true
+        }
     }
 }
 
@@ -156,6 +190,70 @@ impl LuaHost {
     }
 }
 
+impl LuaHost {
+    /// Fires `hook` for every mod that declared it, for a hook with outputs. The order and the
+    /// cancelled rule are `dispatch_cancellable`'s. A mod's turn is its handlers, run in order under
+    /// their budgets. `build` makes the mod's event after the earlier mods committed, so the mod
+    /// sees their accepted values. When the turn is over and none of its handlers failed, `commit`
+    /// takes the answers (the output keys the mod wrote, read with `Event::answer`); a turn with a
+    /// failing handler is void and is not committed. `commit` returns whether the chain goes on.
+    pub fn dispatch_turns(
+        &self,
+        hook: &str,
+        is_cancelled: &dyn Fn() -> bool,
+        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
+        commit: &mut dyn FnMut(&str, &Event) -> bool,
+    ) {
+        let mods = self.mods();
+        for &index in self.run_order(hook) {
+            let m = &mods[index];
+            if is_cancelled() && !m.options(hook).receive_cancelled {
+                continue;
+            }
+            let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
+            if server_hook && m.side() == Side::Client {
+                continue;
+            }
+            let _turn = m.turn().enter();
+            let handlers = match declare::handlers(m.lua(), hook) {
+                Ok(handlers) => handlers,
+                Err(err) => {
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    continue;
+                }
+            };
+            if handlers.is_empty() {
+                continue;
+            }
+            let event = match build(m.lua()) {
+                Ok(event) => event,
+                Err(err) => {
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    continue;
+                }
+            };
+            let mut failed = false;
+            for handler in &handlers {
+                if let Err(err) = call_handler(m.lua(), handler, event.table()) {
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    failed = true;
+                }
+            }
+            if failed {
+                log::warn!(
+                    target: LOG_TARGET,
+                    "{}: {hook}: a handler failed, so this mod's changes to the event are dropped",
+                    m.id()
+                );
+                continue;
+            }
+            if !commit(m.id(), &event) {
+                return;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,7 +297,7 @@ mod tests {
     /// Fires `HOOK` with pos data and the writable keys the tests use.
     fn fire_with_pos(host: &LuaHost) {
         fire_tick(host, &|lua| {
-            new_event(lua, pos_data(lua), &["cancel", "result"])
+            new_event(lua, pos_data(lua), &["cancelled", "result"])
         });
     }
 
@@ -231,7 +329,7 @@ mod tests {
     fn only_writable_keys_are_accepted_and_read_back() {
         let root = tempfile::tempdir().unwrap();
         let source = "horizon.on(\"block_receive_game\", function(event)\n\
-                      event.cancel = true\n\
+                      event.cancelled = true\n\
                       local ok, err = pcall(function() event.other = 1 end)\n\
                       horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
                       end)";
@@ -239,9 +337,9 @@ mod tests {
         let mut seen = Vec::new();
         host.dispatch(
             HOOK,
-            &|lua| new_event(lua, pos_data(lua), &["cancel", "result"]),
+            &|lua| new_event(lua, pos_data(lua), &["cancelled", "result"]),
             &mut |_, event| {
-                seen.push((event.answer("cancel"), event.answer("other")));
+                seen.push((event.answer("cancelled"), event.answer("other")));
                 true
             },
         );
@@ -304,7 +402,7 @@ mod tests {
     #[test]
     fn the_answers_callback_can_stop_the_chain() {
         let root = tempfile::tempdir().unwrap();
-        let a = "horizon.on(\"block_receive_game\", function(event) event.cancel = true; horizon.log(\"a1\") end)\n\
+        let a = "horizon.on(\"block_receive_game\", function(event) event.cancelled = true; horizon.log(\"a1\") end)\n\
                  horizon.on(\"block_receive_game\", function(event) horizon.log(\"a2\") end)";
         let b = "horizon.on(\"block_receive_game\", function(event) horizon.log(\"b1\") end)";
         let mod_a = load(root.path(), "mod_a", a, Side::Both);
@@ -312,8 +410,8 @@ mod tests {
         let host = LuaHost::new(vec![mod_a, mod_b]);
         host.dispatch(
             HOOK,
-            &|lua| new_event(lua, pos_data(lua), &["cancel"]),
-            &mut |_, event| !matches!(event.answer("cancel"), Value::Boolean(true)),
+            &|lua| new_event(lua, pos_data(lua), &["cancelled"]),
+            &mut |_, event| !matches!(event.answer("cancelled"), Value::Boolean(true)),
         );
         assert_eq!(host.mods()[0].log_lines(), ["a1"]);
         assert!(host.mods()[1].log_lines().is_empty());
@@ -449,5 +547,133 @@ mod tests {
             },
         );
         assert_eq!(ids, ["mod_a", "mod_b"]);
+    }
+
+    /// The hook the f32 tests fire: `compute_fov`, a client hook with one f32 output.
+    const FOV: &str = "compute_fov";
+
+    /// The event the generated `compute_fov` method builds: the current `degrees` as data, and the
+    /// key writable.
+    fn fov_event(lua: &Lua, degrees: f32) -> mlua::Result<Event> {
+        let data = lua.create_table()?;
+        data.raw_set("degrees", f64::from(degrees))?;
+        new_event(lua, data, &["degrees"])
+    }
+
+    /// Fires `FOV` once from `start` with the same outputs handling as the generated method.
+    /// Returns the final value and how many answers were refused.
+    fn fire_fov(host: &LuaHost, start: f32) -> (f32, usize) {
+        let slot = RefCell::new(start);
+        let refused = Cell::new(0);
+        host.dispatch_turns(
+            FOV,
+            &|| false,
+            &|lua| fov_event(lua, *slot.borrow()),
+            &mut |id, event| {
+                if accept(&slot, id, FOV, "degrees", &event.answer("degrees")) {
+                    refused.set(refused.get() + 1);
+                }
+                true
+            },
+        );
+        (slot.into_inner(), refused.get())
+    }
+
+    fn fov_mod(root: &Path, id: &str, source: &str) -> LuaMod {
+        load(
+            root,
+            id,
+            &format!("horizon.on(\"{FOV}\", function(event)\n{source}\nend)"),
+            Side::Both,
+        )
+    }
+
+    #[test]
+    fn a_later_mod_sees_the_value_an_earlier_mod_accepted() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            fov_mod(root.path(), "mod_a", "event.degrees = 2.0"),
+            fov_mod(root.path(), "mod_b", "event.degrees = event.degrees * 3"),
+        ]);
+        assert_eq!(fire_fov(&host, 1.0), (6.0, 0));
+    }
+
+    #[test]
+    fn a_string_for_a_number_output_is_refused_once_and_the_value_is_kept() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            fov_mod(root.path(), "mod_a", "event.degrees = \"far\""),
+            fov_mod(root.path(), "mod_b", "event.degrees = event.degrees + 3"),
+        ]);
+        assert_eq!(fire_fov(&host, 1.0), (4.0, 1));
+    }
+
+    #[test]
+    fn a_handler_that_assigns_and_then_fails_is_void() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            fov_mod(root.path(), "mod_a", "event.degrees = 5.0\nerror(\"boom\")"),
+            fov_mod(root.path(), "mod_b", "event.degrees = event.degrees + 1"),
+        ]);
+        assert_eq!(fire_fov(&host, 1.0), (2.0, 0));
+    }
+
+    #[test]
+    fn a_handler_over_its_budget_after_assigning_is_void() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            fov_mod(
+                root.path(),
+                "mod_a",
+                "event.degrees = 5.0\nwhile true do end",
+            ),
+            fov_mod(root.path(), "mod_b", "event.degrees = event.degrees + 1"),
+        ]);
+        let started = Instant::now();
+        assert_eq!(fire_fov(&host, 1.0), (2.0, 0));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn writing_a_key_that_is_not_an_output_voids_the_turn() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![fov_mod(
+            root.path(),
+            "mod_a",
+            "event.degrees = 5.0\nevent.partial = 1",
+        )]);
+        assert_eq!(fire_fov(&host, 1.0), (1.0, 0));
+    }
+
+    #[test]
+    fn a_reference_kept_from_an_earlier_fire_cannot_change_a_later_one() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "local saved = nil\n\
+                      horizon.on(\"compute_fov\", function(event)\n\
+                      if saved == nil then saved = event else saved.degrees = 9 end\n\
+                      end)";
+        let host = LuaHost::new(vec![load(root.path(), "mod_a", source, Side::Both)]);
+        assert_eq!(fire_fov(&host, 1.0), (1.0, 0));
+        assert_eq!(fire_fov(&host, 1.0), (1.0, 0));
+    }
+
+    #[test]
+    fn values_outside_an_output_type_are_refused_and_the_slot_keeps_its_value() {
+        let u32_slot = RefCell::new(7_u32);
+        assert!(accept(&u32_slot, "m", FOV, "x", &Value::Integer(-1)));
+        assert_eq!(u32_slot.into_inner(), 7);
+        let f32_slot = RefCell::new(7.0_f32);
+        assert!(accept(&f32_slot, "m", FOV, "x", &Value::Number(f64::NAN)));
+        assert_eq!(f32_slot.into_inner(), 7.0);
+        let i32_slot = RefCell::new(7_i32);
+        assert!(accept(&i32_slot, "m", FOV, "x", &Value::Number(1.5)));
+        assert_eq!(i32_slot.into_inner(), 7);
+        let bool_slot = RefCell::new(false);
+        assert!(accept(&bool_slot, "m", FOV, "x", &Value::Number(1.0)));
+        assert!(!bool_slot.into_inner());
+        let good = RefCell::new(0_u32);
+        assert!(!accept(&good, "m", FOV, "x", &Value::Integer(4)));
+        assert!(!accept(&good, "m", FOV, "x", &Value::Nil));
+        assert_eq!(good.into_inner(), 4);
     }
 }
