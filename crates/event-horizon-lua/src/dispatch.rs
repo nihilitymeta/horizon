@@ -14,12 +14,13 @@
 use std::cell::RefCell;
 
 use event_horizon_lua_convert::scalar::FromLuaValue;
-use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
+use mlua::{Error, Function, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
-use crate::host::{LOG_TARGET, LuaHost, call_handler, call_handler_value};
+use crate::host::{LOG_TARGET, LuaHost, LuaMod, call_handler, call_handler_value};
+use crate::hostcall::{TurnHost, note_skipped, run_hosted};
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
 const LOCKED: bool = false;
@@ -334,6 +335,20 @@ impl LuaHost {
         build: &dyn Fn(&Lua) -> mlua::Result<Event>,
         commit: &mut dyn FnMut(&str, &Event) -> bool,
     ) {
+        self.run_turns(hook, is_cancelled, build, commit, None);
+    }
+
+    /// The loop behind `dispatch_turns` and `dispatch_hosted`. With `hosted` set (hostcall.rs), each
+    /// turn runs inside a scope that carries the hook's host, and a mod whose turn is already open
+    /// on this thread is skipped. Without it, a turn runs its handlers directly, as before.
+    pub(crate) fn run_turns(
+        &self,
+        hook: &str,
+        is_cancelled: &dyn Fn() -> bool,
+        build: &dyn Fn(&Lua) -> mlua::Result<Event>,
+        commit: &mut dyn FnMut(&str, &Event) -> bool,
+        mut hosted: Option<&mut TurnHost<'_>>,
+    ) {
         let mods = self.mods();
         for &index in self.run_order(hook) {
             let m = &mods[index];
@@ -342,6 +357,10 @@ impl LuaHost {
             }
             let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
             if server_hook && m.side() == Side::Client {
+                continue;
+            }
+            if hosted.is_some() && m.turn().held_here() {
+                note_skipped(m.id(), hook);
                 continue;
             }
             let _turn = m.turn().enter();
@@ -362,13 +381,10 @@ impl LuaHost {
                     continue;
                 }
             };
-            let mut failed = false;
-            for handler in &handlers {
-                if let Err(err) = call_handler(m.lua(), handler, event.table()) {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
-                    failed = true;
-                }
-            }
+            let failed = match hosted.as_mut() {
+                Some(host) => run_hosted(m, hook, host, &handlers, event.table()),
+                None => run_plain(m, hook, &handlers, event.table()),
+            };
             if failed {
                 log::warn!(
                     target: LOG_TARGET,
@@ -382,6 +398,18 @@ impl LuaHost {
             }
         }
     }
+}
+
+/// Runs a mod's handlers with no host. Returns whether one of them failed.
+fn run_plain(m: &LuaMod, hook: &str, handlers: &[Function], event: &Table) -> bool {
+    let mut failed = false;
+    for handler in handlers {
+        if let Err(err) = call_handler(m.lua(), handler, event) {
+            log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+            failed = true;
+        }
+    }
+    failed
 }
 
 impl LuaHost {

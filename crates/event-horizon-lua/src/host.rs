@@ -94,6 +94,15 @@ impl Turn {
     }
 }
 
+impl Turn {
+    /// Whether the calling thread holds this turn now (it is open in an outer call of this thread).
+    pub(crate) fn held_here(&self) -> bool {
+        let me = thread::current().id();
+        let holder = self.holder.lock().unwrap_or_else(PoisonError::into_inner);
+        matches!(*holder, Some((who, _)) if who == me)
+    }
+}
+
 impl Drop for TurnGuard<'_> {
     fn drop(&mut self) {
         let mut holder = self
