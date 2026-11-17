@@ -7716,6 +7716,7 @@ dependencies = [
  "horizon-mod-api-gen",
  "horizon-mod-package",
  "horizon-theme",
+ "tempfile",
 ]
 
 [[package]]

@@ -14,5 +14,8 @@ horizon-addresses = { path = "../crates/horizon-addresses" }
 horizon-mod-package = { path = "../crates/horizon-mod-package", default-features = false }
 horizon-theme = { path = "../crates/horizon-theme" }
 
+[dev-dependencies]
+tempfile = "3.27.0"
+
 [lints]
 workspace = true

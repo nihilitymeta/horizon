@@ -34,6 +34,11 @@
 
 mod mod_api;
 
+// The Lua host's package (std-only: the game's build script includes the same file).
+#[allow(dead_code)]
+#[path = "../../crates/event-horizon-lua/src/package.rs"]
+mod lua_package;
+
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -371,7 +376,14 @@ fn package(binary: &Path, out: &Path) -> Result<(), String> {
     copy_runtime("package", binary, out)?;
     copy_exporters(&repo.join("exporters"), &out.join("exporters"))?;
     let play = repo.join("packaging/PLAY.txt");
-    copy(&play, &out.join("PLAY.txt"))
+    copy(&play, &out.join("PLAY.txt"))?;
+    write_lua_host(out)
+}
+
+/// The Lua host's package, which the game loads from beside its executable (a built-in mod).
+fn write_lua_host(out: &Path) -> Result<(), String> {
+    let dir = out.join("horizon-native-mods").join(lua_package::ID);
+    lua_package::write_to(&dir).map_err(|e| format!("{}: {e}", dir.display()))
 }
 
 fn package_server(engine: &Path, out: &Path) -> Result<(), String> {
@@ -610,6 +622,20 @@ mod tests {
         tar.extend(header(name, mode, data.len(), kind));
         tar.extend(data);
         tar.resize(tar.len().div_ceil(512) * 512, 0);
+    }
+
+    #[test]
+    fn write_lua_host_writes_the_three_files() {
+        let out = std::env::temp_dir().join(format!("xtask-lua-host-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&out);
+        write_lua_host(&out).unwrap();
+        let dir = out.join("horizon-native-mods").join(lua_package::ID);
+        for file in ["horizon-mod.toml", "Cargo.toml", "src/lib.rs"] {
+            assert!(dir.join(file).is_file(), "{file} is missing");
+        }
+        let manifest = fs::read_to_string(dir.join("horizon-mod.toml")).unwrap();
+        assert!(manifest.contains("event_horizon_lua"));
+        fs::remove_dir_all(&out).unwrap();
     }
 
     #[test]
