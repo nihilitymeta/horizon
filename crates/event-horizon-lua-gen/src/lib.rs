@@ -3,3 +3,4 @@
 
 pub mod handles;
 pub mod ir;
+pub mod types;
