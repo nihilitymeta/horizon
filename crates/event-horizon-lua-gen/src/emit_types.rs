@@ -12,6 +12,12 @@
 //! - an enum whose variants all carry no data is the lowercase name of the variant as a string;
 //! - any other enum is a table `{tag = "<variant>", ...}`: named fields by name, tuple fields as `[1]`, `[2]`.
 //!
+//! A borrowed type (only lifetime parameters, such as `ScreenView<'a>`) is plain too when every field
+//! can be copied into an owned Lua value: a `&str` (or `Option<&str>`), a `&Path`, a slice of a
+//! convertible item, or an owned field of a plain type. A reference to anything else, a `&mut`, a
+//! `dyn` and a type parameter are refused. A slice or `Vec` becomes a Lua array through
+//! `list_to_lua`, which fails past [`MAX_LIST_LEN`] items rather than panicking.
+//!
 //! Variant names are [`snake_case`] of the Rust name. The surface's own docs do not give stable
 //! names (only 39 of 202 backticked unit variants match), so the rule is the one name source.
 //!
@@ -23,8 +29,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use mod_surface::{Function, Type, TypeKind};
 
-use crate::emit_impl::convertible;
+use crate::emit_impl::{MAX_ARRAY_LEN, convertible, scalar_name};
 use crate::types::{Access, Mapped, TypeIr, map_type};
+
+/// The most items a borrowed list copies into a Lua array in one call.
+pub const MAX_LIST_LEN: usize = 1024;
 
 /// The names of the plain types. The method emitter asks it whether a named type converts.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -78,11 +87,13 @@ const KEYWORDS: &[&str] = &[
     "while", "async", "await", "dyn",
 ];
 
-/// One field of a struct or a variant: its name (a tuple field's is its position) and its type.
+/// One field of a struct or a variant: its name (a tuple field's is its position), its type, and
+/// whether its text is a reference (`&'a T`), which a `ToLuaValue` impl reads by `&self`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Field {
     name: String,
     ty: Mapped,
+    by_ref: bool,
 }
 
 /// One variant of an enum.
@@ -120,11 +131,14 @@ enum Body {
     },
 }
 
-/// A candidate: its path, the shape, and the field types it names (the leaves the fixed point checks).
+/// A candidate: its path, the shape, whether it has lifetime parameters, and the field types it
+/// names (the leaves the fixed point checks).
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Def {
     path: String,
     hash: String,
+    /// The type has lifetime parameters: its fields may be borrowed, and its impl says `<'_>`.
+    borrowed: bool,
     body: Body,
 }
 
@@ -152,10 +166,47 @@ pub fn snake_case(pascal: &str) -> String {
     out
 }
 
+/// The `[T; N]` impls the convert crate's `vector.rs` writes by hand (keyed tables, `x`, `y`, `z`).
+/// The emitter writes every other scalar array it meets, as a Lua array.
+const HAND_WRITTEN_ARRAYS: &[(&str, usize)] = &[
+    ("i32", 2),
+    ("i32", 3),
+    ("f64", 2),
+    ("f64", 3),
+    ("f32", 2),
+    ("f32", 3),
+];
+
 /// Plans the plain types of `types` (the surface's `types`, in any order) and writes their impls.
 /// `handles` are the surface's handle functions, which name the getters of private newtypes. The
 /// same input always gives the same text.
 pub fn plan(types: &[Type], handles: &[Function], hash: &str) -> TypesPlan {
+    plan_with(types, handles, hash, &[])
+}
+
+/// [`plan`], also given the other type texts the method emitter will convert (the hook arguments),
+/// so that every scalar array any of them names gets its impl here.
+pub fn plan_with(types: &[Type], handles: &[Function], hash: &str, texts: &[String]) -> TypesPlan {
+    let mut arrays = BTreeSet::new();
+    for text in texts {
+        collect_arrays(text, &mut arrays);
+    }
+    for ty in types {
+        for field in &ty.fields {
+            collect_arrays(&field.contract.ty, &mut arrays);
+        }
+        for variant in &ty.variants {
+            for arg in &variant.contract.fields {
+                collect_arrays(&arg.ty, &mut arrays);
+            }
+        }
+    }
+    for handle in handles {
+        if let Some((_, ret)) = handle.contract.signature.split_once("->") {
+            collect_arrays(ret, &mut arrays);
+        }
+    }
+
     let mut refused: BTreeMap<String, String> = BTreeMap::new();
     let mut pending: BTreeMap<String, Def> = BTreeMap::new();
     for ty in types {
@@ -189,6 +240,7 @@ pub fn plan(types: &[Type], handles: &[Function], hash: &str) -> TypesPlan {
                     Def {
                         path: path.to_owned(),
                         hash: ty.hash.clone(),
+                        borrowed: !ty.contract.generics.is_empty(),
                         body,
                     },
                 );
@@ -206,7 +258,7 @@ pub fn plan(types: &[Type], handles: &[Function], hash: &str) -> TypesPlan {
         let plain = Plain(accepted.keys().cloned().collect());
         let ready: Vec<String> = pending
             .iter()
-            .filter(|(_, def)| first_blocker(&def.body, &plain).is_none())
+            .filter(|(_, def)| first_blocker(&def.body, def.borrowed, &plain).is_none())
             .map(|(path, _)| path.clone())
             .collect();
         if ready.is_empty() {
@@ -220,7 +272,7 @@ pub fn plan(types: &[Type], handles: &[Function], hash: &str) -> TypesPlan {
     }
     let plain = Plain(accepted.keys().cloned().collect());
     for (path, def) in &pending {
-        let reason = match first_blocker(&def.body, &plain) {
+        let reason = match first_blocker(&def.body, def.borrowed, &plain) {
             Some(reason) => reason,
             None => "no conversion".to_owned(),
         };
@@ -230,10 +282,21 @@ pub fn plan(types: &[Type], handles: &[Function], hash: &str) -> TypesPlan {
     let mut text =
         format!("// @generated by event-horizon-lua-gen from surface {hash}: do not edit.\n");
     text.push_str("use crate::scalar::ToLuaValue;\nuse mlua::{Lua, Value};\n");
+    for (name, len) in &arrays {
+        text.push_str(&array_impl(name, *len));
+    }
+    let lists = accepted.values().any(uses_list);
+    if lists {
+        text.push_str(LIST_HELPER);
+    }
     for def in accepted.values() {
         text.push_str(&impl_text(def));
     }
+    text.push_str(STD_IMPLS);
     text.push_str(RUNTIME_TESTS);
+    if lists {
+        text.push_str(LIST_TESTS);
+    }
 
     TypesPlan {
         text,
@@ -243,11 +306,83 @@ pub fn plan(types: &[Type], handles: &[Function], hash: &str) -> TypesPlan {
     }
 }
 
+/// Records each `[T; N]` in a type text (at any depth) whose scalar `T` and length `N` convert and
+/// have no hand-written impl. A text that does not parse names no array.
+fn collect_arrays(text: &str, out: &mut BTreeSet<(String, usize)>) {
+    if let Ok(ty) = syn::parse_str::<syn::Type>(text) {
+        walk_arrays(&ty, out);
+    }
+}
+
+fn walk_arrays(ty: &syn::Type, out: &mut BTreeSet<(String, usize)>) {
+    match ty {
+        syn::Type::Array(array) => {
+            if let Some(found) =
+                scalar_array(ty).filter(|found| !HAND_WRITTEN_ARRAYS.contains(found))
+            {
+                out.insert((found.0.to_owned(), found.1));
+            }
+            walk_arrays(&array.elem, out);
+        }
+        syn::Type::Reference(reference) => walk_arrays(&reference.elem, out),
+        syn::Type::Slice(slice) => walk_arrays(&slice.elem, out),
+        syn::Type::Paren(paren) => walk_arrays(&paren.elem, out),
+        syn::Type::Group(group) => walk_arrays(&group.elem, out),
+        syn::Type::Tuple(tuple) => tuple.elems.iter().for_each(|elem| walk_arrays(elem, out)),
+        syn::Type::Path(path) => {
+            for segment in &path.path.segments {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    for arg in &args.args {
+                        if let syn::GenericArgument::Type(inner) = arg {
+                            walk_arrays(inner, out);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The scalar name and the length of a `[T; N]` whose `T` converts and whose `N` is in range.
+fn scalar_array(ty: &syn::Type) -> Option<(&'static str, usize)> {
+    let mapped = map_type(&tokens(ty)).ok()?;
+    let TypeIr::Array(elem, len) = mapped.ty else {
+        return None;
+    };
+    if !(1..=MAX_ARRAY_LEN).contains(&len) {
+        return None;
+    }
+    Some((scalar_name(&elem)?, len))
+}
+
+/// The impl of `[name; len]` as a Lua array: one entry per item, 1-based.
+fn array_impl(name: &str, len: usize) -> String {
+    format!(
+        "\nimpl ToLuaValue for [{name}; {len}] {{\n    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {{\n        let table = lua.create_table()?;\n        for (index, item) in self.iter().enumerate() {{\n            table.raw_set(index + 1, item.to_lua_value(lua)?)?;\n        }}\n        Ok(Value::Table(table))\n    }}\n}}\n"
+    )
+}
+
+/// Whether a surface type's generics are lifetime parameters only (`<'a>`, `<'key, 'b>`).
+fn lifetimes_only(generics: &str) -> bool {
+    let inner = generics
+        .trim()
+        .trim_start_matches('<')
+        .trim_end_matches('>');
+    inner
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .all(|item| item.starts_with('\''))
+}
+
 /// Reads a surface type's shape, or the reason it is not plain.
 fn describe(ty: &Type, handles: &[Function]) -> Result<Body, String> {
-    if !ty.contract.generics.is_empty() {
-        return Err("has a lifetime or type parameter (a borrowed type)".to_owned());
+    let generics = ty.contract.generics.as_str();
+    if !generics.is_empty() && !lifetimes_only(generics) {
+        return Err("has a type parameter (generic, not borrowed)".to_owned());
     }
+    let borrowed = !generics.is_empty();
     match ty.contract.kind {
         TypeKind::UnitStruct => Ok(Body::Unit),
         TypeKind::Struct => {
@@ -260,7 +395,7 @@ fn describe(ty: &Type, handles: &[Function]) -> Result<Body, String> {
                 .iter()
                 .map(|field| {
                     let name = field.id.rsplit('.').next().unwrap_or_default().to_owned();
-                    field_of(name, &field.contract.ty)
+                    field_of(name, &field.contract.ty, borrowed)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Body::Named(fields))
@@ -274,7 +409,7 @@ fn describe(ty: &Type, handles: &[Function]) -> Result<Body, String> {
                 .fields
                 .iter()
                 .enumerate()
-                .map(|(index, field)| field_of(index.to_string(), &field.contract.ty))
+                .map(|(index, field)| field_of(index.to_string(), &field.contract.ty, borrowed))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Body::Tuple(fields))
         }
@@ -296,7 +431,7 @@ fn describe(ty: &Type, handles: &[Function]) -> Result<Body, String> {
                         } else {
                             index.to_string()
                         };
-                        field_of(field_name, &arg.ty)
+                        field_of(field_name, &arg.ty, borrowed)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 variants.push(Variant {
@@ -367,27 +502,134 @@ fn getter(ty: &Type, handles: &[Function]) -> Option<Body> {
     })
 }
 
-/// One field: its type must be owned (no `&`) and map to a type the mapper knows.
-fn field_of(name: String, text: &str) -> Result<Field, String> {
+/// One field. In a plain type it must be owned (no `&`). In a borrowed type (`borrowed`) a reference
+/// is allowed when it is copied: `&str`, `&Path` or a slice, as [`copyable_references`] checks.
+/// The text must map to a type the mapper knows.
+fn field_of(name: String, text: &str, borrowed: bool) -> Result<Field, String> {
     if KEYWORDS.contains(&name.as_str()) {
         return Err(format!("field `{name}` is a Rust keyword"));
     }
-    if text.contains('&') {
+    if borrowed && text.contains('&') {
+        let parsed = syn::parse_str::<syn::Type>(text)
+            .map_err(|error| format!("field `{name}`: `{text}`: {error}"))?;
+        copyable_references(&parsed).map_err(|reason| format!("field `{name}`: {reason}"))?;
+    } else if text.contains('&') {
         return Err(format!(
             "field `{name}` has a reference type `{text}`: not owned"
         ));
     }
     let ty = map_type(text).map_err(|error| format!("field `{name}`: {error}"))?;
-    if ty.access != Access::Owned {
-        return Err(format!(
-            "field `{name}` has a reference type `{text}`: not owned"
-        ));
+    Ok(Field {
+        name,
+        ty,
+        by_ref: borrowed && text.contains('&'),
+    })
+}
+
+/// Checks that every reference in a borrowed field's type is one the emitter copies. A `&mut` is
+/// refused; so is a `dyn` behind a reference, and a list of references. A `&str`, a `&Path` and a
+/// reference to any other type pass here: that type must convert, which the field's type checks
+/// (the mapper drops the reference, so `&'a Text` is the convertible `Text`).
+fn copyable_references(ty: &syn::Type) -> Result<(), String> {
+    match ty {
+        syn::Type::Reference(reference) => {
+            if reference.mutability.is_some() {
+                return Err(format!(
+                    "`{}` is a mutable reference: not copied",
+                    tokens(ty)
+                ));
+            }
+            match &*reference.elem {
+                syn::Type::Slice(slice) => {
+                    if matches!(&*slice.elem, syn::Type::Reference(_)) {
+                        return Err(format!("a list of references `{}`: not copied", tokens(ty)));
+                    }
+                    copyable_references(&slice.elem)
+                }
+                syn::Type::Path(path)
+                    if path.qself.is_none()
+                        && (is_name(&path.path, "str") || is_name(&path.path, "Path")) =>
+                {
+                    Ok(())
+                }
+                syn::Type::TraitObject(_) => Err(format!(
+                    "a reference to `{}`: a `dyn` is not copied",
+                    tokens(&*reference.elem)
+                )),
+                other => copyable_references(other),
+            }
+        }
+        syn::Type::Path(path) => {
+            path.path
+                .segments
+                .iter()
+                .try_for_each(|segment| match &segment.arguments {
+                    syn::PathArguments::AngleBracketed(args) => {
+                        args.args.iter().try_for_each(|arg| match arg {
+                            syn::GenericArgument::Type(inner) => copyable_references(inner),
+                            _ => Ok(()),
+                        })
+                    }
+                    _ => Ok(()),
+                })
+        }
+        syn::Type::Slice(slice) => copyable_references(&slice.elem),
+        syn::Type::Array(array) => copyable_references(&array.elem),
+        syn::Type::Tuple(tuple) => tuple.elems.iter().try_for_each(copyable_references),
+        syn::Type::Paren(paren) => copyable_references(&paren.elem),
+        syn::Type::Group(group) => copyable_references(&group.elem),
+        other => Err(format!("`{}`: not copied", tokens(other))),
     }
-    Ok(Field { name, ty })
+}
+
+/// Whether a path is the one bare name `word`.
+fn is_name(path: &syn::Path, word: &str) -> bool {
+    path.segments.len() == 1 && path.segments[0].ident == word
+}
+
+/// A type as Rust text, for a reason.
+fn tokens(ty: &impl quote::ToTokens) -> String {
+    quote::ToTokens::to_token_stream(ty).to_string()
+}
+
+/// Whether a field of a borrowed type is a list the emitter copies: a slice or `Vec` of an item
+/// that converts. A list of text is refused (the helper takes `ToLuaValue` items, and `&str` has no
+/// impl).
+fn list_convertible(elem: &TypeIr, plain: &Plain) -> bool {
+    !has_text(elem) && convertible(elem, plain)
+}
+
+/// Whether a type is text, or an optional text.
+fn has_text(ty: &TypeIr) -> bool {
+    match ty {
+        TypeIr::Str => true,
+        TypeIr::Option(inner) => matches!(**inner, TypeIr::Str),
+        _ => false,
+    }
+}
+
+/// Whether a field's type converts: a list only in a borrowed type, anything else as [`convertible`].
+fn field_convertible(ty: &TypeIr, borrowed: bool, plain: &Plain) -> bool {
+    match ty {
+        TypeIr::List(elem) => borrowed && list_convertible(elem, plain),
+        _ => convertible(ty, plain),
+    }
+}
+
+/// Whether any field of the type is a list (so the file needs [`LIST_HELPER`]).
+fn uses_list(def: &Def) -> bool {
+    let fields: Vec<&Field> = match &def.body {
+        Body::Unit | Body::Getter { .. } => Vec::new(),
+        Body::Named(fields) | Body::Tuple(fields) => fields.iter().collect(),
+        Body::Enum { variants, .. } => variants.iter().flat_map(|v| v.fields.iter()).collect(),
+    };
+    fields
+        .iter()
+        .any(|field| matches!(field.ty.ty, TypeIr::List(_)))
 }
 
 /// The reason the body is not yet convertible given `plain`, or `None` when every field converts.
-fn first_blocker(body: &Body, plain: &Plain) -> Option<String> {
+fn first_blocker(body: &Body, borrowed: bool, plain: &Plain) -> Option<String> {
     let fields: Vec<&Field> = match body {
         Body::Unit | Body::Getter { .. } => Vec::new(),
         Body::Named(fields) | Body::Tuple(fields) => fields.iter().collect(),
@@ -395,7 +637,7 @@ fn first_blocker(body: &Body, plain: &Plain) -> Option<String> {
     };
     fields
         .into_iter()
-        .find(|field| !convertible(&field.ty.ty, plain))
+        .find(|field| !field_convertible(&field.ty.ty, borrowed, plain))
         .map(|field| {
             format!(
                 "field `{}` has type `{}`: no Lua conversion (or a type that is not plain)",
@@ -417,7 +659,8 @@ fn type_text(ty: &TypeIr) -> String {
 /// The `impl ToLuaValue` of one plain type, with its leading blank line.
 fn impl_text(def: &Def) -> String {
     let target = format!("mod_api::{}", def.path);
-    let mut out = format!("\nimpl ToLuaValue for {target} {{\n");
+    let generic = if def.borrowed { "<'_>" } else { "" };
+    let mut out = format!("\nimpl ToLuaValue for {target}{generic} {{\n");
     out.push_str("    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {\n");
     match &def.body {
         Body::Unit => {
@@ -437,7 +680,7 @@ fn impl_text(def: &Def) -> String {
                 out.push_str(&format!(
                     "        table.raw_set({:?}, {})?;\n",
                     field.name,
-                    value_expr(&format!("self.{}", field.name), &field.ty)
+                    value_expr(&format!("self.{}", field.name), field)
                 ));
             }
             out.push_str("        Ok(Value::Table(table))\n");
@@ -448,7 +691,7 @@ fn impl_text(def: &Def) -> String {
                 out.push_str(&format!(
                     "        table.raw_set({}, {})?;\n",
                     index + 1,
-                    value_expr(&format!("self.{}", field.name), &field.ty)
+                    value_expr(&format!("self.{}", field.name), field)
                 ));
             }
             out.push_str("        Ok(Value::Table(table))\n");
@@ -556,6 +799,54 @@ mod runtime_tests {
     }
 
     #[test]
+    fn a_four_array_is_a_one_based_lua_array() {
+        let lua = Lua::new();
+        let table = table_of([1.5f32, 2.0, 3.0, 4.0].to_lua_value(&lua).expect("converts"));
+        assert_eq!(table.raw_len(), 4);
+        assert_eq!(table.get::<f32>(1).expect("first"), 1.5);
+        assert_eq!(table.get::<f32>(4).expect("last"), 4.0);
+    }
+
+    #[test]
+    fn a_borrowed_struct_copies_its_text_and_its_options() {
+        let lua = Lua::new();
+        let value = mod_api::HurtSource {
+            damage_type: "fall",
+            causing: 4,
+            direct: -1,
+            position: None,
+        };
+        let table = table_of(value.to_lua_value(&lua).expect("converts"));
+        assert_eq!(table.get::<String>("damage_type").expect("damage_type"), "fall");
+        assert_eq!(table.get::<i32>("causing").expect("causing"), 4);
+        assert_eq!(table.get::<i32>("direct").expect("direct"), -1);
+        assert!(table.get::<Value>("position").expect("position").is_nil());
+    }
+
+    #[test]
+    fn a_char_is_a_one_character_string_and_a_path_is_its_text() {
+        let lua = Lua::new();
+        let Value::String(letter) = 'é'.to_lua_value(&lua).expect("converts") else {
+            panic!("expected a string");
+        };
+        assert_eq!(letter.to_str().expect("utf-8").to_string(), "é");
+        let path = std::path::Path::new("saves/player");
+        let Value::String(text) = path.to_lua_value(&lua).expect("converts") else {
+            panic!("expected a string");
+        };
+        assert_eq!(text.to_str().expect("utf-8").to_string(), "saves/player");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_is_not_utf8_is_an_error_for_that_call() {
+        use std::os::unix::ffi::OsStrExt;
+        let lua = Lua::new();
+        let path = std::path::Path::new(std::ffi::OsStr::from_bytes(b"\xff"));
+        assert!(path.to_lua_value(&lua).is_err());
+    }
+
+    #[test]
     fn a_data_enum_with_named_fields_keys_them_by_name() {
         let lua = Lua::new();
         let value = mod_api::DimensionTransition::Conditional {
@@ -566,6 +857,87 @@ mod runtime_tests {
         assert_eq!(table.get::<String>("tag").expect("tag"), "conditional");
         assert_eq!(table.get::<String>("to").expect("to"), "nether");
         assert_eq!(table.get::<String>("from").expect("from"), "overworld");
+    }
+}
+"#;
+
+/// The helper a borrowed list field uses: a Lua array table (1-based), or an error past the cap.
+/// Emitted only when some type has a list field, so the file has no unused function.
+const LIST_HELPER: &str = r#"
+/// The most items a borrowed list copies into a Lua array in one call.
+const MAX_LIST_LEN: usize = 1024;
+
+/// A borrowed list as a Lua array table, or an error past [`MAX_LIST_LEN`] items.
+fn list_to_lua<T: ToLuaValue>(items: &[T], lua: &Lua) -> mlua::Result<Value> {
+    if items.len() > MAX_LIST_LEN {
+        return Err(mlua::Error::runtime(format!(
+            "a list of {} items is over the cap of {MAX_LIST_LEN}",
+            items.len()
+        )));
+    }
+    let table = lua.create_table()?;
+    for (index, item) in items.iter().enumerate() {
+        table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+    }
+    Ok(Value::Table(table))
+}
+"#;
+
+/// The conversions of the std types a surface hook names: a `char` is a one-character string, a
+/// `Path` is its string (a path that is not UTF-8 is an error for that call). `Duration` already has
+/// its impl in the convert crate's `scalar.rs`.
+const STD_IMPLS: &str = r#"
+impl ToLuaValue for char {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let mut buffer = [0u8; 4];
+        Ok(Value::String(lua.create_string(self.encode_utf8(&mut buffer))?))
+    }
+}
+
+impl ToLuaValue for std::path::Path {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let text = self
+            .to_str()
+            .ok_or_else(|| mlua::Error::runtime("a path is not valid UTF-8"))?;
+        Ok(Value::String(lua.create_string(text)?))
+    }
+}
+
+impl ToLuaValue for std::path::PathBuf {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        self.as_path().to_lua_value(lua)
+    }
+}
+"#;
+
+/// The tests of [`LIST_HELPER`], emitted with it: the cap is exact, and a list under it converts.
+const LIST_TESTS: &str = r#"
+#[cfg(test)]
+mod list_tests {
+    use super::list_to_lua;
+    use mlua::{Lua, Value};
+
+    #[test]
+    fn a_list_at_the_cap_converts_and_one_past_it_is_an_error() {
+        let lua = Lua::new();
+        let full = vec![[1i32, 2, 3]; super::MAX_LIST_LEN];
+        let Value::Table(table) = list_to_lua(&full, &lua).expect("at the cap") else {
+            panic!("expected a table");
+        };
+        assert_eq!(table.raw_len(), super::MAX_LIST_LEN);
+        let over = vec![[0i32, 0, 0]; super::MAX_LIST_LEN + 1];
+        assert!(list_to_lua(&over, &lua).is_err());
+    }
+
+    #[test]
+    fn a_list_is_a_one_based_array() {
+        let lua = Lua::new();
+        let items = [7u8, 8];
+        let Value::Table(table) = list_to_lua(&items, &lua).expect("converts") else {
+            panic!("expected a table");
+        };
+        assert_eq!(table.get::<u8>(1).expect("first"), 7);
+        assert_eq!(table.get::<u8>(2).expect("second"), 8);
     }
 }
 "#;
@@ -609,7 +981,7 @@ fn variant_arm(target: &str, variant: &Variant) -> String {
         };
         out.push_str(&format!(
             "                table.raw_set({key}, {})?;\n",
-            value_expr(&bindings[index], &field.ty)
+            value_expr(&bindings[index], field)
         ));
     }
     out.push_str("            }\n");
@@ -617,13 +989,21 @@ fn variant_arm(target: &str, variant: &Variant) -> String {
 }
 
 /// The Lua value of `expr` (a field of `self`, or a binding), as an `mlua::Value`. Strings go
-/// through `to_string` so `Arc<str>` and `&str` read the same as `String`.
-fn value_expr(expr: &str, mapped: &Mapped) -> String {
+/// through `to_string` so `Arc<str>` and `&str` read the same as `String`. An optional reference
+/// (`Option<&'a T>`) maps through `as_ref`, since `Option<&T>` has no impl of its own.
+fn value_expr(expr: &str, field: &Field) -> String {
+    let mapped = &field.ty;
     match &mapped.ty {
         TypeIr::Str => format!("{expr}.to_string().to_lua_value(lua)?"),
+        // A borrowed slice is already a `&[T]`; an owned `Vec` is lent as one.
+        TypeIr::List(_) if mapped.access == Access::Ref => format!("list_to_lua({expr}, lua)?"),
+        TypeIr::List(_) => format!("list_to_lua(&{expr}, lua)?"),
         TypeIr::Option(inner) if matches!(**inner, TypeIr::Str) => {
             format!("{expr}.as_ref().map(|value| value.to_string()).to_lua_value(lua)?")
         }
+        TypeIr::Option(_) if field.by_ref => format!(
+            "{expr}.as_ref().map(|value| value.to_lua_value(lua)).transpose()?.unwrap_or(Value::Nil)"
+        ),
         _ => format!("{expr}.to_lua_value(lua)?"),
     }
 }
@@ -735,18 +1115,133 @@ mod tests {
         assert!(plan.refused[2].1.contains("Ping"), "{:?}", plan.refused[2]);
     }
 
+    /// A borrowed struct and a borrowed enum whose fields are copied, in the surface's record form.
+    const BORROWED: &str = r#"[
+      {"id": "type:Lent", "hash": "l1", "kind": "struct", "wire": false, "constructible": true,
+       "generics": "<'a>",
+       "fields": [
+         {"id": "type:Lent.name", "hash": "f1", "type": "&'a str"},
+         {"id": "type:Lent.menu", "hash": "f2", "type": "Option<&'a str>"},
+         {"id": "type:Lent.cells", "hash": "f3", "type": "&'a[[i32; 3]]"},
+         {"id": "type:Lent.path", "hash": "f4", "type": "&'a Path"}]},
+      {"id": "type:Lend", "hash": "l2", "kind": "enum", "wire": false, "constructible": true,
+       "generics": "<'a>",
+       "variants": [
+         {"id": "type:Lend.Named", "hash": "v1", "named": true,
+          "fields": [{"name": "who", "type": "&'a str"}]},
+         {"id": "type:Lend.Pair", "hash": "v2",
+          "fields": [{"name": "0", "type": "&'a str"}, {"name": "1", "type": "u8"}]},
+         {"id": "type:Lend.Stop", "hash": "v3", "fields": []}]}
+    ]"#;
+
     #[test]
-    fn a_borrowed_or_private_or_reference_field_type_is_refused() {
+    fn a_borrowed_struct_and_enum_copy_their_fields_into_lua() {
+        let types: Vec<Type> = serde_json::from_str(BORROWED).expect("parses");
+        let plan = plan(&types, &[], "b1");
+        assert_eq!(plan.emitted, ["Lend", "Lent"]);
+        assert!(plan.refused.is_empty(), "{:?}", plan.refused);
+        let text = &plan.text;
+        for piece in [
+            // The impls name the lifetime as `<'_>`.
+            "impl ToLuaValue for mod_api::Lent<'_> {\n",
+            "        table.raw_set(\"name\", self.name.to_string().to_lua_value(lua)?)?;\n",
+            "        table.raw_set(\"menu\", self.menu.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;\n",
+            "        table.raw_set(\"cells\", list_to_lua(self.cells, lua)?)?;\n",
+            "        table.raw_set(\"path\", self.path.to_lua_value(lua)?)?;\n",
+            "impl ToLuaValue for mod_api::Lend<'_> {\n",
+            "            mod_api::Lend::Named { who } => {\n",
+            "                table.raw_set(\"who\", who.to_string().to_lua_value(lua)?)?;\n",
+            "            mod_api::Lend::Pair(f0, f1) => {\n",
+            "                table.raw_set(1, f0.to_string().to_lua_value(lua)?)?;\n",
+            "                table.raw_set(2, f1.to_lua_value(lua)?)?;\n",
+            "            mod_api::Lend::Stop => {\n",
+            // The helper and the std impls the text needs.
+            "fn list_to_lua<T: ToLuaValue>(items: &[T], lua: &Lua) -> mlua::Result<Value> {\n",
+            "impl ToLuaValue for char {\n",
+            "impl ToLuaValue for std::path::Path {\n",
+            "mod list_tests {\n",
+        ] {
+            assert!(text.contains(piece), "missing {piece:?} in:\n{text}");
+        }
+        syn::parse_file(text).expect("the generated text parses");
+    }
+
+    /// A borrowed struct with a `&Text` (optional and not), and a `[f32; 4]`.
+    #[test]
+    fn a_text_reference_and_a_four_array_convert() {
+        let text = r#"[
+          {"id": "type:Carrier", "hash": "c1", "kind": "struct", "wire": false, "constructible": true,
+           "generics": "<'a>",
+           "fields": [
+             {"id": "type:Carrier.title", "hash": "f1", "type": "&'a text::Text"},
+             {"id": "type:Carrier.shown", "hash": "f2", "type": "Option<&'a text::Text>"},
+             {"id": "type:Carrier.rect", "hash": "f3", "type": "[f32; 4]"}]}
+        ]"#;
+        let types: Vec<Type> = serde_json::from_str(text).expect("parses");
+        let plan = plan(&types, &[], "t");
+        assert_eq!(plan.emitted, ["Carrier"]);
+        assert!(plan.refused.is_empty(), "{:?}", plan.refused);
+        let text = &plan.text;
+        for piece in [
+            "        table.raw_set(\"title\", self.title.to_lua_value(lua)?)?;\n",
+            "        table.raw_set(\"shown\", self.shown.as_ref().map(|value| value.to_lua_value(lua)).transpose()?.unwrap_or(Value::Nil))?;\n",
+            "        table.raw_set(\"rect\", self.rect.to_lua_value(lua)?)?;\n",
+            "impl ToLuaValue for [f32; 4] {\n",
+            "            table.raw_set(index + 1, item.to_lua_value(lua)?)?;\n",
+        ] {
+            assert!(text.contains(piece), "missing {piece:?} in:\n{text}");
+        }
+        assert!(
+            !text.contains("impl ToLuaValue for [f32; 2]"),
+            "a hand-written impl is not repeated"
+        );
+        syn::parse_file(text).expect("the generated text parses");
+    }
+
+    #[test]
+    fn a_scalar_array_named_by_a_hook_argument_gets_its_impl() {
+        let plan = plan_with(
+            &[],
+            &[],
+            "h",
+            &["Option<[u8; 5]>".to_owned(), "[f64; 3]".to_owned()],
+        );
+        assert!(
+            plan.text.contains("impl ToLuaValue for [u8; 5] {\n"),
+            "{}",
+            plan.text
+        );
+        assert!(
+            !plan.text.contains("[f64; 3]"),
+            "a hand-written impl is not repeated"
+        );
+        assert!(plan.emitted.is_empty());
+    }
+
+    #[test]
+    fn a_reference_a_mutable_reference_or_a_type_parameter_stays_refused() {
         let text = r#"[
           {"id": "type:Borrowed", "hash": "a", "kind": "struct", "wire": false, "constructible": false,
-           "generics": "<'a>", "fields": [{"id": "type:Borrowed.name", "hash": "b", "type": "String"}]},
-          {"id": "type:Private", "hash": "c", "kind": "struct", "wire": false, "constructible": false},
-          {"id": "type:Holds", "hash": "d", "kind": "struct", "wire": false, "constructible": true,
-           "fields": [{"id": "type:Holds.r", "hash": "e", "type": "&'static str"}]}
+           "generics": "<'a>", "fields": [{"id": "type:Borrowed.name", "hash": "b", "type": "&'a str"}]},
+          {"id": "type:Lends", "hash": "c", "kind": "struct", "wire": false, "constructible": true,
+           "generics": "<'a>", "fields": [{"id": "type:Lends.inner", "hash": "d", "type": "&'a Unknown"}]},
+          {"id": "type:Dyn", "hash": "n", "kind": "struct", "wire": false, "constructible": true,
+           "generics": "<'a>", "fields": [{"id": "type:Dyn.any", "hash": "o", "type": "&'a dyn Thing"}]},
+          {"id": "type:Copies", "hash": "p", "kind": "struct", "wire": false, "constructible": true,
+           "generics": "<'a>", "fields": [{"id": "type:Copies.inner", "hash": "q", "type": "&'a Borrowed<'a>"}]},
+          {"id": "type:Mut", "hash": "e", "kind": "struct", "wire": false, "constructible": true,
+           "generics": "<'a>", "fields": [{"id": "type:Mut.out", "hash": "f", "type": "&'a mut u8"}]},
+          {"id": "type:Items", "hash": "g", "kind": "struct", "wire": false, "constructible": true,
+           "generics": "<'a>", "fields": [{"id": "type:Items.names", "hash": "h", "type": "&'a [&'a str]"}]},
+          {"id": "type:Generic", "hash": "i", "kind": "struct", "wire": false, "constructible": true,
+           "generics": "<T>", "fields": [{"id": "type:Generic.value", "hash": "j", "type": "u8"}]},
+          {"id": "type:Private", "hash": "k", "kind": "struct", "wire": false, "constructible": false},
+          {"id": "type:Holds", "hash": "l", "kind": "struct", "wire": false, "constructible": true,
+           "fields": [{"id": "type:Holds.r", "hash": "m", "type": "&'static str"}]}
         ]"#;
         let types: Vec<Type> = serde_json::from_str(text).expect("parses");
         let plan = plan(&types, &[], "h");
-        assert!(plan.emitted.is_empty());
+        assert_eq!(plan.emitted, ["Borrowed", "Copies"]);
         let reason = |name: &str| {
             plan.refused
                 .iter()
@@ -756,7 +1251,23 @@ mod tests {
                 .to_owned()
         };
         assert!(
-            reason("Borrowed").contains("lifetime"),
+            reason("Lends").contains("no Lua conversion"),
+            "{:?}",
+            plan.refused
+        );
+        assert!(reason("Dyn").contains("dyn"), "{:?}", plan.refused);
+        assert!(
+            reason("Mut").contains("mutable reference"),
+            "{:?}",
+            plan.refused
+        );
+        assert!(
+            reason("Items").contains("list of references"),
+            "{:?}",
+            plan.refused
+        );
+        assert!(
+            reason("Generic").contains("type parameter"),
             "{:?}",
             plan.refused
         );

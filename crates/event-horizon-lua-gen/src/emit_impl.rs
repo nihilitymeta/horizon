@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use crate::emit_types::Plain;
 use crate::ir::{HookIr, Ir, Kind};
 use crate::trait_sigs::HookSig;
-use crate::types::{Access, IntKind, Mapped, TypeIr, kind_of, map_type};
+use crate::types::{Access, FloatKind, IntKind, Mapped, TypeIr, kind_of, map_type};
 
 /// The emitted file and what became of each hook asked for.
 #[derive(Debug, PartialEq, Eq)]
@@ -184,34 +184,58 @@ fn to_lua_expr(field_expr: &str, mapped: &Mapped, plain: &Plain) -> Option<Strin
     }
 }
 
+/// The longest array a Lua value converts: `[T; N]` with `1 <= N <= MAX_ARRAY_LEN`, `T` a scalar.
+pub const MAX_ARRAY_LEN: usize = 16;
+
+/// The Rust name of a bool, float or integer type that converts, or `None` (`i128` and `isize`
+/// have no impl). The same name spells the array impls in `generated_types`.
+pub fn scalar_name(ty: &TypeIr) -> Option<&'static str> {
+    Some(match ty {
+        TypeIr::Bool => "bool",
+        TypeIr::Float(FloatKind::F32) => "f32",
+        TypeIr::Float(FloatKind::F64) => "f64",
+        TypeIr::Int(kind) => match kind {
+            IntKind::I8 => "i8",
+            IntKind::U8 => "u8",
+            IntKind::I16 => "i16",
+            IntKind::U16 => "u16",
+            IntKind::I32 => "i32",
+            IntKind::U32 => "u32",
+            IntKind::I64 => "i64",
+            IntKind::U64 => "u64",
+            IntKind::U128 => "u128",
+            IntKind::Usize => "usize",
+            IntKind::I128 | IntKind::Isize => return None,
+        },
+        _ => return None,
+    })
+}
+
 /// Whether `ty` has a `ToLuaValue` impl in `event-horizon-lua-convert`, or is a plain surface type
 /// whose impl `generated_types` has (for a reference, the referent). `u128` (a UUID, as text),
-/// `usize` and `Identifier` have impls in its `ids` module; `i128` and `isize` have none.
+/// `usize` and `Identifier` have impls in its `ids` module; `i128` and `isize` have none. `Duration`
+/// has one in `scalar.rs`; `char`, `Path` and `PathBuf` have one in `generated_types` (the std impls).
 pub fn convertible(ty: &TypeIr, plain: &Plain) -> bool {
     match ty {
-        TypeIr::Bool | TypeIr::Str | TypeIr::Float(_) => true,
-        TypeIr::Int(kind) => matches!(
-            kind,
-            IntKind::I8
-                | IntKind::U8
-                | IntKind::I16
-                | IntKind::U16
-                | IntKind::I32
-                | IntKind::U32
-                | IntKind::I64
-                | IntKind::U64
-                | IntKind::U128
-                | IntKind::Usize
-        ),
+        TypeIr::Str => true,
+        TypeIr::Bool | TypeIr::Float(_) | TypeIr::Int(_) => scalar_name(ty).is_some(),
         TypeIr::Option(inner) => !matches!(**inner, TypeIr::Option(_)) && convertible(inner, plain),
-        TypeIr::Array(elem, len) => matches!(
-            (&**elem, *len),
-            (TypeIr::Int(IntKind::I32), 2 | 3) | (TypeIr::Float(_), 2 | 3)
-        ),
+        TypeIr::Array(elem, len) => {
+            (1..=MAX_ARRAY_LEN).contains(len) && scalar_name(elem).is_some()
+        }
         TypeIr::Named(name) => {
             matches!(
                 name.as_str(),
-                "BlockPos" | "Compound" | "Text" | "text::Text" | "Identifier" | "Rotation"
+                "BlockPos"
+                    | "Compound"
+                    | "Text"
+                    | "text::Text"
+                    | "Identifier"
+                    | "Rotation"
+                    | "Duration"
+                    | "char"
+                    | "Path"
+                    | "PathBuf"
             ) || plain.contains(name)
         }
         _ => false,

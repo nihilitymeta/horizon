@@ -2,6 +2,174 @@
 use crate::scalar::ToLuaValue;
 use mlua::{Lua, Value};
 
+impl ToLuaValue for [bool; 3] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [bool; 6] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [f32; 4] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [f32; 6] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [f32; 12] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [f32; 16] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [f64; 4] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [f64; 6] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [i32; 4] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [u16; 2] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [u32; 2] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [u64; 2] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [u8; 2] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [u8; 3] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for [usize; 2] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        for (index, item) in self.iter().enumerate() {
+            table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+        }
+        Ok(Value::Table(table))
+    }
+}
+
+/// The most items a borrowed list copies into a Lua array in one call.
+const MAX_LIST_LEN: usize = 1024;
+
+/// A borrowed list as a Lua array table, or an error past [`MAX_LIST_LEN`] items.
+fn list_to_lua<T: ToLuaValue>(items: &[T], lua: &Lua) -> mlua::Result<Value> {
+    if items.len() > MAX_LIST_LEN {
+        return Err(mlua::Error::runtime(format!(
+            "a list of {} items is over the cap of {MAX_LIST_LEN}",
+            items.len()
+        )));
+    }
+    let table = lua.create_table()?;
+    for (index, item) in items.iter().enumerate() {
+        table.raw_set(index + 1, item.to_lua_value(lua)?)?;
+    }
+    Ok(Value::Table(table))
+}
+
 impl ToLuaValue for mod_api::Activity {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -50,6 +218,18 @@ impl ToLuaValue for mod_api::AgeableGroup {
     }
 }
 
+impl ToLuaValue for mod_api::AnimalTameEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("tamer", self.tamer.to_lua_value(lua)?)?;
+        table.raw_set("tamer_entity_id", self.tamer_entity_id.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::AnimationTarget {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -72,11 +252,34 @@ impl ToLuaValue for mod_api::AnimationTarget {
     }
 }
 
+impl ToLuaValue for mod_api::AnvilDamagedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_string().to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ArmAngles {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("right", self.right.to_lua_value(lua)?)?;
         table.raw_set("left", self.left.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ArmorStandManipulateEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("stand_id", self.stand_id.to_lua_value(lua)?)?;
+        table.raw_set("slot", self.slot.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -90,6 +293,15 @@ impl ToLuaValue for mod_api::ArrowPickup {
             _ => return Err(mlua::Error::runtime("unknown variant of ArrowPickup")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::AtlasRegion {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("uv", self.uv.to_lua_value(lua)?)?;
+        table.raw_set("size", self.size.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -121,6 +333,17 @@ impl ToLuaValue for mod_api::AttachmentWrite {
             _ => return Err(mlua::Error::runtime("unknown variant of AttachmentWrite")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::AttackEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -190,6 +413,29 @@ impl ToLuaValue for mod_api::Authority {
             _ => return Err(mlua::Error::runtime("unknown variant of Authority")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::BabyEntitySpawnEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("parent", self.parent.to_lua_value(lua)?)?;
+        table.raw_set("partner", self.partner.to_lua_value(lua)?)?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("player_entity_id", self.player_entity_id.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BeaconStateChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("active", self.active.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -415,6 +661,17 @@ impl ToLuaValue for mod_api::BiomeSourceKind {
     }
 }
 
+impl ToLuaValue for mod_api::BlockBreakProgressUpdateEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("progress", self.progress.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::BlockBreakingState {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -440,6 +697,46 @@ impl ToLuaValue for mod_api::BlockBurnEvent {
         table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
         table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
         table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockCookEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("result", self.result.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockDamageAbortEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockDispenseArmorEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("target", self.target.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockEntityClientTicksEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        table.raw_set("ticks", self.ticks.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -528,6 +825,33 @@ impl ToLuaValue for mod_api::BlockEntityTickReply {
     }
 }
 
+impl ToLuaValue for mod_api::BlockEntityTicksEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        table.raw_set("ticks", self.ticks.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockEntityUpdateTagEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockEntityViewDistanceEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        table.raw_set("distance", self.distance.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::BlockFace {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -543,12 +867,34 @@ impl ToLuaValue for mod_api::BlockFace {
     }
 }
 
+impl ToLuaValue for mod_api::BlockFailedDispenseEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::BlockHit {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("point", self.point.to_lua_value(lua)?)?;
         table.raw_set("face", self.face.to_lua_value(lua)?)?;
         table.raw_set("inside", self.inside.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockIgniteEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cause", self.cause.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -563,6 +909,29 @@ impl ToLuaValue for mod_api::BlockInteraction {
             _ => return Err(mlua::Error::runtime("unknown variant of BlockInteraction")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockLockCheckEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockReceiveGameEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        table.raw_set("event", self.event.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -612,6 +981,17 @@ impl ToLuaValue for mod_api::BlockShapeKind {
     }
 }
 
+impl ToLuaValue for mod_api::BlockShearEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::BlockSoundCause {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -640,10 +1020,42 @@ impl ToLuaValue for mod_api::BlockSoundType {
     }
 }
 
+impl ToLuaValue for mod_api::BlockSpreadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::BlockStateId {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set(1, self.0.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BlockStateModelPick {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        match self {
+            mod_api::BlockStateModelPick::Model { state, model, turns, uvlock } => {
+                table.raw_set("tag", "model")?;
+                table.raw_set("state", state.to_lua_value(lua)?)?;
+                table.raw_set("model", model.to_string().to_lua_value(lua)?)?;
+                table.raw_set("turns", turns.to_lua_value(lua)?)?;
+                table.raw_set("uvlock", uvlock.to_lua_value(lua)?)?;
+            }
+            mod_api::BlockStateModelPick::Refuse { reason } => {
+                table.raw_set("tag", "refuse")?;
+                table.raw_set("reason", reason.to_string().to_lua_value(lua)?)?;
+            }
+        }
         Ok(Value::Table(table))
     }
 }
@@ -728,6 +1140,36 @@ impl ToLuaValue for mod_api::BrewingCompleteEvent {
     }
 }
 
+impl ToLuaValue for mod_api::BrewingFuelEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("fuel", self.fuel.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BrewingStartEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("ingredient", self.ingredient.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::BucketEmptyEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("fluid", self.fluid.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::CalculatePlayerTurnEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -735,6 +1177,24 @@ impl ToLuaValue for mod_api::CalculatePlayerTurnEvent {
         table.raw_set("player_uuid", self.player_uuid.to_lua_value(lua)?)?;
         table.raw_set("mouse_sensitivity", self.mouse_sensitivity.to_lua_value(lua)?)?;
         table.raw_set("cinematic_camera_enabled", self.cinematic_camera_enabled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::Camera {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("position", self.position.to_lua_value(lua)?)?;
+        table.raw_set("eye_height", self.eye_height.to_lua_value(lua)?)?;
+        table.raw_set("partial_tick", self.partial_tick.to_lua_value(lua)?)?;
+        table.raw_set("yaw", self.yaw.to_lua_value(lua)?)?;
+        table.raw_set("pitch", self.pitch.to_lua_value(lua)?)?;
+        table.raw_set("fov_degrees", self.fov_degrees.to_lua_value(lua)?)?;
+        table.raw_set("near", self.near.to_lua_value(lua)?)?;
+        table.raw_set("far", self.far.to_lua_value(lua)?)?;
+        table.raw_set("view", self.view.to_lua_value(lua)?)?;
+        table.raw_set("projection", self.projection.to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -750,6 +1210,27 @@ impl ToLuaValue for mod_api::CameraType {
     }
 }
 
+impl ToLuaValue for mod_api::CampfireStartEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::CanContinueSleepingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("problem", self.problem.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::CauldronFire {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -761,10 +1242,48 @@ impl ToLuaValue for mod_api::CauldronFire {
     }
 }
 
+impl ToLuaValue for mod_api::CauldronLevelChangedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("from_level", self.from_level.to_lua_value(lua)?)?;
+        table.raw_set("to_level", self.to_level.to_lua_value(lua)?)?;
+        table.raw_set("reason", self.reason.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ChannelRef {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("id", self.id.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ChatRecipientEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("sender", self.sender.to_lua_value(lua)?)?;
+        table.raw_set("sender_name", self.sender_name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("message", self.message.to_string().to_lua_value(lua)?)?;
+        table.raw_set("recipient", self.recipient.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ChatSuggestionAppliedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("original", self.original.to_string().to_lua_value(lua)?)?;
+        table.raw_set("start", self.start.to_lua_value(lua)?)?;
+        table.raw_set("end", self.end.to_lua_value(lua)?)?;
+        table.raw_set("suggestion", self.suggestion.to_string().to_lua_value(lua)?)?;
+        table.raw_set("input", self.input.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -801,6 +1320,16 @@ impl ToLuaValue for mod_api::ChunkCap {
             _ => return Err(mlua::Error::runtime("unknown variant of ChunkCap")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::ChunkLoadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("chunk", self.chunk.to_lua_value(lua)?)?;
+        table.raw_set("new", self.new.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -867,6 +1396,15 @@ impl ToLuaValue for mod_api::ChunkTicketLevel {
     }
 }
 
+impl ToLuaValue for mod_api::ChunkUnloadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("chunk", self.chunk.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ClientAudioOptions {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -903,6 +1441,24 @@ impl ToLuaValue for mod_api::ClientChatOptions {
         table.raw_set("height_unfocused", self.height_unfocused.to_lua_value(lua)?)?;
         table.raw_set("line_spacing", self.line_spacing.to_lua_value(lua)?)?;
         table.raw_set("delay", self.delay.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ClientChunkLoadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("chunk", self.chunk.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ClientChunkUnloadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("chunk", self.chunk.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -969,6 +1525,18 @@ impl ToLuaValue for mod_api::ClientInfo {
     }
 }
 
+impl ToLuaValue for mod_api::ClientInformationUpdatedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("player_entity_id", self.player_entity_id.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("old", self.old.to_lua_value(lua)?)?;
+        table.raw_set("new", self.new.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ClientInputOptions {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -980,6 +1548,22 @@ impl ToLuaValue for mod_api::ClientInputOptions {
         table.raw_set("toggle_crouch", self.toggle_crouch.to_lua_value(lua)?)?;
         table.raw_set("toggle_sprint", self.toggle_sprint.to_lua_value(lua)?)?;
         table.raw_set("auto_jump", self.auto_jump.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ClientLevelLoadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ClientLevelUnloadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -1227,6 +1811,15 @@ impl ToLuaValue for mod_api::CommandArgumentKind {
     }
 }
 
+impl ToLuaValue for mod_api::CommandEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("command", self.command.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::CommandSuggestion {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -1240,6 +1833,15 @@ impl ToLuaValue for mod_api::CommandSuggestion {
 impl ToLuaValue for mod_api::ComponentId {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         self.as_str().to_string().to_lua_value(lua)
+    }
+}
+
+impl ToLuaValue for mod_api::CompostItemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -1359,9 +1961,25 @@ impl ToLuaValue for mod_api::ConfigKind {
     }
 }
 
+impl ToLuaValue for mod_api::ConfigLoadingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("config", self.config.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ConfigPath {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         self.as_str().to_string().to_lua_value(lua)
+    }
+}
+
+impl ToLuaValue for mod_api::ConfigReloadingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("config", self.config.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -1371,6 +1989,14 @@ impl ToLuaValue for mod_api::ConfigStat {
         table.raw_set("kind", self.kind.to_lua_value(lua)?)?;
         table.raw_set("len", self.len.to_lua_value(lua)?)?;
         table.raw_set("modified_millis", self.modified_millis.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ConfigUnloadingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("config", self.config.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -1387,6 +2013,41 @@ impl ToLuaValue for mod_api::ConnectionKind {
     }
 }
 
+impl ToLuaValue for mod_api::ConsoleLineEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("level", self.level.to_string().to_lua_value(lua)?)?;
+        table.raw_set("thread", self.thread.to_string().to_lua_value(lua)?)?;
+        table.raw_set("message", self.message.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ContainerLootFilled<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("table", self.table.to_string().to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("origin", self.origin.to_lua_value(lua)?)?;
+        table.raw_set("block", self.block.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("opener", self.opener.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ContainerOpenedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::Corner {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -1396,6 +2057,38 @@ impl ToLuaValue for mod_api::Corner {
             mod_api::Corner::BottomRight => "bottom_right",
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::CrafterCraftEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("recipe", self.recipe.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::CreativeSlotEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("slot", self.slot.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::CreeperIgniteEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -1427,12 +2120,68 @@ impl ToLuaValue for mod_api::CriterionTestError {
     }
 }
 
+impl ToLuaValue for mod_api::CriticalHitEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("target_kind", self.target_kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("vanilla_critical", self.vanilla_critical.to_lua_value(lua)?)?;
+        table.raw_set("critical", self.critical.to_lua_value(lua)?)?;
+        table.raw_set("damage_multiplier", self.damage_multiplier.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::CubeDefinition {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("origin", self.origin.to_lua_value(lua)?)?;
+        table.raw_set("dimensions", self.dimensions.to_lua_value(lua)?)?;
+        table.raw_set("grow", self.grow.to_lua_value(lua)?)?;
+        table.raw_set("mirror", self.mirror.to_lua_value(lua)?)?;
+        table.raw_set("tex_coord", self.tex_coord.to_lua_value(lua)?)?;
+        table.raw_set("tex_scale", self.tex_scale.to_lua_value(lua)?)?;
+        table.raw_set("visible_faces", self.visible_faces.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::CubeDeformation {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("grow_x", self.grow_x.to_lua_value(lua)?)?;
         table.raw_set("grow_y", self.grow_y.to_lua_value(lua)?)?;
         table.raw_set("grow_z", self.grow_z.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::CubeFace<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("sprite", self.sprite.to_string().to_lua_value(lua)?)?;
+        table.raw_set("uv", self.uv.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::CustomSpawnerTickEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("key", self.key.to_lua_value(lua)?)?;
+        table.raw_set("spawn_enemies", self.spawn_enemies.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::CustomizeBossEventProgressEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("bar", self.bar.to_lua_value(lua)?)?;
+        table.raw_set("x", self.x.to_lua_value(lua)?)?;
+        table.raw_set("y", self.y.to_lua_value(lua)?)?;
+        table.raw_set("increment", self.increment.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -1490,6 +2239,15 @@ impl ToLuaValue for mod_api::DataMapsUpdateCause {
             _ => return Err(mlua::Error::runtime("unknown variant of DataMapsUpdateCause")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::DataMapsUpdatedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("registry", self.registry.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cause", self.cause.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -1732,6 +2490,15 @@ impl ToLuaValue for mod_api::Difficulty {
     }
 }
 
+impl ToLuaValue for mod_api::DifficultyChangedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("from", self.from.to_string().to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::DimensionTransition {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -1899,6 +2666,18 @@ impl ToLuaValue for mod_api::EmptyEnergyHandler {
     }
 }
 
+impl ToLuaValue for mod_api::EnchantedEntityLootEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("source", self.source.to_lua_value(lua)?)?;
+        table.raw_set("attacker", self.attacker.to_lua_value(lua)?)?;
+        table.raw_set("enchantment", self.enchantment.to_lua_value(lua)?)?;
+        table.raw_set("level", self.level.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::EnchantmentEffect {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         self.as_str().to_string().to_lua_value(lua)
@@ -1911,6 +2690,26 @@ impl ToLuaValue for mod_api::EnchantmentInfo {
         table.raw_set("id", self.id.to_string().to_lua_value(lua)?)?;
         table.raw_set("max_level", self.max_level.to_lua_value(lua)?)?;
         table.raw_set("curse", self.curse.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntitiesLoadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("chunk", self.chunk.to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntitiesUnloadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("chunk", self.chunk.to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -1928,12 +2727,75 @@ impl ToLuaValue for mod_api::EntityAttributeError {
     }
 }
 
+impl ToLuaValue for mod_api::EntityBreakDoorEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::EntityBreedEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("parent", self.parent.to_lua_value(lua)?)?;
         table.raw_set("partner", self.partner.to_lua_value(lua)?)?;
         table.raw_set("child", self.child.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityChangeBlockEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_string().to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityConstructingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("holder", self.holder.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityDropItemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityEnterBlockEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityEnterLoveModeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -1945,6 +2807,41 @@ impl ToLuaValue for mod_api::EntityEnteringSectionEvent {
         table.raw_set("old_section", self.old_section.to_lua_value(lua)?)?;
         table.raw_set("new_section", self.new_section.to_lua_value(lua)?)?;
         table.raw_set("chunk_changed", self.chunk_changed.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityInvulnerabilityCheckEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("source", self.source.to_lua_value(lua)?)?;
+        table.raw_set("original_invulnerability", self.original_invulnerability.to_lua_value(lua)?)?;
+        table.raw_set("invulnerable", self.invulnerable.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityJoinLevelEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("loaded_from_disk", self.loaded_from_disk.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityLeaveLevelEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -1965,6 +2862,41 @@ impl ToLuaValue for mod_api::EntityMobGriefingEvent {
         let table = lua.create_table()?;
         table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
         table.raw_set("can_grief", self.can_grief.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityMountEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("vehicle", self.vehicle.to_lua_value(lua)?)?;
+        table.raw_set("vehicle_kind", self.vehicle_kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("mounting", self.mounting.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityPortalEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityPoseChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_string().to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -2022,6 +2954,17 @@ impl ToLuaValue for mod_api::EntityResidency {
     }
 }
 
+impl ToLuaValue for mod_api::EntityShootBowEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("projectile", self.projectile.to_lua_value(lua)?)?;
+        table.raw_set("force", self.force.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::EntitySpectatorShader {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -2041,10 +2984,82 @@ impl ToLuaValue for mod_api::EntityStruckByLightningEvent {
     }
 }
 
+impl ToLuaValue for mod_api::EntityTameEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("owner", self.owner.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityTeleportEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::EntityTickListenedEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("listened", self.listened.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityTickPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityTickPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityToggleGlideEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("gliding", self.gliding.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityTravelToDimensionEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cause", self.cause.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::EntityUnleashEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -2109,6 +3124,34 @@ impl ToLuaValue for mod_api::ExperienceOrb {
         table.raw_set("position", self.position.to_lua_value(lua)?)?;
         table.raw_set("value", self.value.to_lua_value(lua)?)?;
         table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ExperienceOrbCanMergeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("into", self.into.to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("into_value", self.into_value.to_lua_value(lua)?)?;
+        table.raw_set("from_value", self.from_value.to_lua_value(lua)?)?;
+        table.raw_set("can_merge", self.can_merge.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ExperienceOrbMergeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("into", self.into.to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("into_value", self.into_value.to_lua_value(lua)?)?;
+        table.raw_set("into_count", self.into_count.to_lua_value(lua)?)?;
+        table.raw_set("from_value", self.from_value.to_lua_value(lua)?)?;
+        table.raw_set("from_count", self.from_count.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -2212,6 +3255,45 @@ impl ToLuaValue for mod_api::ExplosionResistance {
             }
             _ => return Err(mlua::Error::runtime("unknown variant of ExplosionResistance")),
         }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ExplosionStart<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("center", self.center.to_lua_value(lua)?)?;
+        table.raw_set("radius", self.radius.to_lua_value(lua)?)?;
+        table.raw_set("fire", self.fire.to_lua_value(lua)?)?;
+        table.raw_set("interaction", self.interaction.to_lua_value(lua)?)?;
+        table.raw_set("damage_type", self.damage_type.to_string().to_lua_value(lua)?)?;
+        table.raw_set("source", self.source.to_lua_value(lua)?)?;
+        table.raw_set("owner", self.owner.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ExplosionStartEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("explosion", self.explosion.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::FaceSprite {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("sprite", self.sprite.to_lua_value(lua)?)?;
+        table.raw_set("texture", self.texture.to_string().to_lua_value(lua)?)?;
+        table.raw_set("rect", self.rect.to_lua_value(lua)?)?;
+        table.raw_set("inset", self.inset.to_lua_value(lua)?)?;
+        table.raw_set("uv", self.uv.to_lua_value(lua)?)?;
+        table.raw_set("tint", self.tint.to_lua_value(lua)?)?;
+        table.raw_set("tint_index", self.tint_index.to_lua_value(lua)?)?;
+        table.raw_set("translucent", self.translucent.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -2324,6 +3406,19 @@ impl ToLuaValue for mod_api::FluidIngredientError {
     }
 }
 
+impl ToLuaValue for mod_api::FluidLevelChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("fluid", self.fluid.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::FluidModel {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -2331,6 +3426,20 @@ impl ToLuaValue for mod_api::FluidModel {
         table.raw_set("still", self.still.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
         table.raw_set("flowing", self.flowing.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
         table.raw_set("overlay", self.overlay.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::FluidRulesEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("fluid", self.fluid.to_string().to_lua_value(lua)?)?;
+        table.raw_set("tick_delay", self.tick_delay.to_lua_value(lua)?)?;
+        table.raw_set("drop_off", self.drop_off.to_lua_value(lua)?)?;
+        table.raw_set("slope_find_distance", self.slope_find_distance.to_lua_value(lua)?)?;
+        table.raw_set("converts_to_source", self.converts_to_source.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -2360,6 +3469,17 @@ impl ToLuaValue for mod_api::FluidStateError {
     }
 }
 
+impl ToLuaValue for mod_api::FluidTickEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("fluid", self.fluid.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::FluidTypeProperties {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -2379,6 +3499,20 @@ impl ToLuaValue for mod_api::FluidTypeProperties {
     }
 }
 
+impl ToLuaValue for mod_api::FogData {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("color", self.color.to_lua_value(lua)?)?;
+        table.raw_set("environmental_start", self.environmental_start.to_lua_value(lua)?)?;
+        table.raw_set("environmental_end", self.environmental_end.to_lua_value(lua)?)?;
+        table.raw_set("render_distance_start", self.render_distance_start.to_lua_value(lua)?)?;
+        table.raw_set("render_distance_end", self.render_distance_end.to_lua_value(lua)?)?;
+        table.raw_set("sky_end", self.sky_end.to_lua_value(lua)?)?;
+        table.raw_set("cloud_end", self.cloud_end.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::FogType {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -2391,6 +3525,18 @@ impl ToLuaValue for mod_api::FogType {
     }
 }
 
+impl ToLuaValue for mod_api::FoodLevelChangedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::FramerateLimitEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -2398,6 +3544,46 @@ impl ToLuaValue for mod_api::FramerateLimitEvent {
         table.raw_set("minimized", self.minimized.to_lua_value(lua)?)?;
         table.raw_set("in_world", self.in_world.to_lua_value(lua)?)?;
         table.raw_set("limit", self.limit.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::FurnaceBurnEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("fuel", self.fuel.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::FurnaceExtractEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::FurnaceSmeltEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("result", self.result.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::FurnaceStartSmeltEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -2422,6 +3608,26 @@ impl ToLuaValue for mod_api::GameMode {
             mod_api::GameMode::Spectator => "spectator",
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::GameRuleActor<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("uuid", self.uuid.to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::GameRuleChangedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("rule", self.rule.to_string().to_lua_value(lua)?)?;
+        table.raw_set("value", self.value.to_lua_value(lua)?)?;
+        table.raw_set("actor", self.actor.as_ref().map(|value| value.to_lua_value(lua)).transpose()?.unwrap_or(Value::Nil))?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -2556,6 +3762,15 @@ impl ToLuaValue for mod_api::GeneralEntityRegistrationError {
     }
 }
 
+impl ToLuaValue for mod_api::GeneralEntityTickEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::GeneralSavePolicy {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -2663,6 +3878,17 @@ impl ToLuaValue for mod_api::GuiEntityLook {
     }
 }
 
+impl ToLuaValue for mod_api::GuiEntityView {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("rect", self.rect.to_lua_value(lua)?)?;
+        table.raw_set("size", self.size.to_lua_value(lua)?)?;
+        table.raw_set("offset_y", self.offset_y.to_lua_value(lua)?)?;
+        table.raw_set("look", self.look.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::GuiLayer {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -2712,6 +3938,39 @@ impl ToLuaValue for mod_api::HandlerThread {
             mod_api::HandlerThread::Network => "network",
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::HangingBreakEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::HangingPlaceEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::HealthHudEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("inputs", self.inputs.to_lua_value(lua)?)?;
+        table.raw_set("wi", self.wi.to_lua_value(lua)?)?;
+        table.raw_set("hi", self.hi.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -2829,6 +4088,18 @@ impl ToLuaValue for mod_api::HopperInventorySearchEvent {
     }
 }
 
+impl ToLuaValue for mod_api::HopperPickupItemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::HotbarSlotError {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -2881,6 +4152,17 @@ impl ToLuaValue for mod_api::HumanoidPart {
     }
 }
 
+impl ToLuaValue for mod_api::HurtSource<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("damage_type", self.damage_type.to_string().to_lua_value(lua)?)?;
+        table.raw_set("causing", self.causing.to_lua_value(lua)?)?;
+        table.raw_set("direct", self.direct.to_lua_value(lua)?)?;
+        table.raw_set("position", self.position.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::HurtSourceError {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -2912,6 +4194,18 @@ impl ToLuaValue for mod_api::IngredientKeysError {
             _ => return Err(mlua::Error::runtime("unknown variant of IngredientKeysError")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::InputKeyEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("key", self.key.to_string().to_lua_value(lua)?)?;
+        table.raw_set("layout_key", self.layout_key.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("raw_code", self.raw_code.to_lua_value(lua)?)?;
+        table.raw_set("action", self.action.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -3023,6 +4317,28 @@ impl ToLuaValue for mod_api::Interpolation {
     }
 }
 
+impl ToLuaValue for mod_api::InventoryBlockStartEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::InventoryMoveItemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("source", self.source.to_lua_value(lua)?)?;
+        table.raw_set("destination", self.destination.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ItemAttackRange {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -3072,6 +4388,17 @@ impl ToLuaValue for mod_api::ItemDamageSource {
     }
 }
 
+impl ToLuaValue for mod_api::ItemDespawnEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ItemDisplayContext {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -3110,6 +4437,17 @@ impl ToLuaValue for mod_api::ItemRarity {
             _ => return Err(mlua::Error::runtime("unknown variant of ItemRarity")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::ItemSpawnEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -3168,6 +4506,16 @@ impl ToLuaValue for mod_api::KeyMapping {
         let table = lua.create_table()?;
         table.raw_set("down", self.down.to_lua_value(lua)?)?;
         table.raw_set("label", self.label.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::KeyMappingPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("mapping", self.mapping.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pressed", self.pressed.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -3294,6 +4642,14 @@ impl ToLuaValue for mod_api::LevelKey {
     }
 }
 
+impl ToLuaValue for mod_api::LevelLoadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::LevelReadError {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -3302,6 +4658,22 @@ impl ToLuaValue for mod_api::LevelReadError {
             _ => return Err(mlua::Error::runtime("unknown variant of LevelReadError")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::LevelSaveEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LevelUnloadEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -3354,10 +4726,113 @@ impl ToLuaValue for mod_api::LightLayer {
     }
 }
 
+impl ToLuaValue for mod_api::LightningStrikeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cause", self.cause.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingBreatheEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("can_breathe", self.can_breathe.to_lua_value(lua)?)?;
+        table.raw_set("consume", self.consume.to_lua_value(lua)?)?;
+        table.raw_set("refill", self.refill.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingConversionPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("converted", self.converted.to_lua_value(lua)?)?;
+        table.raw_set("converted_kind", self.converted_kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingConversionPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("outcome", self.outcome.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingDeathPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("damage_type", self.damage_type.to_string().to_lua_value(lua)?)?;
+        table.raw_set("attacker", self.attacker.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingDrownEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("is_drowning", self.is_drowning.to_lua_value(lua)?)?;
+        table.raw_set("damage_amount", self.damage_amount.to_lua_value(lua)?)?;
+        table.raw_set("bubble_count", self.bubble_count.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::LivingEquipmentListenedEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("listened", self.listened.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingExperienceDropEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("attacking_player", self.attacking_player.to_lua_value(lua)?)?;
+        table.raw_set("original", self.original.to_lua_value(lua)?)?;
+        table.raw_set("amount", self.amount.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingFallEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("distance", self.distance.to_lua_value(lua)?)?;
+        table.raw_set("multiplier", self.multiplier.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingFlyingSpeedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("speed", self.speed.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -3368,6 +4843,25 @@ impl ToLuaValue for mod_api::LivingHealEvent {
         table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
         table.raw_set("amount", self.amount.to_lua_value(lua)?)?;
         table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingJumpEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingJumpPowerEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("power", self.power.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -3395,6 +4889,29 @@ impl ToLuaValue for mod_api::LivingRenderState {
         table.raw_set("has_red_overlay", self.has_red_overlay.to_lua_value(lua)?)?;
         table.raw_set("pose", self.pose.to_lua_value(lua)?)?;
         table.raw_set("bed_orientation", self.bed_orientation.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingSpeedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("speed", self.speed.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::LivingUseTotemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("source", self.source.to_lua_value(lua)?)?;
+        table.raw_set("hand", self.hand.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -3469,6 +4986,19 @@ impl ToLuaValue for mod_api::MapDecorationType {
         table.raw_set("id", self.id.to_string().to_lua_value(lua)?)?;
         table.raw_set("sprite", self.sprite.to_string().to_lua_value(lua)?)?;
         table.raw_set("show_on_item_frame", self.show_on_item_frame.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::MapInfo<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("id", self.id.to_lua_value(lua)?)?;
+        table.raw_set("center", self.center.to_lua_value(lua)?)?;
+        table.raw_set("scale", self.scale.to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("locked", self.locked.to_lua_value(lua)?)?;
+        table.raw_set("in_frame", self.in_frame.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -3549,6 +5079,17 @@ impl ToLuaValue for mod_api::MenuContainer {
             _ => return Err(mlua::Error::runtime("unknown variant of MenuContainer")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::MenuExtraDataEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("menu", self.menu.to_string().to_lua_value(lua)?)?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -3657,6 +5198,31 @@ impl ToLuaValue for mod_api::MenuSlotPlace {
     }
 }
 
+impl ToLuaValue for mod_api::MenuStillValidEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("menu", self.menu.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("eye", self.eye.to_lua_value(lua)?)?;
+        table.raw_set("valid", self.valid.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::MenuTransferEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("menu", self.menu.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("recipe", self.recipe.to_string().to_lua_value(lua)?)?;
+        table.raw_set("max", self.max.to_lua_value(lua)?)?;
+        table.raw_set("dry_run", self.dry_run.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::MinecartKind {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -3716,9 +5282,93 @@ impl ToLuaValue for mod_api::MobCategory {
     }
 }
 
+impl ToLuaValue for mod_api::MobKilledEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::MobRender<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("id", self.id.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("custom_name", self.custom_name.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("baby", self.baby.to_lua_value(lua)?)?;
+        table.raw_set("partial", self.partial.to_lua_value(lua)?)?;
+        table.raw_set("age", self.age.to_lua_value(lua)?)?;
+        table.raw_set("body_yaw", self.body_yaw.to_lua_value(lua)?)?;
+        table.raw_set("head_yaw", self.head_yaw.to_lua_value(lua)?)?;
+        table.raw_set("pitch", self.pitch.to_lua_value(lua)?)?;
+        table.raw_set("walk_position", self.walk_position.to_lua_value(lua)?)?;
+        table.raw_set("walk_speed", self.walk_speed.to_lua_value(lua)?)?;
+        table.raw_set("hurt_time", self.hurt_time.to_lua_value(lua)?)?;
+        table.raw_set("death_time", self.death_time.to_lua_value(lua)?)?;
+        table.raw_set("on_ground", self.on_ground.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::MobSpawnedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("natural", self.natural.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::MobSplitEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("parent", self.parent.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("size", self.size.to_lua_value(lua)?)?;
+        table.raw_set("child_size", self.child_size.to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ModBlockEntity {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         self.id().to_string().to_lua_value(lua)
+    }
+}
+
+impl ToLuaValue for mod_api::ModBlockEntityView<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        self.id().to_string().to_lua_value(lua)
+    }
+}
+
+impl ToLuaValue for mod_api::ModContainerViewersEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("viewers", self.viewers.to_lua_value(lua)?)?;
+        table.raw_set("previous", self.previous.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ModEnergyBuffer {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("capacity", self.capacity.to_lua_value(lua)?)?;
+        table.raw_set("max_insert", self.max_insert.to_lua_value(lua)?)?;
+        table.raw_set("max_extract", self.max_extract.to_lua_value(lua)?)?;
+        table.raw_set("insert_faces", self.insert_faces.to_lua_value(lua)?)?;
+        table.raw_set("extract_faces", self.extract_faces.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -3741,6 +5391,23 @@ impl ToLuaValue for mod_api::ModMismatchResolution {
     }
 }
 
+impl ToLuaValue for mod_api::ModParticle {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("position", self.position.to_lua_value(lua)?)?;
+        table.raw_set("previous", self.previous.to_lua_value(lua)?)?;
+        table.raw_set("velocity", self.velocity.to_lua_value(lua)?)?;
+        table.raw_set("age", self.age.to_lua_value(lua)?)?;
+        table.raw_set("lifetime", self.lifetime.to_lua_value(lua)?)?;
+        table.raw_set("size", self.size.to_lua_value(lua)?)?;
+        table.raw_set("rgba", self.rgba.to_lua_value(lua)?)?;
+        table.raw_set("frame", self.frame.to_lua_value(lua)?)?;
+        table.raw_set("removed", self.removed.to_lua_value(lua)?)?;
+        table.raw_set("state", self.state.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ModelError {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -3749,6 +5416,18 @@ impl ToLuaValue for mod_api::ModelError {
             _ => return Err(mlua::Error::runtime("unknown variant of ModelError")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::ModelInstance {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("origin", self.origin.to_lua_value(lua)?)?;
+        table.raw_set("transform", self.transform.to_lua_value(lua)?)?;
+        table.raw_set("tint", self.tint.to_lua_value(lua)?)?;
+        table.raw_set("light", self.light.to_lua_value(lua)?)?;
+        table.raw_set("overlay", self.overlay.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -3810,6 +5489,19 @@ impl ToLuaValue for mod_api::MouseButtonPreEvent {
         let table = lua.create_table()?;
         table.raw_set("button", self.button.to_lua_value(lua)?)?;
         table.raw_set("pressed", self.pressed.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::MouseScrollingEvent {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("scroll", self.scroll.to_lua_value(lua)?)?;
+        table.raw_set("accumulated", self.accumulated.to_lua_value(lua)?)?;
+        table.raw_set("buttons", self.buttons.to_lua_value(lua)?)?;
+        table.raw_set("cursor", self.cursor.to_lua_value(lua)?)?;
         table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
         table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
@@ -3976,6 +5668,16 @@ impl ToLuaValue for mod_api::NoteBlockChange {
         table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
         table.raw_set("instrument", self.instrument.to_lua_value(lua)?)?;
         table.raw_set("old_note", self.old_note.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::NoteBlockChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("context", self.context.to_lua_value(lua)?)?;
+        table.raw_set("new_note", self.new_note.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -4670,6 +6372,19 @@ impl ToLuaValue for mod_api::PermissionLevel {
     }
 }
 
+impl ToLuaValue for mod_api::PermissionsChangedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("player_entity_id", self.player_entity_id.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("old", self.old.to_lua_value(lua)?)?;
+        table.raw_set("new", self.new.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PhantomSpawnResult {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -4679,6 +6394,19 @@ impl ToLuaValue for mod_api::PhantomSpawnResult {
             _ => return Err(mlua::Error::runtime("unknown variant of PhantomSpawnResult")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::PickupXpEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("orb", self.orb.to_lua_value(lua)?)?;
+        table.raw_set("value", self.value.to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -4774,6 +6502,51 @@ impl ToLuaValue for mod_api::PipelineVertexFormat {
     }
 }
 
+impl ToLuaValue for mod_api::PistonPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("piston", self.piston.to_lua_value(lua)?)?;
+        table.raw_set("direction", self.direction.to_lua_value(lua)?)?;
+        table.raw_set("extending", self.extending.to_lua_value(lua)?)?;
+        table.raw_set("push", list_to_lua(self.push, lua)?)?;
+        table.raw_set("destroy", list_to_lua(self.destroy, lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PistonPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_lua_value(lua)?)?;
+        table.raw_set("piston", self.piston.to_lua_value(lua)?)?;
+        table.raw_set("direction", self.direction.to_lua_value(lua)?)?;
+        table.raw_set("extending", self.extending.to_lua_value(lua)?)?;
+        table.raw_set("push", list_to_lua(self.push, lua)?)?;
+        table.raw_set("destroy", list_to_lua(self.destroy, lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlaySoundSourceEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("sound", self.sound.to_lua_value(lua)?)?;
+        table.raw_set("channel", self.channel.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayStreamingSourceEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("sound", self.sound.to_lua_value(lua)?)?;
+        table.raw_set("channel", self.channel.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PlayerAbilities {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -4821,6 +6594,58 @@ impl ToLuaValue for mod_api::PlayerAction {
     }
 }
 
+impl ToLuaValue for mod_api::PlayerAdvancementDoneEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("advancement", self.advancement.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerArmSwingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("hand", self.hand.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerAttackCooldownResetEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerBedEnterEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerBedLeaveEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("wake_immediately", self.wake_immediately.to_lua_value(lua)?)?;
+        table.raw_set("update_level", self.update_level.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PlayerBreakSpeedEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -4830,6 +6655,72 @@ impl ToLuaValue for mod_api::PlayerBreakSpeedEvent {
         table.raw_set("original_speed", self.original_speed.to_lua_value(lua)?)?;
         table.raw_set("new_speed", self.new_speed.to_lua_value(lua)?)?;
         table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerBucketEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerBundleItemSelectEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("slot", self.slot.to_lua_value(lua)?)?;
+        table.raw_set("index", self.index.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerChangedDimensionEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_string().to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerClientLoadedWorldEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerContainerCloseEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("menu", self.menu.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerContainerOpenEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("menu", self.menu.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -4865,12 +6756,115 @@ impl ToLuaValue for mod_api::PlayerDataRefusal {
     }
 }
 
+impl ToLuaValue for mod_api::PlayerDeepSleepEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerDestroyItemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("slot", self.slot.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerDiedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("cause", self.cause.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerEditBookEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pages", self.pages.to_lua_value(lua)?)?;
+        table.raw_set("signing", self.signing.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerEggThrowEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerElytraBoostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerExpCooldownChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("ticks", self.ticks.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PlayerExperience {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("level", self.level.to_lua_value(lua)?)?;
         table.raw_set("progress", self.progress.to_lua_value(lua)?)?;
         table.raw_set("total", self.total.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerFishEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("state", self.state.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerFlowerPotManipulateEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("plant", self.plant.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerFlyableFallEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("player_entity_id", self.player_entity_id.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("distance", self.distance.to_lua_value(lua)?)?;
+        table.raw_set("multiplier", self.multiplier.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -4911,6 +6905,115 @@ impl ToLuaValue for mod_api::PlayerInput {
     }
 }
 
+impl ToLuaValue for mod_api::PlayerInputEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("flags", self.flags.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerInsertLecternBookEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("book", self.book.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerItemCooldownEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("ticks", self.ticks.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerItemFrameChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("action", self.action.to_string().to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("rotation", self.rotation.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerItemMendEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("repair", self.repair.to_lua_value(lua)?)?;
+        table.raw_set("experience", self.experience.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerJumpEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerKickedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("reason", self.reason.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerLaunchProjectileEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerLecternPageChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("page", self.page.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerLevelChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PlayerLimitRefusal {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -4924,6 +7027,54 @@ impl ToLuaValue for mod_api::PlayerLimitRefusal {
             }
             _ => return Err(mlua::Error::runtime("unknown variant of PlayerLimitRefusal")),
         }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerLoadFromFileEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("directory", self.directory.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerLoggedInEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerLoggedOutEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerLoomPatternSelectEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pattern", self.pattern.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerMapFilledEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("map_id", self.map_id.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -4951,11 +7102,257 @@ impl ToLuaValue for mod_api::PlayerMoveEvent {
     }
 }
 
+impl ToLuaValue for mod_api::PlayerNameEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("entity_name", self.entity_name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerOpenSignEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("front", self.front.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerPickItemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from_entity", self.from_entity.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerPickupArrowEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerReadyArrowEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("arrow", self.arrow.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerRecipeBookClickEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("recipe", self.recipe.to_string().to_lua_value(lua)?)?;
+        table.raw_set("all", self.all.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerRecipeBookSettingsChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("book", self.book.to_lua_value(lua)?)?;
+        table.raw_set("open", self.open.to_lua_value(lua)?)?;
+        table.raw_set("filtering", self.filtering.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerRecipeDiscoveredEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("recipe", self.recipe.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerRender<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("local", self.local.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerRespawnedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerRiptideEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerSaveToFileEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("directory", self.directory.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerSetSpawnEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("player_entity_id", self.player_entity_id.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("forced", self.forced.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerShearEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("off_hand", self.off_hand.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerShieldDisableEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("ticks", self.ticks.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerSprintEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("sprinting", self.sprinting.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerStartSpectatingEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerStartTrackingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("uuid", self.uuid.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PlayerStaysOnGroundSurfaceEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
         table.raw_set("staying", self.staying.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerStonecutterRecipeSelectEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("recipe", self.recipe.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerStopSpectatingEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerStopTrackingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("uuid", self.uuid.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerStopUsingItemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerSwapWithEquipmentSlotEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("slot", self.slot.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -4979,6 +7376,111 @@ impl ToLuaValue for mod_api::PlayerSwitchHotbarSlotPreEvent {
         table.raw_set("old_slot", self.old_slot.to_lua_value(lua)?)?;
         table.raw_set("new_slot", self.new_slot.to_lua_value(lua)?)?;
         table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerTakeLecternBookEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("book", self.book.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerTeleportEndGatewayEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("gateway", self.gateway.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerTeleportedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerToggleEntityAgeLockEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        table.raw_set("locked", self.locked.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerToggleFlightEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("flying", self.flying.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerToggleSneakEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("sneaking", self.sneaking.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerTotemEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerTradeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerUnleashEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity_id", self.entity_id.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerVelocityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("velocity", self.velocity.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -5033,10 +7535,42 @@ impl ToLuaValue for mod_api::PlayerWorldRefusal {
     }
 }
 
+impl ToLuaValue for mod_api::PlayerXpChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("player_entity_id", self.player_entity_id.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("amount", self.amount.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PlayerXpLevelChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("levels", self.levels.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PoiKey {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set(1, self.0.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PortalCreateEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -5088,9 +7622,38 @@ impl ToLuaValue for mod_api::PosedPart {
     }
 }
 
+impl ToLuaValue for mod_api::PotionSplashEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::PrepareHopperTransferEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PrepareItemCraftEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::PrepareSmithingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
         table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
@@ -5131,6 +7694,34 @@ impl ToLuaValue for mod_api::ProgressType {
             _ => return Err(mlua::Error::runtime("unknown variant of ProgressType")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::ProjectileImpactEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("projectile", self.projectile.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("owner", self.owner.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("entity_kind", self.entity_kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("block", self.block.to_lua_value(lua)?)?;
+        table.raw_set("face", self.face.to_lua_value(lua)?)?;
+        table.raw_set("at", self.at.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ProjectileLaunchEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -5186,6 +7777,16 @@ impl ToLuaValue for mod_api::RaidSpawnWaveEvent {
         table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
         table.raw_set("wave", self.wave.to_lua_value(lua)?)?;
         table.raw_set("raiders", self.raiders.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::RaidStateChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("raid", self.raid.to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("state", self.state.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -5366,6 +7967,12 @@ impl ToLuaValue for mod_api::RegisteredAnimationType {
     }
 }
 
+impl ToLuaValue for mod_api::RegistrarMob<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        self.id().to_string().to_lua_value(lua)
+    }
+}
+
 impl ToLuaValue for mod_api::RegistrationReadError {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -5412,6 +8019,26 @@ impl ToLuaValue for mod_api::RemovalReason {
             _ => return Err(mlua::Error::runtime("unknown variant of RemovalReason")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::RenderFramePostEvent {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("elapsed", self.elapsed.to_lua_value(lua)?)?;
+        table.raw_set("world_partial_tick", self.world_partial_tick.to_lua_value(lua)?)?;
+        table.raw_set("partial_tick", self.partial_tick.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::RenderFramePreEvent {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("elapsed", self.elapsed.to_lua_value(lua)?)?;
+        table.raw_set("world_partial_tick", self.world_partial_tick.to_lua_value(lua)?)?;
+        table.raw_set("partial_tick", self.partial_tick.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -5500,6 +8127,16 @@ impl ToLuaValue for mod_api::ResolverBiome {
         table.raw_set("temperature", self.temperature.to_lua_value(lua)?)?;
         table.raw_set("downfall", self.downfall.to_lua_value(lua)?)?;
         table.raw_set("colors", self.colors.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ResourcePackStatusEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("status", self.status.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -5693,10 +8330,198 @@ impl ToLuaValue for mod_api::ScheduleError {
     }
 }
 
+impl ToLuaValue for mod_api::ScheduledTaskEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("id", self.id.to_lua_value(lua)?)?;
+        table.raw_set("owner", self.owner.to_string().to_lua_value(lua)?)?;
+        table.raw_set("token", self.token.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenCharTypedPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("c", self.c.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenClickEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        table.raw_set("data", list_to_lua(self.data, lua)?)?;
+        table.raw_set("at", self.at.to_lua_value(lua)?)?;
+        table.raw_set("right", self.right.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenClosingEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ScreenId {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("id", self.id.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenInitPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenKeyPressedPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("key", self.key.to_string().to_lua_value(lua)?)?;
+        table.raw_set("repeat", self.repeat.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenKeyPressedPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("key", self.key.to_string().to_lua_value(lua)?)?;
+        table.raw_set("repeat", self.repeat.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenKeyReleasedPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("key", self.key.to_string().to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenKeyReleasedPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("key", self.key.to_string().to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseButtonPressedPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("button", self.button.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseButtonPressedPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("button", self.button.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseButtonReleasedPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("button", self.button.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseButtonReleasedPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("button", self.button.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseDraggedPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("button", self.button.to_lua_value(lua)?)?;
+        table.raw_set("delta", self.delta.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseDraggedPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("button", self.button.to_lua_value(lua)?)?;
+        table.raw_set("delta", self.delta.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseScrolledPostEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("scroll", self.scroll.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenMouseScrolledPreEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("scroll", self.scroll.to_lua_value(lua)?)?;
+        table.raw_set("modifiers", self.modifiers.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -5709,6 +8534,59 @@ impl ToLuaValue for mod_api::ScreenOpening {
             _ => return Err(mlua::Error::runtime("unknown variant of ScreenOpening")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenOpeningEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("current", self.current.to_lua_value(lua)?)?;
+        table.raw_set("new", self.new.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenRenderInventoryMobEffectsEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("available_space", self.available_space.to_lua_value(lua)?)?;
+        table.raw_set("compact", self.compact.to_lua_value(lua)?)?;
+        table.raw_set("horizontal_offset", self.horizontal_offset.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenRoomEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("screen", self.screen.to_lua_value(lua)?)?;
+        table.raw_set("right", self.right.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::ScreenView<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("id", self.id.to_string().to_lua_value(lua)?)?;
+        table.raw_set("menu", self.menu.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("title", self.title.as_ref().map(|value| value.to_lua_value(lua)).transpose()?.unwrap_or(Value::Nil))?;
+        table.raw_set("rect", self.rect.to_lua_value(lua)?)?;
+        table.raw_set("slots", self.slots.to_lua_value(lua)?)?;
+        table.raw_set("mouse", self.mouse.to_lua_value(lua)?)?;
+        table.raw_set("partial_tick", self.partial_tick.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::SculkBloomEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -5849,6 +8727,15 @@ impl ToLuaValue for mod_api::ServerStoppingEvent {
     }
 }
 
+impl ToLuaValue for mod_api::ServerTickEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("context", self.context.to_lua_value(lua)?)?;
+        table.raw_set("phase", self.phase.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::ServerTickPhase {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -5863,6 +8750,15 @@ impl ToLuaValue for mod_api::ServerTickPhase {
             }
             _ => return Err(mlua::Error::runtime("unknown variant of ServerTickPhase")),
         }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::SettingChangedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("mod_id", self.mod_id.to_string().to_lua_value(lua)?)?;
+        table.raw_set("key", self.key.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -6382,6 +9278,15 @@ impl ToLuaValue for mod_api::StateMatchError {
     }
 }
 
+impl ToLuaValue for mod_api::StatefulBlockEntityEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("block", self.block.to_string().to_lua_value(lua)?)?;
+        table.raw_set("stateful", self.stateful.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::StorageError {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -6494,6 +9399,17 @@ impl ToLuaValue for mod_api::SwapWith {
     }
 }
 
+impl ToLuaValue for mod_api::SweepAttackEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("target", self.target.to_string().to_lua_value(lua)?)?;
+        table.raw_set("vanilla_sweep", self.vanilla_sweep.to_lua_value(lua)?)?;
+        table.raw_set("sweeping", self.sweeping.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::TagsUpdateCause {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -6516,6 +9432,16 @@ impl ToLuaValue for mod_api::TagsUpdatedEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("cause", self.cause.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::TargetHitEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("strength", self.strength.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -6582,6 +9508,18 @@ impl ToLuaValue for mod_api::TerrainModelError {
     }
 }
 
+impl ToLuaValue for mod_api::TerrainModelOptions<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("material", self.material.to_lua_value(lua)?)?;
+        table.raw_set("shade", self.shade.to_lua_value(lua)?)?;
+        table.raw_set("uv_shift", self.uv_shift.to_lua_value(lua)?)?;
+        table.raw_set("uv_shrink_ratio", self.uv_shrink_ratio.to_lua_value(lua)?)?;
+        table.raw_set("tint", self.tint.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::TerrainShade {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -6591,6 +9529,17 @@ impl ToLuaValue for mod_api::TerrainShade {
             _ => return Err(mlua::Error::runtime("unknown variant of TerrainShade")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::TerrainUvShift<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("source_sprite", self.source_sprite.to_string().to_lua_value(lua)?)?;
+        table.raw_set("target_sprite", self.target_sprite.to_string().to_lua_value(lua)?)?;
+        table.raw_set("scale", self.scale.to_lua_value(lua)?)?;
+        table.raw_set("offset", self.offset.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -6646,6 +9595,16 @@ impl ToLuaValue for mod_api::TextureAtlasStitchedEvent {
     }
 }
 
+impl ToLuaValue for mod_api::ThunderChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("thundering", self.thundering.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::TickId {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         self.get().to_lua_value(lua)
@@ -6679,6 +9638,18 @@ impl ToLuaValue for mod_api::TicketOwner {
                 table.raw_set(1, f0.to_lua_value(lua)?)?;
             }
         }
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::TimeSkipEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        table.raw_set("cause", self.cause.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -6806,6 +9777,17 @@ impl ToLuaValue for mod_api::TooltipPlacement {
     }
 }
 
+impl ToLuaValue for mod_api::TradeSelectEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("name", self.name.to_string().to_lua_value(lua)?)?;
+        table.raw_set("villager", self.villager.to_lua_value(lua)?)?;
+        table.raw_set("index", self.index.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::TradeSetKey {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -6831,6 +9813,17 @@ impl ToLuaValue for mod_api::TransformRefusal {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("reason", self.reason.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::Transformation {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("translation", self.translation.to_lua_value(lua)?)?;
+        table.raw_set("left_rotation", self.left_rotation.to_lua_value(lua)?)?;
+        table.raw_set("scale", self.scale.to_lua_value(lua)?)?;
+        table.raw_set("right_rotation", self.right_rotation.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -7032,6 +10025,25 @@ impl ToLuaValue for mod_api::VarLong {
     }
 }
 
+impl ToLuaValue for mod_api::VaultChangeStateEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("state", self.state.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::VaultLootEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        table.raw_set("item", self.item.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::Vec3 {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -7042,11 +10054,61 @@ impl ToLuaValue for mod_api::Vec3 {
     }
 }
 
+impl ToLuaValue for mod_api::VehicleCreateEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::VehicleDamageEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("damage", self.damage.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::VehicleDestroyEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("pos", self.pos.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::VehicleMovedEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("from", self.from.to_lua_value(lua)?)?;
+        table.raw_set("to", self.to.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::Victim {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.raw_set("position", self.position.to_lua_value(lua)?)?;
         table.raw_set("view", self.view.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::VillageSiegeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("attempted_pos", self.attempted_pos.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -7066,6 +10128,17 @@ impl ToLuaValue for mod_api::WantedPositionError {
             _ => return Err(mlua::Error::runtime("unknown variant of WantedPositionError")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::WeatherChangeEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("dimension", self.dimension.to_string().to_lua_value(lua)?)?;
+        table.raw_set("raining", self.raining.to_lua_value(lua)?)?;
+        table.raw_set("thundering", self.thundering.to_lua_value(lua)?)?;
+        table.raw_set("cancelled", self.cancelled.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
     }
 }
 
@@ -7126,6 +10199,16 @@ impl ToLuaValue for mod_api::WorldFluid {
         table.raw_set("slope_find_distance", self.slope_find_distance.to_lua_value(lua)?)?;
         table.raw_set("source_conversion", self.source_conversion.to_lua_value(lua)?)?;
         table.raw_set("bucket", self.bucket.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::WorldLifecycleEvent<'_> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("context", self.context.to_lua_value(lua)?)?;
+        table.raw_set("phase", self.phase.to_lua_value(lua)?)?;
+        table.raw_set("error_text", self.error_text.to_string().to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -7344,6 +10427,16 @@ impl ToLuaValue for mod_api::client::particles::PositionSource {
     }
 }
 
+impl ToLuaValue for mod_api::client::widgets::Button {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("rect", self.rect.to_lua_value(lua)?)?;
+        table.raw_set("label", self.label.to_lua_value(lua)?)?;
+        table.raw_set("active", self.active.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::client::widgets::EditKey {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -7356,6 +10449,57 @@ impl ToLuaValue for mod_api::client::widgets::EditKey {
             mod_api::client::widgets::EditKey::SelectAll => "select_all",
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+impl ToLuaValue for mod_api::client::widgets::TextField {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("rect", self.rect.to_lua_value(lua)?)?;
+        table.raw_set("edit", self.edit.to_lua_value(lua)?)?;
+        table.raw_set("active", self.active.to_lua_value(lua)?)?;
+        table.raw_set("bordered", self.bordered.to_lua_value(lua)?)?;
+        table.raw_set("text_color", self.text_color.to_lua_value(lua)?)?;
+        table.raw_set("suggestion", self.suggestion.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("message", self.message.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::client::widgets::TextFieldView {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("rect", self.rect.to_lua_value(lua)?)?;
+        table.raw_set("value", self.value.to_string().to_lua_value(lua)?)?;
+        table.raw_set("cursor", self.cursor.to_lua_value(lua)?)?;
+        table.raw_set("highlight", self.highlight.to_lua_value(lua)?)?;
+        table.raw_set("max_length", self.max_length.to_lua_value(lua)?)?;
+        table.raw_set("scroll", self.scroll.to_lua_value(lua)?)?;
+        table.raw_set("focused", self.focused.to_lua_value(lua)?)?;
+        table.raw_set("caret_shown", self.caret_shown.to_lua_value(lua)?)?;
+        table.raw_set("bordered", self.bordered.to_lua_value(lua)?)?;
+        table.raw_set("text_color", self.text_color.to_lua_value(lua)?)?;
+        table.raw_set("suggestion", self.suggestion.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("message", self.message.to_string().to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::client::widgets::Widget {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        match self {
+            mod_api::client::widgets::Widget::Button(f0) => {
+                table.raw_set("tag", "button")?;
+                table.raw_set(1, f0.to_lua_value(lua)?)?;
+            }
+            mod_api::client::widgets::Widget::TextField(f0) => {
+                table.raw_set("tag", "text_field")?;
+                table.raw_set(1, f0.to_lua_value(lua)?)?;
+            }
+            _ => return Err(mlua::Error::runtime("unknown variant of client::widgets::Widget")),
+        }
+        Ok(Value::Table(table))
     }
 }
 
@@ -7536,6 +10680,28 @@ impl ToLuaValue for mod_api::world::snapshots::LootLevel {
     }
 }
 
+impl ToLuaValue for char {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let mut buffer = [0u8; 4];
+        Ok(Value::String(lua.create_string(self.encode_utf8(&mut buffer))?))
+    }
+}
+
+impl ToLuaValue for std::path::Path {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let text = self
+            .to_str()
+            .ok_or_else(|| mlua::Error::runtime("a path is not valid UTF-8"))?;
+        Ok(Value::String(lua.create_string(text)?))
+    }
+}
+
+impl ToLuaValue for std::path::PathBuf {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        self.as_path().to_lua_value(lua)
+    }
+}
+
 #[cfg(test)]
 mod runtime_tests {
     use crate::scalar::ToLuaValue;
@@ -7597,6 +10763,54 @@ mod runtime_tests {
     }
 
     #[test]
+    fn a_four_array_is_a_one_based_lua_array() {
+        let lua = Lua::new();
+        let table = table_of([1.5f32, 2.0, 3.0, 4.0].to_lua_value(&lua).expect("converts"));
+        assert_eq!(table.raw_len(), 4);
+        assert_eq!(table.get::<f32>(1).expect("first"), 1.5);
+        assert_eq!(table.get::<f32>(4).expect("last"), 4.0);
+    }
+
+    #[test]
+    fn a_borrowed_struct_copies_its_text_and_its_options() {
+        let lua = Lua::new();
+        let value = mod_api::HurtSource {
+            damage_type: "fall",
+            causing: 4,
+            direct: -1,
+            position: None,
+        };
+        let table = table_of(value.to_lua_value(&lua).expect("converts"));
+        assert_eq!(table.get::<String>("damage_type").expect("damage_type"), "fall");
+        assert_eq!(table.get::<i32>("causing").expect("causing"), 4);
+        assert_eq!(table.get::<i32>("direct").expect("direct"), -1);
+        assert!(table.get::<Value>("position").expect("position").is_nil());
+    }
+
+    #[test]
+    fn a_char_is_a_one_character_string_and_a_path_is_its_text() {
+        let lua = Lua::new();
+        let Value::String(letter) = 'é'.to_lua_value(&lua).expect("converts") else {
+            panic!("expected a string");
+        };
+        assert_eq!(letter.to_str().expect("utf-8").to_string(), "é");
+        let path = std::path::Path::new("saves/player");
+        let Value::String(text) = path.to_lua_value(&lua).expect("converts") else {
+            panic!("expected a string");
+        };
+        assert_eq!(text.to_str().expect("utf-8").to_string(), "saves/player");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_is_not_utf8_is_an_error_for_that_call() {
+        use std::os::unix::ffi::OsStrExt;
+        let lua = Lua::new();
+        let path = std::path::Path::new(std::ffi::OsStr::from_bytes(b"\xff"));
+        assert!(path.to_lua_value(&lua).is_err());
+    }
+
+    #[test]
     fn a_data_enum_with_named_fields_keys_them_by_name() {
         let lua = Lua::new();
         let value = mod_api::DimensionTransition::Conditional {
@@ -7607,5 +10821,34 @@ mod runtime_tests {
         assert_eq!(table.get::<String>("tag").expect("tag"), "conditional");
         assert_eq!(table.get::<String>("to").expect("to"), "nether");
         assert_eq!(table.get::<String>("from").expect("from"), "overworld");
+    }
+}
+
+#[cfg(test)]
+mod list_tests {
+    use super::list_to_lua;
+    use mlua::{Lua, Value};
+
+    #[test]
+    fn a_list_at_the_cap_converts_and_one_past_it_is_an_error() {
+        let lua = Lua::new();
+        let full = vec![[1i32, 2, 3]; super::MAX_LIST_LEN];
+        let Value::Table(table) = list_to_lua(&full, &lua).expect("at the cap") else {
+            panic!("expected a table");
+        };
+        assert_eq!(table.raw_len(), super::MAX_LIST_LEN);
+        let over = vec![[0i32, 0, 0]; super::MAX_LIST_LEN + 1];
+        assert!(list_to_lua(&over, &lua).is_err());
+    }
+
+    #[test]
+    fn a_list_is_a_one_based_array() {
+        let lua = Lua::new();
+        let items = [7u8, 8];
+        let Value::Table(table) = list_to_lua(&items, &lua).expect("converts") else {
+            panic!("expected a table");
+        };
+        assert_eq!(table.get::<u8>(1).expect("first"), 7);
+        assert_eq!(table.get::<u8>(2).expect("second"), 8);
     }
 }

@@ -76,7 +76,17 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .iter()
         .map(|hook| hook.name.as_str())
         .collect();
-    let types = emit_types::plan(&document.types, &document.handles, &document.hash);
+    let hook_types: Vec<String> = surface
+        .hooks
+        .iter()
+        .flat_map(|hook| hook.arguments.iter().map(|arg| arg.rust_type.clone()))
+        .collect();
+    let types = emit_types::plan_with(
+        &document.types,
+        &document.handles,
+        &document.hash,
+        &hook_types,
+    );
     let methods = emit_impl::emit(&surface, &sigs, &names, &types.plain);
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(&surface, &emitted);
