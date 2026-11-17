@@ -7,3 +7,6 @@ pub mod nbt;
 pub mod scalar;
 pub mod text;
 pub mod vector;
+
+#[cfg(test)]
+mod fuzz_tests;
