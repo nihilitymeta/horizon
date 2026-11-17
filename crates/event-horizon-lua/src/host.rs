@@ -365,8 +365,9 @@ pub(crate) fn call_handler_value(
     )
 }
 
-/// The `horizon` table a mod's handlers see: `log`, and nothing else yet. Any other field errors,
-/// and `on` only refuses, because hooks are declared while the mod loads.
+/// The `horizon` table a mod's handlers see: `log`, and `none` (the sentinel that answers None on an
+/// `Option` output). Any other field errors, and `on` only refuses, because hooks are declared while
+/// the mod loads.
 fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Result<Table> {
     let horizon = lua.create_table()?;
     let meta = lua.create_table()?;
@@ -419,6 +420,7 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
             Ok(())
         })?,
     )?;
+    horizon.raw_set("none", lua.create_userdata(crate::dispatch::NoneAnswer)?)?;
     horizon.set_readonly(true);
     Ok(horizon)
 }
@@ -502,7 +504,7 @@ fn lock(log: &Mutex<Vec<String>>) -> MutexGuard<'_, Vec<String>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::sync::mpsc;
@@ -1033,7 +1035,7 @@ mod tests {
     }
 
     /// Installs the capturing logger once for the process.
-    fn install_capture() {
+    pub(crate) fn install_capture() {
         static INSTALL: std::sync::Once = std::sync::Once::new();
         INSTALL.call_once(|| {
             let _ = log::set_logger(&CAPTURE);
@@ -1041,7 +1043,7 @@ mod tests {
         });
     }
 
-    fn captured_with_prefix(prefix: &str) -> Vec<String> {
+    pub(crate) fn captured_with_prefix(prefix: &str) -> Vec<String> {
         install_capture();
         lock_captured()
             .iter()

@@ -767,12 +767,6 @@ fn turn_body(method: &Method<'_>) -> String {
     let hook = &method.hook.name;
     let mut out = String::new();
     for output in &method.outputs {
-        if output.ty.starts_with("Option<") {
-            out.push_str(&format!(
-                "        // `{}` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).\n",
-                output.key
-            ));
-        }
         // A list, a carried value or a value behind a reference is copied out of the event: the event
         // keeps its own value until the write back.
         let copy = if output.by_ref || output.shape.is_some() || output.ty.starts_with("Vec<") {
@@ -823,14 +817,18 @@ fn turn_body(method: &Method<'_>) -> String {
     out.push_str("            },\n");
     out.push_str("            &mut |id, answered| {\n");
     for output in &method.outputs {
+        // An `Option` output takes `horizon.none` as None; any other output refuses it.
+        let optional = output.ty.starts_with("Option<");
         match (output.shape, method.view.as_deref()) {
             (Some(shape), Some(view)) => out.push_str(&format!(
-                "                crate::dispatch::accept_by(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {convert});\n",
+                "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {convert});\n",
+                accept = if optional { "accept_opt_by" } else { "accept_by" },
                 key = output.key,
                 convert = carried::converter(shape, view)
             )),
             _ => out.push_str(&format!(
-                "                crate::dispatch::accept(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
+                "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
+                accept = if optional { "accept_opt" } else { "accept" },
                 key = output.key
             )),
         }
@@ -1262,7 +1260,7 @@ impl mod_api::Hooks for LuaHost {
     }
 
     #[test]
-    fn an_option_output_is_documented_as_assign_only() {
+    fn an_option_output_takes_horizon_none_as_none() {
         let ir = ir(vec![hook(
             "pick_thing",
             Kind::Listen,
@@ -1287,7 +1285,8 @@ impl mod_api::Hooks for LuaHost {
         };
         let out = emit(&ir, &sigs, &dispatch, &["pick_thing"], &Plain::default());
         assert!(
-            out.text.contains("setting None is not supported yet"),
+            out.text
+                .contains("crate::dispatch::accept_opt(&out_value, id, \"pick_thing\", \"value\""),
             "{}",
             out.text
         );

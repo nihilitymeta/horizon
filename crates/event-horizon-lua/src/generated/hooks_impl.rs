@@ -430,7 +430,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn block_grow_feature(&self, level: &mut dyn LevelRandomHost, event: &mut BlockGrowFeatureEvent<'_>) -> Flow {
         let _ = &level;
-        // `feature` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_feature = std::cell::RefCell::new(event.feature.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
         self.dispatch_turns(
@@ -445,7 +444,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["feature", "cancelled"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept(&out_feature, id, "block_grow_feature", "feature", &answered.answer("feature"));
+                crate::dispatch::accept_opt(&out_feature, id, "block_grow_feature", "feature", &answered.answer("feature"));
                 crate::dispatch::accept(&out_cancelled, id, "block_grow_feature", "cancelled", &answered.answer("cancelled"));
                 true
             },
@@ -599,7 +598,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn block_tool_modification(&self, host: &dyn Host, event: &mut BlockToolModificationEvent<'_>) -> Flow {
         let _ = &host;
-        // `final_state` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_final_state = std::cell::RefCell::new(event.final_state.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
         if !self.has_handlers("block_tool_modification") {
@@ -625,7 +623,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["final_state", "cancelled"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept_by(&out_final_state, id, "block_tool_modification", "final_state", &answered.answer("final_state"), |value| crate::stacks::optional_state_value(host, value));
+                crate::dispatch::accept_opt_by(&out_final_state, id, "block_tool_modification", "final_state", &answered.answer("final_state"), |value| crate::stacks::state_value(host, value));
                 crate::dispatch::accept(&out_cancelled, id, "block_tool_modification", "cancelled", &answered.answer("cancelled"));
                 true
             },
@@ -638,7 +636,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn break_block(&self, host: &mut dyn ServerHost, event: &mut BreakBlockEvent<'_>) -> Flow {
         let _ = &host;
-        // `exp_to_drop` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_exp_to_drop = std::cell::RefCell::new(event.exp_to_drop.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
         if !self.has_handlers("break_block") {
@@ -660,7 +657,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["exp_to_drop", "cancelled"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept(&out_exp_to_drop, id, "break_block", "exp_to_drop", &answered.answer("exp_to_drop"));
+                crate::dispatch::accept_opt(&out_exp_to_drop, id, "break_block", "exp_to_drop", &answered.answer("exp_to_drop"));
                 crate::dispatch::accept(&out_cancelled, id, "break_block", "cancelled", &answered.answer("cancelled"));
                 true
             },
@@ -881,7 +878,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn can_player_sleep(&self, host: &mut dyn ServerHost, event: &mut CanPlayerSleepEvent<'_>) {
         let _ = &host;
-        // `problem` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_problem = std::cell::RefCell::new(event.problem.clone());
         self.dispatch_turns(
             "can_player_sleep",
@@ -895,7 +891,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["problem"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept(&out_problem, id, "can_player_sleep", "problem", &answered.answer("problem"));
+                crate::dispatch::accept_opt(&out_problem, id, "can_player_sleep", "problem", &answered.answer("problem"));
                 true
             },
         );
@@ -2255,7 +2251,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn entity_outline(&self, host: &dyn ClientHost, event: &mut EntityOutlineEvent<'_>) {
         let _ = &host;
-        // `outline` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_outline = std::cell::RefCell::new(event.outline.clone());
         self.dispatch_turns(
             "entity_outline",
@@ -2268,7 +2263,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["outline"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept(&out_outline, id, "entity_outline", "outline", &answered.answer("outline"));
+                crate::dispatch::accept_opt(&out_outline, id, "entity_outline", "outline", &answered.answer("outline"));
                 true
             },
         );
@@ -3302,7 +3297,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn item_model_select_property(&self, host: &dyn ClientHost, event: &mut ItemModelSelectPropertyEvent<'_>) {
         let _ = &host;
-        // `value` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_value = std::cell::RefCell::new(event.value.clone());
         if !self.has_handlers("item_model_select_property") {
             return;
@@ -3323,7 +3317,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["value"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept(&out_value, id, "item_model_select_property", "value", &answered.answer("value"));
+                crate::dispatch::accept_opt(&out_value, id, "item_model_select_property", "value", &answered.answer("value"));
                 true
             },
         );
@@ -3333,7 +3327,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn item_picked_up_partial(&self, host: &mut dyn ServerHost, event: &mut ItemPickedUpPartialEvent<'_>) {
         let _ = &host;
-        // `remaining` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_remaining = std::cell::RefCell::new(event.remaining.clone());
         if !self.has_handlers("item_picked_up_partial") {
             return;
@@ -3357,7 +3350,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["remaining"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept_by(&out_remaining, id, "item_picked_up_partial", "remaining", &answered.answer("remaining"), |value| crate::stacks::optional_stack_value(&*host as &dyn mod_api::Host, value));
+                crate::dispatch::accept_opt_by(&out_remaining, id, "item_picked_up_partial", "remaining", &answered.answer("remaining"), |value| crate::stacks::stack_value(&*host as &dyn mod_api::Host, value));
                 true
             },
         );
@@ -3734,7 +3727,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn living_entity_use_item_finish(&self, host: HostSide, event: &mut LivingEntityUseItemFinishEvent<'_>) {
         let _ = &host;
-        // `result` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_result = std::cell::RefCell::new(event.result.clone());
         if !self.has_handlers("living_entity_use_item_finish") {
             return;
@@ -3760,7 +3752,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["result"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept_by(&out_result, id, "living_entity_use_item_finish", "result", &answered.answer("result"), |value| crate::stacks::optional_stack_value(crate::stacks::side_host(&host), value));
+                crate::dispatch::accept_opt_by(&out_result, id, "living_entity_use_item_finish", "result", &answered.answer("result"), |value| crate::stacks::stack_value(crate::stacks::side_host(&host), value));
                 true
             },
         );
@@ -3976,7 +3968,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn living_get_projectile(&self, host: HostSide, event: &mut LivingGetProjectileEvent<'_>) {
         let _ = &host;
-        // `projectile` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_projectile = std::cell::RefCell::new(event.projectile.clone());
         if !self.has_handlers("living_get_projectile") {
             return;
@@ -4003,7 +3994,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["projectile"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept_by(&out_projectile, id, "living_get_projectile", "projectile", &answered.answer("projectile"), |value| crate::stacks::optional_stack_value(crate::stacks::side_host(&host), value));
+                crate::dispatch::accept_opt_by(&out_projectile, id, "living_get_projectile", "projectile", &answered.answer("projectile"), |value| crate::stacks::stack_value(crate::stacks::side_host(&host), value));
                 true
             },
         );
@@ -4140,7 +4131,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn menu_background(&self, host: &dyn ClientHost, event: &mut MenuBackgroundEvent<'_>) {
         let _ = &host;
-        // `radius` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_radius = std::cell::RefCell::new(event.radius.clone());
         self.dispatch_turns(
             "menu_background",
@@ -4151,7 +4141,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["radius"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept(&out_radius, id, "menu_background", "radius", &answered.answer("radius"));
+                crate::dispatch::accept_opt(&out_radius, id, "menu_background", "radius", &answered.answer("radius"));
                 true
             },
         );
@@ -5250,7 +5240,6 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn player_login(&self, host: &mut dyn ServerHost, event: &mut PlayerLoginEvent<'_>) -> Flow {
         let _ = &host;
-        // `reason` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_reason = std::cell::RefCell::new(event.reason.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
         self.dispatch_turns(
@@ -5265,7 +5254,7 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["reason", "cancelled"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept(&out_reason, id, "player_login", "reason", &answered.answer("reason"));
+                crate::dispatch::accept_opt(&out_reason, id, "player_login", "reason", &answered.answer("reason"));
                 crate::dispatch::accept(&out_cancelled, id, "player_login", "cancelled", &answered.answer("cancelled"));
                 true
             },
@@ -5748,9 +5737,7 @@ impl mod_api::Hooks for LuaHost {
     #[allow(clippy::clone_on_copy)]
     fn player_swap_hands(&self, host: &mut dyn ServerHost, event: &mut PlayerSwapHandsEvent<'_>) -> Flow {
         let _ = &host;
-        // `to_main_hand` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_to_main_hand = std::cell::RefCell::new(event.to_main_hand.clone());
-        // `to_off_hand` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_to_off_hand = std::cell::RefCell::new(event.to_off_hand.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
         if !self.has_handlers("player_swap_hands") {
@@ -5777,8 +5764,8 @@ impl mod_api::Hooks for LuaHost {
                 crate::dispatch::new_event(lua, data, &["to_main_hand", "to_off_hand", "cancelled"])
             },
             &mut |id, answered| {
-                crate::dispatch::accept_by(&out_to_main_hand, id, "player_swap_hands", "to_main_hand", &answered.answer("to_main_hand"), |value| crate::stacks::optional_stack_value(&*host as &dyn mod_api::Host, value));
-                crate::dispatch::accept_by(&out_to_off_hand, id, "player_swap_hands", "to_off_hand", &answered.answer("to_off_hand"), |value| crate::stacks::optional_stack_value(&*host as &dyn mod_api::Host, value));
+                crate::dispatch::accept_opt_by(&out_to_main_hand, id, "player_swap_hands", "to_main_hand", &answered.answer("to_main_hand"), |value| crate::stacks::stack_value(&*host as &dyn mod_api::Host, value));
+                crate::dispatch::accept_opt_by(&out_to_off_hand, id, "player_swap_hands", "to_off_hand", &answered.answer("to_off_hand"), |value| crate::stacks::stack_value(&*host as &dyn mod_api::Host, value));
                 crate::dispatch::accept(&out_cancelled, id, "player_swap_hands", "cancelled", &answered.answer("cancelled"));
                 true
             },
@@ -6484,7 +6471,6 @@ impl mod_api::Hooks for LuaHost {
     fn render_name_tag(&self, host: &dyn ClientHost, event: &mut RenderNameTagEvent<'_>) {
         let _ = &host;
         let out_visible = std::cell::RefCell::new(event.visible);
-        // `text` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_text = std::cell::RefCell::new(event.text.clone());
         self.dispatch_turns(
             "render_name_tag",
@@ -6500,7 +6486,7 @@ impl mod_api::Hooks for LuaHost {
             },
             &mut |id, answered| {
                 crate::dispatch::accept(&out_visible, id, "render_name_tag", "visible", &answered.answer("visible"));
-                crate::dispatch::accept(&out_text, id, "render_name_tag", "text", &answered.answer("text"));
+                crate::dispatch::accept_opt(&out_text, id, "render_name_tag", "text", &answered.answer("text"));
                 true
             },
         );
@@ -7254,7 +7240,6 @@ impl mod_api::Hooks for LuaHost {
     fn toast_add(&self, host: &dyn ClientHost, event: &mut ToastAddEvent<'_>) -> Flow {
         let _ = &host;
         let out_title = std::cell::RefCell::new(event.title.clone());
-        // `description` is an Option: a mod's value replaces it, and nil leaves it as it is (setting None is not supported yet).
         let out_description = std::cell::RefCell::new(event.description.clone());
         let out_cancelled = std::cell::RefCell::new(event.cancelled);
         self.dispatch_turns(
@@ -7270,7 +7255,7 @@ impl mod_api::Hooks for LuaHost {
             },
             &mut |id, answered| {
                 crate::dispatch::accept(&out_title, id, "toast_add", "title", &answered.answer("title"));
-                crate::dispatch::accept(&out_description, id, "toast_add", "description", &answered.answer("description"));
+                crate::dispatch::accept_opt(&out_description, id, "toast_add", "description", &answered.answer("description"));
                 crate::dispatch::accept(&out_cancelled, id, "toast_add", "cancelled", &answered.answer("cancelled"));
                 true
             },

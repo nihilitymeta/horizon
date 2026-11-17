@@ -158,18 +158,12 @@ pub fn stack_from_spec<H: StackHost + ?Sized>(
     Ok(Some(stack))
 }
 
-/// A non-optional stack a mod wrote: a count of 0 is refused.
+/// A stack a mod wrote to a stack or an `Option<ItemStack>` output. A count of 0 is refused: it is
+/// not a stack. An optional output answers None with `horizon.none`, never with a count of 0.
 pub fn stack_value<H: StackHost + ?Sized>(host: &H, value: &Value) -> Result<H::Stack, String> {
-    stack_from_spec(host, &read_stack(value)?)?
-        .ok_or_else(|| "count 0 is the empty stack: this value needs a stack".to_owned())
-}
-
-/// An optional stack a mod wrote: a count of 0 is the empty stack, `None`.
-pub fn optional_stack_value<H: StackHost + ?Sized>(
-    host: &H,
-    value: &Value,
-) -> Result<Option<H::Stack>, String> {
-    stack_from_spec(host, &read_stack(value)?)
+    stack_from_spec(host, &read_stack(value)?)?.ok_or_else(|| {
+        "count 0 is not a stack: an empty answer is horizon.none on an optional output".to_owned()
+    })
 }
 
 /// A list of stacks a mod wrote: each entry must be a stack, so a count of 0 refuses the list.
@@ -243,14 +237,6 @@ pub fn state_from_spec<H: StateHost + ?Sized>(
 /// A block state a mod wrote, for a state slot.
 pub fn state_value<H: StateHost + ?Sized>(host: &H, value: &Value) -> Result<H::State, String> {
     state_from_spec(host, &read_state(value)?)
-}
-
-/// A block state a mod wrote, for an optional state slot (a state is never empty).
-pub fn optional_state_value<H: StateHost + ?Sized>(
-    host: &H,
-    value: &Value,
-) -> Result<Option<H::State>, String> {
-    state_value(host, value).map(Some)
 }
 
 /// Logs that a hook is not delivered to Lua because a stack or state in it has no id. The caller
@@ -414,8 +400,8 @@ mod tests {
         let lua = mlua::Lua::new();
         let spec = stack_in(&host, Some(&apple(5))).unwrap().unwrap();
         let table = spec.to_lua_value(&lua).unwrap();
-        let back = optional_stack_value(&host, &table).unwrap();
-        assert_eq!(back, Some(apple(5)));
+        let back = stack_value(&host, &table).unwrap();
+        assert_eq!(back, apple(5));
     }
 
     #[test]
@@ -448,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_id_is_refused_and_a_count_0_is_the_empty_stack_only_when_optional() {
+    fn an_unknown_id_and_a_count_0_are_refused() {
         let host = Items {
             calls: Cell::new(0),
         };
@@ -456,8 +442,29 @@ mod tests {
         let unknown = lua_value(&lua, r#"return { id = "minecraft:nothing", count = 1 }"#);
         assert!(stack_value(&host, &unknown).is_err());
         let empty = lua_value(&lua, r#"return { id = "minecraft:apple", count = 0 }"#);
-        assert!(stack_value(&host, &empty).is_err());
-        assert_eq!(optional_stack_value(&host, &empty), Ok(None));
+        let error = stack_value(&host, &empty).expect_err("count 0 is not a stack");
+        assert!(error.contains("horizon.none"), "{error}");
+    }
+
+    #[test]
+    fn an_optional_stack_output_is_cleared_only_by_horizon_none() {
+        let host = Items {
+            calls: Cell::new(0),
+        };
+        let lua = mlua::Lua::new();
+        let slot = std::cell::RefCell::new(Some(apple(3)));
+        let empty = lua_value(&lua, r#"return { id = "minecraft:apple", count = 0 }"#);
+        let refused = crate::dispatch::accept_opt_by(&slot, "m", "h", "o", &empty, |value| {
+            stack_value(&host, value)
+        });
+        assert!(refused);
+        assert_eq!(slot.borrow().clone(), Some(apple(3)));
+        let none = Value::UserData(lua.create_userdata(crate::dispatch::NoneAnswer).unwrap());
+        let refused = crate::dispatch::accept_opt_by(&slot, "m", "h", "o", &none, |value| {
+            stack_value(&host, value)
+        });
+        assert!(!refused);
+        assert_eq!(slot.into_inner(), None);
     }
 
     #[test]

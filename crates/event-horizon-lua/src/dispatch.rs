@@ -14,7 +14,7 @@
 use std::cell::RefCell;
 
 use event_horizon_lua_convert::scalar::FromLuaValue;
-use mlua::{Error, Lua, Table, Value};
+use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 use crate::declare;
 use crate::discover::Side;
@@ -49,9 +49,27 @@ impl Event {
     }
 }
 
-/// Takes the value a mod wrote to one output key, if it wrote one (`nil` is no answer). A value that
-/// does not convert to the output's type is refused: the slot keeps its previous value, and one
-/// warning names the mod, the hook and the output. Other outputs of the same turn are not affected.
+/// The value a mod writes to answer `None` on an `Option` output: `horizon.none`. It is a userdata
+/// with no fields and no way to make another, so a table, a string or a number cannot forge it. The
+/// host makes one per Lua state (`host::runtime_table`), and [`is_none`] tells it apart.
+pub struct NoneAnswer;
+
+impl UserData for NoneAnswer {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("horizon.none"));
+    }
+}
+
+/// Whether `value` is `horizon.none`. Only the host makes a [`NoneAnswer`], one per state, so the
+/// type is the identity.
+pub fn is_none(value: &Value) -> bool {
+    matches!(value, Value::UserData(ud) if ud.is::<NoneAnswer>())
+}
+
+/// Takes the value a mod wrote to a non-optional output key, if it wrote one (`nil` is no answer).
+/// `horizon.none` is refused: such an output has no None. A value that does not convert to the
+/// output's type is refused too. A refusal keeps the slot's previous value and logs one warning
+/// naming the mod, the hook and the output. Other outputs of the same turn are not affected.
 /// Returns whether the value was refused.
 pub fn accept<T: FromLuaValue>(
     slot: &RefCell<T>,
@@ -75,6 +93,55 @@ pub fn accept_by<T>(
     value: &Value,
     convert: impl FnOnce(&Value) -> Result<T, String>,
 ) -> bool {
+    if is_none(value) {
+        return refuse(id, hook, output, "this output cannot be none");
+    }
+    keep(slot, id, hook, output, value, convert)
+}
+
+/// Takes the value a mod wrote to an `Option` output key. `horizon.none` sets the slot to `None`;
+/// any other value converts to the inner type and sets `Some`. `nil` is no answer, as for
+/// [`accept`]. Returns whether the value was refused.
+pub fn accept_opt<T: FromLuaValue>(
+    slot: &RefCell<Option<T>>,
+    id: &str,
+    hook: &str,
+    output: &str,
+    value: &Value,
+) -> bool {
+    accept_opt_by(slot, id, hook, output, value, |value| {
+        T::from_lua_value(value).map_err(|err| err.to_string())
+    })
+}
+
+/// The same as [`accept_opt`], with the conversion of the inner type given (a stack or a block
+/// state converts through its host). The conversion never sees `horizon.none`.
+pub fn accept_opt_by<T>(
+    slot: &RefCell<Option<T>>,
+    id: &str,
+    hook: &str,
+    output: &str,
+    value: &Value,
+    convert: impl FnOnce(&Value) -> Result<T, String>,
+) -> bool {
+    if is_none(value) {
+        *slot.borrow_mut() = None;
+        return false;
+    }
+    keep(slot, id, hook, output, value, |value| {
+        convert(value).map(Some)
+    })
+}
+
+/// Stores the converted value, unless the value is nil (no answer) or does not convert (refused).
+fn keep<T>(
+    slot: &RefCell<T>,
+    id: &str,
+    hook: &str,
+    output: &str,
+    value: &Value,
+    convert: impl FnOnce(&Value) -> Result<T, String>,
+) -> bool {
     if matches!(value, Value::Nil) {
         return false;
     }
@@ -83,14 +150,19 @@ pub fn accept_by<T>(
             *slot.borrow_mut() = next;
             false
         }
-        Err(err) => {
-            log::warn!(
-                target: LOG_TARGET,
-                "{id}: {hook}: output `{output}` refused, the previous value is kept: {err}"
-            );
-            true
-        }
+        Err(err) => refuse(
+            id,
+            hook,
+            output,
+            &format!("the previous value is kept: {err}"),
+        ),
     }
+}
+
+/// Logs the one warning for a refused output and returns `true`.
+fn refuse(id: &str, hook: &str, output: &str, why: &str) -> bool {
+    log::warn!(target: LOG_TARGET, "{id}: {hook}: output `{output}` refused, {why}");
+    true
 }
 
 /// Converts a replace hook's answer, a mod's return value, to `T`. A value that does not convert is
@@ -102,14 +174,19 @@ pub fn answer_of<T: FromLuaValue>(id: &str, hook: &str, value: &Value) -> Option
 }
 
 /// The same as [`answer_of`], with the conversion given (a stack or a block state converts through
-/// its host).
+/// its host). `horizon.none` is refused: a replace answer is always a value.
 pub fn answer_by<T>(
     id: &str,
     hook: &str,
     value: &Value,
     convert: impl FnOnce(&Value) -> Result<T, String>,
 ) -> Option<T> {
-    match convert(value) {
+    let converted = if is_none(value) {
+        Err("this answer cannot be none".to_owned())
+    } else {
+        convert(value)
+    };
+    match converted {
         Ok(answer) => Some(answer),
         Err(err) => {
             log::warn!(
@@ -383,6 +460,7 @@ impl LuaHost {
 mod tests {
     use super::*;
     use crate::discover::{Discovered, ENTRY};
+    use crate::host::tests::{captured_with_prefix, install_capture};
     use crate::host::{LuaHost, LuaMod};
 
     /// A server hook the generated impl has, with a cancel answer: the tests fire it by name.
@@ -800,6 +878,141 @@ mod tests {
         assert!(!accept(&good, "m", FOV, "x", &Value::Integer(4)));
         assert!(!accept(&good, "m", FOV, "x", &Value::Nil));
         assert_eq!(good.into_inner(), 4);
+    }
+
+    /// Fires `FOV` with an `Option<u32>` output held in a slot, as the generated method does for an
+    /// `Option` output: the event gets the current value (nil for None), and the answer goes through
+    /// `accept_opt`. Returns the final value and how many answers were refused.
+    fn fire_opt(host: &LuaHost, start: Option<u32>) -> (Option<u32>, usize) {
+        let slot = RefCell::new(start);
+        let refused = Cell::new(0);
+        host.dispatch_turns(
+            FOV,
+            &|| false,
+            &|lua| {
+                let data = lua.create_table()?;
+                if let Some(value) = *slot.borrow() {
+                    data.raw_set("degrees", value)?;
+                }
+                new_event(lua, data, &["degrees"])
+            },
+            &mut |id, event| {
+                if accept_opt(&slot, id, FOV, "degrees", &event.answer("degrees")) {
+                    refused.set(refused.get() + 1);
+                }
+                true
+            },
+        );
+        (slot.into_inner(), refused.get())
+    }
+
+    #[test]
+    fn horizon_none_clears_an_option_output_and_the_next_mod_sees_nil() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            fov_mod(root.path(), "mod_a", "event.degrees = horizon.none"),
+            fov_mod(root.path(), "mod_b", "horizon.log(tostring(event.degrees))"),
+            fov_mod(root.path(), "mod_c", "event.degrees = 5"),
+        ]);
+        assert_eq!(fire_opt(&host, Some(3)), (Some(5), 0));
+        assert_eq!(host.mods()[1].log_lines(), ["nil"]);
+    }
+
+    #[test]
+    fn horizon_none_is_refused_for_a_number_output_with_one_warning() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            fov_mod(
+                root.path(),
+                "mod_none_refused",
+                "event.degrees = horizon.none",
+            ),
+            fov_mod(
+                root.path(),
+                "mod_none_later",
+                "event.degrees = event.degrees + 3",
+            ),
+        ]);
+        assert_eq!(fire_fov(&host, 1.0), (4.0, 1));
+        let warnings = captured_with_prefix(
+            "mod_none_refused: compute_fov: output `degrees` refused, this output cannot be none",
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+    }
+
+    #[test]
+    fn horizon_none_is_its_own_value_and_horizon_is_frozen() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "local n = horizon.none\n\
+                      horizon.log(type(n) .. \" \" .. tostring(n == nil) .. \" \" .. tostring(n == false) .. \" \" .. tostring(n == 0) .. \" \" .. tostring(n == \"\") .. \" \" .. tostring(n == {}))\n\
+                      horizon.log(tostring(pcall(function() horizon.none = 1 end)) .. \" \" .. tostring(n))";
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "mod_a",
+            &format!("horizon.on(\"{FOV}\", function(event)\n{source}\nend)"),
+            Side::Both,
+        )]);
+        assert_eq!(fire_opt(&host, Some(3)), (Some(3), 0));
+        assert_eq!(
+            host.mods()[0].log_lines(),
+            [
+                "userdata false false false false false",
+                "false horizon.none"
+            ]
+        );
+    }
+
+    #[test]
+    fn nil_leaves_an_option_output_and_a_table_is_refused() {
+        let lua = Lua::new();
+        let slot = RefCell::new(Some(7_u32));
+        assert!(!accept_opt(&slot, "m", FOV, "x", &Value::Nil));
+        assert_eq!(slot.borrow().clone(), Some(7));
+        let table = Value::Table(lua.create_table().unwrap());
+        assert!(accept_opt(&slot, "m", FOV, "x", &table));
+        assert_eq!(slot.borrow().clone(), Some(7));
+        assert!(!accept_opt(&slot, "m", FOV, "x", &Value::Integer(4)));
+        assert_eq!(slot.into_inner(), Some(4));
+    }
+
+    #[test]
+    fn horizon_none_clears_an_option_string_output() {
+        let lua = Lua::new();
+        let slot = RefCell::new(Some(String::from("far")));
+        let text = Value::String(lua.create_string("near").unwrap());
+        assert!(!accept_opt(&slot, "m", FOV, "x", &text));
+        assert_eq!(slot.borrow().as_deref(), Some("near"));
+        let none = Value::UserData(lua.create_userdata(NoneAnswer).unwrap());
+        assert!(!accept_opt(&slot, "m", FOV, "x", &none));
+        assert_eq!(slot.into_inner(), None);
+    }
+
+    #[test]
+    fn a_turn_that_assigns_horizon_none_and_then_fails_is_void() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            fov_mod(
+                root.path(),
+                "mod_a",
+                "event.degrees = horizon.none\nerror(\"boom\")",
+            ),
+            fov_mod(root.path(), "mod_b", "horizon.log(tostring(event.degrees))"),
+        ]);
+        assert_eq!(fire_opt(&host, Some(3)), (Some(3), 0));
+        assert_eq!(host.mods()[1].log_lines(), ["3"]);
+    }
+
+    #[test]
+    fn a_replace_answer_of_horizon_none_is_refused_with_one_warning() {
+        install_capture();
+        let lua = Lua::new();
+        let none = Value::UserData(lua.create_userdata(NoneAnswer).unwrap());
+        assert_eq!(answer_of::<String>("mod_replace_none", HOOK, &none), None);
+        let warnings = captured_with_prefix(
+            "mod_replace_none: block_receive_game: answer refused, the mod gives no answer: this answer cannot be none",
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 
     /// The `(mod, answer)` pairs a replace fire of `HOOK` gives, read as strings.

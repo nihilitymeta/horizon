@@ -180,14 +180,14 @@ pub fn input_check(shape: Shape, raw: &str, field: &str, view: &str) -> String {
     spec_call(shape, view, &input_value(raw, field))
 }
 
-/// The converter `accept_by` takes for an output: the conversion of a mod's value.
+/// The converter `accept_by` (or `accept_opt_by`, for an `Option` output) takes for an output: the
+/// conversion of a mod's value to the value's own type. An `Option` output's `horizon.none` is
+/// handled by the dispatch, so the optional shapes convert like their inner shapes.
 pub fn converter(shape: Shape, view: &str) -> String {
     let function = match shape {
-        Shape::Stack => "stack_value",
-        Shape::OptStack => "optional_stack_value",
+        Shape::Stack | Shape::OptStack => "stack_value",
         Shape::StackList => "stack_list_value",
-        Shape::State => "state_value",
-        Shape::OptState => "optional_state_value",
+        Shape::State | Shape::OptState => "state_value",
     };
     format!("|value| crate::stacks::{function}({view}, value)")
 }
@@ -330,7 +330,7 @@ mod tests {
         );
         assert_eq!(
             converter(Shape::OptState, "v"),
-            "|value| crate::stacks::optional_state_value(v, value)"
+            "|value| crate::stacks::state_value(v, value)"
         );
     }
 }
