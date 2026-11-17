@@ -18,6 +18,7 @@ use mlua::{Error, Function, Lua, Table, Value};
 use crate::budget;
 use crate::declare;
 use crate::discover::{Discovered, ENTRY, Side};
+use crate::dispatch::new_event;
 use crate::ratelimit::{RateLimit, Verdict};
 use crate::state;
 
@@ -38,7 +39,7 @@ pub const LOG_BURST: u32 = 20;
 pub const LOG_PER_SECOND: u32 = 20;
 
 const LATE_ON: &str = "horizon.on can only be used while the mod loads";
-const LOG_TARGET: &str = "event_horizon_lua";
+pub(crate) const LOG_TARGET: &str = "event_horizon_lua";
 
 /// The game's hook id for a hook name a Lua mod may use. Only `server_tick` for now.
 pub fn hook_id(name: &str) -> Option<mod_api::HookId> {
@@ -64,18 +65,18 @@ pub struct LuaMod {
 /// (a call that re-enters the mod does not wait for itself), and another thread waits until the
 /// turn is free. std has no such lock, so it is built from a mutex, its holder and a condvar.
 #[derive(Default)]
-struct Turn {
+pub(crate) struct Turn {
     holder: Mutex<Option<(ThreadId, usize)>>,
     free: Condvar,
 }
 
 /// Holds a mod's turn; the turn is given back when the guard drops, also when the thread panics.
-struct TurnGuard<'a> {
+pub(crate) struct TurnGuard<'a> {
     turn: &'a Turn,
 }
 
 impl Turn {
-    fn enter(&self) -> TurnGuard<'_> {
+    pub(crate) fn enter(&self) -> TurnGuard<'_> {
         let me = thread::current().id();
         let mut holder = self.holder.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
@@ -143,6 +144,16 @@ impl LuaMod {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The mod's sandboxed state. Callers hold `turn()` while they use it.
+    pub(crate) fn lua(&self) -> &Lua {
+        &self.lua
+    }
+
+    /// The turn that serialises the threads calling into this mod's state.
+    pub(crate) fn turn(&self) -> &Turn {
+        &self.turn
     }
 
     pub fn version(&self) -> &str {
@@ -222,6 +233,11 @@ impl LuaHost {
         &self.report
     }
 
+    /// The loaded Lua mods, in load order.
+    pub(crate) fn mods(&self) -> &[LuaMod] {
+        &self.mods
+    }
+
     /// Writes the loaded and refused counts and one line per refusal. The game's logger is up by
     /// `register`, unlike when the mods are read, so this is where the player sees them.
     fn report(&self) {
@@ -253,24 +269,11 @@ impl LuaHost {
     /// Calls every handler of `hook` in every mod that declared it. A client-only mod is skipped
     /// for the server hooks. A failing handler is logged and does not stop the others.
     pub fn fire(&self, hook: &str) {
-        for m in &self.mods {
-            if hook == SERVER_TICK && m.side == Side::Client {
-                continue;
-            }
-            let _turn = m.turn.enter();
-            let handlers = match declare::handlers(&m.lua, hook) {
-                Ok(handlers) => handlers,
-                Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id);
-                    continue;
-                }
-            };
-            for handler in &handlers {
-                if let Err(err) = call_handler(&m.lua, handler) {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id);
-                }
-            }
-        }
+        self.dispatch(
+            hook,
+            &|lua| new_event(lua, lua.create_table()?, &[]),
+            &mut |_, _| true,
+        );
     }
 }
 
@@ -295,12 +298,12 @@ impl mod_api::Hooks for LuaHost {
 
 /// Runs one handler under `HANDLER_BUDGET`. The budget keeps failing after the deadline, so a
 /// `pcall` inside the handler cannot swallow the stop.
-fn call_handler(lua: &Lua, handler: &Function) -> mlua::Result<()> {
+pub(crate) fn call_handler(lua: &Lua, handler: &Function, event: &Table) -> mlua::Result<()> {
     budget::within_with(
         lua,
         HANDLER_BUDGET,
         "the handler ran over its time budget",
-        || handler.call::<()>(()),
+        || handler.call::<()>(event.clone()),
     )
 }
 

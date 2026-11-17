@@ -4,6 +4,7 @@ pub mod budget;
 pub mod builtin;
 pub mod declare;
 pub mod discover;
+pub mod dispatch;
 pub mod host;
 pub mod package;
 pub mod ratelimit;
