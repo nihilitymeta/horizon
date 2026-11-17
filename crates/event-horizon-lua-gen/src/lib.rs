@@ -3,6 +3,7 @@
 
 pub mod carried;
 pub mod dispatch_sigs;
+pub mod emit_handles;
 pub mod emit_hooks;
 pub mod emit_impl;
 pub mod emit_types;

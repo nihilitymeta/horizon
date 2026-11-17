@@ -6,6 +6,7 @@ pub mod declare;
 pub mod discover;
 pub mod dispatch;
 pub mod generated;
+pub mod handles;
 pub mod host;
 pub mod hostcall;
 pub mod package;

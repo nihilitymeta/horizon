@@ -867,6 +867,23 @@ impl ToLuaValue for mod_api::BlockFace {
     }
 }
 
+const BLOCK_FACE_NAMES: &[&str] = &["down", "up", "north", "south", "west", "east"];
+
+impl FromLuaValue for mod_api::BlockFace {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "down" => Ok(mod_api::BlockFace::Down),
+            "up" => Ok(mod_api::BlockFace::Up),
+            "north" => Ok(mod_api::BlockFace::North),
+            "south" => Ok(mod_api::BlockFace::South),
+            "west" => Ok(mod_api::BlockFace::West),
+            "east" => Ok(mod_api::BlockFace::East),
+            _ => Err(ConvertError::unknown_variant(&name, BLOCK_FACE_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::BlockFailedDispenseEvent<'_> {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -978,6 +995,19 @@ impl ToLuaValue for mod_api::BlockShapeKind {
             _ => return Err(mlua::Error::runtime("unknown variant of BlockShapeKind")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const BLOCK_SHAPE_KIND_NAMES: &[&str] = &["outline", "collision"];
+
+impl FromLuaValue for mod_api::BlockShapeKind {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "outline" => Ok(mod_api::BlockShapeKind::Outline),
+            "collision" => Ok(mod_api::BlockShapeKind::Collision),
+            _ => Err(ConvertError::unknown_variant(&name, BLOCK_SHAPE_KIND_NAMES)),
+        }
     }
 }
 
@@ -1712,6 +1742,19 @@ impl ToLuaValue for mod_api::ClipBlock {
     }
 }
 
+const CLIP_BLOCK_NAMES: &[&str] = &["collider", "outline"];
+
+impl FromLuaValue for mod_api::ClipBlock {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "collider" => Ok(mod_api::ClipBlock::Collider),
+            "outline" => Ok(mod_api::ClipBlock::Outline),
+            _ => Err(ConvertError::unknown_variant(&name, CLIP_BLOCK_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::ClipFluid {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -1719,6 +1762,18 @@ impl ToLuaValue for mod_api::ClipFluid {
             _ => return Err(mlua::Error::runtime("unknown variant of ClipFluid")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const CLIP_FLUID_NAMES: &[&str] = &["none"];
+
+impl FromLuaValue for mod_api::ClipFluid {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "none" => Ok(mod_api::ClipFluid::None),
+            _ => Err(ConvertError::unknown_variant(&name, CLIP_FLUID_NAMES)),
+        }
     }
 }
 
@@ -2566,6 +2621,23 @@ impl ToLuaValue for mod_api::Direction {
             mod_api::Direction::East => "east",
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const DIRECTION_NAMES: &[&str] = &["down", "up", "north", "south", "west", "east"];
+
+impl FromLuaValue for mod_api::Direction {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "down" => Ok(mod_api::Direction::Down),
+            "up" => Ok(mod_api::Direction::Up),
+            "north" => Ok(mod_api::Direction::North),
+            "south" => Ok(mod_api::Direction::South),
+            "west" => Ok(mod_api::Direction::West),
+            "east" => Ok(mod_api::Direction::East),
+            _ => Err(ConvertError::unknown_variant(&name, DIRECTION_NAMES)),
+        }
     }
 }
 
@@ -4752,6 +4824,19 @@ impl ToLuaValue for mod_api::LightLayer {
             mod_api::LightLayer::Sky => "sky",
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const LIGHT_LAYER_NAMES: &[&str] = &["block", "sky"];
+
+impl FromLuaValue for mod_api::LightLayer {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "block" => Ok(mod_api::LightLayer::Block),
+            "sky" => Ok(mod_api::LightLayer::Sky),
+            _ => Err(ConvertError::unknown_variant(&name, LIGHT_LAYER_NAMES)),
+        }
     }
 }
 
@@ -9412,6 +9497,20 @@ impl ToLuaValue for mod_api::SupportType {
     }
 }
 
+const SUPPORT_TYPE_NAMES: &[&str] = &["full", "center", "rigid"];
+
+impl FromLuaValue for mod_api::SupportType {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "full" => Ok(mod_api::SupportType::Full),
+            "center" => Ok(mod_api::SupportType::Center),
+            "rigid" => Ok(mod_api::SupportType::Rigid),
+            _ => Err(ConvertError::unknown_variant(&name, SUPPORT_TYPE_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::SwapWith {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -10926,15 +11025,57 @@ mod unit_enum_tests {
     }
 
     #[test]
+    fn block_face_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::BLOCK_FACE_NAMES, vec![mod_api::BlockFace::Down, mod_api::BlockFace::Up, mod_api::BlockFace::North, mod_api::BlockFace::South, mod_api::BlockFace::West, mod_api::BlockFace::East]);
+    }
+
+    #[test]
+    fn block_shape_kind_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::BLOCK_SHAPE_KIND_NAMES, vec![mod_api::BlockShapeKind::Outline, mod_api::BlockShapeKind::Collision]);
+    }
+
+    #[test]
     fn camera_type_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::CAMERA_TYPE_NAMES, vec![mod_api::CameraType::FirstPerson, mod_api::CameraType::ThirdPersonBack, mod_api::CameraType::ThirdPersonFront]);
     }
 
     #[test]
+    fn clip_block_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::CLIP_BLOCK_NAMES, vec![mod_api::ClipBlock::Collider, mod_api::ClipBlock::Outline]);
+    }
+
+    #[test]
+    fn clip_fluid_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::CLIP_FLUID_NAMES, vec![mod_api::ClipFluid::None]);
+    }
+
+    #[test]
+    fn direction_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::DIRECTION_NAMES, vec![mod_api::Direction::Down, mod_api::Direction::Up, mod_api::Direction::North, mod_api::Direction::South, mod_api::Direction::West, mod_api::Direction::East]);
+    }
+
+    #[test]
     fn game_mode_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::GAME_MODE_NAMES, vec![mod_api::GameMode::Survival, mod_api::GameMode::Creative, mod_api::GameMode::Adventure, mod_api::GameMode::Spectator]);
+    }
+
+    #[test]
+    fn light_layer_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::LIGHT_LAYER_NAMES, vec![mod_api::LightLayer::Block, mod_api::LightLayer::Sky]);
+    }
+
+    #[test]
+    fn support_type_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::SUPPORT_TYPE_NAMES, vec![mod_api::SupportType::Full, mod_api::SupportType::Center, mod_api::SupportType::Rigid]);
     }
 
     #[test]

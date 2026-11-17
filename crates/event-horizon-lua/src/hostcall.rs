@@ -13,10 +13,13 @@
 //! operation's name. The scoped function charges the turn's budget and runs the operation against
 //! the turn's host, which must be of the kind the operation needs: a read needs [`TurnHost::read`],
 //! a write needs [`TurnHost::server`]. A turn without that kind raises `not available in this hook`.
-//! A `None` turn opens no scope, so every host call raises `no host call outside a hook`.
+//! A `None` turn opens a scope too, with no host: its calls raise `not available in this hook`,
+//! and a call outside any hook raises `no host call outside a hook`.
 //!
-//! The operations themselves are the handles' job (the next chunk). Until then the only operations
-//! are the H0 stub's, which exist under `cfg(test)` and drive the real `EntityRef` methods.
+//! The operations are the generated handle methods ([`crate::generated::handles`]): `run` converts
+//! the arguments, calls the game's method through the turn's host, and converts the result. A
+//! handle's userdata passes itself as the first argument, so the operation finds the handle it
+//! names. The H0 stub's operations exist under `cfg(test)` only.
 //!
 //! Re-entrancy: a host call may fire a hook again on this thread. A mod whose turn is open is
 //! skipped there (one log line per mod per top-level call), the other mods run, and the nesting is
@@ -29,7 +32,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use mlua::{Error, Lua, Value};
+use mlua::{AnyUserData, Error, Lua, MultiValue, Value};
 use mod_api::{ClientHost, Host, HostSide, ServerHost};
 
 use crate::host::{LOG_TARGET, LuaMod};
@@ -40,7 +43,7 @@ pub const TURN_BUDGET: u32 = 10_000;
 pub const MAX_DEPTH: u32 = 8;
 /// The Lua registry key of the turn's scoped function. Only [`scoped`] sets it, and only in a turn.
 const SLOT: &str = "event_horizon.host_call";
-/// Raised when a handle is called with no turn open, or by a turn with no host at all.
+/// Raised when a handle is called with no turn open.
 pub const OUTSIDE: &str = "no host call outside a hook";
 /// Raised when the turn's host is not of the kind the operation needs.
 pub const NOT_HERE: &str = "not available in this hook";
@@ -176,25 +179,23 @@ pub(crate) fn note_skipped(id: &str, hook: &str) {
     }
 }
 
-/// Runs `body` for one mod's turn with `host` open to its handles. For a host turn, a scope holds
-/// the scoped function under [`SLOT`] while `body` runs. A `None` turn runs `body` with no scope.
-/// Returns what `body` returned and whether the turn's budget was spent, which voids the turn even
-/// when a `pcall` hid the raise. An error from the scope itself is returned as is.
+/// Runs `body` for one mod's turn with `host` open to its handles. A scope holds the scoped
+/// function under [`SLOT`] while `body` runs, for every turn, the `None` turn included (its
+/// operations find no host). Returns what `body` returned and whether the turn's budget was spent,
+/// which voids the turn even when a `pcall` hid the raise. An error from the scope itself is
+/// returned as is.
 pub(crate) fn scoped<R>(
     lua: &Lua,
     host: &mut TurnHost<'_>,
     body: impl FnOnce(&Lua) -> R,
 ) -> mlua::Result<(R, bool)> {
-    if let TurnHost::None = host {
-        return Ok((body(lua), false));
-    }
     let mut turn_host = host.reborrow();
     let spent_cell = Cell::new(false);
     let spent_out = &spent_cell;
     let out = lua.scope(|scope| {
         let mut spent = 0u32;
         let calls = scope.create_function_mut(
-            move |lua: &Lua, (op, id, epoch, arg): (String, u32, u32, Value)| {
+            move |lua: &Lua, (op, this, args): (String, AnyUserData, MultiValue)| {
                 if spent_out.get() {
                     return Err(Error::runtime(SPENT));
                 }
@@ -204,7 +205,7 @@ pub(crate) fn scoped<R>(
                     return Err(Error::runtime(SPENT));
                 }
                 spent += cost;
-                run_op(lua, &mut turn_host, &op, id, epoch, arg)
+                run_op(lua, &mut turn_host, &op, this, args)
             },
         )?;
         lua.set_named_registry_value(SLOT, calls)?;
@@ -245,50 +246,75 @@ pub(crate) fn run_hosted(
 }
 
 /// The handle's side of a host call: find the turn's scoped function and call it with the
-/// operation's name and the handle's id and epoch. Outside a host turn there is none.
+/// operation's name, the handle's userdata (its first argument) and the rest of the arguments.
+/// Outside a hook there is no scoped function.
 pub fn host_call(
     lua: &Lua,
     op: &'static str,
-    id: u32,
-    epoch: u32,
-    arg: Value,
+    this: AnyUserData,
+    args: MultiValue,
 ) -> mlua::Result<Value> {
     let slot: Option<mlua::Function> = lua.named_registry_value(SLOT)?;
     match slot {
-        Some(slot) => slot.call((op, id, epoch, arg)),
+        Some(slot) => slot.call((op, this, args)),
         None => Err(Error::runtime(OUTSIDE)),
     }
 }
 
-/// The operations the scoped function knows. None exist until the handles do (the next chunk), so
-/// outside tests every call is an unknown operation; the H0 stub's table is under `cfg(test)`.
-#[cfg(not(test))]
-fn op_cost(op: &str) -> mlua::Result<u32> {
-    Err(Error::runtime(format!("unknown host call {op}")))
+fn unknown(op: &str) -> Error {
+    Error::runtime(format!("unknown host call {op}"))
 }
 
+/// What an operation costs, from the generated table of the handle families.
+#[cfg(not(test))]
+fn op_cost(op: &str) -> mlua::Result<u32> {
+    crate::generated::handles::cost(op).ok_or_else(|| unknown(op))
+}
+
+/// Runs an operation through the generated table.
 #[cfg(not(test))]
 fn run_op(
-    _: &Lua,
-    _: &mut TurnHost<'_>,
+    lua: &Lua,
+    host: &mut TurnHost<'_>,
     op: &str,
-    _: u32,
-    _: u32,
-    _: Value,
+    this: AnyUserData,
+    args: MultiValue,
 ) -> mlua::Result<Value> {
-    Err(Error::runtime(format!("unknown host call {op}")))
+    crate::generated::handles::run(lua, host, op, &this, args).unwrap_or_else(|| Err(unknown(op)))
+}
+
+/// The H0 stub's table first, then the generated one: the stub's names are not generated names.
+#[cfg(test)]
+fn op_cost(op: &str) -> mlua::Result<u32> {
+    match stub::cost(op) {
+        Some(cost) => Ok(cost),
+        None => crate::generated::handles::cost(op).ok_or_else(|| unknown(op)),
+    }
 }
 
 #[cfg(test)]
-use stub::{op_cost, run_op};
+fn run_op(
+    lua: &Lua,
+    host: &mut TurnHost<'_>,
+    op: &str,
+    this: AnyUserData,
+    args: MultiValue,
+) -> mlua::Result<Value> {
+    match stub::run(lua, host, op, &this, args.clone()) {
+        Some(out) => out,
+        None => crate::generated::handles::run(lua, host, op, &this, args)
+            .unwrap_or_else(|| Err(unknown(op))),
+    }
+}
 
 #[cfg(test)]
 mod stub {
     //! The H0 stub: a handle `Entity` with `position`, `heavy` and `set_velocity`, which reach the
-    //! real `EntityRef` methods through the turn's host. Test-only: the handles are the next chunk.
+    //! real `EntityRef` methods through the turn's host. Test-only: the handles are the generated
+    //! ones, and these names are not theirs.
 
     use event_horizon_lua_convert::scalar::FromLuaValue;
-    use mlua::{Error, Lua, UserData, UserDataMethods, Value};
+    use mlua::{AnyUserData, Error, Lua, MultiValue, UserData, UserDataMethods, Value};
     use mod_api::{EntityRef, WorldEpoch};
 
     use super::{NOT_HERE, TurnHost, host_call};
@@ -307,62 +333,79 @@ mod stub {
     impl UserData for Entity {
         fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
             methods.add_method("id", |_, this, ()| Ok(this.id));
-            methods.add_method("position", |lua, this, ()| {
-                host_call(lua, "position", this.id, this.epoch, Value::Nil)
+            methods.add_function(
+                "position",
+                |lua, (this, args): (AnyUserData, MultiValue)| {
+                    host_call(lua, "position", this, args)
+                },
+            );
+            methods.add_function("heavy", |lua, (this, args): (AnyUserData, MultiValue)| {
+                host_call(lua, "heavy", this, args)
             });
-            methods.add_method("heavy", |lua, this, ()| {
-                host_call(lua, "heavy", this.id, this.epoch, Value::Nil)
-            });
-            methods.add_method("set_velocity", |lua, this, velocity: Value| {
-                host_call(lua, "set_velocity", this.id, this.epoch, velocity)
-            });
+            methods.add_function(
+                "set_velocity",
+                |lua, (this, args): (AnyUserData, MultiValue)| {
+                    host_call(lua, "set_velocity", this, args)
+                },
+            );
         }
     }
 
-    pub fn op_cost(op: &str) -> mlua::Result<u32> {
+    pub fn cost(op: &str) -> Option<u32> {
         match op {
-            "position" => Ok(READ),
-            "heavy" => Ok(HEAVY),
-            "set_velocity" => Ok(WRITE),
-            other => Err(Error::runtime(format!("unknown host call {other}"))),
+            "position" => Some(READ),
+            "heavy" => Some(HEAVY),
+            "set_velocity" => Some(WRITE),
+            _ => None,
         }
     }
 
-    /// Runs one operation against the turn's host. Each operation asks for the host kind it needs,
-    /// so a read-only turn refuses a write with the same error a `None` turn gives a read.
-    pub fn run_op(
+    /// Runs one stub operation against the turn's host, or `None` for a name the stub does not
+    /// have. Each operation asks for the host kind it needs, so a read-only turn refuses a write
+    /// with the same error a `None` turn gives a read.
+    pub fn run(
         lua: &Lua,
         host: &mut TurnHost<'_>,
         op: &str,
-        id: u32,
-        epoch: u32,
-        arg: Value,
-    ) -> mlua::Result<Value> {
-        let entity = EntityRef::new(WorldEpoch::new(u64::from(epoch)), id);
-        match op {
+        this: &AnyUserData,
+        args: MultiValue,
+    ) -> Option<mlua::Result<Value>> {
+        cost(op)?;
+        let entity = match this.borrow::<Entity>() {
+            Ok(entity) => *entity,
+            Err(err) => return Some(Err(err)),
+        };
+        let handle = EntityRef::new(WorldEpoch::new(u64::from(entity.epoch)), entity.id);
+        let arg = args.into_iter().next().unwrap_or(Value::Nil);
+        Some(match op {
             "position" | "heavy" => {
                 let Some(read) = host.read() else {
-                    return Err(Error::runtime(NOT_HERE));
+                    return Some(Err(Error::runtime(NOT_HERE)));
                 };
-                match EntityRef::position(entity, read) {
+                match EntityRef::position(handle, read) {
                     Some([x, y, z]) => {
-                        let point = lua.create_table()?;
-                        point.raw_set("x", x)?;
-                        point.raw_set("y", y)?;
-                        point.raw_set("z", z)?;
-                        Ok(Value::Table(point))
+                        let point = lua.create_table().and_then(|point| {
+                            point.raw_set("x", x)?;
+                            point.raw_set("y", y)?;
+                            point.raw_set("z", z)?;
+                            Ok(point)
+                        });
+                        point.map(Value::Table)
                     }
                     None => Ok(Value::Nil),
                 }
             }
-            _ => {
+            "set_velocity" => {
                 let Some(server) = host.server() else {
-                    return Err(Error::runtime(NOT_HERE));
+                    return Some(Err(Error::runtime(NOT_HERE)));
                 };
-                let velocity = vector(&arg)?;
-                Ok(Value::Boolean(entity.set_velocity(server, velocity)))
+                match vector(&arg) {
+                    Ok(velocity) => Ok(Value::Boolean(handle.set_velocity(server, velocity))),
+                    Err(err) => Err(err),
+                }
             }
-        }
+            _ => return None,
+        })
     }
 
     /// Reads `{x, y, z}` strictly: each axis must be a finite number. The error names the argument.
@@ -391,10 +434,13 @@ mod tests {
     use std::time::Duration;
 
     use mod_api::__private::game::{BackendMutRefOf, BackendRefOf};
-    use mod_api::prelude::{EntitiesBackend, EntitiesBackendMut};
+    use mod_api::prelude::{EntitiesBackend, EntitiesBackendMut, LevelsBackend};
     use mod_api::{
-        Backend, BackendMut, BackendMutRef, BackendRef, ClientHost, EntityRef, Host, ServerHost,
+        Backend, BackendMut, BackendMutRef, BackendRef, BlockState, ClientHost, DimensionKey,
+        EntityRef, Host, LevelRef, ServerHost, WorldEpoch,
     };
+
+    use crate::handles::Token;
 
     use super::stub::Entity;
     use super::*;
@@ -421,7 +467,7 @@ mod tests {
             }
             impl Backend for $ty {}
             mod_api::impl_host_areas!($ty);
-            mod_api::impl_backend_areas!($ty, except(entities));
+            mod_api::impl_backend_areas!($ty, except(entities, levels));
             impl ServerHost for $ty {
                 fn backend_mut(&mut self) -> Option<BackendMutRef<'_>> {
                     Some(BackendMutRefOf::of(self))
@@ -440,11 +486,13 @@ mod tests {
         entity.id() == ME.id && entity.epoch().get() == u64::from(ME.epoch)
     }
 
-    /// A host that knows `ME` at `at`, counts its writes and keeps the last velocity.
+    /// A host that knows `ME` at `at`, counts its writes and keeps the last velocity. `calls` counts
+    /// every read the double answers, so a test can see that a refused call never reached it.
     struct Fake {
         at: [f64; 3],
         velocity: Option<[f64; 3]>,
         writes: u32,
+        calls: Cell<u32>,
     }
 
     impl Fake {
@@ -453,7 +501,12 @@ mod tests {
                 at,
                 velocity: None,
                 writes: 0,
+                calls: Cell::new(0),
             }
+        }
+
+        fn counted(&self) {
+            self.calls.set(self.calls.get() + 1);
         }
     }
 
@@ -461,8 +514,39 @@ mod tests {
 
     impl EntitiesBackend for Fake {
         fn entity_position(&self, entity: EntityRef) -> Option<[f64; 3]> {
+            self.counted();
             is_me(entity).then_some(self.at)
         }
+        fn entity_is_in_water(&self, entity: EntityRef) -> Option<bool> {
+            self.counted();
+            is_me(entity).then_some(true)
+        }
+        fn entity_passengers(&self, entity: EntityRef) -> Option<Vec<EntityRef>> {
+            self.counted();
+            is_me(entity).then(|| vec![me()])
+        }
+        fn entity_level(&self, entity: EntityRef) -> Option<LevelRef> {
+            self.counted();
+            is_me(entity).then(level)
+        }
+    }
+
+    impl LevelsBackend for Fake {
+        /// `None` for every position: a block state needs the game's block registry to build.
+        fn level_block_state(&self, _: LevelRef, _: [i32; 3]) -> Option<BlockState> {
+            self.counted();
+            None
+        }
+    }
+
+    /// The test world's `ME` as a handle value.
+    fn me() -> EntityRef {
+        EntityRef::new(WorldEpoch::new(u64::from(ME.epoch)), ME.id)
+    }
+
+    /// The test world's overworld, as a handle value.
+    fn level() -> LevelRef {
+        LevelRef::new(WorldEpoch::new(1), DimensionKey::OVERWORLD)
     }
 
     impl EntitiesBackendMut for Fake {
@@ -588,7 +672,7 @@ mod tests {
                 ["true 1", "NOT_HERE"],
             ),
             ("read", TurnHost::Read(&read_only), ["true 1", "NOT_HERE"]),
-            ("none", TurnHost::None, ["OUTSIDE", "OUTSIDE"]),
+            ("none", TurnHost::None, ["NOT_HERE", "NOT_HERE"]),
         ];
         for (kind, turn, [read, write]) in cases {
             fire(&host, turn, 0);
@@ -839,6 +923,12 @@ mod tests {
         deepest: &'a Cell<u32>,
     }
 
+    impl LevelsBackend for Nesting<'_> {
+        fn level_block_state(&self, _: LevelRef, _: [i32; 3]) -> Option<BlockState> {
+            None
+        }
+    }
+
     host_double!(Nesting<'_>);
 
     impl EntitiesBackend for Nesting<'_> {
@@ -971,6 +1061,181 @@ mod tests {
         assert_eq!(
             host.mods()[0].log_lines(),
             ["false", "nil", "nil", "false", "false"]
+        );
+    }
+
+    /// The event of a mod that holds real handles: `entity` (`ME`), `level`, `stranger` (a stale
+    /// handle) and `n`.
+    fn build_real(n: u32) -> impl Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event> {
+        move |lua: &Lua, _: &TurnHost<'_>| {
+            let data = lua.create_table()?;
+            data.raw_set("entity", lua.create_userdata(Token(me()))?)?;
+            data.raw_set("level", lua.create_userdata(Token(level()))?)?;
+            data.raw_set(
+                "stranger",
+                lua.create_userdata(Token(EntityRef::new(WorldEpoch::new(0), ME.id)))?,
+            )?;
+            data.raw_set("n", n)?;
+            new_event(lua, data, &["cancelled", "result"])
+        }
+    }
+
+    /// Fires `HOOK` with real handles and `turn`; returns how many turns committed.
+    fn fire_real(host: &LuaHost, turn: TurnHost<'_>, n: u32) -> u32 {
+        let mut commits = 0;
+        host.dispatch_turns(HOOK, turn, &|| false, &build_real(n), &mut |_, _, _| {
+            commits += 1;
+            true
+        })
+        .unwrap();
+        commits
+    }
+
+    /// A one-hook mod with `body` as its handler, loaded under a fresh folder.
+    fn one_handler(body: &str) -> LuaMod {
+        let root = tempfile::tempdir().unwrap();
+        let source = format!("horizon.on(\"block_receive_game\", function(event)\n{body}\nend)");
+        load(root.path(), "hc_gen", &source)
+    }
+
+    #[test]
+    fn a_generated_read_returns_its_values_and_a_stale_handle_is_nil() {
+        let host = LuaHost::new(vec![one_handler(
+            "local p = event.entity:position()\n\
+             horizon.log(tostring(p.x == 1 and p.y == 2 and p.z == 3))\n\
+             horizon.log(tostring(event.entity:is_in_water()))\n\
+             horizon.log(tostring(event.stranger:position()))",
+        )]);
+        fire_real(&host, TurnHost::Read(&Fake::at([1.0, 2.0, 3.0])), 0);
+        assert_eq!(host.mods()[0].log_lines(), ["true", "true", "nil"]);
+    }
+
+    #[test]
+    fn a_list_of_handles_is_a_table_of_usable_userdata_and_a_level_has_its_methods() {
+        let host = LuaHost::new(vec![one_handler(
+            "local p = event.entity:passengers()\n\
+             horizon.log(tostring(#p) .. \" \" .. tostring(p[1]:is_in_water()))\n\
+             local lv = event.entity:level()\n\
+             horizon.log(tostring(lv:block_state({x = 1, y = 2, z = 3})) .. \" \" .. tostring(lv))\n\
+             horizon.log(tostring(event.entity) .. \" \" .. tostring(event.entity == event.entity))",
+        )]);
+        fire_real(&host, TurnHost::Read(&Fake::at([1.0, 2.0, 3.0])), 0);
+        assert_eq!(
+            host.mods()[0].log_lines(),
+            ["1 true", "nil LevelRef", "EntityRef(1) true"]
+        );
+    }
+
+    #[test]
+    fn a_bad_position_raises_before_the_host_is_called() {
+        let host = LuaHost::new(vec![one_handler(
+            "local bad = {\n\
+               function() return event.level:block_state({x = 1, y = 2}) end,\n\
+               function() return event.level:block_state({x = \"a\", y = 2, z = 3}) end,\n\
+               function() return event.level:block_state({x = 0 / 0, y = 2, z = 3}) end,\n\
+             }\n\
+             for _, f in ipairs(bad) do\n\
+               local ok, err = pcall(f)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end",
+        )]);
+        let fake = Fake::at([1.0, 2.0, 3.0]);
+        fire_real(&host, TurnHost::Read(&fake), 0);
+        let lines = host.mods()[0].log_lines();
+        assert_eq!(lines.len(), 3);
+        for line in &lines {
+            assert!(
+                line.starts_with("false ") && line.contains("LevelRef::block_state: argument 1"),
+                "{line}"
+            );
+        }
+        assert_eq!(fake.calls.get(), 0, "the host was not called");
+    }
+
+    #[test]
+    fn a_handle_of_the_wrong_family_raises_and_the_host_is_not_called() {
+        let host = LuaHost::new(vec![one_handler(
+            "local ok, err = pcall(function()\n\
+               return event.entity:is_passenger_of_same_vehicle(event.level)\n\
+             end)\n\
+             horizon.log(tostring(ok) .. \" \" .. tostring(err))",
+        )]);
+        let fake = Fake::at([1.0, 2.0, 3.0]);
+        fire_real(&host, TurnHost::Read(&fake), 0);
+        let line = &host.mods()[0].log_lines()[0];
+        assert!(
+            line.starts_with("false ")
+                && line.contains(
+                    "EntityRef::is_passenger_of_same_vehicle: argument 1: must be a EntityRef"
+                ),
+            "{line}"
+        );
+        assert_eq!(fake.calls.get(), 0);
+    }
+
+    #[test]
+    fn a_read_spends_one_unit_so_ten_thousand_fit_and_the_next_voids_the_turn() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "hc_gen_read",
+            &counted_reads("position"),
+        )]);
+        let fake = Fake::at([0.0; 3]);
+        assert_eq!(
+            fire_real(&host, TurnHost::Read(&fake), 0),
+            1,
+            "10,000 reads fit"
+        );
+        assert_eq!(
+            fire_real(&host, TurnHost::Read(&fake), 1),
+            0,
+            "the 10,001st voids"
+        );
+    }
+
+    #[test]
+    fn a_heavy_method_spends_one_hundred_units_so_one_hundred_fit_and_the_next_voids() {
+        let host = LuaHost::new(vec![one_handler(
+            "local e = event.entity\nfor i = 1, event.n do e:passengers() end",
+        )]);
+        let fake = Fake::at([0.0; 3]);
+        assert_eq!(
+            fire_real(&host, TurnHost::Read(&fake), 100),
+            1,
+            "100 x 100 = 10,000 fit"
+        );
+        assert_eq!(
+            fire_real(&host, TurnHost::Read(&fake), 101),
+            0,
+            "the 101st voids"
+        );
+    }
+
+    #[test]
+    fn a_generated_handle_called_outside_a_hook_says_there_is_no_host() {
+        let host = LuaHost::new(vec![one_handler("kept = event.entity")]);
+        fire_real(&host, TurnHost::Read(&Fake::at([1.0, 2.0, 3.0])), 0);
+        let lua = host.mods()[0].lua();
+        let err = lua
+            .load("return kept:position()")
+            .set_environment(declare::environment(lua).unwrap())
+            .eval::<Value>()
+            .unwrap_err();
+        assert!(err.to_string().contains(OUTSIDE), "{err}");
+    }
+
+    #[test]
+    fn a_none_turn_says_the_operation_is_not_available_in_this_hook() {
+        let host = LuaHost::new(vec![one_handler(
+            "local ok, err = pcall(function() return event.entity:is_in_water() end)\n\
+             horizon.log(tostring(ok) .. \" \" .. tostring(err))",
+        )]);
+        fire_real(&host, TurnHost::None, 0);
+        let line = &host.mods()[0].log_lines()[0];
+        assert!(
+            line.starts_with("false ") && line.contains(NOT_HERE),
+            "{line}"
         );
     }
 }

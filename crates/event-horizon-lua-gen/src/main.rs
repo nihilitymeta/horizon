@@ -1,7 +1,8 @@
 //! `event-horizon-lua-gen --surface PATH --hooks-trait PATH --out DIR --types PATH [--check]`: writes
 //! the Lua host's generated hook table (`DIR/hooks.rs`), its `Hooks` methods (`DIR/hooks_impl.rs`)
 //! and the `ToLuaValue` impls of the surface's plain types (`PATH`, the convert crate's
-//! `generated_types.rs`).
+//! `generated_types.rs`), and the handle families' methods (`DIR/handles.rs`) with their coverage
+//! (`DIR/handles_coverage.txt`). `--families A,B` picks the handle families (default: `EntityRef,LevelRef`).
 //!
 //! Exit codes: 0 on success (with `--check`, when every file matches what would be written), 1 when
 //! `--check` finds a file that differs, 2 on bad input or arguments.
@@ -11,7 +12,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use event_horizon_lua_gen::{dispatch_sigs, emit_hooks, emit_impl, emit_types, ir, trait_sigs};
+use event_horizon_lua_gen::{
+    dispatch_sigs, emit_handles, emit_hooks, emit_impl, emit_types, handles, ir, trait_sigs,
+};
 use mod_surface::Surface;
 
 /// The parsed command line.
@@ -20,16 +23,18 @@ struct Args {
     hooks_trait: PathBuf,
     out: PathBuf,
     types: PathBuf,
+    families: Option<Vec<String>>,
     check: bool,
 }
 
-const USAGE: &str = "usage: event-horizon-lua-gen --surface PATH --hooks-trait PATH --out DIR --types PATH [--check]";
+const USAGE: &str = "usage: event-horizon-lua-gen --surface PATH --hooks-trait PATH --out DIR --types PATH [--families A,B] [--check]";
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut surface = None;
     let mut hooks_trait = None;
     let mut out = None;
     let mut types = None;
+    let mut families = None;
     let mut check = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -39,6 +44,14 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--out" => out = Some(PathBuf::from(value(&mut args, "--out")?)),
             "--types" => types = Some(PathBuf::from(value(&mut args, "--types")?)),
+            "--families" => {
+                families = Some(
+                    value(&mut args, "--families")?
+                        .split(',')
+                        .map(str::to_owned)
+                        .collect(),
+                )
+            }
             "--check" => check = true,
             other => return Err(format!("unknown argument `{other}`")),
         }
@@ -48,6 +61,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         hooks_trait: hooks_trait.ok_or("--hooks-trait is required")?,
         out: out.ok_or("--out is required")?,
         types: types.ok_or("--types is required")?,
+        families,
         check,
     })
 }
@@ -73,6 +87,19 @@ fn run(args: Args) -> Result<ExitCode, String> {
     let dispatch = dispatch_sigs::parse(&trait_text)
         .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
 
+    let families: Vec<String> = args.families.clone().unwrap_or_else(|| {
+        emit_handles::FAMILIES
+            .iter()
+            .map(|f| (*f).to_owned())
+            .collect()
+    });
+    let family_names: Vec<&str> = families.iter().map(String::as_str).collect();
+    let members =
+        handles::load(&bytes).map_err(|error| format!("{}: {error}", args.surface.display()))?;
+    // The handle methods' argument types the type emitter decides too: a unit enum among them
+    // converts from Lua, as a hook's answer does.
+    let handle_types = emit_handles::argument_types(&members, &family_names);
+
     let names: Vec<&str> = surface
         .hooks
         .iter()
@@ -93,6 +120,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .flatten()
         .map(|output| output.ty.clone())
         .chain(sigs.iter().filter_map(|sig| sig.ret.clone()))
+        .chain(handle_types.iter().cloned())
         .collect();
     let first = emit_types::plan_decided(
         &document.types,
@@ -102,7 +130,20 @@ fn run(args: Args) -> Result<ExitCode, String> {
         &candidates,
     );
     let first_methods = emit_impl::emit(&surface, &sigs, &dispatch, &names, &first.plain);
-    let decided = first_methods.decisions.clone();
+    let mut decided = first_methods.decisions.clone();
+    decided.extend(handle_types.iter().cloned());
+    let superset = emit_types::plan_decided(
+        &document.types,
+        &document.handles,
+        &document.hash,
+        &hook_types,
+        &decided,
+    );
+    // The superset of the handle argument types decided above is narrowed to the bound members'
+    // argument types, and the plan is made again: no converter is emitted for an unbound member.
+    let bound_types = emit_handles::bound_argument_types(&members, &family_names, &superset.plain);
+    let mut decided = first_methods.decisions.clone();
+    decided.extend(bound_types);
     let types = emit_types::plan_decided(
         &document.types,
         &document.handles,
@@ -117,14 +158,24 @@ fn run(args: Args) -> Result<ExitCode, String> {
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(&surface, &emitted);
 
+    let handles_out = emit_handles::emit(&members, &family_names, &types.plain, &document.hash);
+    let superset_bound =
+        emit_handles::emit(&members, &family_names, &superset.plain, &document.hash).bound;
+    if superset_bound != handles_out.bound {
+        return Err("narrowing the converters changed the bound handle members".to_owned());
+    }
     let table_path = args.out.join("hooks.rs");
     let methods_path = args.out.join("hooks_impl.rs");
+    let handles_path = args.out.join("handles.rs");
+    let coverage_path = args.out.join("handles_coverage.txt");
     if args.check {
         let mut differ = Vec::new();
         for (path, text) in [
             (&table_path, &table),
             (&methods_path, &methods.text),
             (&args.types, &types.text),
+            (&handles_path, &handles_out.text),
+            (&coverage_path, &handles_out.coverage),
         ] {
             let current = std::fs::read_to_string(path).ok();
             if current.as_deref() != Some(text.as_str()) {
@@ -153,6 +204,25 @@ fn run(args: Args) -> Result<ExitCode, String> {
     }
     std::fs::write(&args.types, &types.text)
         .map_err(|error| format!("cannot write {}: {error}", args.types.display()))?;
+    std::fs::write(&handles_path, &handles_out.text)
+        .map_err(|error| format!("cannot write {}: {error}", handles_path.display()))?;
+    std::fs::write(&coverage_path, &handles_out.coverage)
+        .map_err(|error| format!("cannot write {}: {error}", coverage_path.display()))?;
+    println!("handle families: {}", families.join(", "));
+    for (family, members, bound) in &handles_out.per_family {
+        println!("  {family}: {members} members, {bound} bound");
+    }
+    println!("handle members bound: {}", handles_out.bound.len());
+    println!("  heavy (cost 100): {}", handles_out.heavy.len());
+    let mut skipped_by = BTreeMap::<String, usize>::new();
+    for (_, reason) in &handles_out.skipped {
+        *skipped_by
+            .entry(emit_handles::reason_category(reason).to_owned())
+            .or_default() += 1;
+    }
+    for (reason, count) in &skipped_by {
+        println!("  skipped, {reason}: {count}");
+    }
 
     println!("hooks in the surface: {}", surface.hooks.len());
     println!("methods emitted: {}", methods.emitted.len());

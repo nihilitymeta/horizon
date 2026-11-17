@@ -1,0 +1,273 @@
+# Handle coverage (issue 74, H1b) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
+# families: EntityRef, LevelRef
+
+EntityRef: 114 members
+  handle:EntityRef::add_tag skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::added_to_level bound, cost 1
+  handle:EntityRef::air_supply bound, cost 1
+  handle:EntityRef::block_position bound, cost 1
+  handle:EntityRef::bounding_box skipped: unconvertible return: Option<[[f64; 3]; 2]>
+  handle:EntityRef::broadcast_event skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::capability skipped: generics: <T: ? Sized + 'static, C: Copy + 'static>
+  handle:EntityRef::classification bound, cost 1
+  handle:EntityRef::clear_fire skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::controlling_passenger bound, cost 1
+  handle:EntityRef::custom_name_visible bound, cost 1
+  handle:EntityRef::damage_cooldown_time bound, cost 1
+  handle:EntityRef::detach_leash skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::dimensions bound, cost 1
+  handle:EntityRef::direction bound, cost 1
+  handle:EntityRef::discard skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::dismount_location skipped: unconvertible arg: LivingRef
+  handle:EntityRef::distance_to_sqr bound, cost 1
+  handle:EntityRef::eject_passengers skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::entities_team_damage_allowed bound, cost 1
+  handle:EntityRef::epoch bound, cost 1
+  handle:EntityRef::extinguish_fire skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::eye_fluid bound, cost 1
+  handle:EntityRef::eye_height bound, cost 1
+  handle:EntityRef::eye_position bound, cost 1
+  handle:EntityRef::fire_immune bound, cost 1
+  handle:EntityRef::fire_ticks bound, cost 1
+  handle:EntityRef::fluid_heights skipped: unconvertible return: Option<Vec<(String, f64)>>
+  handle:EntityRef::game_event skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::glowing bound, cost 1
+  handle:EntityRef::head_yaw bound, cost 1
+  handle:EntityRef::hurt skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::id bound, cost 1
+  handle:EntityRef::indirect_passengers bound, cost 100
+  handle:EntityRef::invulnerable_time bound, cost 1
+  handle:EntityRef::invulnerable_to_damage bound, cost 1
+  handle:EntityRef::invulnerable_to_piercing_weapon bound, cost 1
+  handle:EntityRef::is_crouching bound, cost 1
+  handle:EntityRef::is_in_lava bound, cost 1
+  handle:EntityRef::is_in_water bound, cost 1
+  handle:EntityRef::is_invisible bound, cost 1
+  handle:EntityRef::is_multipart bound, cost 1
+  handle:EntityRef::is_passenger bound, cost 1
+  handle:EntityRef::is_passenger_of_same_vehicle bound, cost 1
+  handle:EntityRef::is_shift_key_down bound, cost 1
+  handle:EntityRef::is_silent bound, cost 1
+  handle:EntityRef::is_sprinting bound, cost 1
+  handle:EntityRef::is_vehicle bound, cost 1
+  handle:EntityRef::kind skipped: unconvertible return: Option<EntityTypeKey>
+  handle:EntityRef::leash_holder bound, cost 1
+  handle:EntityRef::leash_to skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::leash_to_knot skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::level bound, cost 1
+  handle:EntityRef::max_air_supply bound, cost 1
+  handle:EntityRef::merge_nbt skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::name bound, cost 1
+  handle:EntityRef::nbt skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::no_gravity bound, cost 1
+  handle:EntityRef::no_physics bound, cost 1
+  handle:EntityRef::on_block bound, cost 1
+  handle:EntityRef::on_ground bound, cost 1
+  handle:EntityRef::parts bound, cost 100
+  handle:EntityRef::passengers bound, cost 100
+  handle:EntityRef::permanently_invulnerable bound, cost 1
+  handle:EntityRef::pick bound, cost 1
+  handle:EntityRef::play_bound_sound skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::play_sound skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::portal_cooldown bound, cost 1
+  handle:EntityRef::pose bound, cost 1
+  handle:EntityRef::position bound, cost 1
+  handle:EntityRef::push skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::remove skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::remove_tag skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::reset_fall_distance skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::root_vehicle bound, cost 1
+  handle:EntityRef::rotation bound, cost 1
+  handle:EntityRef::run_command skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::run_command_with_output skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_air_supply skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_collision_exclusions skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_custom_name skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_custom_name_visible skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_damage_cooldown_time skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_glowing skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_hanging_direction skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_head_yaw skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_invisible skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_invulnerable skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_invulnerable_time skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_item_frame_rotation skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_no_gravity skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_no_physics skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_portal_cooldown skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_remaining_fire_ticks skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_rotation skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_silent skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_ticks_frozen skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::set_velocity skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::sound_source bound, cost 1
+  handle:EntityRef::spawn_at_location skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::spectator bound, cost 1
+  handle:EntityRef::sprint_particles skipped: &mut host: &mut dyn ClientHost
+  handle:EntityRef::start_riding skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::stop_riding skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::tags bound, cost 100
+  handle:EntityRef::teleport_to skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::teleport_to_level skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::tick_count bound, cost 1
+  handle:EntityRef::ticks_frozen bound, cost 1
+  handle:EntityRef::up_vector bound, cost 1
+  handle:EntityRef::uuid skipped: &mut host: &mut dyn ServerHost
+  handle:EntityRef::vehicle bound, cost 1
+  handle:EntityRef::velocity bound, cost 1
+  handle:EntityRef::view_vector bound, cost 1
+
+LevelRef: 145 members
+  handle:LevelRef::add_water_ticket skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::all_entities bound, cost 100
+  handle:LevelRef::award_experience skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::best_neighbor_signal bound, cost 1
+  handle:LevelRef::biome_at bound, cost 1
+  handle:LevelRef::biome_effects bound, cost 1
+  handle:LevelRef::biome_in_tag bound, cost 1
+  handle:LevelRef::biome_properties bound, cost 1
+  handle:LevelRef::biome_spawners skipped: unconvertible return: Option<Vec<BiomeSpawners>>
+  handle:LevelRef::block skipped: unconvertible return: Option<BlockKey>
+  handle:LevelRef::block_break_speed skipped: unconvertible arg: Option<&item::item_stack::ItemStack>
+  handle:LevelRef::block_drops skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::block_event skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::block_face_sturdy bound, cost 1
+  handle:LevelRef::block_floor_height bound, cost 1
+  handle:LevelRef::block_property bound, cost 1
+  handle:LevelRef::block_random_tick skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::block_shape bound, cost 100
+  handle:LevelRef::block_state bound, cost 1
+  handle:LevelRef::block_tick skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::block_transform skipped: unconvertible arg: PlayerRef
+  handle:LevelRef::bone_meal skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::brightness bound, cost 1
+  handle:LevelRef::can_see_sky bound, cost 1
+  handle:LevelRef::can_spawn_entities_in_chunk bound, cost 1
+  handle:LevelRef::capability skipped: generics: <T: ? Sized + 'static>
+  handle:LevelRef::capability_generation bound, cost 1
+  handle:LevelRef::check_light skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::chunk_ref skipped: unconvertible return: Option<ChunkRef>
+  handle:LevelRef::client_biome bound, cost 1
+  handle:LevelRef::clip bound, cost 100
+  handle:LevelRef::clock_marker_time bound, cost 1
+  handle:LevelRef::clock_time bound, cost 1
+  handle:LevelRef::collision_boxes skipped: unconvertible arg: [f64; 6]
+  handle:LevelRef::datapack_entries bound, cost 100
+  handle:LevelRef::datapack_handle skipped: Result: Result<DatapackHandle, DatapackReadError>
+  handle:LevelRef::datapack_read skipped: unconvertible arg: &DatapackHandle
+  handle:LevelRef::day_time bound, cost 1
+  handle:LevelRef::destroy_block skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::difficulty bound, cost 1
+  handle:LevelRef::dimension skipped: unconvertible return: DimensionKey
+  handle:LevelRef::dimension_shape bound, cost 1
+  handle:LevelRef::dimension_type skipped: unconvertible return: Option<LevelDimensionType>
+  handle:LevelRef::direct_signal bound, cost 1
+  handle:LevelRef::direct_signal_to bound, cost 1
+  handle:LevelRef::enabled_features skipped: unconvertible return: Option<FeatureFlags>
+  handle:LevelRef::entities_in bound, cost 100
+  handle:LevelRef::entity_ticking bound, cost 1
+  handle:LevelRef::epoch bound, cost 1
+  handle:LevelRef::explode skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::explosion_destroy_blocks skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::explosion_resistance skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::explosion_resistances skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::find_closest_biome skipped: unconvertible arg: BiomeSearch
+  handle:LevelRef::find_nearest_structure skipped: unconvertible arg: StructureSearch
+  handle:LevelRef::fluid_can_be_replaced_with skipped: unconvertible arg: FluidKey
+  handle:LevelRef::fluid_flow bound, cost 1
+  handle:LevelRef::fluid_height bound, cost 1
+  handle:LevelRef::fluid_height_for_camera bound, cost 1
+  handle:LevelRef::fluid_shape bound, cost 100
+  handle:LevelRef::fluid_state skipped: unconvertible return: Option<FluidState>
+  handle:LevelRef::fluid_tick skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::fluid_tick_delay skipped: unconvertible arg: FluidKey
+  handle:LevelRef::forced_chunks bound, cost 100
+  handle:LevelRef::game_event skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::game_rule skipped: Result: Result<Option<GameRuleValue>, LevelReadError>
+  handle:LevelRef::game_rule_bool skipped: unconvertible arg: BoolGameRuleKey
+  handle:LevelRef::game_rule_int skipped: unconvertible arg: IntGameRuleKey
+  handle:LevelRef::game_rules skipped: Result: Result<Vec<(String, GameRuleValue)>, LevelReadError>
+  handle:LevelRef::game_time bound, cost 1
+  handle:LevelRef::get_sky_darken bound, cost 1
+  handle:LevelRef::global_level_event skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::has_collisions skipped: unconvertible arg: [f64; 6]
+  handle:LevelRef::has_neighbor_signal bound, cost 1
+  handle:LevelRef::has_water_ticket bound, cost 1
+  handle:LevelRef::height skipped: unconvertible return: Option<(i32, i32)>
+  handle:LevelRef::in_place bound, cost 1
+  handle:LevelRef::in_spawnable_bounds bound, cost 1
+  handle:LevelRef::in_world_bounds bound, cost 1
+  handle:LevelRef::invalidate_capabilities skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::is_loaded bound, cost 1
+  handle:LevelRef::is_raining bound, cost 1
+  handle:LevelRef::is_raining_at bound, cost 1
+  handle:LevelRef::is_thundering bound, cost 1
+  handle:LevelRef::level_event skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::lightning_target skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::line_of_sight bound, cost 1
+  handle:LevelRef::loaded_chunks skipped: unconvertible return: Option<Vec<ChunkRef>>
+  handle:LevelRef::local_difficulty bound, cost 1
+  handle:LevelRef::logical_height bound, cost 1
+  handle:LevelRef::map_data skipped: unconvertible return: Option<MapState>
+  handle:LevelRef::mod_forced_chunks skipped: unconvertible arg: TicketController
+  handle:LevelRef::neighbor_changed skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::online_players skipped: unconvertible return: Option<Vec<PlayerRef>>
+  handle:LevelRef::pickup_fluid skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::place_fluid skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::play_fluid_effects skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::play_sound skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::pop_resource skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::raid bound, cost 1
+  handle:LevelRef::raid_at bound, cost 1
+  handle:LevelRef::raids bound, cost 100
+  handle:LevelRef::random skipped: unconvertible return: Option<LegacyRandom>
+  handle:LevelRef::ray_trace_entities bound, cost 100
+  handle:LevelRef::recipe_for skipped: unconvertible arg: &RecipeInput
+  handle:LevelRef::register_passage skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::relight_chunks skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::remove_block skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::remove_passage skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::request_save skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::respawn_data bound, cost 1
+  handle:LevelRef::roll_loot skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::sea_level bound, cost 1
+  handle:LevelRef::seed bound, cost 1
+  handle:LevelRef::send_block_updated skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::send_particles skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_biome skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_block skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_break_progress skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_client_break_progress skipped: &mut host: &mut dyn ClientHost
+  handle:LevelRef::set_clock_time skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_game_rule skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_map_data skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_random skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_respawn_data skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_spawn_flags skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_spawn_limits skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_weather skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_weather_levels skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_world_border_center skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_world_border_damage skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_world_border_size skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::set_world_border_warning skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::should_tick_blocks_at bound, cost 1
+  handle:LevelRef::signal bound, cost 1
+  handle:LevelRef::spawn_flags bound, cost 1
+  handle:LevelRef::spawn_item skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::spawn_item_with_motion skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::spawn_limits bound, cost 1
+  handle:LevelRef::spawn_mob skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::strike_lightning skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::update_neighbors skipped: &mut host: &mut dyn ServerHost
+  handle:LevelRef::weather skipped: unconvertible return: Option<(f32, f32)>
+  handle:LevelRef::with_random skipped: generics: <T>
+  handle:LevelRef::world_border bound, cost 1
+
+summary: bound 120 of 259; heavy 13
+  skipped, &mut host: 103
+  skipped, Result: 3
+  skipped, generics: 3
+  skipped, unconvertible arg: 14
+  skipped, unconvertible return: 16
+heavy (cost 100): handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities
