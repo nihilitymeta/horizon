@@ -5317,6 +5317,7 @@ pub const EMITTED: &[&str] = &[
     "config_reloading",
     "config_unloading",
     "console_line",
+    "container_loot_filled",
     "container_opened",
     "crafter_craft",
     "create_fluid_source",

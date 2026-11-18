@@ -100,6 +100,20 @@ struct Output {
     shape: Option<Shape>,
 }
 
+impl Method<'_> {
+    /// The shape's view: a stack's own view, else the state view (the host's, or the level's), inside
+    /// the dispatch closures when `in_turn`, else outside them. `None` when the shape has no view.
+    fn view_for(&self, shape: Shape, in_turn: bool) -> Option<(Shape, &str)> {
+        let view = match (carried::is_stack(shape), in_turn) {
+            (true, true) => self.stack_turn_view.as_deref(),
+            (true, false) => self.stack_view.as_deref(),
+            (false, true) => self.turn_view.as_deref(),
+            (false, false) => self.view.as_deref(),
+        };
+        view.map(|view| (shape, view))
+    }
+}
+
 /// One hook that is emitted, with what its method needs.
 struct Method<'a> {
     hook: &'a HookIr,
@@ -121,6 +135,11 @@ struct Method<'a> {
     /// The host as the closures of the dispatch take it: the turn's own host for a hook whose turn
     /// carries one (the closures run while the turn holds the host), else [`Method::view`].
     turn_view: Option<String>,
+    /// The view a stack converts through outside the closures: the host for a `Host` hook, else the
+    /// global tables (see [`carried::stack_reach`]). Stacks use it where the state views would not do.
+    stack_view: Option<String>,
+    /// [`Method::stack_view`] as the closures of the dispatch take it (the turn's host for a `Host`).
+    stack_turn_view: Option<String>,
     /// The pre-checks of the arguments that carry a stack or a block state: a call that is `None`
     /// when the host has no id for the value, so the hook is not delivered.
     checks: Vec<String>,
@@ -171,6 +190,10 @@ pub fn emit_with_handles(
                     "not a method of the Hooks trait".to_owned(),
                 ));
             }
+            continue;
+        }
+        if HOT_HOOKS.contains(&name) {
+            skipped.push((name.to_owned(), HOT_REASON.to_owned()));
             continue;
         }
         match plan(ir, sigs, dispatch, name, plain, handles, false) {
@@ -480,6 +503,16 @@ fn plan<'a>(
     } else {
         view.clone()
     };
+    let stack_view = carried::view(
+        sig.host_name.as_deref(),
+        sig.host_ty.as_deref(),
+        carried::stack_reach(reach),
+    );
+    let stack_turn_view = if reach == Reach::Host {
+        turn_view.clone()
+    } else {
+        stack_view.clone()
+    };
     let cancel = match hook.kind {
         Kind::Listen | Kind::Replace | Kind::Collect => false,
         Kind::Cancel => true,
@@ -529,12 +562,17 @@ fn plan<'a>(
                     arg.name
                 ));
             }
-            let (Some(view), true) = (view.as_deref(), carried::allowed(shape, reach)) else {
+            let (shape_view, shape_turn) = if carried::is_stack(shape) {
+                (stack_view.as_deref(), stack_turn_view.as_deref())
+            } else {
+                (view.as_deref(), turn_view.as_deref())
+            };
+            let (Some(view), true) = (shape_view, carried::allowed(shape, reach)) else {
                 return Err(carried::refusal(shape));
             };
             let field = format!("{}.{}", sig.event_name, arg.name);
             checks.push(carried::input_check(shape, &arg.rust_type, &field, view));
-            let built = turn_view.as_deref().unwrap_or(view);
+            let built = shape_turn.unwrap_or(view);
             fields.push((
                 arg.name.clone(),
                 carried::input_lua(shape, &arg.rust_type, &field, built),
@@ -555,8 +593,10 @@ fn plan<'a>(
         }
         if is_block_click(&arg.rust_type) {
             // A right click is a borrowed view whose held stack is carried through the host.
-            let (Some(view), true) = (view.as_deref(), carried::allowed(Shape::OptStack, reach))
-            else {
+            let (Some(view), true) = (
+                stack_view.as_deref(),
+                carried::allowed(Shape::OptStack, reach),
+            ) else {
                 return Err(carried::refusal(Shape::OptStack));
             };
             let field = format!("{}.{}", sig.event_name, arg.name);
@@ -567,7 +607,7 @@ fn plan<'a>(
                 &stack_field,
                 view,
             ));
-            let built = turn_view.as_deref().unwrap_or(view);
+            let built = stack_turn_view.as_deref().unwrap_or(view);
             let stack =
                 carried::input_lua(Shape::OptStack, "Option<&ItemStack>", &stack_field, built);
             // The event field is the click itself when its type is a reference, else a value.
@@ -618,6 +658,8 @@ fn plan<'a>(
         view,
         turn,
         turn_view,
+        stack_view,
+        stack_turn_view,
         checks,
     })
 }
@@ -955,9 +997,9 @@ fn build_text(method: &Method<'_>, outputs: bool) -> String {
     let mut keys = Vec::new();
     if outputs {
         for output in &method.outputs {
-            let value = match (output.shape, method.turn_view.as_deref()) {
-                (Some(shape), Some(view)) => carried::output_lua(shape, &output.key, view),
-                _ => format!("out_{}.borrow().to_lua_value(lua)?", output.key),
+            let value = match output.shape.and_then(|shape| method.view_for(shape, true)) {
+                Some((shape, view)) => carried::output_lua(shape, &output.key, view),
+                None => format!("out_{}.borrow().to_lua_value(lua)?", output.key),
             };
             body.push_str(&format!(
                 "                data.raw_set({key:?}, {value})?;\n",
@@ -993,9 +1035,11 @@ fn plain_body(method: &Method<'_>) -> String {
 /// current values; they are read from their cells, so it runs after the cells are made.
 fn checks_text(method: &Method<'_>, outputs: bool) -> String {
     let mut calls = method.checks.clone();
-    if let (true, Some(view)) = (outputs, method.view.as_deref()) {
+    if outputs {
         for output in &method.outputs {
-            if let Some(shape) = output.shape {
+            if let Some((shape, view)) =
+                output.shape.and_then(|shape| method.view_for(shape, false))
+            {
                 calls.push(carried::output_check(shape, &output.key, view));
             }
         }
@@ -1034,7 +1078,7 @@ fn replace_body(method: &Method<'_>, answer: &str) -> String {
     out.push_str(&format!("            {},\n", turn_text(method)));
     out.push_str(&build_text(method, false));
     let mut body = String::new();
-    match carried::shape_of(answer).zip(method.turn_view.as_deref()) {
+    match carried::shape_of(answer).and_then(|shape| method.view_for(shape, true)) {
         Some((shape, view)) => body.push_str(&format!(
             "                match crate::dispatch::answer_by(id, {hook:?}, &value, {}) {{\n",
             carried::converter(shape, view)
@@ -1116,8 +1160,8 @@ fn commit_text(method: &Method<'_>) -> String {
     for output in &method.outputs {
         // An `Option` output takes `horizon.none` as None; any other output refuses it.
         let optional = output.ty.starts_with("Option<");
-        match (output.shape, method.turn_view.as_deref()) {
-            (Some(shape), Some(view)) => body.push_str(&format!(
+        match output.shape.and_then(|shape| method.view_for(shape, true)) {
+            Some((shape, view)) => body.push_str(&format!(
                 "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {convert});\n",
                 accept = if optional { "accept_opt_by" } else { "accept_by" },
                 key = output.key,
@@ -1229,6 +1273,23 @@ pub const PART_EXCLUDED: &[(&str, &str, &str)] = &[
 const NBT_REASON: &str = "NBT output (Compound is denied)";
 const ATTACHMENT_REASON: &str = "attachment state: not a Part state in v1";
 const HOT_REASON: &str = "hot path (needs measurement)";
+/// The hooks, on either a Hooks or a Part trait, that fire per tick, per movement step, per block
+/// write or per hit. They stay unbound until they are measured, with [`HOT_REASON`]; the list is
+/// the lead's judgement (issue 74), not a measurement.
+pub const HOT_HOOKS: &[&str] = &[
+    "friction",
+    "block_jump_factor",
+    "block_speed_factor",
+    "is_ladder",
+    "makes_open_trapdoor_above_climbable",
+    "update_shape",
+    "neighbor_changed",
+    "on_block_state_change",
+    "block_step_on",
+    "living_incoming_damage",
+    "living_knockback",
+    "ingredient_test",
+];
 const WORKER_REASON: &str = "worldgen worker";
 /// Part methods that take or answer a container, a capability or a payload handler: the Lua host
 /// does not carry those yet (see the manifest `powers`).
@@ -1279,7 +1340,7 @@ pub fn emit_parts(
             || CONTAINER_TYPES
                 .iter()
                 .any(|name| sig.event_ty.contains(name));
-        let hot = PART_HOT.contains(&(part.name(), name));
+        let hot = PART_HOT.contains(&(part.name(), name)) || HOT_HOOKS.contains(&name);
         let excluded = PART_EXCLUDED
             .iter()
             .find(|(trait_name, method, _)| *trait_name == part.name() && *method == name)
@@ -1436,10 +1497,10 @@ mod tests {
         }
     }
 
-    /// The shape of `block_step_on` without its `state` argument (which has no conversion).
+    /// The shape of `block_step_probe` without its `state` argument (which has no conversion).
     fn step_ir() -> Ir {
         ir(vec![hook(
-            "block_step_on",
+            "block_step_probe",
             Kind::Listen,
             vec![
                 arg("dimension", "&'a str"),
@@ -1450,7 +1511,13 @@ mod tests {
     }
 
     fn step_sig() -> HookSig {
-        sig("block_step_on", None, "event", "BlockStepOnEvent<'_>", None)
+        sig(
+            "block_step_probe",
+            None,
+            "event",
+            "BlockStepOnEvent<'_>",
+            None,
+        )
     }
 
     /// The shape of `block_receive_game`: a cancel hook with a `cancelled` argument.
@@ -1523,7 +1590,7 @@ mod tests {
         let out = emit_plain(
             &step_ir(),
             &[step_sig()],
-            &["block_step_on"],
+            &["block_step_probe"],
             &Plain::default(),
         );
         let expected = r#"// @generated by event-horizon-lua-gen from surface abc123: do not edit.
@@ -1544,9 +1611,9 @@ impl mod_api::Hooks for LuaHost {
         self.listeners_slice()
     }
 
-    fn block_step_on(&self, event: &mut BlockStepOnEvent<'_>) {
+    fn block_step_probe(&self, event: &mut BlockStepOnEvent<'_>) {
         crate::hostcall::refused(self.dispatch_turns(
-            "block_step_on",
+            "block_step_probe",
             crate::hostcall::TurnHost::None,
             &|| false,
             &|lua, _turn| {
@@ -1562,7 +1629,7 @@ impl mod_api::Hooks for LuaHost {
 }
 "#;
         assert_eq!(out.text, expected);
-        assert_eq!(out.emitted, ["block_step_on"]);
+        assert_eq!(out.emitted, ["block_step_probe"]);
         assert!(out.skipped.is_empty());
         syn::parse_file(&out.text).expect("the golden text parses");
     }
@@ -1616,6 +1683,45 @@ impl mod_api::Hooks for LuaHost {
             gate < first,
             "the gate must come before the first conversion"
         );
+    }
+
+    #[test]
+    fn a_stack_in_hook_with_no_host_converts_through_the_global_table_and_refuses_before_dispatch()
+    {
+        let ir = ir(vec![hook(
+            "stack_seen_global",
+            Kind::Listen,
+            vec![arg("stack", "&'a item::item_stack::ItemStack")],
+        )]);
+        let sigs = [sig(
+            "stack_seen_global",
+            None,
+            "event",
+            "StackSeenEvent<'_>",
+            None,
+        )];
+        let out = emit_plain(&ir, &sigs, &["stack_seen_global"], &Plain::default());
+        assert!(out.skipped.is_empty(), "{:?}", out.skipped);
+        // Tables missing: stack_in is None, so the hook is not delivered (undelivered, then return).
+        assert!(
+            out.text.contains(
+                "        if crate::stacks::stack_in(&crate::stacks::GlobalHost, Some(event.stack)).is_none() {\n            crate::stacks::undelivered(\"stack_seen_global\");\n            return;\n        }\n"
+            ),
+            "{}",
+            out.text
+        );
+        assert!(out.text.contains("TurnHost::None"), "{}", out.text);
+        let gate = out
+            .text
+            .find("has_handlers(\"stack_seen_global\")")
+            .expect("gated");
+        let check = out.text.find("stack_in(").expect("checked");
+        let dispatch = out.text.find("dispatch_turns(").expect("dispatched");
+        assert!(
+            gate < check && check < dispatch,
+            "gate, then check, then dispatch"
+        );
+        syn::parse_file(&out.text).expect("the text parses");
     }
 
     #[test]
@@ -2549,5 +2655,20 @@ impl mod_api::Hooks for LuaHost {
             Err(HANDLE_OUTPUT.to_owned())
         );
         assert!(handle_parts("Option<Option<EntityRef>>").is_none());
+    }
+
+    #[test]
+    fn a_hot_hook_is_skipped_with_its_reason() {
+        let out = emit_plain(
+            &step_ir(),
+            &[step_sig()],
+            &["block_step_on"],
+            &Plain::default(),
+        );
+        assert!(out.emitted.is_empty());
+        assert_eq!(
+            out.skipped,
+            [("block_step_on".to_owned(), HOT_REASON.to_owned())]
+        );
     }
 }

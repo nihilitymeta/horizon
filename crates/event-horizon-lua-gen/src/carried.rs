@@ -4,12 +4,15 @@
 //! A hook's argument or output of type `ItemStack`, `Option<ItemStack>`, `Vec<ItemStack>`,
 //! `BlockState` or `Option<BlockState>` converts through the host its method has. The game's
 //! `Host` gives items and states (`ItemStack::from_nbt`, `to_nbt`, `block_state_id`), so a `Host`
-//! hook converts all of them. A level hook (`LevelHost`) has the state calls and no item calls, so
-//! it converts block states only. A hook with no host converts neither, and it is skipped with
-//! the reason [`refusal`] gives.
+//! hook converts all of them. A level hook (`LevelHost`, or a `LevelSide`) has the state calls and no
+//! item calls. Stacks do not need a host: a hook with no `Host` converts them through the
+//! process-global tables (`GlobalHost`), as every hook may. A
+//! hook whose host type is not one of these converts its states through no host and is skipped
+//! with the reason [`refusal`] gives. Block states need a host or a level: the global tables give
+//! none.
 //!
 //! The emitted expressions call the Lua crate's `stacks` module, whose functions take the host as
-//! `&dyn Host` or `&dyn LevelHost`. [`view`] is that expression for a method.
+//! `&dyn Host`, `&dyn LevelHost` or `GlobalHost`. [`view`] is that expression for a method.
 
 /// The shape of a carried value, as the generated code converts it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,15 +35,19 @@ pub enum Reach {
     /// A `Host` (`&dyn Host`, `&mut dyn ServerHost`, `&dyn ClientHost`, `&mut dyn ClientHost`) or a
     /// `HostSide`: items and block states.
     Host,
-    /// A level (`&dyn LevelHost`, `&mut dyn LevelRandomHost`, ...): block states only.
+    /// A level (`&dyn LevelHost`, `&mut dyn LevelRandomHost`, `LevelSide`, ...): block states only.
     Level,
-    /// No host parameter: neither.
+    /// No host parameter: items and block states through the process-global tables
+    /// (`stacks::GlobalHost`).
+    Global,
+    /// A host type this generator does not carry: neither.
     Nothing,
 }
 
 /// The reach of a method whose host parameter has type `host_ty` (`None` for no host).
 pub fn reach_of(host_ty: Option<&str>) -> Reach {
     match host_ty {
+        None => Reach::Global,
         Some("&dyn Host" | "&mut dyn ServerHost" | "&dyn ClientHost" | "&mut dyn ClientHost") => {
             Reach::Host
         }
@@ -49,9 +56,10 @@ pub fn reach_of(host_ty: Option<&str>) -> Reach {
             "&dyn LevelHost"
             | "&mut dyn LevelRandomHost"
             | "&mut dyn LevelWriteHost"
-            | "&dyn LevelTicksHost",
+            | "&dyn LevelTicksHost"
+            | "LevelSide",
         ) => Reach::Level,
-        _ => Reach::Nothing,
+        Some(_) => Reach::Nothing,
     }
 }
 
@@ -78,12 +86,28 @@ fn plain(ty: &str) -> String {
     text.replace("'a", "").replace("&mut", "").replace('&', "")
 }
 
-/// Whether a value of `shape` converts through a host of `reach`. A list is an output only, and a
-/// hook's list input is not converted here (the caller refuses it).
+/// Whether a value of `shape` converts through a host of `reach`. Stacks convert whatever the reach
+/// (through the host, or through the global tables). A block state needs a host or a level: the
+/// global tables give none. A list is an output only, and a hook's list input is not converted here
+/// (the caller refuses it).
 pub fn allowed(shape: Shape, reach: Reach) -> bool {
     match shape {
-        Shape::State | Shape::OptState => reach != Reach::Nothing,
-        Shape::Stack | Shape::OptStack | Shape::StackList => reach == Reach::Host,
+        Shape::State | Shape::OptState => matches!(reach, Reach::Host | Reach::Level),
+        Shape::Stack | Shape::OptStack | Shape::StackList => true,
+    }
+}
+
+/// Whether `shape` is a stack shape (the carried values that the global tables also convert).
+pub fn is_stack(shape: Shape) -> bool {
+    matches!(shape, Shape::Stack | Shape::OptStack | Shape::StackList)
+}
+
+/// The reach a stack converts through: the method's host when it is a `Host`, else the global
+/// tables. A stack never needs a level host, so a level hook's stacks go through the tables.
+pub fn stack_reach(reach: Reach) -> Reach {
+    match reach {
+        Reach::Host => Reach::Host,
+        Reach::Level | Reach::Nothing | Reach::Global => Reach::Global,
     }
 }
 
@@ -97,14 +121,18 @@ pub fn refusal(shape: Shape) -> String {
 
 /// The expression that is the method's host as the Lua crate takes it, or `None` with no host.
 pub fn view(host_name: Option<&str>, host_ty: Option<&str>, reach: Reach) -> Option<String> {
+    if reach == Reach::Global {
+        return Some("&crate::stacks::GlobalHost".to_owned());
+    }
     let name = host_name?;
     let ty = host_ty?;
     Some(match (reach, ty) {
-        (Reach::Nothing, _) => return None,
+        (Reach::Nothing | Reach::Global, _) => return None,
         (Reach::Host, "&dyn Host") => name.to_owned(),
         (Reach::Host, "HostSide") => format!("crate::stacks::side_host(&{name})"),
         (Reach::Host, _) => upcast(name, ty, "mod_api::Host"),
         (Reach::Level, "&dyn LevelHost") => name.to_owned(),
+        (Reach::Level, "LevelSide") => format!("crate::stacks::side_level(&{name})"),
         (Reach::Level, _) => upcast(name, ty, "mod_api::LevelHost"),
     })
 }
@@ -244,18 +272,31 @@ mod tests {
         assert_eq!(reach_of(Some("HostSide")), Reach::Host);
         assert_eq!(reach_of(Some("&dyn LevelHost")), Reach::Level);
         assert_eq!(reach_of(Some("&mut dyn LevelRandomHost")), Reach::Level);
-        assert_eq!(reach_of(None), Reach::Nothing);
+        assert_eq!(reach_of(None), Reach::Global);
+        assert_eq!(reach_of(Some("&dyn WorldgenHost")), Reach::Nothing);
     }
 
     #[test]
-    fn a_level_has_states_and_no_stacks() {
+    fn a_level_has_states_and_stacks_come_from_the_tables() {
         assert!(allowed(Shape::State, Reach::Level));
         assert!(allowed(Shape::OptState, Reach::Host));
-        assert!(!allowed(Shape::Stack, Reach::Level));
-        assert!(!allowed(Shape::StackList, Reach::Level));
+        assert!(allowed(Shape::Stack, Reach::Level));
+        assert!(allowed(Shape::StackList, Reach::Level));
         assert!(!allowed(Shape::State, Reach::Nothing));
-        assert_eq!(refusal(Shape::Stack), "no host path for stacks");
+        assert!(!allowed(Shape::State, Reach::Global));
+        assert!(allowed(Shape::Stack, Reach::Nothing));
+        assert_eq!(stack_reach(Reach::Level), Reach::Global);
+        assert_eq!(stack_reach(Reach::Host), Reach::Host);
         assert_eq!(refusal(Shape::OptState), "no host path for block states");
+    }
+
+    #[test]
+    fn a_level_side_is_a_level() {
+        assert_eq!(reach_of(Some("LevelSide")), Reach::Level);
+        assert_eq!(
+            view(Some("level"), Some("LevelSide"), Reach::Level).as_deref(),
+            Some("crate::stacks::side_level(&level)")
+        );
     }
 
     #[test]
@@ -290,6 +331,19 @@ mod tests {
             Some("level as &dyn mod_api::LevelHost")
         );
         assert_eq!(view(None, None, Reach::Nothing), None);
+        assert_eq!(
+            view(None, None, Reach::Global).as_deref(),
+            Some("&crate::stacks::GlobalHost")
+        );
+    }
+
+    #[test]
+    fn a_hook_with_no_host_takes_items_through_the_global_table_and_no_states() {
+        assert!(allowed(Shape::Stack, Reach::Global));
+        assert!(allowed(Shape::OptStack, Reach::Global));
+        assert!(allowed(Shape::StackList, Reach::Global));
+        assert!(!allowed(Shape::State, Reach::Global));
+        assert!(!allowed(Shape::OptState, Reach::Global));
     }
 
     #[test]

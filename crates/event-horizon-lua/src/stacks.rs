@@ -15,7 +15,10 @@ use event_horizon_lua_convert::item::{BlockStateSpec, ItemStackSpec, MAX_COUNT};
 use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::Value;
 use mod_api::prelude::{BlockStatesHost, ItemsHost};
-use mod_api::{BlockState, Compound, Host, HostSide, ItemStack, LevelHost, StateConstraint, Tag};
+use mod_api::{
+    BlockState, Compound, Host, HostSide, Identifier, ItemStack, LevelHost, LevelSide,
+    StateConstraint, Tag,
+};
 
 use crate::host::LOG_TARGET;
 
@@ -82,11 +85,112 @@ impl StateHost for dyn LevelHost + '_ {
     }
 }
 
+/// The host of a hook with no host parameter, for stacks: the process-global item table the mod API
+/// installs when a world is entered. It gives the host's NBT shape for the id and components. Two
+/// limits, both because the table is not the host:
+/// - A stack has no item maximum here, so only [`MAX_COUNT`] is checked. The game's write boundary
+///   still refuses a count above the item's maximum.
+/// - Block states are None (see the `StateHost` impl). Before the table is installed every stack
+///   conversion is None, so the hook is not delivered.
+pub struct GlobalHost;
+
+impl StackHost for GlobalHost {
+    type Stack = ItemStack;
+
+    fn stack_nbt(&self, stack: &ItemStack) -> Option<Compound> {
+        let id = mod_api::__private::item_key_id(stack.item())?;
+        Some(stack_nbt_of(
+            id,
+            stack.count(),
+            stack.damage_component(),
+            stack.components().map(|patch| patch.as_nbt()),
+        ))
+    }
+
+    fn stack_from_nbt(&self, nbt: &Compound) -> Option<ItemStack> {
+        let Tag::String(id) = tag_of(nbt, "id")? else {
+            return None;
+        };
+        let id = Identifier::parse(&id.to_string_lossy()).ok()?;
+        let item = mod_api::__private::item_key_by_identifier(&id)?;
+        let count = match tag_of(nbt, "count") {
+            None => 1,
+            Some(tag) => nbt_count(tag)?,
+        };
+        let mut stack = ItemStack::new(item, count)?;
+        match tag_of(nbt, "components") {
+            Some(Tag::Compound(patch)) => stack.set_components(patch.clone()).ok()?,
+            None => {}
+            Some(_) => return None,
+        }
+        Some(stack)
+    }
+
+    fn stack_max(&self, _stack: &ItemStack) -> Option<u32> {
+        None
+    }
+}
+
+/// The global tables give no block states. A state's text needs its block's properties, and the
+/// tables do not name them: the block index a definition is found by is private to the mod API.
+/// So a state converts only through a host or a level, and a no-host hook does not get one.
+impl StateHost for GlobalHost {
+    type State = BlockState;
+
+    fn state_text(&self, _state: &BlockState) -> Option<String> {
+        None
+    }
+
+    fn state_parse(&self, _text: &str) -> Option<BlockState> {
+        None
+    }
+}
+
+/// A stack's NBT escape as the host writes it: id, count, then the component patch with the
+/// damage override put back into it (the host's `to_nbt`, from the parts the global tables give).
+fn stack_nbt_of(id: &str, count: u32, damage: Option<u32>, patch: Option<&Compound>) -> Compound {
+    let mut nbt = Compound::new();
+    nbt.insert("id".into(), Tag::String(id.into()));
+    nbt.insert("count".into(), count_tag(count));
+    let mut patch = patch.cloned().unwrap_or_default();
+    if let Some(damage) = damage {
+        patch.insert("minecraft:damage".into(), count_tag(damage));
+    }
+    if !patch.is_empty() {
+        nbt.insert("components".into(), Tag::Compound(patch));
+    }
+    nbt
+}
+
+/// A count or damage as the host writes it: an int, or a long above the int range.
+fn count_tag(value: u32) -> Tag {
+    i32::try_from(value).map_or_else(|_| Tag::Long(i64::from(value)), Tag::Int)
+}
+
+/// A count as the host reads it: any integer tag that is a `u32`.
+fn nbt_count(tag: &Tag) -> Option<u32> {
+    let value = match tag {
+        Tag::Byte(value) => i64::from(*value),
+        Tag::Short(value) => i64::from(*value),
+        Tag::Int(value) => i64::from(*value),
+        Tag::Long(value) => *value,
+        _ => return None,
+    };
+    u32::try_from(value).ok()
+}
+
 /// The host of a `HostSide` hook as a `Host`: both of its sides are one.
 pub fn side_host<'a>(side: &'a HostSide<'_>) -> &'a dyn Host {
     match side {
         HostSide::Server(host) => &**host,
         HostSide::Client(host) => &**host,
+    }
+}
+
+/// The level of a `LevelSide` hook as a `LevelHost`: both of its sides are one.
+pub fn side_level<'a>(side: &'a LevelSide<'_>) -> &'a dyn LevelHost {
+    match side {
+        LevelSide::Server(level) | LevelSide::Client(level) => *level,
     }
 }
 
@@ -572,6 +676,79 @@ mod tests {
             assert!(state_value(&host, &Value::Table(table)).is_err(), "{value}");
         }
         assert_eq!(host.calls.get(), 0, "the host was called");
+    }
+
+    #[test]
+    fn a_global_stack_writes_the_host_nbt_shape() {
+        // Hand-written: id, count, then the patch with the damage override put back in it.
+        let mut patch = Compound::new();
+        patch.insert("minecraft:custom_name".into(), Tag::String("x".into()));
+        let nbt = stack_nbt_of("minecraft:apple", 3, Some(5), Some(&patch));
+        assert_eq!(
+            tag_of(&nbt, "id"),
+            Some(&Tag::String("minecraft:apple".into()))
+        );
+        assert_eq!(tag_of(&nbt, "count"), Some(&Tag::Int(3)));
+        let Some(Tag::Compound(components)) = tag_of(&nbt, "components") else {
+            panic!("components")
+        };
+        assert_eq!(tag_of(components, "minecraft:damage"), Some(&Tag::Int(5)));
+        assert_eq!(
+            tag_of(components, "minecraft:custom_name"),
+            Some(&Tag::String("x".into()))
+        );
+        // No damage and no patch: no components key at all.
+        let plain = stack_nbt_of("minecraft:apple", 1, None, None);
+        assert_eq!(tag_of(&plain, "components"), None);
+        assert_eq!(tag_of(&plain, "count"), Some(&Tag::Int(1)));
+    }
+
+    #[test]
+    fn global_counts_read_and_write_like_the_host() {
+        assert_eq!(count_tag(64), Tag::Int(64));
+        assert_eq!(count_tag(3_000_000_000), Tag::Long(3_000_000_000));
+        assert_eq!(nbt_count(&Tag::Byte(3)), Some(3));
+        assert_eq!(nbt_count(&Tag::Short(7)), Some(7));
+        assert_eq!(nbt_count(&Tag::Long(-1)), None);
+        assert_eq!(nbt_count(&Tag::String("3".into())), None);
+    }
+
+    #[test]
+    fn without_installed_tables_global_conversions_give_none() {
+        // The tables are installed at world entry; no test installs them, so every lookup is None.
+        assert!(
+            GlobalHost
+                .stack_from_nbt(&stack_nbt_of("minecraft:apple", 1, None, None))
+                .is_none()
+        );
+        assert!(GlobalHost.state_parse("minecraft:stone").is_none());
+        assert!(
+            GlobalHost
+                .state_parse("minecraft:oak_stairs[facing=east]")
+                .is_none()
+        );
+        let lua = mlua::Lua::new();
+        let table = lua_value(&lua, r#"return { id = "minecraft:apple", count = 1 }"#);
+        assert!(stack_value(&GlobalHost, &table).is_err());
+        let state = lua_value(&lua, r#"return { id = "minecraft:stone" }"#);
+        assert!(state_value(&GlobalHost, &state).is_err());
+    }
+
+    #[test]
+    fn an_output_list_with_a_bad_stack_is_refused_whole_and_kept() {
+        // A stack list output with one stack the tables cannot give is refused, and the value kept.
+        let lua = mlua::Lua::new();
+        // The slot holds no stacks yet; the refusal must leave it that way.
+        let slot = std::cell::RefCell::new(Vec::<ItemStack>::new());
+        let list = lua_value(
+            &lua,
+            r#"return { { id = "minecraft:apple", count = 2 }, { id = "minecraft:nothing", count = 1 } }"#,
+        );
+        let refused = crate::dispatch::accept_by(&slot, "m", "h", "items", &list, |value| {
+            stack_list_value(&GlobalHost, value)
+        });
+        assert!(refused);
+        assert!(slot.borrow().is_empty());
     }
 
     #[test]

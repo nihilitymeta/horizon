@@ -1,5 +1,5 @@
 # Hook coverage (issue 74, H3) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
-# hooks: 749, emitted: 397, skipped: 352
+# hooks: 749, emitted: 398, skipped: 351
 # skipped, answer: ArmPose: 1
 # skipped, answer: Minimap: 1
 # skipped, answer: Vec<GuiDraw>: 1
@@ -16,13 +16,12 @@
 # skipped, argument <..> has type <..> (kind Text): a mutable argument writes back, not in this slice: 1
 # skipped, argument <..> has type <..> (kind Vector): a mutable argument writes back, not in this slice: 2
 # skipped, argument <..>: a mutable argument writes back, not in this slice: 1
-# skipped, handle input: host <..> is not carried by a turn: 1
+# skipped, handle input: host <..> is not carried by a turn: 2
 # skipped, handle output: 4
 # skipped, has an output: its listeners write back, not in this slice: 51
+# skipped, hot path (needs measurement): 12
 # skipped, listen hook returns <..>: its listeners answer nothing: 1
-# skipped, no host path for block states: 1
-# skipped, no host path for stacks: 5
-# skipped, not a method of the Hooks trait: 151
+# skipped, not a method of the Hooks trait: 143
 # skipped, output <..>: <..> has no <..> field of that name: 7
 # skipped, output: ArmAngles: 1
 # skipped, output: BiomeColors: 1
@@ -114,7 +113,7 @@ block_form emitted
 block_grow_feature emitted
 block_highlight emitted
 block_ignite emitted
-block_jump_factor skipped: not a method of the Hooks trait
+block_jump_factor skipped: hot path (needs measurement)
 block_lock_check emitted
 block_path_type skipped: not a method of the Hooks trait
 block_receive_game emitted
@@ -122,9 +121,9 @@ block_render_visibility skipped: not a method of the Hooks trait
 block_screen_effect_draw skipped: argument `draw` has type `&'a mut dyn CameraDrawContext` (kind DynHost): a mutable argument writes back, not in this slice
 block_shear_entity emitted
 block_signal skipped: not a method of the Hooks trait
-block_speed_factor skipped: not a method of the Hooks trait
+block_speed_factor skipped: hot path (needs measurement)
 block_spread emitted
-block_step_on skipped: no host path for block states
+block_step_on skipped: hot path (needs measurement)
 block_tool_modification emitted
 blocks emitted (host records)
 bonemeal skipped: argument `stack`: a mutable argument writes back, not in this slice
@@ -207,7 +206,7 @@ connects_to skipped: not a method of the Hooks trait
 console_line emitted
 consume_effect skipped: argument `data` has type `&'a Tag` (kind Event): no Lua conversion
 contained_fluid skipped: not a method of the Hooks trait
-container_loot_filled skipped: no host path for stacks
+container_loot_filled emitted
 container_opened emitted
 contents_changed skipped: not a method of the Hooks trait
 crafter_craft emitted
@@ -245,7 +244,7 @@ empty_contents skipped: not a method of the Hooks trait
 enchant_effect skipped: argument `data` has type `&'a Tag` (kind Event): no Lua conversion
 enchant_item emitted
 enchant_power_bonus skipped: not a method of the Hooks trait
-enchanted_block_loot skipped: no host path for stacks
+enchanted_block_loot skipped: handle input: host `&dyn LevelHost` is not carried by a turn
 enchanted_entity_loot emitted
 enchantment_level_set skipped: argument `offer` has type `&'a item::stations::EnchantmentRow<'a>` (kind Event): no Lua conversion
 ender_entity_teleport emitted
@@ -313,7 +312,7 @@ fluid_tick emitted
 fluid_tooltip skipped: argument `stack` has type `&'a FluidStack` (kind Event): no Lua conversion
 food_level_changed emitted
 framerate_limit emitted
-friction skipped: not a method of the Hooks trait
+friction skipped: hot path (needs measurement)
 furnace_burn emitted
 furnace_extract emitted
 furnace_smelt emitted
@@ -344,7 +343,7 @@ hopper_pickup_item emitted
 hurt_enemy skipped: not a method of the Hooks trait
 ignited_by_lava skipped: not a method of the Hooks trait
 ingredient emitted
-ingredient_test skipped: no host path for stacks
+ingredient_test skipped: hot path (needs measurement)
 input_key emitted
 instantiate_block_state_definition skipped: has an output: its listeners write back, not in this slice
 interaction_key_mapping_triggered emitted
@@ -355,7 +354,7 @@ is_bonemeal_success skipped: not a method of the Hooks trait
 is_combine_repairable skipped: not a method of the Hooks trait
 is_fertile skipped: not a method of the Hooks trait
 is_fire_source skipped: not a method of the Hooks trait
-is_ladder skipped: not a method of the Hooks trait
+is_ladder skipped: hot path (needs measurement)
 is_not_replaceable_by_pick_action skipped: not a method of the Hooks trait
 is_pathfindable skipped: not a method of the Hooks trait
 is_piglin_currency skipped: not a method of the Hooks trait
@@ -422,10 +421,10 @@ living_fall emitted
 living_flying_speed emitted
 living_get_projectile emitted
 living_heal emitted
-living_incoming_damage skipped: no host path for stacks
+living_incoming_damage skipped: hot path (needs measurement)
 living_jump emitted
 living_jump_power emitted
-living_knockback skipped: no host path for stacks
+living_knockback skipped: hot path (needs measurement)
 living_shield_block skipped: output: ShieldBlock
 living_speed emitted
 living_use_totem emitted
@@ -434,7 +433,7 @@ loot_condition skipped: has an output: its listeners write back, not in this sli
 loot_drops skipped: argument `context` has type `&'a LootDrops<'a>` (kind Event): no Lua conversion
 loot_function skipped: has an output: its listeners write back, not in this slice
 loot_table_load skipped: has an output: its listeners write back, not in this slice
-makes_open_trapdoor_above_climbable skipped: not a method of the Hooks trait
+makes_open_trapdoor_above_climbable skipped: hot path (needs measurement)
 makes_piglins_neutral skipped: not a method of the Hooks trait
 map_decoration_types skipped: has an output: its listeners write back, not in this slice
 map_decorations skipped: has an output: its listeners write back, not in this slice
@@ -473,13 +472,13 @@ mouse_scrolling emitted
 movement_input emitted
 music skipped: output: Option<Music>
 music_layers skipped: has an output: its listeners write back, not in this slice
-neighbor_changed skipped: not a method of the Hooks trait
+neighbor_changed skipped: hot path (needs measurement)
 neighbor_notify emitted
 note_block_change emitted
 note_block_play skipped: argument `instrument` has type `&'a mut NoteInstrument` (kind Event): a mutable argument writes back, not in this slice
 on_block_exploded skipped: not a method of the Hooks trait
 on_block_placed_by skipped: not a method of the Hooks trait
-on_block_state_change skipped: not a method of the Hooks trait
+on_block_state_change skipped: hot path (needs measurement)
 on_caught_fire skipped: not a method of the Hooks trait
 on_chunk_unloaded skipped: not a method of the Hooks trait
 on_destroyed_by_player skipped: not a method of the Hooks trait
@@ -775,7 +774,7 @@ tooltip_component skipped: not a method of the Hooks trait
 tooltip_component_draw skipped: not a method of the Hooks trait
 trade_select emitted
 trade_with_villager skipped: has an output: its listeners write back, not in this slice
-update_shape skipped: not a method of the Hooks trait
+update_shape skipped: hot path (needs measurement)
 use_animation skipped: not a method of the Hooks trait
 use_duration skipped: not a method of the Hooks trait
 use_item skipped: not a method of the Hooks trait
@@ -816,11 +815,11 @@ block_part.adjacent_block_path_type emitted
 block_part.affect_neighbors_after_removal skipped: has an output: its listeners write back, not in this slice
 block_part.analog_output skipped: has an output: its listeners write back, not in this slice
 block_part.beacon_color_multiplier skipped: has an output: its listeners write back, not in this slice
-block_part.block_jump_factor skipped: no host path for block states
+block_part.block_jump_factor skipped: hot path (needs measurement)
 block_part.block_path_type emitted
 block_part.block_render_visibility skipped: hot path (needs measurement)
 block_part.block_signal emitted
-block_part.block_speed_factor skipped: no host path for block states
+block_part.block_speed_factor skipped: hot path (needs measurement)
 block_part.bounce_on emitted
 block_part.bounce_restitution skipped: has an output: its listeners write back, not in this slice
 block_part.can_be_connected_to emitted
@@ -842,33 +841,33 @@ block_part.explosion_resistance emitted
 block_part.fall_on skipped: has an output: its listeners write back, not in this slice
 block_part.falling_tick skipped: hot path (needs measurement)
 block_part.fire_odds skipped: answer: (i32, i32)
-block_part.friction skipped: no host path for block states
+block_part.friction skipped: hot path (needs measurement)
 block_part.has_analog_output skipped: has an output: its listeners write back, not in this slice
 block_part.ignited_by_lava emitted
 block_part.is_bonemeal_success skipped: has an output: its listeners write back, not in this slice
 block_part.is_fertile skipped: has an output: its listeners write back, not in this slice
 block_part.is_fire_source skipped: hot path (needs measurement)
-block_part.is_ladder skipped: no host path for block states
+block_part.is_ladder skipped: hot path (needs measurement)
 block_part.is_pathfindable skipped: has an output: its listeners write back, not in this slice
 block_part.is_signal_source emitted
 block_part.is_slime_block skipped: has an output: its listeners write back, not in this slice
 block_part.is_sticky_block skipped: has an output: its listeners write back, not in this slice
-block_part.is_valid_bonemeal_target skipped: no host path for block states
+block_part.is_valid_bonemeal_target emitted
 block_part.item_after_vertical_collision skipped: cancel hook has no `cancelled: bool` argument
 block_part.light_emission skipped: answer: u8
-block_part.makes_open_trapdoor_above_climbable skipped: no host path for block states
+block_part.makes_open_trapdoor_above_climbable skipped: hot path (needs measurement)
 block_part.may_place_on emitted
 block_part.minecart_pass skipped: hot path (needs measurement)
-block_part.neighbor_changed skipped: no host path for block states
+block_part.neighbor_changed skipped: hot path (needs measurement)
 block_part.on_block_exploded emitted
-block_part.on_block_state_change skipped: no host path for block states
+block_part.on_block_state_change skipped: hot path (needs measurement)
 block_part.on_caught_fire emitted
 block_part.on_destroyed_by_player emitted
 block_part.on_destroyed_by_push_reaction skipped: argument `fluid` has type `FluidState` (kind Other): no Lua conversion
 block_part.on_neighbor_change emitted
 block_part.on_tree_grow skipped: worldgen worker
 block_part.perform_bonemeal emitted
-block_part.piston_carries_block_entity skipped: no host path for block states
+block_part.piston_carries_block_entity emitted
 block_part.piston_push_reaction skipped: answer: PushReaction
 block_part.play_hit_sound skipped: cancel hook has no `cancelled: bool` argument
 block_part.rail_can_make_slopes skipped: has an output: its listeners write back, not in this slice
@@ -889,7 +888,7 @@ block_part.state_at_viewpoint skipped: hot path (needs measurement)
 block_part.state_for_placement skipped: answer: Option<BlockState>
 block_part.tick_block skipped: cancel hook has no `cancelled: bool` argument
 block_part.tool_modified_state skipped: cancel hook has no `cancelled: bool` argument
-block_part.update_shape skipped: no host path for block states
+block_part.update_shape skipped: hot path (needs measurement)
 block_part.use_item_on emitted
 block_part.use_without_item emitted
 block_part.weak_changes skipped: has an output: its listeners write back, not in this slice
@@ -897,8 +896,8 @@ block_part.weak_changes skipped: has an output: its listeners write back, not in
 # item parts (issue 74, P2): the ItemPart trait's methods
 item_part.apply_enchantments skipped: argument `enchantments` has type `&'a[(Arc<str>, u32)]` (kind Collection): no Lua conversion
 item_part.can_equip emitted
-item_part.can_fit_inside_container_items skipped: no host path for stacks
-item_part.can_grindstone_repair skipped: no host path for stacks
+item_part.can_fit_inside_container_items emitted
+item_part.can_grindstone_repair emitted
 item_part.can_perform_action emitted
 item_part.contained_fluid skipped: output: Option<FluidKey>
 item_part.crafting_remainder emitted
@@ -909,7 +908,7 @@ item_part.empty_contents skipped: argument `hit` has type `Option<(BlockPos, Dir
 item_part.highlight_tip skipped: hot path (needs measurement)
 item_part.hurt_enemy emitted
 item_part.inventory_tick skipped: hot path (needs measurement)
-item_part.is_combine_repairable skipped: no host path for stacks
+item_part.is_combine_repairable emitted
 item_part.is_not_replaceable_by_pick_action emitted
 item_part.is_piglin_currency emitted
 item_part.is_primary_item_for emitted
@@ -951,7 +950,7 @@ block_entity_part.block_entity_view_distance skipped: hot path (needs measuremen
 block_entity_part.menu_button skipped: output: ModBlockEntity
 block_entity_part.menu_quick_move skipped: cancel hook has no `cancelled: bool` argument
 block_entity_part.on_chunk_unloaded emitted
-block_entity_part.pre_remove_side_effects skipped: no host path for stacks
+block_entity_part.pre_remove_side_effects emitted
 block_entity_part.screen skipped: answer: Screen
 block_entity_part.screen_click emitted
 block_entity_part.screen_draw skipped: hot path (needs measurement)
