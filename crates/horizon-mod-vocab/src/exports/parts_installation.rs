@@ -4,7 +4,7 @@ mod __private {
     #[doc(hidden)]
     pub use crate::parts::installation as parts_installation;
     pub use crate::parts::{RegistrationAccess, RegistrationKeyKind};
-    pub use crate::parts::{owned_declaration_id, owns_namespace, qualified};
+    pub use crate::parts::{grant_namespace, owned_declaration_id, owns_namespace, qualified};
     pub use crate::runtime::entered_registration;
     pub use crate::world::dimension::NOISE_GENERATOR;
 }

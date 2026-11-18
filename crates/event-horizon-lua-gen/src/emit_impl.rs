@@ -31,6 +31,9 @@ pub struct Emitted {
     pub text: String,
     /// The hooks whose methods are in `text`, in name order.
     pub emitted: Vec<String>,
+    /// The hooks whose methods answer from the mods' declaration records (`HOST_RECORDED`), in
+    /// name order. They are in `text` but not in `emitted`: a Lua handler is never called for them.
+    pub host_recorded: Vec<String>,
     /// Each hook asked for that is not emitted, with its reason, in name order.
     pub skipped: Vec<(String, String)>,
     /// How many outputs of the emitted hooks have each type, by the type's spelling.
@@ -46,6 +49,27 @@ pub struct Emitted {
     pub lists: usize,
 }
 
+/// The hooks the host answers from the records the mods declared at load, not from Lua handlers:
+/// `(hook, event struct, event field, host method)`. The method takes the event's output and
+/// extends it with each loaded mod's records. A hook named here is not in `EMITTED`, so a mod
+/// cannot subscribe to it with `horizon.on`.
+pub const HOST_RECORDED: &[(&str, &str, &str, &str)] = &[
+    ("blocks", "BlocksEvent", "blocks", "declared_blocks"),
+    ("items", "ItemsEvent", "items", "declared_items"),
+];
+
+/// The method of a host-recorded hook: it passes the event's output to the host method.
+fn host_recorded_text(hook: &str, event: &str, field: &str, host_method: &str) -> String {
+    format!(
+        "
+    fn {hook}(&self, context: &mod_api::RegistrationContext, event: &mut mod_api::{event}<'_>) {{
+        let _ = context;
+        self.{host_method}(event.{field});
+    }}
+"
+    )
+}
+
 /// The `impl` header and the two methods every file has. `subscribed_slice` and `on_register` are
 /// provided by the host, not generated.
 const IMPL_HEAD: &str = "
@@ -54,8 +78,8 @@ impl mod_api::Hooks for LuaHost {
         self.subscribed_slice()
     }
 
-    fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
-        self.on_register()
+    fn register(&self, r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+        self.on_register(r)
     }
 
     fn listeners(&self) -> &'static [mod_api::Listener] {
@@ -132,7 +156,23 @@ pub fn emit_with_handles(
 
     let mut methods = Vec::new();
     let mut skipped = Vec::new();
+    let mut host_recorded = Vec::new();
+    let mut recorded_text = String::new();
     for name in names {
+        if let Some((hook, event, field, host_method)) =
+            HOST_RECORDED.iter().find(|entry| entry.0 == name)
+        {
+            if sigs.iter().any(|sig| sig.name == name) && ir.hooks.iter().any(|h| h.name == name) {
+                host_recorded.push((*hook).to_owned());
+                recorded_text.push_str(&host_recorded_text(hook, event, field, host_method));
+            } else {
+                skipped.push((
+                    name.to_owned(),
+                    "not a method of the Hooks trait".to_owned(),
+                ));
+            }
+            continue;
+        }
         match plan(ir, sigs, dispatch, name, plain, handles) {
             Ok(method) => methods.push(method),
             Err(reason) => skipped.push((name.to_owned(), reason)),
@@ -148,6 +188,7 @@ pub fn emit_with_handles(
     for method in &methods {
         text.push_str(&method_text(method));
     }
+    text.push_str(&recorded_text);
     text.push_str("}\n");
 
     let mut output_types = BTreeMap::new();
@@ -199,6 +240,7 @@ pub fn emit_with_handles(
             .iter()
             .map(|method| method.hook.name.clone())
             .collect(),
+        host_recorded,
         skipped,
         output_types,
         decisions,
@@ -1203,8 +1245,8 @@ impl mod_api::Hooks for LuaHost {
         self.subscribed_slice()
     }
 
-    fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
-        self.on_register()
+    fn register(&self, r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+        self.on_register(r)
     }
 
     fn listeners(&self) -> &'static [mod_api::Listener] {
@@ -1411,8 +1453,8 @@ impl mod_api::Hooks for LuaHost {
         self.subscribed_slice()
     }
 
-    fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
-        self.on_register()
+    fn register(&self, r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+        self.on_register(r)
     }
 
     fn listeners(&self) -> &'static [mod_api::Listener] {

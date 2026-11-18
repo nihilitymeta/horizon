@@ -17,7 +17,7 @@ use horizon_client::save::level_mods::{self, ModRecord};
 use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
-use crate::declare::{self, ListenerOptions};
+use crate::declare::{self, BlockRecord, ItemRecord, ListenerOptions};
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::new_event;
 use crate::generated::hooks::{hook_id, is_emitted};
@@ -49,6 +49,9 @@ pub struct LuaMod {
     side: Side,
     hooks: Vec<String>,
     options: Vec<(String, ListenerOptions)>,
+    /// The blocks and items the mod declared with `horizon.block` and `horizon.item`.
+    blocks: Vec<BlockRecord>,
+    items: Vec<ItemRecord>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -124,7 +127,8 @@ impl LuaMod {
         let source = read_source(&found.dir)?;
         let lua = state::new_state().map_err(|e| e.to_string())?;
         let chunk_name = format!("@{}", found.dir.join(ENTRY).display());
-        let declaration = declare::declare(&lua, &source, &chunk_name, &|n| is_emitted(n))?;
+        let declaration =
+            declare::declare(&lua, &found.id, &source, &chunk_name, &|n| is_emitted(n))?;
 
         let log = Arc::new(Mutex::new(Vec::new()));
         let runtime =
@@ -139,10 +143,22 @@ impl LuaMod {
             side: found.side,
             hooks: declaration.hooks,
             options: declaration.options,
+            blocks: declaration.blocks,
+            items: declaration.items,
             lua,
             log,
             turn: Turn::default(),
         })
+    }
+
+    /// The blocks this mod declared, in declaration order.
+    pub fn blocks(&self) -> &[BlockRecord] {
+        &self.blocks
+    }
+
+    /// The items this mod declared, in declaration order.
+    pub fn items(&self) -> &[ItemRecord] {
+        &self.items
     }
 
     pub fn id(&self) -> &str {
@@ -221,6 +237,9 @@ pub struct LuaHost {
     report: Vec<String>,
     /// Set once the report is written, so a second `register` writes nothing.
     reported: AtomicBool,
+    /// The ids of the mods whose declared keys the game refused. Their blocks and items are not
+    /// answered.
+    refused_keys: Mutex<Vec<String>>,
 }
 
 impl LuaHost {
@@ -255,6 +274,22 @@ impl LuaHost {
             }
             order.push((name, run));
         }
+        // The declaration hooks have no Lua handlers: the host answers them from the records. The
+        // game asks only the hooks a host subscribes to, so each one is subscribed when a mod
+        // declared something for it.
+        for (name, declared) in [
+            ("blocks", mods.iter().any(|m| !m.blocks.is_empty())),
+            ("items", mods.iter().any(|m| !m.items.is_empty())),
+        ] {
+            if let (true, Some(id)) = (declared, hook_id(name)) {
+                subscribed.push(Some(id));
+                listeners.push(mod_api::Listener {
+                    hook: Some(id),
+                    priority: 0,
+                    receive_cancelled: false,
+                });
+            }
+        }
         LuaHost {
             mods,
             subscribed: Box::leak(subscribed.into_boxed_slice()),
@@ -262,6 +297,7 @@ impl LuaHost {
             order,
             report: Vec::new(),
             reported: AtomicBool::new(false),
+            refused_keys: Mutex::new(Vec::new()),
         }
     }
 
@@ -340,12 +376,83 @@ impl LuaHost {
         self.listeners
     }
 
-    /// What `register` does: writes the report and records the loaded mods. The generated
-    /// `Hooks::register` calls it.
-    pub(crate) fn on_register(&self) {
+    /// What `register` does: writes the report, records the loaded mods, and requests the registry
+    /// keys of every declared block and item. The generated `Hooks::register` calls it.
+    pub(crate) fn on_register(&self, r: &mut dyn mod_api::Registrar) {
         self.report();
         self.record_loaded();
+        self.request_keys(&mut RegistrarKeys(r));
     }
+
+    /// Requests the key of each block and item every loaded mod declared, in declaration order. A
+    /// mod whose request is refused is dropped from the answers, and the others are not affected.
+    pub(crate) fn request_keys(&self, keys: &mut dyn DeclaredKeys) {
+        for m in &self.mods {
+            let refusal = m
+                .blocks
+                .iter()
+                .find_map(|block| keys.block_key(&block.id).err())
+                .or_else(|| {
+                    m.items
+                        .iter()
+                        .find_map(|item| keys.item_key(&item.id).err())
+                });
+            if let Some(reason) = refusal {
+                log::warn!("Lua mod {} refused its declarations: {reason}", m.id);
+                lock_ids(&self.refused_keys).push(m.id.clone());
+            }
+        }
+    }
+
+    /// Whether `m` was refused by its key requests.
+    fn is_refused(&self, m: &LuaMod) -> bool {
+        lock_ids(&self.refused_keys).contains(&m.id)
+    }
+
+    /// The blocks of every loaded mod that was not refused, in load order and declaration order:
+    /// the answer to the game's `blocks` hook.
+    pub(crate) fn declared_blocks(&self, out: &mut Vec<mod_api::Block>) {
+        for m in self.mods.iter().filter(|m| !self.is_refused(m)) {
+            out.extend(m.blocks.iter().map(BlockRecord::to_block));
+        }
+    }
+
+    /// The items of every loaded mod that was not refused: the answer to the game's `items` hook.
+    pub(crate) fn declared_items(&self, out: &mut Vec<mod_api::Item>) {
+        for m in self.mods.iter().filter(|m| !self.is_refused(m)) {
+            out.extend(m.items.iter().map(ItemRecord::to_item));
+        }
+    }
+}
+
+/// The registry keys `register` requests for the declared blocks and items. The game's Registrar
+/// answers them (`RegistrarKeys`); a test double records them.
+pub(crate) trait DeclaredKeys {
+    /// Requests the key of block `id`. An `Err` refuses the mod that declared it.
+    fn block_key(&mut self, id: &str) -> Result<(), String>;
+    /// Requests the key of item `id`. An `Err` refuses the mod that declared it.
+    fn item_key(&mut self, id: &str) -> Result<(), String>;
+}
+
+/// The game's Registrar as the keys' requester.
+struct RegistrarKeys<'a>(&'a mut dyn mod_api::Registrar);
+
+impl DeclaredKeys for RegistrarKeys<'_> {
+    fn block_key(&mut self, id: &str) -> Result<(), String> {
+        // The game checks every request after all declarations and reports a bad one itself,
+        // through its own refusal, so the key is not an answer this host can refuse with.
+        let _key = mod_api::BlocksRegistrar::block_key(&mut *self.0, id);
+        Ok(())
+    }
+
+    fn item_key(&mut self, id: &str) -> Result<(), String> {
+        let _key = mod_api::ItemsRegistrar::item_key(&mut *self.0, id);
+        Ok(())
+    }
+}
+
+fn lock_ids(ids: &Mutex<Vec<String>>) -> MutexGuard<'_, Vec<String>> {
+    ids.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Runs one handler under `HANDLER_BUDGET`. The budget keeps failing after the deadline, so a

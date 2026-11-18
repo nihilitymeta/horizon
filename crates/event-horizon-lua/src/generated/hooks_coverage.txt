@@ -1,5 +1,5 @@
 # Hook coverage (issue 74, H3) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
-# hooks: 749, emitted: 393, skipped: 356
+# hooks: 749, emitted: 395, skipped: 354
 # skipped, answer: ArmPose: 1
 # skipped, answer: Minimap: 1
 # skipped, answer: Vec<GuiDraw>: 1
@@ -18,7 +18,7 @@
 # skipped, argument <..>: a mutable argument writes back, not in this slice: 1
 # skipped, handle input: host <..> is not carried by a turn: 1
 # skipped, handle output: 4
-# skipped, has an output: its listeners write back, not in this slice: 53
+# skipped, has an output: its listeners write back, not in this slice: 51
 # skipped, listen hook returns <..>: its listeners answer nothing: 1
 # skipped, no host path for block states: 1
 # skipped, no host path for stacks: 5
@@ -126,7 +126,7 @@ block_speed_factor skipped: not a method of the Hooks trait
 block_spread emitted
 block_step_on skipped: no host path for block states
 block_tool_modification emitted
-blocks skipped: has an output: its listeners write back, not in this slice
+blocks emitted (host records)
 bonemeal skipped: argument `stack`: a mutable argument writes back, not in this slice
 bounce_on skipped: not a method of the Hooks trait
 bounce_restitution skipped: not a method of the Hooks trait
@@ -387,7 +387,7 @@ item_stacked_on_other skipped: output: StackedOnOther<'_>
 item_tint_source skipped: argument `config` has type `&'a Tag` (kind Event): no Lua conversion
 item_tooltip skipped: argument `display` has type `&'a TooltipDisplay<'a>` (kind Event): no Lua conversion
 item_toss emitted
-items skipped: has an output: its listeners write back, not in this slice
+items emitted (host records)
 key_mapping_pre emitted
 leaves_decay emitted
 left_click_block emitted

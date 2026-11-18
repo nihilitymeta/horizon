@@ -8,8 +8,8 @@ impl mod_api::Hooks for LuaHost {
         self.subscribed_slice()
     }
 
-    fn register(&self, _r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
-        self.on_register()
+    fn register(&self, r: &mut dyn mod_api::Registrar, _cx: &mod_api::RegistrationContext) {
+        self.on_register(r)
     }
 
     fn listeners(&self) -> &'static [mod_api::Listener] {
@@ -8445,5 +8445,15 @@ impl mod_api::Hooks for LuaHost {
             },
             &mut |_, _, _| true,
         ));
+    }
+
+    fn blocks(&self, context: &mod_api::RegistrationContext, event: &mut mod_api::BlocksEvent<'_>) {
+        let _ = context;
+        self.declared_blocks(event.blocks);
+    }
+
+    fn items(&self, context: &mod_api::RegistrationContext, event: &mut mod_api::ItemsEvent<'_>) {
+        let _ = context;
+        self.declared_items(event.items);
     }
 }

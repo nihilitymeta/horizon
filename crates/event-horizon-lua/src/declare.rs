@@ -15,6 +15,12 @@ use crate::budget;
 /// The most `horizon.on` calls one mod may make.
 pub const MAX_HANDLERS: usize = 256;
 
+/// The most `horizon.block` calls one mod may make.
+pub const MAX_BLOCKS: usize = 256;
+
+/// The most `horizon.item` calls one mod may make.
+pub const MAX_ITEMS: usize = 256;
+
 /// The time a mod's top level may run while it loads.
 pub const DECLARE_BUDGET: Duration = Duration::from_secs(2);
 
@@ -25,6 +31,8 @@ const HANDLERS_KEY: &str = "eh_handlers";
 const ENV_KEY: &str = "eh_env";
 
 const LATE_ON: &str = "horizon.on can only be used while the mod loads";
+
+const LATE_DECLARE: &str = "declarations are only allowed while the mod loads";
 
 /// The `horizon.on` options table's `priority` range.
 const PRIORITY_MIN: i64 = i32::MIN as i64;
@@ -37,6 +45,39 @@ const PRIORITY_MAX: i64 = i32::MAX as i64;
 pub struct Declaration {
     pub hooks: Vec<String>,
     pub options: Vec<(String, ListenerOptions)>,
+    /// The blocks `horizon.block` declared, in declaration order.
+    pub blocks: Vec<BlockRecord>,
+    /// The items `horizon.item` declared, in declaration order.
+    pub items: Vec<ItemRecord>,
+}
+
+/// A block a mod declared with `horizon.block{id, template}`. The id is in the mod's own
+/// namespace; the template is a vanilla block (`minecraft:<path>`) it copies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockRecord {
+    pub id: String,
+    pub template: String,
+}
+
+/// An item a mod declared with `horizon.item{id, template}`, as `BlockRecord` does for blocks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ItemRecord {
+    pub id: String,
+    pub template: String,
+}
+
+impl BlockRecord {
+    /// The game's declaration of this block: the template and the id, every other field default.
+    pub fn to_block(&self) -> mod_api::Block {
+        mod_api::Block::new(self.id.clone(), self.template.clone())
+    }
+}
+
+impl ItemRecord {
+    /// The game's declaration of this item: the template and the id, every other field default.
+    pub fn to_item(&self) -> mod_api::Item {
+        mod_api::Item::new(self.id.clone(), self.template.clone())
+    }
 }
 
 /// How a mod's listener for one hook is ordered and whether it still runs once the event is
@@ -49,29 +90,41 @@ pub struct ListenerOptions {
 }
 
 /// Runs `source` (the mod's main.luau, named `chunk_name`) in declaring mode, with the default
-/// time budget. `is_hook` says whether a hook name exists in the game's catalog.
+/// time budget. `owner` is the mod's id: its declared blocks and items must be in its namespace.
+/// `is_hook` says whether a hook name exists in the game's catalog.
 pub fn declare(
     lua: &Lua,
+    owner: &str,
     source: &str,
     chunk_name: &str,
     is_hook: &dyn Fn(&str) -> bool,
 ) -> Result<Declaration, String> {
-    declare_with_budget(lua, source, chunk_name, is_hook, DECLARE_BUDGET)
+    declare_with_budget(lua, owner, source, chunk_name, is_hook, DECLARE_BUDGET)
 }
 
 /// The same as `declare` with an explicit time budget.
 pub fn declare_with_budget(
     lua: &Lua,
+    owner: &str,
     source: &str,
     chunk_name: &str,
     is_hook: &dyn Fn(&str) -> bool,
     budget: Duration,
 ) -> Result<Declaration, String> {
-    let (options, loaded) =
-        run(lua, source, chunk_name, is_hook, budget).map_err(|e| e.to_string())?;
-    let hooks = options.iter().map(|(name, _)| name.clone()).collect();
+    let (recorded, loaded) =
+        run(lua, owner, source, chunk_name, is_hook, budget).map_err(|e| e.to_string())?;
+    let hooks = recorded
+        .options
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect();
     loaded
-        .map(|()| Declaration { hooks, options })
+        .map(|()| Declaration {
+            hooks,
+            options: recorded.options,
+            blocks: recorded.blocks,
+            items: recorded.items,
+        })
         .map_err(|e| e.to_string())
 }
 
@@ -149,17 +202,25 @@ fn parse_options(value: Value) -> mlua::Result<ListenerOptions> {
     Ok(options)
 }
 
-/// Sets up the environment and the `horizon` table, runs the chunk, and then replaces `horizon.on`
-/// with a function that only refuses. Returns each hook recorded with its options, and the chunk's
-/// own result: the setup errors come first, and the chunk's result is kept apart so the caller can
+/// Everything a chunk declared while it loaded.
+struct Recorded {
+    options: Vec<(String, ListenerOptions)>,
+    blocks: Vec<BlockRecord>,
+    items: Vec<ItemRecord>,
+}
+
+/// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
+/// functions with ones that only refuse. Returns what the chunk declared, and the chunk's own
+/// result: the setup errors come first, and the chunk's result is kept apart so the caller can
 /// report it.
 fn run(
     lua: &Lua,
+    owner: &str,
     source: &str,
     chunk_name: &str,
     is_hook: &dyn Fn(&str) -> bool,
     budget_limit: Duration,
-) -> mlua::Result<(Vec<(String, ListenerOptions)>, mlua::Result<()>)> {
+) -> mlua::Result<(Recorded, mlua::Result<()>)> {
     let handlers = lua.create_table()?;
     lua.set_named_registry_value(HANDLERS_KEY, handlers.clone())?;
 
@@ -182,11 +243,14 @@ fn run(
     lua.set_named_registry_value(ENV_KEY, env.clone())?;
 
     let recorded = RefCell::new(Vec::<(String, ListenerOptions)>::new());
+    let blocks = RefCell::new(Vec::<BlockRecord>::new());
+    let items = RefCell::new(Vec::<ItemRecord>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
-    // `horizon.on` borrows the caller's `is_hook` and the cells above, so it is a scoped function:
-    // it expires when the scope ends, and is replaced below before anything can call it.
+    // The declaring functions borrow the caller's `is_hook`, owner and the cells above, so they are
+    // scoped functions: they expire when the scope ends, and are replaced below before anything can
+    // call them.
     let loaded = lua
         .scope(|scope| {
             let on = scope.create_function(|_, (name, handler, opts): (Value, Value, Value)| {
@@ -233,7 +297,45 @@ fn run(
                 };
                 list.raw_set(list.raw_len() + 1, handler)
             })?;
+            let block = scope.create_function(|lua, value: Value| {
+                let (id, template) = parse_record(lua, "block", owner, value)?;
+                let mut records = blocks.borrow_mut();
+                if records.len() >= MAX_BLOCKS {
+                    return Err(at_line(
+                        lua,
+                        format!("a mod may declare at most {MAX_BLOCKS} blocks"),
+                    ));
+                }
+                if records.iter().any(|record| record.id == id) {
+                    return Err(at_line(
+                        lua,
+                        format!("horizon.block: id '{id}' is declared twice"),
+                    ));
+                }
+                records.push(BlockRecord { id, template });
+                Ok(())
+            })?;
+            let item = scope.create_function(|lua, value: Value| {
+                let (id, template) = parse_record(lua, "item", owner, value)?;
+                let mut records = items.borrow_mut();
+                if records.len() >= MAX_ITEMS {
+                    return Err(at_line(
+                        lua,
+                        format!("a mod may declare at most {MAX_ITEMS} items"),
+                    ));
+                }
+                if records.iter().any(|record| record.id == id) {
+                    return Err(at_line(
+                        lua,
+                        format!("horizon.item: id '{id}' is declared twice"),
+                    ));
+                }
+                records.push(ItemRecord { id, template });
+                Ok(())
+            })?;
             horizon.raw_set("on", on)?;
+            horizon.raw_set("block", block)?;
+            horizon.raw_set("item", item)?;
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
@@ -254,13 +356,131 @@ fn run(
         .and_then(|result| result);
 
     horizon.set_readonly(false);
-    let refuse = lua.create_function(|_, _: mlua::MultiValue| -> mlua::Result<()> {
-        Err(Error::runtime(LATE_ON))
-    })?;
-    horizon.raw_set("on", refuse)?;
+    for (name, message) in [
+        ("on", LATE_ON),
+        ("block", LATE_DECLARE),
+        ("item", LATE_DECLARE),
+    ] {
+        let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
+            Err(Error::runtime(message))
+        })?;
+        horizon.raw_set(name, refuse)?;
+    }
     horizon.set_readonly(true);
 
-    Ok((recorded.into_inner(), loaded))
+    let recorded = Recorded {
+        options: recorded.into_inner(),
+        blocks: blocks.into_inner(),
+        items: items.into_inner(),
+    };
+    Ok((recorded, loaded))
+}
+
+/// The error for a declaring call, with the line of the call when Lua can name it.
+fn at_line(lua: &Lua, message: String) -> Error {
+    match lua.inspect_stack(1, |debug| debug.current_line()).flatten() {
+        Some(line) => Error::runtime(format!("line {line}: {message}")),
+        None => Error::runtime(message),
+    }
+}
+
+/// Reads the fields of `horizon.block{...}` or `horizon.item{...}` (`kind` names the call): `id` and
+/// `template`, both strings, and nothing else. Returns the id and the template, checked.
+fn parse_record(
+    lua: &Lua,
+    kind: &str,
+    owner: &str,
+    value: Value,
+) -> mlua::Result<(String, String)> {
+    let table = match value {
+        Value::Table(table) => table,
+        other => {
+            return Err(at_line(
+                lua,
+                format!(
+                    "horizon.{kind} needs its fields as a table, not {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    };
+    let mut id = None;
+    let mut template = None;
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let name = match &key {
+            Value::String(name) => name.to_str()?.to_string(),
+            _ => {
+                return Err(at_line(
+                    lua,
+                    format!("horizon.{kind} field names are strings"),
+                ));
+            }
+        };
+        let slot = match name.as_str() {
+            "id" => &mut id,
+            "template" => &mut template,
+            other => {
+                return Err(at_line(
+                    lua,
+                    format!(
+                        "horizon.{kind} has no field '{other}'; its fields are id and template"
+                    ),
+                ));
+            }
+        };
+        let Value::String(text) = value else {
+            return Err(at_line(
+                lua,
+                format!("horizon.{kind} field '{name}' needs a string"),
+            ));
+        };
+        *slot = Some(text.to_str()?.to_string());
+    }
+    let id = id.ok_or_else(|| at_line(lua, format!("horizon.{kind} needs a field 'id'")))?;
+    let template =
+        template.ok_or_else(|| at_line(lua, format!("horizon.{kind} needs a field 'template'")))?;
+    check_id(owner, &id)
+        .map_err(|reason| at_line(lua, format!("horizon.{kind} field 'id': {reason}")))?;
+    check_template(&template)
+        .map_err(|reason| at_line(lua, format!("horizon.{kind} field 'template': {reason}")))?;
+    Ok((id, template))
+}
+
+/// An id `namespace:path` in `owner`'s own namespace, with a valid path.
+fn check_id(owner: &str, id: &str) -> Result<(), String> {
+    let Some((namespace, path)) = id.split_once(':') else {
+        return Err(format!("'{id}' needs a namespaced id such as {owner}:name"));
+    };
+    if namespace != owner {
+        return Err(format!("'{id}' is outside this mod's namespace '{owner}'"));
+    }
+    check_path(id, path)
+}
+
+/// A vanilla template `minecraft:<path>`.
+fn check_template(template: &str) -> Result<(), String> {
+    match template.split_once(':') {
+        Some(("minecraft", path)) => check_path(template, path),
+        _ => Err(format!(
+            "'{template}' needs a vanilla id such as minecraft:stone"
+        )),
+    }
+}
+
+/// A path of lowercase letters, digits, `_`, `-`, `.` and `/`, not empty.
+fn check_path(whole: &str, path: &str) -> Result<(), String> {
+    let valid = !path.is_empty()
+        && path.chars().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-' | '.' | '/')
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "'{whole}' has an invalid path; use lowercase letters, digits, '_', '-', '.' and '/'"
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -275,7 +495,7 @@ mod tests {
 
     fn declare_in_fresh_state(source: &str) -> Result<Declaration, String> {
         let lua = new_state().unwrap();
-        declare(&lua, source, "@lua-mods/test/main.luau", &is_known)
+        declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known)
     }
 
     #[test]
@@ -285,7 +505,8 @@ mod tests {
             horizon.on(\"tick\", function() end)\n\
             horizon.on(\"chat\", function() end)\n\
             horizon.on(\"tick\", function() end)\n";
-        let declaration = declare(&lua, source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
         assert_eq!(declaration.hooks, ["tick", "chat"]);
         assert_eq!(handlers(&lua, "tick").unwrap().len(), 2);
         assert_eq!(handlers(&lua, "chat").unwrap().len(), 1);
@@ -319,7 +540,7 @@ mod tests {
     fn horizon_on_is_refused_after_loading() {
         let lua = new_state().unwrap();
         let source = "horizon.on(\"tick\", function() horizon.on(\"chat\", function() end) end)";
-        declare(&lua, source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
         let tick = handlers(&lua, "tick").unwrap();
         let err = tick[0].call::<()>(()).unwrap_err().to_string();
         assert!(
@@ -334,6 +555,7 @@ mod tests {
         let started = Instant::now();
         let err = declare_with_budget(
             &lua,
+            "mymod",
             "while true do end",
             "@lua-mods/test/main.luau",
             &is_known,
@@ -350,6 +572,7 @@ mod tests {
     fn a_syntax_error_names_the_chunk() {
         let err = declare(
             &new_state().unwrap(),
+            "mymod",
             "this is not lua",
             "@lua-mods/x/main.luau",
             &is_known,
@@ -377,6 +600,7 @@ mod tests {
         let lua = new_state().unwrap();
         declare(
             &lua,
+            "mymod",
             "horizon.on(\"tick\", function() end)",
             "@lua-mods/test/main.luau",
             &is_known,
@@ -392,7 +616,10 @@ mod tests {
         let lua = new_state().unwrap();
         let source = "kept = horizon.on\n\
                       horizon.on(\"tick\", function() kept(\"chat\", function() end) end)";
-        declare(&lua, source, "=mod", &|n| n == "tick" || n == "chat").unwrap();
+        declare(&lua, "mymod", source, "=mod", &|n| {
+            n == "tick" || n == "chat"
+        })
+        .unwrap();
         let tick = handlers(&lua, "tick").unwrap();
         assert!(tick[0].call::<()>(()).is_err());
     }
@@ -403,8 +630,14 @@ mod tests {
         let lua = new_state().unwrap();
         let source = "while true do pcall(function() while true do end end) end";
         let started = std::time::Instant::now();
-        let result =
-            declare_with_budget(&lua, source, "=mod", &|_| true, Duration::from_millis(100));
+        let result = declare_with_budget(
+            &lua,
+            "mymod",
+            source,
+            "=mod",
+            &|_| true,
+            Duration::from_millis(100),
+        );
         assert!(result.is_err());
         assert!(started.elapsed() < Duration::from_secs(2));
     }
@@ -524,5 +757,188 @@ mod tests {
             declaration.options[1],
             ("tick".to_string(), ListenerOptions::default())
         );
+    }
+
+    fn block_error(source: &str) -> String {
+        declare_in_fresh_state(source).unwrap_err()
+    }
+
+    #[test]
+    fn blocks_and_items_are_recorded_in_declaration_order() {
+        let source = "\
+            horizon.block{id = \"mymod:lamp\", template = \"minecraft:stone\"}\n\
+            horizon.item{id = \"mymod:wand\", template = \"minecraft:stick\"}\n\
+            horizon.block{id = \"mymod:pipe\", template = \"minecraft:iron_block\"}\n";
+        let declaration = declare_in_fresh_state(source).unwrap();
+        let blocks: Vec<(&str, &str)> = declaration
+            .blocks
+            .iter()
+            .map(|b| (b.id.as_str(), b.template.as_str()))
+            .collect();
+        assert_eq!(
+            blocks,
+            [
+                ("mymod:lamp", "minecraft:stone"),
+                ("mymod:pipe", "minecraft:iron_block")
+            ]
+        );
+        assert_eq!(declaration.items.len(), 1);
+        assert_eq!(declaration.items[0].id, "mymod:wand");
+        assert_eq!(declaration.items[0].template, "minecraft:stick");
+        assert!(declaration.hooks.is_empty());
+    }
+
+    #[test]
+    fn a_record_becomes_the_game_block_and_item_with_its_id_and_template() {
+        let source = "horizon.block{id = \"mymod:lamp\", template = \"minecraft:stone\"}\n\
+                      horizon.item{id = \"mymod:wand\", template = \"minecraft:stick\"}";
+        let declaration = declare_in_fresh_state(source).unwrap();
+        let block = declaration.blocks[0].to_block();
+        assert_eq!(block.id, "mymod:lamp");
+        assert_eq!(block.template, "minecraft:stone");
+        assert!(block.item, "a block has its item unless told not to");
+        let item = declaration.items[0].to_item();
+        assert_eq!(item.id, "mymod:wand");
+        assert_eq!(item.template, "minecraft:stick");
+    }
+
+    #[test]
+    fn a_mod_with_no_declarations_records_none() {
+        let declaration = declare_in_fresh_state("horizon.on(\"tick\", function() end)").unwrap();
+        assert!(declaration.blocks.is_empty());
+        assert!(declaration.items.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_field_is_an_error_naming_it_and_the_line() {
+        let err = block_error(
+            "horizon.block{id = \"mymod:lamp\", template = \"minecraft:stone\"}\n\
+             horizon.block{id = \"mymod:x\", template = \"minecraft:stone\", colour = 1}",
+        );
+        assert!(err.contains("line 2"), "got {err}");
+        assert!(err.contains("no field 'colour'"), "got {err}");
+    }
+
+    #[test]
+    fn an_id_without_a_namespace_is_refused() {
+        let err = block_error("horizon.block{id = \"lamp\", template = \"minecraft:stone\"}");
+        assert!(err.contains("namespaced id"), "got {err}");
+        assert!(err.contains("field 'id'"), "got {err}");
+    }
+
+    #[test]
+    fn an_id_in_another_namespace_is_refused() {
+        let err =
+            block_error("horizon.item{id = \"minecraft:wand\", template = \"minecraft:stick\"}");
+        assert!(
+            err.contains("outside this mod's namespace 'mymod'"),
+            "got {err}"
+        );
+        let err = block_error("horizon.block{id = \"other:lamp\", template = \"minecraft:stone\"}");
+        assert!(
+            err.contains("outside this mod's namespace 'mymod'"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn an_id_with_a_bad_path_is_refused() {
+        let err = block_error("horizon.block{id = \"mymod:Lamp\", template = \"minecraft:stone\"}");
+        assert!(err.contains("invalid path"), "got {err}");
+    }
+
+    #[test]
+    fn a_template_must_be_a_vanilla_id() {
+        let err = block_error("horizon.block{id = \"mymod:lamp\", template = \"stone\"}");
+        assert!(err.contains("field 'template'"), "got {err}");
+        let err = block_error("horizon.block{id = \"mymod:lamp\", template = \"other:stone\"}");
+        assert!(err.contains("field 'template'"), "got {err}");
+    }
+
+    #[test]
+    fn a_missing_field_is_refused() {
+        let err = block_error("horizon.block{id = \"mymod:lamp\"}");
+        assert!(err.contains("needs a field 'template'"), "got {err}");
+        let err = block_error("horizon.item{template = \"minecraft:stick\"}");
+        assert!(err.contains("needs a field 'id'"), "got {err}");
+    }
+
+    #[test]
+    fn a_duplicate_id_in_one_mod_is_refused() {
+        let err = block_error(
+            "horizon.block{id = \"mymod:lamp\", template = \"minecraft:stone\"}\n\
+             horizon.block{id = \"mymod:lamp\", template = \"minecraft:stone\"}",
+        );
+        assert!(err.contains("'mymod:lamp' is declared twice"), "got {err}");
+        let err = block_error(
+            "horizon.item{id = \"mymod:wand\", template = \"minecraft:stick\"}\n\
+             horizon.item{id = \"mymod:wand\", template = \"minecraft:stick\"}",
+        );
+        assert!(err.contains("'mymod:wand' is declared twice"), "got {err}");
+    }
+
+    #[test]
+    fn two_hundred_fifty_six_blocks_are_fine_and_the_257th_is_refused() {
+        let line = |i: usize| {
+            format!("horizon.block{{id = \"mymod:b{i}\", template = \"minecraft:stone\"}}\n")
+        };
+        let ok: String = (0..MAX_BLOCKS).map(line).collect();
+        assert_eq!(
+            declare_in_fresh_state(&ok).unwrap().blocks.len(),
+            MAX_BLOCKS
+        );
+        let too_many: String = (0..=MAX_BLOCKS).map(line).collect();
+        let err = declare_in_fresh_state(&too_many).unwrap_err();
+        assert!(err.contains("at most 256 blocks"), "got {err}");
+    }
+
+    #[test]
+    fn items_have_their_own_cap() {
+        let line = |i: usize| {
+            format!("horizon.item{{id = \"mymod:i{i}\", template = \"minecraft:stick\"}}\n")
+        };
+        let too_many: String = (0..=MAX_ITEMS).map(line).collect();
+        let err = declare_in_fresh_state(&too_many).unwrap_err();
+        assert!(err.contains("at most 256 items"), "got {err}");
+    }
+
+    #[test]
+    fn a_declaration_after_loading_is_refused() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"tick\", function() horizon.block{id = \"mymod:late\", template = \"minecraft:stone\"} end)";
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        assert!(declaration.blocks.is_empty());
+        let tick = handlers(&lua, "tick").unwrap();
+        let err = tick[0].call::<()>(()).unwrap_err().to_string();
+        assert!(
+            err.contains("declarations are only allowed while the mod loads"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn the_declaring_functions_cannot_be_kept_and_called_later() {
+        let lua = new_state().unwrap();
+        let source = "kept = horizon.block\n\
+                      horizon.on(\"tick\", function() kept{id = \"mymod:late\", template = \"minecraft:stone\"} end)";
+        declare(&lua, "mymod", source, "=mod", &|n| n == "tick").unwrap();
+        let tick = handlers(&lua, "tick").unwrap();
+        assert!(tick[0].call::<()>(()).is_err());
+    }
+
+    #[test]
+    fn a_hook_is_not_a_block_declaration() {
+        // `blocks` is answered by the host, not by a handler: a mod cannot subscribe to it.
+        let lua = new_state().unwrap();
+        let err = declare(
+            &lua,
+            "mymod",
+            "horizon.on(\"blocks\", function() end)",
+            "=mod",
+            &|name| crate::generated::hooks::is_emitted(name),
+        )
+        .unwrap_err();
+        assert!(err.contains("unknown hook 'blocks'"), "got {err}");
     }
 }

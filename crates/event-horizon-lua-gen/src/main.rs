@@ -160,7 +160,12 @@ fn plan_pass(
     }
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(surface, &emitted);
-    let hook_coverage = emit_hooks::coverage(surface, &methods.emitted, &first_methods.skipped);
+    let hook_coverage = emit_hooks::coverage(
+        surface,
+        &methods.emitted,
+        &methods.host_recorded,
+        &first_methods.skipped,
+    );
 
     let handles =
         emit_handles::emit_listing(members, families, dropped, &types.plain, &document.hash);

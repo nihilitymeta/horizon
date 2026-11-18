@@ -6,7 +6,63 @@ pub fn owns_namespace(owner: &str, namespace: &str) -> bool {
         || crate::LoadedMods::new()
             .get(owner)
             .is_some_and(|package| package.namespaces().any(|owned| owned == namespace))
+        || (granted(owner, namespace)
+            && (namespace == owner || crate::LoadedMods::new().get(namespace).is_none()))
 }
+
+/// Namespaces the package inventory cannot list because they are found at runtime (the Lua
+/// host's mods, whose ids are read from their folders): `(owner, namespace)`, append-only.
+static GRANTS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// The namespaces no grant may take: the vanilla and client ones, and Horizon's own.
+const RESERVED_GRANTS: [&str; 3] = ["minecraft", "c", "horizon"];
+
+fn granted(owner: &str, namespace: &str) -> bool {
+    GRANTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .any(|(o, n)| o == owner && n == namespace)
+}
+
+/// Lets `owner` declare content in `namespace`, which it does not list in its package. Only a
+/// namespace of 1 to 64 lowercase letters, digits or underscores (a Lua mod id) can be granted:
+/// not a reserved one, not the id of another loaded package, and not one another owner already
+/// holds. Granting the same pair again changes nothing. A grant is also dropped at check time
+/// when a package with that id is loaded, because a host may grant before the packages are known.
+pub fn grant_namespace(owner: &str, namespace: &str) -> Result<(), String> {
+    let valid = (1..=64).contains(&namespace.len())
+        && namespace
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    if !valid {
+        return Err(format!(
+            "namespace {namespace:?} must be 1 to 64 lowercase letters, digits or underscores"
+        ));
+    }
+    if RESERVED_GRANTS.contains(&namespace) {
+        return Err(format!("namespace {namespace:?} is reserved"));
+    }
+    if namespace != owner && crate::LoadedMods::new().get(namespace).is_some() {
+        return Err(format!(
+            "namespace {namespace:?} is the id of another loaded package"
+        ));
+    }
+    let mut grants = GRANTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match grants.iter().find(|(_, n)| n == namespace) {
+        Some((holder, _)) if holder == owner => Ok(()),
+        Some((holder, _)) => Err(format!(
+            "namespace {namespace:?} is already granted to {holder:?}"
+        )),
+        None => {
+            grants.push((owner.to_owned(), namespace.to_owned()));
+            Ok(())
+        }
+    }
+}
+
 
 /// `name` with its namespace: a bare name is in mod `owner`'s own, for a declared id and
 /// for the block and item references a declaration names (`block_item`, `pick_item`,
@@ -123,4 +179,62 @@ pub fn take_declaration_refusals(context: &crate::RegistrationContext) -> Vec<St
             .lock()
             .unwrap_or_else(|p| p.into_inner()),
     )
+}
+
+#[cfg(test)]
+mod grant_tests {
+    use super::*;
+
+    #[test]
+    fn a_granted_namespace_is_owned_by_its_holder_only() {
+        grant_namespace("grant_host_a", "grant_mod_a").unwrap();
+        assert!(owns_namespace("grant_host_a", "grant_mod_a"));
+        assert!(!owns_namespace("grant_host_b", "grant_mod_a"));
+        assert!(!owns_namespace("grant_host_a", "grant_mod_other"));
+    }
+
+    #[test]
+    fn granting_the_same_pair_again_is_fine() {
+        grant_namespace("grant_host_c", "grant_mod_c").unwrap();
+        grant_namespace("grant_host_c", "grant_mod_c").unwrap();
+    }
+
+    #[test]
+    fn another_owner_cannot_take_a_granted_namespace() {
+        grant_namespace("grant_host_d", "grant_mod_d").unwrap();
+        let err = grant_namespace("grant_host_e", "grant_mod_d").unwrap_err();
+        assert!(err.contains("already granted"), "got {err}");
+    }
+
+    #[test]
+    fn a_malformed_namespace_is_refused() {
+        for bad in ["", "Mod", "my-mod", "my.mod", "my mod", "mod:x"] {
+            let err = grant_namespace("grant_host_f", bad).unwrap_err();
+            assert!(err.contains("lowercase letters"), "{bad:?}: got {err}");
+        }
+        let long = "a".repeat(65);
+        assert!(grant_namespace("grant_host_f", &long).is_err());
+        let exact = "a".repeat(64);
+        grant_namespace("grant_host_f", &exact).unwrap();
+    }
+
+    #[test]
+    fn a_reserved_namespace_is_refused() {
+        for reserved in RESERVED_GRANTS {
+            let err = grant_namespace("grant_host_g", reserved).unwrap_err();
+            assert!(err.contains("reserved"), "{reserved}: got {err}");
+        }
+    }
+
+    #[test]
+    fn the_id_of_another_loaded_package_is_refused() {
+        crate::world::phase::with_test_packages(&["grant_loaded_pkg"], || {
+            let err = grant_namespace("grant_host_h", "grant_loaded_pkg").unwrap_err();
+            assert!(err.contains("another loaded package"), "got {err}");
+            // The owner's own id is not "another" package.
+            crate::world::phase::with_test_packages(&["grant_host_i"], || {
+                grant_namespace("grant_host_i", "grant_host_i").unwrap();
+            });
+        });
+    }
 }

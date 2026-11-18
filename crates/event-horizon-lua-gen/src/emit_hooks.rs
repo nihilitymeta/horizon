@@ -103,7 +103,12 @@ pub fn emit(ir: &Ir, emitted: &[&str]) -> String {
 /// `hooks_coverage.txt` (issue 74, H3): one line per hook of the surface, sorted by name, `<hook>
 /// emitted` or `<hook> skipped: <reason>`, under a header with the counts per reason. `emitted` names
 /// the hooks with a method; `skipped` gives the reason of every other hook asked for.
-pub fn coverage(ir: &Ir, emitted: &[String], skipped: &[(String, String)]) -> String {
+pub fn coverage(
+    ir: &Ir,
+    emitted: &[String],
+    host_recorded: &[String],
+    skipped: &[(String, String)],
+) -> String {
     let mut hooks: Vec<&HookIr> = ir.hooks.iter().collect();
     hooks.sort_by(|a, b| a.name.cmp(&b.name));
     let reasons: BTreeMap<&str, &str> = skipped
@@ -117,6 +122,9 @@ pub fn coverage(ir: &Ir, emitted: &[String], skipped: &[(String, String)]) -> St
         if emitted.contains(&hook.name) {
             count += 1;
             lines.push_str(&format!("{} emitted\n", hook.name));
+        } else if host_recorded.contains(&hook.name) {
+            count += 1;
+            lines.push_str(&format!("{} emitted (host records)\n", hook.name));
         } else {
             let reason = reasons
                 .get(hook.name.as_str())
@@ -293,7 +301,7 @@ mod tests {
     fn the_coverage_lists_every_hook_once_with_its_reason() {
         let ir = fixture();
         let skipped = [("attack_entity".to_owned(), "handle output".to_owned())];
-        let text = coverage(&ir, &["add_attribute_tooltips".to_owned()], &skipped);
+        let text = coverage(&ir, &["add_attribute_tooltips".to_owned()], &[], &skipped);
         let lines: Vec<&str> = text
             .lines()
             .filter(|line| !line.starts_with('#') && !line.is_empty())
@@ -317,7 +325,7 @@ mod tests {
         );
         assert_eq!(
             text,
-            coverage(&ir, &["add_attribute_tooltips".to_owned()], &skipped)
+            coverage(&ir, &["add_attribute_tooltips".to_owned()], &[], &skipped)
         );
     }
 
