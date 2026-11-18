@@ -436,8 +436,10 @@ mod tests {
     use mod_api::__private::game::{BackendMutRefOf, BackendRefOf};
     use mod_api::prelude::{EntitiesBackend, EntitiesBackendMut, LevelsBackend};
     use mod_api::{
-        Backend, BackendMut, BackendMutRef, BackendRef, BlockState, ClientHost, DimensionKey,
-        EntityRef, Host, LevelRef, ServerHost, WorldEpoch,
+        Backend, BackendMut, BackendMutRef, BackendRef, BlockState, ChunkRef, ClientHost,
+        DimensionKey, DisplayRef, DragonRef, EntityRef, FishingHookRef, Host, ItemEntityRef,
+        LevelRef, LivingRef, MerchantRef, MinecartRef, MobRef, ProjectileRef, RaidRef, ServerHost,
+        WorldEpoch,
     };
 
     use crate::handles::Token;
@@ -1237,5 +1239,124 @@ mod tests {
             line.starts_with("false ") && line.contains(NOT_HERE),
             "{line}"
         );
+    }
+
+    /// The event of a mod that holds one handle of each new family (H1c): the entity families made
+    /// from `ME`, a chunk and a raid of the test level, and `entity` (`ME`) and `level`.
+    fn build_families() -> impl Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event> {
+        move |lua: &Lua, _: &TurnHost<'_>| {
+            let data = lua.create_table()?;
+            data.raw_set("entity", lua.create_userdata(Token(me()))?)?;
+            data.raw_set("level", lua.create_userdata(Token(level()))?)?;
+            data.raw_set("living", lua.create_userdata(Token(LivingRef::new(me())))?)?;
+            data.raw_set("mob", lua.create_userdata(Token(MobRef::new(me())))?)?;
+            data.raw_set("dragon", lua.create_userdata(Token(DragonRef::new(me())))?)?;
+            data.raw_set(
+                "display",
+                lua.create_userdata(Token(DisplayRef::new(me())))?,
+            )?;
+            data.raw_set(
+                "minecart",
+                lua.create_userdata(Token(MinecartRef::new(me())))?,
+            )?;
+            data.raw_set(
+                "merchant",
+                lua.create_userdata(Token(MerchantRef::new(me())))?,
+            )?;
+            data.raw_set(
+                "item",
+                lua.create_userdata(Token(ItemEntityRef::new(me())))?,
+            )?;
+            data.raw_set(
+                "projectile",
+                lua.create_userdata(Token(ProjectileRef::new(me())))?,
+            )?;
+            data.raw_set(
+                "hook",
+                lua.create_userdata(Token(FishingHookRef::new(me())))?,
+            )?;
+            data.raw_set(
+                "chunk",
+                lua.create_userdata(Token(ChunkRef::new(level(), [3, -4])))?,
+            )?;
+            data.raw_set(
+                "raid",
+                lua.create_userdata(Token(RaidRef::new(level(), 9)))?,
+            )?;
+            new_event(lua, data, &["cancelled", "result"])
+        }
+    }
+
+    /// Fires `HOOK` with the handles of [`build_families`] and `turn`.
+    fn fire_families(host: &LuaHost, turn: TurnHost<'_>) -> u32 {
+        let mut commits = 0;
+        host.dispatch_turns(HOOK, turn, &|| false, &build_families(), &mut |_, _, _| {
+            commits += 1;
+            true
+        })
+        .unwrap();
+        commits
+    }
+
+    #[test]
+    fn each_entity_family_reaches_its_entity_and_the_entity_answers() {
+        let host = LuaHost::new(vec![one_handler(
+            "for _, name in ipairs({\"living\", \"mob\", \"dragon\", \"display\", \"minecart\",\n\
+               \"merchant\", \"item\", \"projectile\", \"hook\"}) do\n\
+               horizon.log(name .. \" \" .. tostring(event[name]:entity():is_in_water()))\n\
+             end",
+        )]);
+        let fake = Fake::at([0.0; 3]);
+        fire_families(&host, TurnHost::Read(&fake));
+        let lines = host.mods()[0].log_lines();
+        assert_eq!(lines.len(), 9, "{lines:?}");
+        for line in &lines {
+            assert!(line.ends_with(" true"), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_handle_returned_across_families_keeps_its_methods() {
+        let host = LuaHost::new(vec![one_handler(
+            "local living = event.dragon:mob():living()\n\
+             horizon.log(tostring(living))\n\
+             local p = living:entity():position()\n\
+             horizon.log(tostring(p.x) .. \" \" .. tostring(p.y) .. \" \" .. tostring(p.z))",
+        )]);
+        let fake = Fake::at([1.0, 2.0, 3.0]);
+        fire_families(&host, TurnHost::Read(&fake));
+        assert_eq!(host.mods()[0].log_lines(), ["LivingRef(1)", "1 2 3"]);
+    }
+
+    #[test]
+    fn a_new_family_read_that_needs_no_host_returns_its_value() {
+        let host = LuaHost::new(vec![one_handler(
+            "local pos = event.chunk:pos()\n\
+             horizon.log(tostring(pos.x) .. \" \" .. tostring(pos.y))\n\
+             horizon.log(tostring(event.raid:id()))",
+        )]);
+        let fake = Fake::at([0.0; 3]);
+        fire_families(&host, TurnHost::Read(&fake));
+        assert_eq!(host.mods()[0].log_lines(), ["3 -4", "9"]);
+    }
+
+    #[test]
+    fn a_handle_of_a_new_family_passed_where_another_is_wanted_is_refused_and_the_host_is_not_called()
+     {
+        let host = LuaHost::new(vec![one_handler(
+            "local ok, err = pcall(function()\n\
+               return event.entity:dismount_location(event.entity)\n\
+             end)\n\
+             horizon.log(tostring(ok) .. \" \" .. tostring(err))",
+        )]);
+        let fake = Fake::at([1.0, 2.0, 3.0]);
+        fire_families(&host, TurnHost::Read(&fake));
+        let line = &host.mods()[0].log_lines()[0];
+        assert!(
+            line.starts_with("false ")
+                && line.contains("EntityRef::dismount_location: argument 1: must be a LivingRef"),
+            "{line}"
+        );
+        assert_eq!(fake.calls.get(), 0, "the host was not called");
     }
 }

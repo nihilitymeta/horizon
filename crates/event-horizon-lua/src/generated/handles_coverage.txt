@@ -1,5 +1,120 @@
-# Handle coverage (issue 74, H1b) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
-# families: EntityRef, LevelRef
+# Handle coverage (issue 74, H1c) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
+# families: BlockEntityRef, BossBarRef, ChunkRef, DisplayRef, DragonRef, EntityRef, FishingHookRef, ItemEntityRef, LevelRef, LivingRef, MenuRef, MerchantRef, MinecartRef, MobRef, OriginalPlayerRef, PlayerRef, ProjectileRef, RaidRef
+# not generated (no member binds): InstanceGroupRef, SoundRef, UnspawnedMobRef
+
+BlockEntityRef: 17 members
+  handle:BlockEntityRef::data bound, cost 1
+  handle:BlockEntityRef::data_slots bound, cost 100
+  handle:BlockEntityRef::item_slot skipped: Result: Result<Option<item::item_stack::ItemStack>, BlockEntityItemError>
+  handle:BlockEntityRef::kind skipped: unconvertible return: Option<BlockEntityTypeKey>
+  handle:BlockEntityRef::level bound, cost 1
+  handle:BlockEntityRef::lock bound, cost 1
+  handle:BlockEntityRef::merge_data skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::name bound, cost 1
+  handle:BlockEntityRef::position bound, cost 1
+  handle:BlockEntityRef::replace_data skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::set_changed skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::set_data_slot skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::set_data_slots skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::set_item_slot skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::set_lock skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::set_name skipped: &mut host: &mut dyn ServerHost
+  handle:BlockEntityRef::viewers bound, cost 100
+
+BossBarRef: 23 members
+  handle:BossBarRef::add_player skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::color bound, cost 1
+  handle:BossBarRef::create_world_fog bound, cost 1
+  handle:BossBarRef::darken_screen bound, cost 1
+  handle:BossBarRef::id bound, cost 1
+  handle:BossBarRef::max bound, cost 1
+  handle:BossBarRef::name skipped: Result: Result<Option<text::Text>, text::TextFormError>
+  handle:BossBarRef::overlay bound, cost 1
+  handle:BossBarRef::play_boss_music bound, cost 1
+  handle:BossBarRef::players bound, cost 100
+  handle:BossBarRef::remove skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::remove_player skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_color skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_create_world_fog skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_darken_screen skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_max skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_name skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_overlay skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_play_boss_music skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_value skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::set_visible skipped: &mut host: &mut dyn ServerHost
+  handle:BossBarRef::value bound, cost 1
+  handle:BossBarRef::visible bound, cost 1
+
+ChunkRef: 10 members
+  handle:ChunkRef::forced bound, cost 1
+  handle:ChunkRef::is_slime_chunk bound, cost 1
+  handle:ChunkRef::level bound, cost 1
+  handle:ChunkRef::loaded bound, cost 1
+  handle:ChunkRef::pos bound, cost 1
+  handle:ChunkRef::resend skipped: &mut host: &mut dyn ServerHost
+  handle:ChunkRef::set_forced skipped: &mut host: &mut dyn ServerHost
+  handle:ChunkRef::set_mod_forced skipped: &mut host: &mut dyn ServerHost
+  handle:ChunkRef::status bound, cost 1
+  handle:ChunkRef::watchers bound, cost 100
+
+DisplayRef: 48 members
+  handle:DisplayRef::alignment bound, cost 1
+  handle:DisplayRef::background bound, cost 1
+  handle:DisplayRef::billboard bound, cost 1
+  handle:DisplayRef::block_state bound, cost 1
+  handle:DisplayRef::brightness skipped: unconvertible return: Option<(u8, u8)>
+  handle:DisplayRef::default_background bound, cost 1
+  handle:DisplayRef::entity bound, cost 1
+  handle:DisplayRef::glow_color_override bound, cost 1
+  handle:DisplayRef::height bound, cost 1
+  handle:DisplayRef::interpolation_duration bound, cost 1
+  handle:DisplayRef::item skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:DisplayRef::item_context bound, cost 1
+  handle:DisplayRef::kind bound, cost 1
+  handle:DisplayRef::line_width bound, cost 1
+  handle:DisplayRef::see_through bound, cost 1
+  handle:DisplayRef::set_alignment skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_background skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_billboard skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_block_state skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_brightness skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_default_background skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_glow_color_override skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_height skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_interpolation_duration skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_item skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_item_context skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_line_width skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_see_through skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_shadow_radius skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_shadow_strength skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_start_interpolation skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_teleport_duration skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_text skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_text_opacity skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_text_shadow skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_transformation skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_view_range skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::set_width skipped: &mut host: &mut dyn ServerHost
+  handle:DisplayRef::shadow_radius bound, cost 1
+  handle:DisplayRef::shadow_strength bound, cost 1
+  handle:DisplayRef::start_interpolation bound, cost 1
+  handle:DisplayRef::teleport_duration bound, cost 1
+  handle:DisplayRef::text skipped: Result: Result<Option<text::Text>, text::TextFormError>
+  handle:DisplayRef::text_opacity bound, cost 1
+  handle:DisplayRef::text_shadow bound, cost 1
+  handle:DisplayRef::transformation bound, cost 1
+  handle:DisplayRef::view_range bound, cost 1
+  handle:DisplayRef::width bound, cost 1
+
+DragonRef: 6 members
+  handle:DragonRef::alive_crystals bound, cost 1
+  handle:DragonRef::entity bound, cost 1
+  handle:DragonRef::mob bound, cost 1
+  handle:DragonRef::phase bound, cost 1
+  handle:DragonRef::previously_killed bound, cost 1
+  handle:DragonRef::set_phase skipped: &mut host: &mut dyn ServerHost
 
 EntityRef: 114 members
   handle:EntityRef::add_tag skipped: &mut host: &mut dyn ServerHost
@@ -18,7 +133,7 @@ EntityRef: 114 members
   handle:EntityRef::dimensions bound, cost 1
   handle:EntityRef::direction bound, cost 1
   handle:EntityRef::discard skipped: &mut host: &mut dyn ServerHost
-  handle:EntityRef::dismount_location skipped: unconvertible arg: LivingRef
+  handle:EntityRef::dismount_location bound, cost 1
   handle:EntityRef::distance_to_sqr bound, cost 1
   handle:EntityRef::eject_passengers skipped: &mut host: &mut dyn ServerHost
   handle:EntityRef::entities_team_damage_allowed bound, cost 1
@@ -117,6 +232,26 @@ EntityRef: 114 members
   handle:EntityRef::velocity bound, cost 1
   handle:EntityRef::view_vector bound, cost 1
 
+FishingHookRef: 4 members
+  handle:FishingHookRef::entity bound, cost 1
+  handle:FishingHookRef::hooked_in bound, cost 1
+  handle:FishingHookRef::open_water bound, cost 1
+  handle:FishingHookRef::player_owner bound, cost 1
+
+ItemEntityRef: 12 members
+  handle:ItemEntityRef::age bound, cost 1
+  handle:ItemEntityRef::entity bound, cost 1
+  handle:ItemEntityRef::owner bound, cost 1
+  handle:ItemEntityRef::pickup_delay bound, cost 1
+  handle:ItemEntityRef::set_default_pickup_delay skipped: &mut host: &mut dyn ServerHost
+  handle:ItemEntityRef::set_never_pickup skipped: &mut host: &mut dyn ServerHost
+  handle:ItemEntityRef::set_no_pickup_delay skipped: &mut host: &mut dyn ServerHost
+  handle:ItemEntityRef::set_pickup_delay skipped: &mut host: &mut dyn ServerHost
+  handle:ItemEntityRef::set_stack skipped: &mut host: &mut dyn ServerHost
+  handle:ItemEntityRef::set_target skipped: &mut host: &mut dyn ServerHost
+  handle:ItemEntityRef::stack skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:ItemEntityRef::target bound, cost 1
+
 LevelRef: 145 members
   handle:LevelRef::add_water_ticket skipped: &mut host: &mut dyn ServerHost
   handle:LevelRef::all_entities bound, cost 100
@@ -138,7 +273,7 @@ LevelRef: 145 members
   handle:LevelRef::block_shape bound, cost 100
   handle:LevelRef::block_state bound, cost 1
   handle:LevelRef::block_tick skipped: &mut host: &mut dyn ServerHost
-  handle:LevelRef::block_transform skipped: unconvertible arg: PlayerRef
+  handle:LevelRef::block_transform skipped: unconvertible arg: Hand
   handle:LevelRef::bone_meal skipped: &mut host: &mut dyn ServerHost
   handle:LevelRef::brightness bound, cost 1
   handle:LevelRef::can_see_sky bound, cost 1
@@ -146,7 +281,7 @@ LevelRef: 145 members
   handle:LevelRef::capability skipped: generics: <T: ? Sized + 'static>
   handle:LevelRef::capability_generation bound, cost 1
   handle:LevelRef::check_light skipped: &mut host: &mut dyn ServerHost
-  handle:LevelRef::chunk_ref skipped: unconvertible return: Option<ChunkRef>
+  handle:LevelRef::chunk_ref bound, cost 1
   handle:LevelRef::client_biome bound, cost 1
   handle:LevelRef::clip bound, cost 100
   handle:LevelRef::clock_marker_time bound, cost 1
@@ -205,13 +340,13 @@ LevelRef: 145 members
   handle:LevelRef::level_event skipped: &mut host: &mut dyn ServerHost
   handle:LevelRef::lightning_target skipped: &mut host: &mut dyn ServerHost
   handle:LevelRef::line_of_sight bound, cost 1
-  handle:LevelRef::loaded_chunks skipped: unconvertible return: Option<Vec<ChunkRef>>
+  handle:LevelRef::loaded_chunks bound, cost 100
   handle:LevelRef::local_difficulty bound, cost 1
   handle:LevelRef::logical_height bound, cost 1
   handle:LevelRef::map_data skipped: unconvertible return: Option<MapState>
   handle:LevelRef::mod_forced_chunks skipped: unconvertible arg: TicketController
   handle:LevelRef::neighbor_changed skipped: &mut host: &mut dyn ServerHost
-  handle:LevelRef::online_players skipped: unconvertible return: Option<Vec<PlayerRef>>
+  handle:LevelRef::online_players bound, cost 100
   handle:LevelRef::pickup_fluid skipped: &mut host: &mut dyn ServerHost
   handle:LevelRef::place_fluid skipped: &mut host: &mut dyn ServerHost
   handle:LevelRef::play_fluid_effects skipped: &mut host: &mut dyn ServerHost
@@ -264,10 +399,380 @@ LevelRef: 145 members
   handle:LevelRef::with_random skipped: generics: <T>
   handle:LevelRef::world_border bound, cost 1
 
-summary: bound 120 of 259; heavy 13
-  skipped, &mut host: 103
-  skipped, Result: 3
-  skipped, generics: 3
-  skipped, unconvertible arg: 14
-  skipped, unconvertible return: 16
-heavy (cost 100): handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities
+LivingRef: 73 members
+  handle:LivingRef::absorption bound, cost 1
+  handle:LivingRef::add_attribute_modifier skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::add_effect skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::alive bound, cost 1
+  handle:LivingRef::apply_consume_effect skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::arrow_count skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::attribute_base bound, cost 1
+  handle:LivingRef::attribute_modifiers bound, cost 100
+  handle:LivingRef::attribute_value bound, cost 1
+  handle:LivingRef::attributes bound, cost 100
+  handle:LivingRef::baby bound, cost 1
+  handle:LivingRef::bed_orientation bound, cost 1
+  handle:LivingRef::can_breathe_underwater bound, cost 1
+  handle:LivingRef::can_freeze bound, cost 1
+  handle:LivingRef::can_use_portal bound, cost 1
+  handle:LivingRef::clear_sleeping_pos skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::dimensions_for_pose bound, cost 1
+  handle:LivingRef::drop skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::effect skipped: unconvertible arg: EffectKey
+  handle:LivingRef::effect_blend_factor skipped: other: host kind &dyn ClientHost
+  handle:LivingRef::effects skipped: unconvertible return: Option<Vec<ActiveEffect>>
+  handle:LivingRef::entity bound, cost 1
+  handle:LivingRef::equipment skipped: unconvertible arg: EquipmentSlot
+  handle:LivingRef::gliding_ticks bound, cost 1
+  handle:LivingRef::hand_item skipped: unconvertible arg: Hand
+  handle:LivingRef::has_line_of_sight bound, cost 1
+  handle:LivingRef::heal skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::health bound, cost 1
+  handle:LivingRef::hurt_and_break skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::id bound, cost 1
+  handle:LivingRef::in_melee_range bound, cost 1
+  handle:LivingRef::is_blocking bound, cost 1
+  handle:LivingRef::is_climbing bound, cost 1
+  handle:LivingRef::is_gliding bound, cost 1
+  handle:LivingRef::is_jumping bound, cost 1
+  handle:LivingRef::is_sleeping bound, cost 1
+  handle:LivingRef::is_tamed bound, cost 1
+  handle:LivingRef::item_use_remaining bound, cost 1
+  handle:LivingRef::kill_credit bound, cost 1
+  handle:LivingRef::last_attacker bound, cost 1
+  handle:LivingRef::max_health bound, cost 1
+  handle:LivingRef::owner bound, cost 1
+  handle:LivingRef::potion_affected skipped: unconvertible arg: EffectKey
+  handle:LivingRef::random_teleport skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::release_using_item skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::remove_all_effects skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::remove_attribute_modifier skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::remove_effect skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::replace_attribute_modifier skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_absorption skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_arrow_count skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_arrow_removal_ticks skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_attribute_base skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_equipment skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_hand_item skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_health skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_is_jumping skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_item_use_remaining skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_riptiding skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_sleeping_pos skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_stinger_count skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_stinger_removal_ticks skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_waypoint_color skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::set_waypoint_style skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::sleeping_pos bound, cost 1
+  handle:LivingRef::start_sleeping skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::start_using_item skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::stinger_count skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::stop_gliding skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::stop_sleeping skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::swing skipped: &mut host: &mut dyn ServerHost
+  handle:LivingRef::used_item_hand bound, cost 1
+  handle:LivingRef::weapon_item skipped: unconvertible return: Option<item::item_stack::ItemStack>
+
+MenuRef: 15 members
+  handle:MenuRef::carried skipped: unconvertible return: Option<Option<item::item_stack::ItemStack>>
+  handle:MenuRef::click skipped: &mut host: &mut dyn ClientHost
+  handle:MenuRef::click_button skipped: &mut host: &mut dyn ClientHost
+  handle:MenuRef::close skipped: &mut host: &mut dyn ClientHost
+  handle:MenuRef::close_container skipped: &mut host: &mut dyn ServerHost
+  handle:MenuRef::container_id bound, cost 1
+  handle:MenuRef::cursor skipped: unconvertible return: ItemPlace
+  handle:MenuRef::kind bound, cost 1
+  handle:MenuRef::slot skipped: unconvertible return: Option<Option<item::item_stack::ItemStack>>
+  handle:MenuRef::slot_backing skipped: unconvertible return: Option<MenuSlotBacking>
+  handle:MenuRef::slot_boxes skipped: other: host kind &dyn ClientHost
+  handle:MenuRef::slot_count bound, cost 1
+  handle:MenuRef::slot_gives bound, cost 1
+  handle:MenuRef::slot_holds skipped: unconvertible arg: &item::item_stack::ItemStack
+  handle:MenuRef::slot_kinds skipped: other: host kind &dyn ClientHost
+
+MerchantRef: 14 members
+  handle:MerchantRef::add_offer skipped: &mut host: &mut dyn ServerHost
+  handle:MerchantRef::entity bound, cost 1
+  handle:MerchantRef::level bound, cost 1
+  handle:MerchantRef::offers skipped: unconvertible return: Option<Vec<MerchantOffer>>
+  handle:MerchantRef::profession bound, cost 1
+  handle:MerchantRef::remove_offer skipped: &mut host: &mut dyn ServerHost
+  handle:MerchantRef::set_level skipped: &mut host: &mut dyn ServerHost
+  handle:MerchantRef::set_offer skipped: &mut host: &mut dyn ServerHost
+  handle:MerchantRef::set_profession skipped: &mut host: &mut dyn ServerHost
+  handle:MerchantRef::set_villager_type skipped: &mut host: &mut dyn ServerHost
+  handle:MerchantRef::set_xp skipped: &mut host: &mut dyn ServerHost
+  handle:MerchantRef::trading_player bound, cost 1
+  handle:MerchantRef::villager_type bound, cost 1
+  handle:MerchantRef::xp bound, cost 1
+
+MinecartRef: 24 members
+  handle:MinecartRef::command bound, cost 1
+  handle:MinecartRef::custom_display_block skipped: unconvertible return: Option<Option<BlockState>>
+  handle:MinecartRef::damage bound, cost 1
+  handle:MinecartRef::display_offset bound, cost 1
+  handle:MinecartRef::entity bound, cost 1
+  handle:MinecartRef::flipped bound, cost 1
+  handle:MinecartRef::fuel bound, cost 1
+  handle:MinecartRef::fuse bound, cost 1
+  handle:MinecartRef::hopper_enabled bound, cost 1
+  handle:MinecartRef::hurt_time bound, cost 1
+  handle:MinecartRef::is_on_rails bound, cost 1
+  handle:MinecartRef::kind bound, cost 1
+  handle:MinecartRef::max_speed bound, cost 1
+  handle:MinecartRef::prime_fuse skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::push bound, cost 1
+  handle:MinecartRef::set_command skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_custom_display_block skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_damage skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_display_offset skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_flipped skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_fuel skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_hopper_enabled skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_hurt_time skipped: &mut host: &mut dyn ServerHost
+  handle:MinecartRef::set_push skipped: &mut host: &mut dyn ServerHost
+
+MobRef: 54 members
+  handle:MobRef::add_goal skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::add_target_goal skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::ai_paused bound, cost 1
+  handle:MobRef::can_float bound, cost 1
+  handle:MobRef::can_open_doors bound, cost 1
+  handle:MobRef::can_pass_doors bound, cost 1
+  handle:MobRef::can_pick_up_loot bound, cost 1
+  handle:MobRef::can_use_portal bound, cost 1
+  handle:MobRef::clear_restriction skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::entity bound, cost 1
+  handle:MobRef::goals skipped: unconvertible return: Option<Vec<MobGoalEntry>>
+  handle:MobRef::has_restriction bound, cost 1
+  handle:MobRef::is_aggressive bound, cost 1
+  handle:MobRef::is_done bound, cost 1
+  handle:MobRef::is_within_restriction bound, cost 1
+  handle:MobRef::jump skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::left_handed bound, cost 1
+  handle:MobRef::living bound, cost 1
+  handle:MobRef::look_at skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::move_to skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::move_to_path skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::navigation_speed bound, cost 1
+  handle:MobRef::no_action_time bound, cost 1
+  handle:MobRef::no_ai bound, cost 1
+  handle:MobRef::pathfinding_malus bound, cost 1
+  handle:MobRef::persistence_required bound, cost 1
+  handle:MobRef::raid bound, cost 1
+  handle:MobRef::remove_goal skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::remove_target_goal skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::requires_custom_persistence bound, cost 1
+  handle:MobRef::restrict_center bound, cost 1
+  handle:MobRef::restrict_radius bound, cost 1
+  handle:MobRef::restrict_to skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_aggressive skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_ai_paused skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_baby skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_brain_target skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_can_float skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_can_open_doors skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_can_pass_doors skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_can_pick_up_loot skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_left_handed skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_navigation_speed skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_no_action_time skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_no_ai skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_pathfinding_malus skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_persistence_required skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_target skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::set_wanted_position skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::speed_modifier bound, cost 1
+  handle:MobRef::stop skipped: &mut host: &mut dyn ServerHost
+  handle:MobRef::target bound, cost 1
+  handle:MobRef::target_goals skipped: unconvertible return: Option<Vec<MobGoalEntry>>
+  handle:MobRef::wanted_position bound, cost 1
+
+OriginalPlayerRef: 9 members
+  handle:OriginalPlayerRef::attachment skipped: generics: <T: Clone + Send + Sync + 'static>
+  handle:OriginalPlayerRef::dimension bound, cost 1
+  handle:OriginalPlayerRef::effects skipped: unconvertible return: Option<Vec<ActiveEffect>>
+  handle:OriginalPlayerRef::experience bound, cost 1
+  handle:OriginalPlayerRef::health bound, cost 1
+  handle:OriginalPlayerRef::inventory_slot skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:OriginalPlayerRef::level bound, cost 1
+  handle:OriginalPlayerRef::position bound, cost 1
+  handle:OriginalPlayerRef::uuid bound, cost 1
+
+PlayerRef: 112 members
+  handle:PlayerRef::abilities bound, cost 1
+  handle:PlayerRef::ack_block_changes skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::action_bar skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::add_exhaustion skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::address bound, cost 1
+  handle:PlayerRef::ambient_mood skipped: other: host kind &dyn ClientHost
+  handle:PlayerRef::announced_channels bound, cost 100
+  handle:PlayerRef::attack_strength_scale bound, cost 1
+  handle:PlayerRef::award_recipes skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::award_stat skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::back_mod_menu_slots skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::block_breaking skipped: other: host kind &dyn ClientHost
+  handle:PlayerRef::can_eat bound, cost 1
+  handle:PlayerRef::can_harm bound, cost 1
+  handle:PlayerRef::can_use_game_master_blocks bound, cost 1
+  handle:PlayerRef::client_brand bound, cost 1
+  handle:PlayerRef::container_menu bound, cost 1
+  handle:PlayerRef::counts_for_sleep bound, cost 1
+  handle:PlayerRef::destroy_block skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::dimension bound, cost 1
+  handle:PlayerRef::disconnect skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::discovered_recipes bound, cost 100
+  handle:PlayerRef::drop_stack skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::ender_chest skipped: unconvertible return: Option<Vec<(u32, item::item_stack::ItemStack)>>
+  handle:PlayerRef::entity bound, cost 1
+  handle:PlayerRef::exp_cooldown bound, cost 1
+  handle:PlayerRef::experience bound, cost 1
+  handle:PlayerRef::feed skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::food bound, cost 1
+  handle:PlayerRef::game_mode bound, cost 1
+  handle:PlayerRef::give_experience_points skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::give_levels skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::give_stack skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::has_discovered_recipe bound, cost 1
+  handle:PlayerRef::has_enough_food bound, cost 1
+  handle:PlayerRef::has_infinite_materials bound, cost 1
+  handle:PlayerRef::has_item_cooldown bound, cost 1
+  handle:PlayerRef::hide skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::inventory skipped: unconvertible return: Option<Vec<item::item_stack::ItemStack>>
+  handle:PlayerRef::inventory_slots skipped: unconvertible return: Option<Vec<(u32, item::item_stack::ItemStack)>>
+  handle:PlayerRef::is_creative bound, cost 1
+  handle:PlayerRef::is_fake bound, cost 1
+  handle:PlayerRef::is_secondary_use_active bound, cost 1
+  handle:PlayerRef::is_spectator bound, cost 1
+  handle:PlayerRef::item_cooldown_percent bound, cost 1
+  handle:PlayerRef::item_cooldowns bound, cost 100
+  handle:PlayerRef::last_death_location skipped: unconvertible return: Option<GlobalPos>
+  handle:PlayerRef::level bound, cost 1
+  handle:PlayerRef::may_build bound, cost 1
+  handle:PlayerRef::may_fly bound, cost 1
+  handle:PlayerRef::may_use_item_at skipped: unconvertible arg: &item::item_stack::ItemStack
+  handle:PlayerRef::name bound, cost 1
+  handle:PlayerRef::needs_food bound, cost 1
+  handle:PlayerRef::open_menu skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::open_mod_menu skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::perform_action skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::perform_action_scoped skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::permission_level bound, cost 1
+  handle:PlayerRef::persistent_data bound, cost 1
+  handle:PlayerRef::place_block skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::play_sound skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::previous_game_mode bound, cost 1
+  handle:PlayerRef::profile skipped: unconvertible return: Option<GameProfile>
+  handle:PlayerRef::recipe_book_settings skipped: unconvertible arg: &RecipeBookTypeKey
+  handle:PlayerRef::remove_fake skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::remove_item_cooldown skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::request_recipe_book_settings skipped: &mut host: &mut dyn ClientHost
+  handle:PlayerRef::reset_recipes skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::reset_stat skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::respawn skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::respawn_config skipped: unconvertible return: Option<Option<PlayerRespawnConfig>>
+  handle:PlayerRef::sees skipped: Result: Result<bool, PlayerWorldRefusal>
+  handle:PlayerRef::selected_slot bound, cost 1
+  handle:PlayerRef::send_map skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::send_payload skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_abilities skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_chunk_areas skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_ender_chest_slot skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_exhaustion skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_exp_cooldown skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_experience_levels skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_experience_points skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_food_level skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_game_mode skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_inventory_slot skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_item_cooldown skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_last_death_location skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_nickname skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_persistent_data skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_recipe_book_settings skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_respawn_config skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_saturation skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_selected_slot skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_sleep_ignored skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_sleep_timer skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::set_warden_warning_cooldown skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::show_block skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::simulate_move skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::sleep_ignored bound, cost 1
+  handle:PlayerRef::sleep_timer bound, cost 1
+  handle:PlayerRef::stat bound, cost 1
+  handle:PlayerRef::stop_sound skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::synced_recipe_book_settings skipped: other: host kind &dyn ClientHost
+  handle:PlayerRef::tab_list skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::tell skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::text_filtering bound, cost 1
+  handle:PlayerRef::trigger_block_use skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::trigger_criterion skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::trigger_item_used_on_block skipped: &mut host: &mut dyn ServerHost
+  handle:PlayerRef::uuid bound, cost 1
+  handle:PlayerRef::within_entity_reach bound, cost 1
+  handle:PlayerRef::xp_needed_for_next_level bound, cost 1
+
+ProjectileRef: 12 members
+  handle:ProjectileRef::base_damage bound, cost 1
+  handle:ProjectileRef::critical bound, cost 1
+  handle:ProjectileRef::deflect skipped: &mut host: &mut dyn ServerHost
+  handle:ProjectileRef::entity bound, cost 1
+  handle:ProjectileRef::owner bound, cost 1
+  handle:ProjectileRef::pickup bound, cost 1
+  handle:ProjectileRef::pierce_level skipped: Result: Result<i8, PierceLevelError>
+  handle:ProjectileRef::set_base_damage skipped: &mut host: &mut dyn ServerHost
+  handle:ProjectileRef::set_critical skipped: &mut host: &mut dyn ServerHost
+  handle:ProjectileRef::set_owner skipped: &mut host: &mut dyn ServerHost
+  handle:ProjectileRef::set_pickup skipped: &mut host: &mut dyn ServerHost
+  handle:ProjectileRef::set_pierce_level skipped: &mut host: &mut dyn ServerHost
+
+RaidRef: 18 members
+  handle:RaidRef::bar_progress bound, cost 1
+  handle:RaidRef::center bound, cost 1
+  handle:RaidRef::groups_spawned bound, cost 1
+  handle:RaidRef::has_bonus_wave bound, cost 1
+  handle:RaidRef::heroes bound, cost 100
+  handle:RaidRef::id bound, cost 1
+  handle:RaidRef::is_active bound, cost 1
+  handle:RaidRef::is_started bound, cost 1
+  handle:RaidRef::level bound, cost 1
+  handle:RaidRef::living_health bound, cost 1
+  handle:RaidRef::num_groups bound, cost 1
+  handle:RaidRef::omen_level bound, cost 1
+  handle:RaidRef::raiders bound, cost 100
+  handle:RaidRef::set_omen_level skipped: &mut host: &mut dyn ServerHost
+  handle:RaidRef::status bound, cost 1
+  handle:RaidRef::stop skipped: &mut host: &mut dyn ServerHost
+  handle:RaidRef::total_health bound, cost 1
+  handle:RaidRef::wave_raiders bound, cost 100
+
+InstanceGroupRef: 4 members, not generated: no member binds
+  handle:InstanceGroupRef::destroy skipped: other: host kind &dyn ClientHost
+  handle:InstanceGroupRef::set_group_transform skipped: other: host kind &dyn ClientHost
+  handle:InstanceGroupRef::set_len skipped: other: host kind &dyn ClientHost
+  handle:InstanceGroupRef::write skipped: other: host kind &dyn ClientHost
+
+SoundRef: 3 members, not generated: no member binds
+  handle:SoundRef::fade skipped: other: host kind &dyn ClientHost
+  handle:SoundRef::state skipped: other: host kind &dyn ClientHost
+  handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
+
+UnspawnedMobRef: 7 members, not generated: no member binds
+  handle:UnspawnedMobRef::attribute_base skipped: Result: Result<f64, UnspawnedMobError>
+  handle:UnspawnedMobRef::attribute_value skipped: Result: Result<f64, UnspawnedMobError>
+  handle:UnspawnedMobRef::custom_name skipped: Result: Result<Option<text::Text>, UnspawnedMobError>
+  handle:UnspawnedMobRef::equipment skipped: unconvertible arg: EquipmentSlot
+  handle:UnspawnedMobRef::kind skipped: Result: Result<Identifier, UnspawnedMobError>
+  handle:UnspawnedMobRef::position skipped: Result: Result<[f64; 3], UnspawnedMobError>
+  handle:UnspawnedMobRef::tags skipped: Result: Result<Vec<String>, UnspawnedMobError>
+
+summary: bound 333 of 724; heavy 27
+  skipped, &mut host: 304
+  skipped, Result: 14
+  skipped, generics: 4
+  skipped, other: 13
+  skipped, unconvertible arg: 21
+  skipped, unconvertible return: 35
+heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders

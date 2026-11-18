@@ -3008,6 +3008,20 @@ impl ToLuaValue for mod_api::EntityReach {
     }
 }
 
+const ENTITY_REACH_NAMES: &[&str] = &["interact", "container", "attack"];
+
+impl FromLuaValue for mod_api::EntityReach {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "interact" => Ok(mod_api::EntityReach::Interact),
+            "container" => Ok(mod_api::EntityReach::Container),
+            "attack" => Ok(mod_api::EntityReach::Attack),
+            _ => Err(ConvertError::unknown_variant(&name, ENTITY_REACH_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::EntityRef {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         self.id().to_lua_value(lua)
@@ -6229,6 +6243,44 @@ impl ToLuaValue for mod_api::PathType {
     }
 }
 
+const PATH_TYPE_NAMES: &[&str] = &["blocked", "open", "walkable", "walkable_door", "trapdoor", "powder_snow", "on_top_of_powder_snow", "fence", "lava", "water", "water_border", "rail", "unpassable_rail", "fire_in_neighbor", "fire", "damaging_in_neighbor", "damaging", "door_open", "door_wood_closed", "door_iron_closed", "breach", "leaves", "sticky_honey", "cocoa", "damage_cautious", "on_top_of_trapdoor", "big_mobs_close_to_danger"];
+
+impl FromLuaValue for mod_api::PathType {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "blocked" => Ok(mod_api::PathType::Blocked),
+            "open" => Ok(mod_api::PathType::Open),
+            "walkable" => Ok(mod_api::PathType::Walkable),
+            "walkable_door" => Ok(mod_api::PathType::WalkableDoor),
+            "trapdoor" => Ok(mod_api::PathType::Trapdoor),
+            "powder_snow" => Ok(mod_api::PathType::PowderSnow),
+            "on_top_of_powder_snow" => Ok(mod_api::PathType::OnTopOfPowderSnow),
+            "fence" => Ok(mod_api::PathType::Fence),
+            "lava" => Ok(mod_api::PathType::Lava),
+            "water" => Ok(mod_api::PathType::Water),
+            "water_border" => Ok(mod_api::PathType::WaterBorder),
+            "rail" => Ok(mod_api::PathType::Rail),
+            "unpassable_rail" => Ok(mod_api::PathType::UnpassableRail),
+            "fire_in_neighbor" => Ok(mod_api::PathType::FireInNeighbor),
+            "fire" => Ok(mod_api::PathType::Fire),
+            "damaging_in_neighbor" => Ok(mod_api::PathType::DamagingInNeighbor),
+            "damaging" => Ok(mod_api::PathType::Damaging),
+            "door_open" => Ok(mod_api::PathType::DoorOpen),
+            "door_wood_closed" => Ok(mod_api::PathType::DoorWoodClosed),
+            "door_iron_closed" => Ok(mod_api::PathType::DoorIronClosed),
+            "breach" => Ok(mod_api::PathType::Breach),
+            "leaves" => Ok(mod_api::PathType::Leaves),
+            "sticky_honey" => Ok(mod_api::PathType::StickyHoney),
+            "cocoa" => Ok(mod_api::PathType::Cocoa),
+            "damage_cautious" => Ok(mod_api::PathType::DamageCautious),
+            "on_top_of_trapdoor" => Ok(mod_api::PathType::OnTopOfTrapdoor),
+            "big_mobs_close_to_danger" => Ok(mod_api::PathType::BigMobsCloseToDanger),
+            _ => Err(ConvertError::unknown_variant(&name, PATH_TYPE_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::PayloadAccepted {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -7723,6 +7775,35 @@ impl ToLuaValue for mod_api::Pose {
             mod_api::Pose::Inhaling => "inhaling",
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const POSE_NAMES: &[&str] = &["standing", "fall_flying", "sleeping", "swimming", "spin_attack", "crouching", "long_jumping", "dying", "croaking", "using_tongue", "sitting", "roaring", "sniffing", "emerging", "digging", "sliding", "shooting", "inhaling"];
+
+impl FromLuaValue for mod_api::Pose {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "standing" => Ok(mod_api::Pose::Standing),
+            "fall_flying" => Ok(mod_api::Pose::FallFlying),
+            "sleeping" => Ok(mod_api::Pose::Sleeping),
+            "swimming" => Ok(mod_api::Pose::Swimming),
+            "spin_attack" => Ok(mod_api::Pose::SpinAttack),
+            "crouching" => Ok(mod_api::Pose::Crouching),
+            "long_jumping" => Ok(mod_api::Pose::LongJumping),
+            "dying" => Ok(mod_api::Pose::Dying),
+            "croaking" => Ok(mod_api::Pose::Croaking),
+            "using_tongue" => Ok(mod_api::Pose::UsingTongue),
+            "sitting" => Ok(mod_api::Pose::Sitting),
+            "roaring" => Ok(mod_api::Pose::Roaring),
+            "sniffing" => Ok(mod_api::Pose::Sniffing),
+            "emerging" => Ok(mod_api::Pose::Emerging),
+            "digging" => Ok(mod_api::Pose::Digging),
+            "sliding" => Ok(mod_api::Pose::Sliding),
+            "shooting" => Ok(mod_api::Pose::Shooting),
+            "inhaling" => Ok(mod_api::Pose::Inhaling),
+            _ => Err(ConvertError::unknown_variant(&name, POSE_NAMES)),
+        }
     }
 }
 
@@ -9362,6 +9443,26 @@ impl ToLuaValue for mod_api::StatType {
             _ => return Err(mlua::Error::runtime("unknown variant of StatType")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const STAT_TYPE_NAMES: &[&str] = &["mined", "crafted", "used", "broken", "picked_up", "dropped", "killed", "killed_by", "custom"];
+
+impl FromLuaValue for mod_api::StatType {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "mined" => Ok(mod_api::StatType::Mined),
+            "crafted" => Ok(mod_api::StatType::Crafted),
+            "used" => Ok(mod_api::StatType::Used),
+            "broken" => Ok(mod_api::StatType::Broken),
+            "picked_up" => Ok(mod_api::StatType::PickedUp),
+            "dropped" => Ok(mod_api::StatType::Dropped),
+            "killed" => Ok(mod_api::StatType::Killed),
+            "killed_by" => Ok(mod_api::StatType::KilledBy),
+            "custom" => Ok(mod_api::StatType::Custom),
+            _ => Err(ConvertError::unknown_variant(&name, STAT_TYPE_NAMES)),
+        }
     }
 }
 
@@ -11061,6 +11162,12 @@ mod unit_enum_tests {
     }
 
     #[test]
+    fn entity_reach_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::ENTITY_REACH_NAMES, vec![mod_api::EntityReach::Interact, mod_api::EntityReach::Container, mod_api::EntityReach::Attack]);
+    }
+
+    #[test]
     fn game_mode_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::GAME_MODE_NAMES, vec![mod_api::GameMode::Survival, mod_api::GameMode::Creative, mod_api::GameMode::Adventure, mod_api::GameMode::Spectator]);
@@ -11070,6 +11177,24 @@ mod unit_enum_tests {
     fn light_layer_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::LIGHT_LAYER_NAMES, vec![mod_api::LightLayer::Block, mod_api::LightLayer::Sky]);
+    }
+
+    #[test]
+    fn path_type_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::PATH_TYPE_NAMES, vec![mod_api::PathType::Blocked, mod_api::PathType::Open, mod_api::PathType::Walkable, mod_api::PathType::WalkableDoor, mod_api::PathType::Trapdoor, mod_api::PathType::PowderSnow, mod_api::PathType::OnTopOfPowderSnow, mod_api::PathType::Fence, mod_api::PathType::Lava, mod_api::PathType::Water, mod_api::PathType::WaterBorder, mod_api::PathType::Rail, mod_api::PathType::UnpassableRail, mod_api::PathType::FireInNeighbor, mod_api::PathType::Fire, mod_api::PathType::DamagingInNeighbor, mod_api::PathType::Damaging, mod_api::PathType::DoorOpen, mod_api::PathType::DoorWoodClosed, mod_api::PathType::DoorIronClosed, mod_api::PathType::Breach, mod_api::PathType::Leaves, mod_api::PathType::StickyHoney, mod_api::PathType::Cocoa, mod_api::PathType::DamageCautious, mod_api::PathType::OnTopOfTrapdoor, mod_api::PathType::BigMobsCloseToDanger]);
+    }
+
+    #[test]
+    fn pose_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::POSE_NAMES, vec![mod_api::Pose::Standing, mod_api::Pose::FallFlying, mod_api::Pose::Sleeping, mod_api::Pose::Swimming, mod_api::Pose::SpinAttack, mod_api::Pose::Crouching, mod_api::Pose::LongJumping, mod_api::Pose::Dying, mod_api::Pose::Croaking, mod_api::Pose::UsingTongue, mod_api::Pose::Sitting, mod_api::Pose::Roaring, mod_api::Pose::Sniffing, mod_api::Pose::Emerging, mod_api::Pose::Digging, mod_api::Pose::Sliding, mod_api::Pose::Shooting, mod_api::Pose::Inhaling]);
+    }
+
+    #[test]
+    fn stat_type_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::STAT_TYPE_NAMES, vec![mod_api::StatType::Mined, mod_api::StatType::Crafted, mod_api::StatType::Used, mod_api::StatType::Broken, mod_api::StatType::PickedUp, mod_api::StatType::Dropped, mod_api::StatType::Killed, mod_api::StatType::KilledBy, mod_api::StatType::Custom]);
     }
 
     #[test]

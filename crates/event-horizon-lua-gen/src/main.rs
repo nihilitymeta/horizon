@@ -2,7 +2,8 @@
 //! the Lua host's generated hook table (`DIR/hooks.rs`), its `Hooks` methods (`DIR/hooks_impl.rs`)
 //! and the `ToLuaValue` impls of the surface's plain types (`PATH`, the convert crate's
 //! `generated_types.rs`), and the handle families' methods (`DIR/handles.rs`) with their coverage
-//! (`DIR/handles_coverage.txt`). `--families A,B` picks the handle families (default: `EntityRef,LevelRef`).
+//! (`DIR/handles_coverage.txt`). `--families A,B` picks the handle families (default: every `*Ref` owner of
+//! the surface; a family that binds no member is not generated and is listed in the coverage).
 //!
 //! Exit codes: 0 on success (with `--check`, when every file matches what would be written), 1 when
 //! `--check` finds a file that differs, 2 on bad input or arguments.
@@ -74,32 +75,27 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
 
-fn run(args: Args) -> Result<ExitCode, String> {
-    let bytes = read(&args.surface)?;
-    let surface =
-        ir::load(&bytes).map_err(|error| format!("{}: {error}", args.surface.display()))?;
-    let document =
-        Surface::read(&bytes).map_err(|error| format!("{}: {error}", args.surface.display()))?;
-    let trait_text = String::from_utf8(read(&args.hooks_trait)?)
-        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
-    let sigs = trait_sigs::parse(&trait_text)
-        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
-    let dispatch = dispatch_sigs::parse(&trait_text)
-        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
+/// What one pass of the generator makes: the hook table and methods, the plain types and the
+/// handle methods, for the handle families `families` (`dropped` are listed in the coverage).
+struct Plan {
+    families: Vec<String>,
+    handles: emit_handles::Emitted,
+    table: String,
+    methods: emit_impl::Emitted,
+    first_methods: emit_impl::Emitted,
+    types: emit_types::TypesPlan,
+}
 
-    let families: Vec<String> = args.families.clone().unwrap_or_else(|| {
-        emit_handles::FAMILIES
-            .iter()
-            .map(|f| (*f).to_owned())
-            .collect()
-    });
-    let family_names: Vec<&str> = families.iter().map(String::as_str).collect();
-    let members =
-        handles::load(&bytes).map_err(|error| format!("{}: {error}", args.surface.display()))?;
-    // The handle methods' argument types the type emitter decides too: a unit enum among them
-    // converts from Lua, as a hook's answer does.
-    let handle_types = emit_handles::argument_types(&members, &family_names);
-
+/// One pass over the surface for the handle families `families`.
+fn plan_pass(
+    surface: &ir::Ir,
+    document: &Surface,
+    sigs: &[trait_sigs::HookSig],
+    dispatch: &dispatch_sigs::DispatchSigs,
+    members: &[handles::MemberIr],
+    families: &[&str],
+    dropped: &[&str],
+) -> Result<Plan, String> {
     let names: Vec<&str> = surface
         .hooks
         .iter()
@@ -110,6 +106,9 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .iter()
         .flat_map(|hook| hook.arguments.iter().map(|arg| arg.rust_type.clone()))
         .collect();
+    // The handle methods' argument types the type emitter decides too: a unit enum among them
+    // converts from Lua, as a hook's answer does.
+    let handle_types = emit_handles::argument_types(members, families);
     // Two passes: the first decides every unit enum any hook could answer or output with, and its
     // skip reasons are the ones reported (they are not skewed by the second pass); the second
     // decides only the enums of the hooks the first pass emits, and must emit the same hooks.
@@ -129,7 +128,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         &hook_types,
         &candidates,
     );
-    let first_methods = emit_impl::emit(&surface, &sigs, &dispatch, &names, &first.plain);
+    let first_methods = emit_impl::emit(surface, sigs, dispatch, &names, &first.plain);
     let mut decided = first_methods.decisions.clone();
     decided.extend(handle_types.iter().cloned());
     let superset = emit_types::plan_decided(
@@ -141,7 +140,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
     );
     // The superset of the handle argument types decided above is narrowed to the bound members'
     // argument types, and the plan is made again: no converter is emitted for an unbound member.
-    let bound_types = emit_handles::bound_argument_types(&members, &family_names, &superset.plain);
+    let bound_types = emit_handles::bound_argument_types(members, families, &superset.plain);
     let mut decided = first_methods.decisions.clone();
     decided.extend(bound_types);
     let types = emit_types::plan_decided(
@@ -151,19 +150,86 @@ fn run(args: Args) -> Result<ExitCode, String> {
         &hook_types,
         &decided,
     );
-    let methods = emit_impl::emit(&surface, &sigs, &dispatch, &names, &types.plain);
+    let methods = emit_impl::emit(surface, sigs, dispatch, &names, &types.plain);
     if methods.emitted != first_methods.emitted {
         return Err("the two passes emit different hooks".to_owned());
     }
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
-    let table = emit_hooks::emit(&surface, &emitted);
+    let table = emit_hooks::emit(surface, &emitted);
 
-    let handles_out = emit_handles::emit(&members, &family_names, &types.plain, &document.hash);
+    let handles =
+        emit_handles::emit_listing(members, families, dropped, &types.plain, &document.hash);
     let superset_bound =
-        emit_handles::emit(&members, &family_names, &superset.plain, &document.hash).bound;
-    if superset_bound != handles_out.bound {
+        emit_handles::emit(members, families, &superset.plain, &document.hash).bound;
+    if superset_bound != handles.bound {
         return Err("narrowing the converters changed the bound handle members".to_owned());
     }
+    Ok(Plan {
+        families: families.iter().map(|family| (*family).to_owned()).collect(),
+        handles,
+        table,
+        methods,
+        first_methods,
+        types,
+    })
+}
+
+fn run(args: Args) -> Result<ExitCode, String> {
+    let bytes = read(&args.surface)?;
+    let surface =
+        ir::load(&bytes).map_err(|error| format!("{}: {error}", args.surface.display()))?;
+    let document =
+        Surface::read(&bytes).map_err(|error| format!("{}: {error}", args.surface.display()))?;
+    let trait_text = String::from_utf8(read(&args.hooks_trait)?)
+        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
+    let sigs = trait_sigs::parse(&trait_text)
+        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
+    let dispatch = dispatch_sigs::parse(&trait_text)
+        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
+
+    let members =
+        handles::load(&bytes).map_err(|error| format!("{}: {error}", args.surface.display()))?;
+    let requested: Vec<String> = args
+        .families
+        .clone()
+        .unwrap_or_else(|| emit_handles::candidate_families(&members));
+    // A family that binds no member is dropped and the pass made again: dropping one can only
+    // narrow the others' conversions, so the loop ends with every generated family bound.
+    let mut families = requested.clone();
+    let plan = loop {
+        let refs: Vec<&str> = families.iter().map(String::as_str).collect();
+        let dropped: Vec<&str> = requested
+            .iter()
+            .map(String::as_str)
+            .filter(|family| !refs.contains(family))
+            .collect();
+        let plan = plan_pass(
+            &surface, &document, &sigs, &dispatch, &members, &refs, &dropped,
+        )?;
+        let empty: Vec<String> = plan
+            .handles
+            .per_family
+            .iter()
+            .filter(|(family, _, bound)| *bound == 0 && refs.contains(&family.as_str()))
+            .map(|(family, _, _)| family.clone())
+            .collect();
+        if empty.is_empty() {
+            break plan;
+        }
+        families.retain(|family| !empty.contains(family));
+        if families.is_empty() {
+            return Err("no handle family binds a member".to_owned());
+        }
+    };
+    let Plan {
+        families,
+        handles: handles_out,
+        table,
+        methods,
+        first_methods,
+        types,
+    } = plan;
+
     let table_path = args.out.join("hooks.rs");
     let methods_path = args.out.join("hooks_impl.rs");
     let handles_path = args.out.join("handles.rs");
