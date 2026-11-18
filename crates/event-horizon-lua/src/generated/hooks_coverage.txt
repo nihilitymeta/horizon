@@ -893,3 +893,45 @@ block_part.update_shape skipped: no host path for block states
 block_part.use_item_on emitted
 block_part.use_without_item emitted
 block_part.weak_changes skipped: has an output: its listeners write back, not in this slice
+
+# item parts (issue 74, P2): the ItemPart trait's methods
+item_part.apply_enchantments skipped: argument `enchantments` has type `&'a[(Arc<str>, u32)]` (kind Collection): no Lua conversion
+item_part.can_equip emitted
+item_part.can_fit_inside_container_items skipped: no host path for stacks
+item_part.can_grindstone_repair skipped: no host path for stacks
+item_part.can_perform_action emitted
+item_part.contained_fluid skipped: output: Option<FluidKey>
+item_part.crafting_remainder emitted
+item_part.creator_mod_id skipped: has an output: its listeners write back, not in this slice
+item_part.damage_item skipped: cancel hook has no `cancelled: bool` argument
+item_part.dispense_item skipped: answer: Dispensed
+item_part.empty_contents skipped: argument `hit` has type `Option<(BlockPos, Direction)>` (kind Other): no Lua conversion
+item_part.highlight_tip skipped: hot path (needs measurement)
+item_part.hurt_enemy emitted
+item_part.inventory_tick skipped: hot path (needs measurement)
+item_part.is_combine_repairable skipped: no host path for stacks
+item_part.is_not_replaceable_by_pick_action emitted
+item_part.is_piglin_currency emitted
+item_part.is_primary_item_for emitted
+item_part.item_bar skipped: hot path (needs measurement)
+item_part.item_decorations skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+item_part.item_interact_mob emitted
+item_part.makes_piglins_neutral emitted
+item_part.on_block_placed_by emitted
+item_part.on_dropped_by_player skipped: cancel hook has no `cancelled: bool` argument
+item_part.on_entity_item_update skipped: hot path (needs measurement)
+item_part.on_entity_swing skipped: cancel hook has no `cancelled: bool` argument
+item_part.on_item_use_first emitted
+item_part.on_left_click_entity skipped: cancel hook has no `cancelled: bool` argument
+item_part.on_use_tick skipped: hot path (needs measurement)
+item_part.release_using emitted
+item_part.should_cause_block_break_reset skipped: hot path (needs measurement)
+item_part.should_cause_reequip_animation emitted
+item_part.tooltip skipped: hot path (needs measurement)
+item_part.tooltip_component skipped: answer: [f32 ; 2]
+item_part.tooltip_component_draw skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+item_part.use_animation skipped: hot path (needs measurement)
+item_part.use_duration skipped: hot path (needs measurement)
+item_part.use_item emitted
+item_part.use_on emitted
+item_part.xp_repair_ratio emitted

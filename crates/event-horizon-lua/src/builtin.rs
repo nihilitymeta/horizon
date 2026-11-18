@@ -203,6 +203,7 @@ mod tests {
         asked: Vec<String>,
         refuse: Option<String>,
         parts: Vec<crate::host::LuaBlockPart>,
+        item_parts: Vec<crate::host::LuaItemPart>,
     }
 
     impl crate::host::DeclaredKeys for RecordingKeys {
@@ -219,6 +220,12 @@ mod tests {
         fn block_part(&mut self, id: &str, part: crate::host::LuaBlockPart) -> Result<(), String> {
             self.asked.push(format!("part {id}"));
             self.parts.push(part);
+            self.answer(id)
+        }
+
+        fn item_part(&mut self, id: &str, part: crate::host::LuaItemPart) -> Result<(), String> {
+            self.asked.push(format!("item part {id}"));
+            self.item_parts.push(part);
             self.answer(id)
         }
     }
@@ -471,6 +478,86 @@ mod tests {
             "horizon.block_part(\"first_mod:lamp\", {can_survive = function() error(\"boom\") end})",
         )]);
         assert_eq!(survives(&keys.parts[0]), None);
+    }
+
+    /// Runs the item part's `use_item` handler: its answer, as the generated method would pass it on.
+    fn use_item_answer(part: &crate::host::LuaItemPart) -> Option<mod_api::InteractionResult> {
+        let mut found = None;
+        let build = |lua: &mlua::Lua, _: &crate::hostcall::TurnHost<'_>| {
+            crate::dispatch::new_event(lua, lua.create_table()?, &[])
+        };
+        let mut answer = |id: &str, value: mlua::Value, _: &crate::hostcall::TurnHost<'_>| {
+            found =
+                crate::dispatch::answer_of::<mod_api::InteractionResult>(id, "use_item", &value);
+            true
+        };
+        part.dispatch_replace(
+            "use_item",
+            crate::hostcall::TurnHost::None,
+            &build,
+            &mut answer,
+        )
+        .unwrap();
+        found
+    }
+
+    #[test]
+    fn an_item_part_answers_from_its_own_handler_and_the_others_are_not_called() {
+        let (host, keys) = requested(&[
+            (
+                "a_first",
+                "first_mod",
+                "horizon.item_part(\"first_mod:wand\", {use_item = function(e) horizon.log(\"wand used\") return \"success\" end})",
+            ),
+            (
+                "b_second",
+                "second_mod",
+                "horizon.item_part(\"second_mod:x\", {use_item = function() horizon.log(\"second ran\") return \"fail\" end})",
+            ),
+        ]);
+        assert_eq!(keys.item_parts.len(), 2);
+        assert!(matches!(
+            use_item_answer(&keys.item_parts[0]),
+            Some(mod_api::InteractionResult::Success)
+        ));
+        assert_eq!(host.mods()[0].log_lines(), ["wand used"]);
+        assert!(host.mods()[1].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_failing_item_part_handler_voids_its_answer() {
+        let (_, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.item_part(\"first_mod:wand\", {use_item = function() error(\"boom\") end})",
+        )]);
+        assert!(use_item_answer(&keys.item_parts[0]).is_none());
+    }
+
+    #[test]
+    fn item_parts_with_one_handler_set_share_one_subscription() {
+        let (_, keys) = requested(&[
+            (
+                "a_first",
+                "first_mod",
+                "horizon.item_part(\"first_mod:wand\", {use_item = function() end})\n\
+                 horizon.item_part(\"first_mod:rod\", {use_item = function() end})",
+            ),
+            (
+                "b_second",
+                "second_mod",
+                "horizon.item_part(\"second_mod:x\", {use_item = function() end, hurt_enemy = function() end})",
+            ),
+        ]);
+        assert!(std::ptr::eq(
+            keys.item_parts[0].subscribed(),
+            keys.item_parts[1].subscribed()
+        ));
+        assert!(!std::ptr::eq(
+            keys.item_parts[0].subscribed(),
+            keys.item_parts[2].subscribed()
+        ));
+        assert_eq!(keys.item_parts[2].subscribed().len(), 2);
     }
 
     #[test]

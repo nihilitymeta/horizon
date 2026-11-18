@@ -21,7 +21,7 @@ pub const MAX_BLOCKS: usize = 256;
 /// The most `horizon.item` calls one mod may make.
 pub const MAX_ITEMS: usize = 256;
 
-/// The most `horizon.block_part` calls one mod may make.
+/// The most `horizon.block_part` calls one mod may make, and the most `horizon.item_part` calls.
 pub const MAX_PARTS: usize = 128;
 
 /// The time a mod's top level may run while it loads.
@@ -54,6 +54,42 @@ pub struct Declaration {
     pub items: Vec<ItemRecord>,
     /// The block parts `horizon.block_part` declared, in declaration order.
     pub parts: Vec<PartRecord>,
+    /// The item parts `horizon.item_part` declared, in declaration order.
+    pub item_parts: Vec<PartRecord>,
+}
+
+/// The kind of a part a mod declares: `horizon.block_part` (a BlockPart) or `horizon.item_part` (an
+/// ItemPart). Each kind has its own handler table, its own id check and its own cap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartKind {
+    Block,
+    Item,
+}
+
+impl PartKind {
+    /// The declaring function's name, as a mod calls it.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            PartKind::Block => "block_part",
+            PartKind::Item => "item_part",
+        }
+    }
+
+    /// What the id names, in the errors (`block`, `item`).
+    fn noun(self) -> &'static str {
+        match self {
+            PartKind::Block => "block",
+            PartKind::Item => "item",
+        }
+    }
+
+    /// The handler names of this kind the host binds, with the reason each is not bound.
+    fn handlers(self) -> &'static [(&'static str, Option<&'static str>)] {
+        match self {
+            PartKind::Block => crate::generated::parts::BLOCK_PARTS,
+            PartKind::Item => crate::generated::item_parts::ITEM_PARTS,
+        }
+    }
 }
 
 /// A block part a mod declared with `horizon.block_part(id, {hook = fn, ...})`: the block it attaches
@@ -65,10 +101,10 @@ pub struct PartRecord {
     pub hooks: Vec<String>,
 }
 
-/// The key a block part's handler is stored under in the mod's handler table. A space cannot be in a
-/// hook name or an id, so the key is never a hook's own name.
-pub fn part_handler_key(id: &str, hook: &str) -> String {
-    format!("block_part {id} {hook}")
+/// The key a part's handler is stored under in the mod's handler table. A space cannot be in a hook
+/// name or an id, so the key is never a hook's own name.
+pub fn part_handler_key(kind: PartKind, id: &str, hook: &str) -> String {
+    format!("{} {id} {hook}", kind.keyword())
 }
 
 /// A block a mod declared with `horizon.block{id, template}`. The id is in the mod's own
@@ -145,6 +181,7 @@ pub fn declare_with_budget(
             blocks: recorded.blocks,
             items: recorded.items,
             parts: recorded.parts,
+            item_parts: recorded.item_parts,
         })
         .map_err(|e| e.to_string())
 }
@@ -229,6 +266,7 @@ struct Recorded {
     blocks: Vec<BlockRecord>,
     items: Vec<ItemRecord>,
     parts: Vec<PartRecord>,
+    item_parts: Vec<PartRecord>,
 }
 
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
@@ -268,6 +306,7 @@ fn run(
     let blocks = RefCell::new(Vec::<BlockRecord>::new());
     let items = RefCell::new(Vec::<ItemRecord>::new());
     let parts = RefCell::new(Vec::<PartRecord>::new());
+    let item_parts = RefCell::new(Vec::<PartRecord>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
@@ -357,64 +396,16 @@ fn run(
                 Ok(())
             })?;
             let block_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
-                let id = part_id(lua, id)?;
-                let Value::Table(table) = spec else {
-                    return Err(at_line(
-                        lua,
-                        "horizon.block_part needs its handlers as a table".to_owned(),
-                    ));
-                };
-                let mut records = parts.borrow_mut();
-                if records.len() >= MAX_PARTS {
-                    return Err(at_line(
-                        lua,
-                        format!("a mod may declare at most {MAX_PARTS} block parts"),
-                    ));
-                }
-                if records.iter().any(|record| record.id == id) {
-                    return Err(at_line(
-                        lua,
-                        format!("horizon.block_part: block '{id}' has two parts in this mod"),
-                    ));
-                }
-                let mut hooks = Vec::new();
-                for pair in table.pairs::<Value, Value>() {
-                    let (key, value) = pair?;
-                    let Value::String(name) = key else {
-                        return Err(at_line(
-                            lua,
-                            "horizon.block_part handler names are strings".to_owned(),
-                        ));
-                    };
-                    let name = name.to_str()?.to_string();
-                    let Value::Function(handler) = value else {
-                        return Err(at_line(
-                            lua,
-                            format!("horizon.block_part handler '{name}' needs a function"),
-                        ));
-                    };
-                    check_part_handler(&name).map_err(|reason| {
-                        at_line(lua, format!("horizon.block_part '{name}': {reason}"))
-                    })?;
-                    let list = lua.create_table()?;
-                    list.raw_set(1, handler)?;
-                    handlers.raw_set(part_handler_key(&id, &name), list)?;
-                    hooks.push(name);
-                }
-                if hooks.is_empty() {
-                    return Err(at_line(
-                        lua,
-                        format!("horizon.block_part for '{id}' needs at least one handler"),
-                    ));
-                }
-                hooks.sort();
-                records.push(PartRecord { id, hooks });
-                Ok(())
+                declare_part(lua, PartKind::Block, id, spec, &parts, &handlers)
+            })?;
+            let item_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
+                declare_part(lua, PartKind::Item, id, spec, &item_parts, &handlers)
             })?;
             horizon.raw_set("on", on)?;
             horizon.raw_set("block", block)?;
             horizon.raw_set("item", item)?;
             horizon.raw_set("block_part", block_part)?;
+            horizon.raw_set("item_part", item_part)?;
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
@@ -440,6 +431,7 @@ fn run(
         ("block", LATE_DECLARE),
         ("item", LATE_DECLARE),
         ("block_part", LATE_DECLARE),
+        ("item_part", LATE_DECLARE),
     ] {
         let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
             Err(Error::runtime(message))
@@ -453,6 +445,7 @@ fn run(
         blocks: blocks.into_inner(),
         items: items.into_inner(),
         parts: parts.into_inner(),
+        item_parts: item_parts.into_inner(),
     };
     Ok((recorded, loaded))
 }
@@ -528,25 +521,100 @@ fn parse_record(
     Ok((id, template))
 }
 
-/// Whether `name` is a BlockPart handler the host binds: an error with the reason when it is not.
-fn check_part_handler(name: &str) -> Result<(), String> {
-    match crate::generated::parts::BLOCK_PARTS
-        .iter()
-        .find(|(hook, _)| *hook == name)
-    {
-        None => Err("not a block part handler".to_owned()),
+/// Reads `horizon.block_part(id, {hook = fn, ...})` or `horizon.item_part(...)` (`kind` names it): the
+/// part's id and handlers are checked, each handler is stored under [`part_handler_key`], and the
+/// record is kept in `records`.
+fn declare_part(
+    lua: &Lua,
+    kind: PartKind,
+    id: Value,
+    spec: Value,
+    records: &RefCell<Vec<PartRecord>>,
+    handlers: &Table,
+) -> mlua::Result<()> {
+    let keyword = kind.keyword();
+    let id = part_id(lua, kind, id)?;
+    let Value::Table(table) = spec else {
+        return Err(at_line(
+            lua,
+            format!("horizon.{keyword} needs its handlers as a table"),
+        ));
+    };
+    let mut records = records.borrow_mut();
+    if records.len() >= MAX_PARTS {
+        return Err(at_line(
+            lua,
+            format!(
+                "a mod may declare at most {MAX_PARTS} {} parts",
+                kind.noun()
+            ),
+        ));
+    }
+    if records.iter().any(|record| record.id == id) {
+        return Err(at_line(
+            lua,
+            format!(
+                "horizon.{keyword}: {} '{id}' has two parts in this mod",
+                kind.noun()
+            ),
+        ));
+    }
+    let mut hooks = Vec::new();
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let Value::String(name) = key else {
+            return Err(at_line(
+                lua,
+                format!("horizon.{keyword} handler names are strings"),
+            ));
+        };
+        let name = name.to_str()?.to_string();
+        let Value::Function(handler) = value else {
+            return Err(at_line(
+                lua,
+                format!("horizon.{keyword} handler '{name}' needs a function"),
+            ));
+        };
+        check_part_handler(kind, &name)
+            .map_err(|reason| at_line(lua, format!("horizon.{keyword} '{name}': {reason}")))?;
+        let list = lua.create_table()?;
+        list.raw_set(1, handler)?;
+        handlers.raw_set(part_handler_key(kind, &id, &name), list)?;
+        hooks.push(name);
+    }
+    if hooks.is_empty() {
+        return Err(at_line(
+            lua,
+            format!("horizon.{keyword} for '{id}' needs at least one handler"),
+        ));
+    }
+    hooks.sort();
+    records.push(PartRecord { id, hooks });
+    Ok(())
+}
+
+/// Whether `name` is a handler the host binds for a part of `kind`: an error with the reason when it
+/// is not.
+fn check_part_handler(kind: PartKind, name: &str) -> Result<(), String> {
+    match kind.handlers().iter().find(|(hook, _)| *hook == name) {
+        None => Err(match kind {
+            PartKind::Block => "not a block part handler".to_owned(),
+            PartKind::Item => "not an item part handler".to_owned(),
+        }),
         Some((_, None)) => Ok(()),
         Some((_, Some(reason))) => Err(format!("not available: {reason}")),
     }
 }
 
-/// The block id of `horizon.block_part`: `namespace:path` in any namespace, with a valid path. A part
-/// may attach to a block of another mod or a vanilla block, so the namespace is not checked here.
-fn part_id(lua: &Lua, value: Value) -> mlua::Result<String> {
+/// The id of `horizon.block_part` or `horizon.item_part`: `namespace:path` in any namespace, with a
+/// valid path. A part may attach to a block or item of another mod or a vanilla one, so the namespace
+/// is not checked here.
+fn part_id(lua: &Lua, kind: PartKind, value: Value) -> mlua::Result<String> {
+    let keyword = kind.keyword();
     let Value::String(text) = value else {
         return Err(at_line(
             lua,
-            "horizon.block_part needs the block id as a string".to_owned(),
+            format!("horizon.{keyword} needs the {} id as a string", kind.noun()),
         ));
     };
     let id = text.to_str()?.to_string();
@@ -555,10 +623,15 @@ fn part_id(lua: &Lua, value: Value) -> mlua::Result<String> {
         None => false,
     };
     if !valid {
+        let example = match kind {
+            PartKind::Block => "minecraft:stone",
+            PartKind::Item => "minecraft:stick",
+        };
         return Err(at_line(
             lua,
             format!(
-                "horizon.block_part: '{id}' needs a namespaced block id such as minecraft:stone"
+                "horizon.{keyword}: '{id}' needs a namespaced {} id such as {example}",
+                kind.noun()
             ),
         ));
     }
@@ -1104,6 +1177,106 @@ mod tests {
         let declaration =
             declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
         assert!(declaration.parts.is_empty());
+        let tick = handlers(&lua, "tick").unwrap();
+        let err = tick[0].call::<()>(()).unwrap_err().to_string();
+        assert!(
+            err.contains("declarations are only allowed while the mod loads"),
+            "got {err}"
+        );
+    }
+
+    /// The declared item parts of `source`, or the load error.
+    fn item_parts_of(source: &str) -> Result<Vec<PartRecord>, String> {
+        declare_in_fresh_state(source).map(|declaration| declaration.item_parts)
+    }
+
+    #[test]
+    fn an_item_part_records_its_item_and_sorted_handler_names() {
+        let declaration = declare_in_fresh_state(
+            "horizon.item_part(\"minecraft:stick\", {use_item = function() end, hurt_enemy = function() end})",
+        )
+        .unwrap();
+        assert!(declaration.parts.is_empty());
+        assert_eq!(
+            declaration.item_parts,
+            [PartRecord {
+                id: "minecraft:stick".to_owned(),
+                hooks: vec!["hurt_enemy".to_owned(), "use_item".to_owned()],
+            }]
+        );
+    }
+
+    #[test]
+    fn an_item_part_needs_a_namespaced_item_id() {
+        assert!(
+            item_parts_of("horizon.item_part(\"other_mod:wand\", {use_item = function() end})")
+                .is_ok()
+        );
+        let err =
+            item_parts_of("horizon.item_part(\"wand\", {use_item = function() end})").unwrap_err();
+        assert!(err.contains("namespaced item id"), "got {err}");
+    }
+
+    #[test]
+    fn an_item_part_handler_must_be_an_emitted_item_part_method() {
+        let block_only =
+            item_parts_of("horizon.item_part(\"mymod:x\", {can_survive = function() end})")
+                .unwrap_err();
+        assert!(
+            block_only.contains("not an item part handler"),
+            "got {block_only}"
+        );
+        let hot = item_parts_of("horizon.item_part(\"mymod:x\", {tooltip = function() end})")
+            .unwrap_err();
+        assert!(hot.contains("hot path (needs measurement)"), "got {hot}");
+        let not_function =
+            item_parts_of("horizon.item_part(\"mymod:x\", {use_item = 1})").unwrap_err();
+        assert!(
+            not_function.contains("needs a function"),
+            "got {not_function}"
+        );
+        let empty = item_parts_of("horizon.item_part(\"mymod:x\", {})").unwrap_err();
+        assert!(empty.contains("needs at least one handler"), "got {empty}");
+    }
+
+    #[test]
+    fn a_second_item_part_for_one_item_is_refused_but_a_block_part_of_its_id_is_not() {
+        let err = item_parts_of(
+            "horizon.item_part(\"mymod:x\", {use_item = function() end})\n\
+             horizon.item_part(\"mymod:x\", {hurt_enemy = function() end})",
+        )
+        .unwrap_err();
+        assert!(err.contains("two parts in this mod"), "got {err}");
+        let both = declare_in_fresh_state(
+            "horizon.block_part(\"mymod:x\", {can_survive = function() end})\n\
+             horizon.item_part(\"mymod:x\", {use_item = function() end})",
+        )
+        .unwrap();
+        assert_eq!(both.parts.len(), 1);
+        assert_eq!(both.item_parts.len(), 1);
+    }
+
+    #[test]
+    fn a_mod_may_declare_at_most_128_item_parts() {
+        let source = |count: usize| -> String {
+            (0..count)
+                .map(|i| {
+                    format!("horizon.item_part(\"mymod:p{i}\", {{use_item = function() end}})\n")
+                })
+                .collect()
+        };
+        assert_eq!(item_parts_of(&source(MAX_PARTS)).unwrap().len(), MAX_PARTS);
+        let err = item_parts_of(&source(MAX_PARTS + 1)).unwrap_err();
+        assert!(err.contains("at most 128 item parts"), "got {err}");
+    }
+
+    #[test]
+    fn an_item_part_after_loading_is_refused() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"tick\", function() horizon.item_part(\"mymod:x\", {use_item = function() end}) end)";
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        assert!(declaration.item_parts.is_empty());
         let tick = handlers(&lua, "tick").unwrap();
         let err = tick[0].call::<()>(()).unwrap_err().to_string();
         assert!(

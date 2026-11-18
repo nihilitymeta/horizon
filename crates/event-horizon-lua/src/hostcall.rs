@@ -1646,7 +1646,7 @@ mod tests {
         let lines: Vec<&str> = coverage
             .lines()
             .filter(|line| !line.starts_with('#') && !line.is_empty())
-            .filter(|line| !line.starts_with("block_part."))
+            .filter(|line| !line.starts_with("block_part.") && !line.starts_with("item_part."))
             .collect();
         assert_eq!(lines.len(), 749);
         // The BlockPart methods: one line each, emitted or with its reason.
@@ -1670,6 +1670,29 @@ mod tests {
             )
         );
         assert!(parts.contains(&"block_part.rotate skipped: worldgen worker"));
+        // The ItemPart methods: 40 lines, 16 emitted; the nine hot ones and a block-only type skipped.
+        let items: Vec<&str> = coverage
+            .lines()
+            .filter(|line| line.starts_with("item_part."))
+            .collect();
+        assert_eq!(items.len(), 40);
+        assert_eq!(
+            items
+                .iter()
+                .filter(|line| line.ends_with(" emitted"))
+                .count(),
+            16
+        );
+        assert!(items.contains(&"item_part.use_item emitted"));
+        assert!(items.contains(&"item_part.use_on emitted"));
+        assert!(items.contains(&"item_part.tooltip skipped: hot path (needs measurement)"));
+        assert_eq!(
+            items
+                .iter()
+                .filter(|line| line.ends_with("hot path (needs measurement)"))
+                .count(),
+            9
+        );
         let emitted = lines
             .iter()
             .filter(|line| line.ends_with(" emitted"))

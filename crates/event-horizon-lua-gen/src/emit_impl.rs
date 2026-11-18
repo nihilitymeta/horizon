@@ -1131,42 +1131,97 @@ fn commit_text(method: &Method<'_>) -> String {
     )
 }
 
-/// The BlockPart methods the Lua host does not bind, with the reason: a method on a hot path (per tick
-/// or per frame, measured before it is bound) and every method the worldgen context reaches.
-pub const PART_HOT: &[&str] = &[
-    "block_render_visibility",
-    "can_entity_destroy",
-    "enchant_power_bonus",
-    "falling_tick",
-    "is_fire_source",
-    "minecart_pass",
-    "state_at_viewpoint",
+/// The Part traits the Lua host binds one adapter for: the BlockPart and the ItemPart methods.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartTrait {
+    Block,
+    Item,
+}
+
+impl PartTrait {
+    /// The trait's name, as the Rust source spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            PartTrait::Block => "BlockPart",
+            PartTrait::Item => "ItemPart",
+        }
+    }
+
+    /// The adapter struct the generated methods are written on (in `host.rs`).
+    fn adapter(self) -> &'static str {
+        match self {
+            PartTrait::Block => "LuaBlockPart",
+            PartTrait::Item => "LuaItemPart",
+        }
+    }
+
+    /// The trait method that returns the part's subscription.
+    fn subscribed(self) -> &'static str {
+        match self {
+            PartTrait::Block => "block_subscribed",
+            PartTrait::Item => "item_subscribed",
+        }
+    }
+
+    /// The generated table of the trait's handler names.
+    fn table(self) -> &'static str {
+        match self {
+            PartTrait::Block => "BLOCK_PARTS",
+            PartTrait::Item => "ITEM_PARTS",
+        }
+    }
+}
+
+/// The Part methods the Lua host does not bind, as `(trait, method)`, with the reason. A hot method
+/// runs per tick or per frame and is not bound until it is measured; the worldgen context is not
+/// bound at all (see [`emit_parts`]).
+pub const PART_HOT: &[(&str, &str)] = &[
+    ("BlockPart", "block_render_visibility"),
+    ("BlockPart", "can_entity_destroy"),
+    ("BlockPart", "enchant_power_bonus"),
+    ("BlockPart", "falling_tick"),
+    ("BlockPart", "is_fire_source"),
+    ("BlockPart", "minecart_pass"),
+    ("BlockPart", "state_at_viewpoint"),
+    ("ItemPart", "inventory_tick"),
+    ("ItemPart", "item_bar"),
+    ("ItemPart", "on_use_tick"),
+    ("ItemPart", "on_entity_item_update"),
+    ("ItemPart", "should_cause_block_break_reset"),
+    ("ItemPart", "tooltip"),
+    ("ItemPart", "highlight_tip"),
+    ("ItemPart", "use_animation"),
+    ("ItemPart", "use_duration"),
 ];
 const HOT_REASON: &str = "hot path (needs measurement)";
 const WORKER_REASON: &str = "worldgen worker";
+/// Part methods that take or answer a container, a capability or a payload handler: the Lua host
+/// does not carry those yet (see the manifest `powers`).
+const CONTAINER_REASON: &str = "item container, capability or payload handler: not in v1";
 
-/// The generated `parts.rs` of the BlockPart trait: the table of its handler names with the reason
-/// each is not bound, and the `BlockPart` impl of `LuaBlockPart`, with the emitted methods.
+/// The generated file of one Part trait: the table of its handler names with the reason each is not
+/// bound, and the impl of its adapter, with the emitted methods.
 pub struct PartsEmitted {
     /// The whole file.
     pub text: String,
-    /// The BlockPart methods emitted, in name order.
+    /// The Part methods emitted, in name order.
     pub emitted: Vec<String>,
-    /// Each BlockPart method not emitted, with its reason, in name order.
+    /// Each Part method not emitted, with its reason, in name order.
     pub skipped: Vec<(String, String)>,
     /// The answer and output types of the emitted methods (see [`Emitted::decisions`]).
     pub decisions: Vec<String>,
 }
 
-/// Emits the BlockPart methods of `sigs` (the BlockPart trait's hook-shaped methods): each one the
-/// hook pipeline can convert is emitted as the `LuaBlockPart` method of the same name. The same
+/// Emits the methods of the Part trait `part` (`sigs` is that trait's hook-shaped methods): each one
+/// the hook pipeline can convert is emitted as a method of its adapter with the same name. The same
 /// inputs always give the same text.
-pub fn emit_block_parts(
+pub fn emit_parts(
     ir: &Ir,
     sigs: &[HookSig],
     dispatch: &DispatchSigs,
     plain: &Plain,
     handles: &[&str],
+    part: PartTrait,
 ) -> PartsEmitted {
     let mut methods = Vec::new();
     let mut skipped = Vec::new();
@@ -1181,10 +1236,21 @@ pub fn emit_block_parts(
             .chain(&sig.ret)
             .any(|ty| ty.contains("WorldgenHost"))
             || sig.event_ty.contains("WorldgenHost");
-        let result = if PART_HOT.contains(&name) {
+        let container = sig
+            .host_ty
+            .iter()
+            .chain(&sig.ret)
+            .any(|ty| CONTAINER_TYPES.iter().any(|name| ty.contains(name)))
+            || CONTAINER_TYPES
+                .iter()
+                .any(|name| sig.event_ty.contains(name));
+        let hot = PART_HOT.contains(&(part.name(), name));
+        let result = if hot {
             Err(HOT_REASON.to_owned())
         } else if worldgen {
             Err(WORKER_REASON.to_owned())
+        } else if container {
+            Err(CONTAINER_REASON.to_owned())
         } else {
             plan(ir, sigs, dispatch, name, plain, handles, true)
         };
@@ -1215,22 +1281,28 @@ pub fn emit_block_parts(
         })
         .collect();
 
+    let (name, adapter) = (part.name(), part.adapter());
     let mut text = format!(
         "// @generated by event-horizon-lua-gen from surface {}: do not edit.\n",
         ir.document_hash
     );
-    text.push_str(&imports(&methods, "use crate::host::LuaBlockPart;\n"));
-    text.push_str(
-        "\n/// Every BlockPart handler name with the reason it is not bound (`None`: it is bound), sorted.\n\
-         pub const BLOCK_PARTS: &[(&str, Option<&str>)] = &[\n",
-    );
+    text.push_str(&imports(
+        &methods,
+        &format!("use crate::host::{adapter};\n"),
+    ));
+    text.push_str(&format!(
+        "\n/// Every {name} handler name with the reason it is not bound (`None`: it is bound), sorted.\n\
+         pub const {table}: &[(&str, Option<&str>)] = &[\n",
+        table = part.table()
+    ));
     text.push_str(&table);
     text.push_str("];\n");
-    text.push_str(
-        "\nimpl mod_api::BlockPart for LuaBlockPart {\n    \
-         fn block_subscribed(&self) -> &'static [Option<mod_api::HookId>] {\n        \
-         self.subscribed()\n    }\n",
-    );
+    text.push_str(&format!(
+        "\nimpl mod_api::{name} for {adapter} {{\n    \
+         fn {subscribed}(&self) -> &'static [Option<mod_api::HookId>] {{\n        \
+         self.subscribed()\n    }}\n",
+        subscribed = part.subscribed()
+    ));
     for method in &methods {
         text.push_str(&method_text(method));
     }
@@ -1242,6 +1314,10 @@ pub fn emit_block_parts(
         decisions,
     }
 }
+
+/// The types a Part method may not take or answer yet: a container, a capability or a payload
+/// handler (their names as the trait spells them).
+const CONTAINER_TYPES: &[&str] = &["ItemContainer", "Capability", "PayloadHandler"];
 
 #[cfg(test)]
 mod tests {

@@ -17,7 +17,7 @@ use horizon_client::save::level_mods::{self, ModRecord};
 use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
-use crate::declare::{self, BlockRecord, ItemRecord, ListenerOptions, PartRecord};
+use crate::declare::{self, BlockRecord, ItemRecord, ListenerOptions, PartKind, PartRecord};
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::{self, new_event};
 use crate::generated::hooks::{hook_id, is_emitted};
@@ -52,8 +52,10 @@ pub struct LuaMod {
     /// The blocks and items the mod declared with `horizon.block` and `horizon.item`.
     blocks: Vec<BlockRecord>,
     items: Vec<ItemRecord>,
-    /// The block parts the mod declared with `horizon.block_part`.
+    /// The block parts the mod declared with `horizon.block_part`, and the item parts with
+    /// `horizon.item_part`.
     parts: Vec<PartRecord>,
+    item_parts: Vec<PartRecord>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -148,6 +150,7 @@ impl LuaMod {
             blocks: declaration.blocks,
             items: declaration.items,
             parts: declaration.parts,
+            item_parts: declaration.item_parts,
             lua,
             log,
             turn: Turn::default(),
@@ -167,6 +170,14 @@ impl LuaMod {
     /// The block parts this mod declared, in declaration order.
     pub fn parts(&self) -> &[PartRecord] {
         &self.parts
+    }
+
+    /// The records of the parts of `kind` this mod declared, in declaration order.
+    fn part_records(&self, kind: PartKind) -> &[PartRecord] {
+        match kind {
+            PartKind::Block => &self.parts,
+            PartKind::Item => &self.item_parts,
+        }
     }
 
     pub fn id(&self) -> &str {
@@ -396,9 +407,10 @@ impl LuaHost {
     /// Requests the key of each block and item every loaded mod declared, in declaration order. A
     /// mod whose request is refused is dropped from the answers, and the others are not affected.
     ///
-    /// Then each block part is attached to its block: the block's key is requested again (the game
-    /// keeps one key per id), and the part is handed over. A part that cannot be made (its
-    /// subscription is over the interning cap) refuses its mod, as a refused key does.
+    /// Then each block part is attached to its block, and each item part to its item: the key is
+    /// requested again (the game keeps one key per id), and the part is handed over. A part that
+    /// cannot be made (its subscription is over the interning cap) refuses its mod, as a refused
+    /// key does.
     pub(crate) fn request_keys(&self, keys: &mut dyn DeclaredKeys) {
         for m in self.mods.iter() {
             let refusal = m
@@ -415,13 +427,26 @@ impl LuaHost {
                 lock_ids(&self.refused_keys).push(m.id.clone());
             }
         }
+        self.attach_parts::<BlockTag>(|id, part| keys.block_part(id, part));
+        self.attach_parts::<ItemTag>(|id, part| keys.item_part(id, part));
+    }
+
+    /// Hands each part of kind `K` the mods declared to `attach`, with the id it attaches to. A part
+    /// that cannot be made or attached refuses its mod, and the others are not affected.
+    fn attach_parts<K: PartTag>(
+        &self,
+        mut attach: impl FnMut(&str, LuaPart<K>) -> Result<(), String>,
+    ) {
         for (index, m) in self.mods.iter().enumerate() {
-            for part in 0..m.parts.len() {
-                let id = m.parts[part].id.clone();
-                let attached = LuaBlockPart::new(Arc::clone(&self.mods), index, part)
-                    .and_then(|block_part| keys.block_part(&id, block_part));
+            for (part, record) in m.part_records(K::KIND).iter().enumerate() {
+                let attached = LuaPart::<K>::new(Arc::clone(&self.mods), index, part)
+                    .and_then(|made| attach(&record.id, made));
                 if let Err(reason) = attached {
-                    log::warn!("Lua mod {} refused its block parts: {reason}", m.id);
+                    log::warn!(
+                        "Lua mod {} refused its {} parts: {reason}",
+                        m.id,
+                        K::KIND.keyword()
+                    );
                     lock_ids(&self.refused_keys).push(m.id.clone());
                 }
             }
@@ -460,6 +485,8 @@ pub(crate) trait DeclaredKeys {
     /// Registrar cannot refuse one mod's part (its refusals are game-wide), so `RegistrarKeys` never
     /// returns one; a test double does, to check the refusal path.
     fn block_part(&mut self, id: &str, part: LuaBlockPart) -> Result<(), String>;
+    /// Attaches `part` to item `id`: as [`DeclaredKeys::block_part`].
+    fn item_part(&mut self, id: &str, part: LuaItemPart) -> Result<(), String>;
 }
 
 /// The game's Registrar as the keys' requester.
@@ -483,20 +510,29 @@ impl DeclaredKeys for RegistrarKeys<'_> {
         self.0.block_part(key, part);
         Ok(())
     }
+
+    fn item_part(&mut self, id: &str, part: LuaItemPart) -> Result<(), String> {
+        let key = mod_api::ItemsRegistrar::item_key(&mut *self.0, id);
+        self.0.item_part(key, part);
+        Ok(())
+    }
 }
 
-/// The most distinct sets of block part handler names one process interns. Each set's subscription
-/// is leaked once, because the game reads it as `'static`.
+/// The most distinct sets of part handler names one process interns, per kind of part. Each set's
+/// subscription is leaked once, because the game reads it as `'static`.
 pub const MAX_PART_SETS: usize = 64;
 
-/// The interned subscriptions, by their sorted handler names.
-static SUBSCRIPTIONS: Mutex<Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>> =
-    Mutex::new(Vec::new());
+/// The interned subscriptions of one kind, by their sorted handler names.
+type Subscriptions = Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>;
+
+/// The block parts' subscriptions and the item parts' ones: a separate table for each kind.
+static BLOCK_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
+static ITEM_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 
 /// The subscription of a set of handler names (sorted, no repeats) in `table`: the same slice for
 /// the same set, a new one for a new set, and an error once `MAX_PART_SETS` sets are interned.
 fn intern_in(
-    table: &mut Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>,
+    table: &mut Subscriptions,
     names: &[String],
 ) -> Result<&'static [Option<mod_api::HookId>], String> {
     if let Some((_, known)) = table.iter().find(|(known, _)| known == names) {
@@ -504,7 +540,7 @@ fn intern_in(
     }
     if table.len() >= MAX_PART_SETS {
         return Err(format!(
-            "a process may hold at most {MAX_PART_SETS} different sets of block part handlers"
+            "a process may hold at most {MAX_PART_SETS} different sets of part handlers of one kind"
         ));
     }
     let ids = names
@@ -520,38 +556,63 @@ fn intern_in(
     Ok(slice)
 }
 
-/// One block part of a loaded mod: the BlockPart the game calls for a block the mod attached to. It
-/// runs that mod's handlers for the hooks the part declared, and no other mod's.
-pub struct LuaBlockPart {
+/// The marker of a Lua part's kind: [`LuaBlockPart`] and [`LuaItemPart`] are [`LuaPart`] with one
+/// marker each, so the game's traits get a distinct type for each.
+pub trait PartTag: 'static {
+    /// The kind of part the marker stands for.
+    const KIND: PartKind;
+}
+
+/// The marker of a BlockPart.
+pub struct BlockTag;
+
+/// The marker of an ItemPart.
+pub struct ItemTag;
+
+impl PartTag for BlockTag {
+    const KIND: PartKind = PartKind::Block;
+}
+
+impl PartTag for ItemTag {
+    const KIND: PartKind = PartKind::Item;
+}
+
+/// One block part of a loaded mod: the BlockPart the game calls for a block the mod attached to.
+pub type LuaBlockPart = LuaPart<BlockTag>;
+
+/// One item part of a loaded mod: the ItemPart the game calls for an item the mod attached to.
+pub type LuaItemPart = LuaPart<ItemTag>;
+
+/// One part of a loaded mod (a block or an item part, by `K`). It runs that mod's handlers for the
+/// hooks the part declared, and no other mod's.
+pub struct LuaPart<K: PartTag> {
     mods: Arc<[LuaMod]>,
     index: usize,
     id: String,
     hooks: Vec<String>,
     subscribed: &'static [Option<mod_api::HookId>],
+    kind: std::marker::PhantomData<K>,
 }
 
-impl LuaBlockPart {
-    /// Part `part` (an index into the mod's `parts()`) of the mod at `index` in `mods`.
-    pub(crate) fn new(
-        mods: Arc<[LuaMod]>,
-        index: usize,
-        part: usize,
-    ) -> Result<LuaBlockPart, String> {
+impl<K: PartTag> LuaPart<K> {
+    /// Part `part` (an index into the mod's records of this kind) of the mod at `index` in `mods`.
+    pub(crate) fn new(mods: Arc<[LuaMod]>, index: usize, part: usize) -> Result<Self, String> {
         let (id, hooks) = {
-            let record = &mods[index].parts[part];
+            let record = &mods[index].part_records(K::KIND)[part];
             (record.id.clone(), record.hooks.clone())
         };
-        let subscribed = intern_in(&mut lock_subscriptions(), &hooks)?;
-        Ok(LuaBlockPart {
+        let subscribed = intern_in(&mut lock_subscriptions(K::KIND), &hooks)?;
+        Ok(LuaPart {
             mods,
             index,
             id,
             hooks,
             subscribed,
+            kind: std::marker::PhantomData,
         })
     }
 
-    /// The hook ids the part subscribes to: the generated `BlockPart::block_subscribed`.
+    /// The hook ids the part subscribes to: the generated `subscribed` of its trait.
     pub(crate) fn subscribed(&self) -> &'static [Option<mod_api::HookId>] {
         self.subscribed
     }
@@ -578,7 +639,7 @@ impl LuaBlockPart {
             &crate::hostcall::TurnHost<'_>,
         ) -> bool,
     ) -> Result<(), String> {
-        let key = declare::part_handler_key(&self.id, hook);
+        let key = declare::part_handler_key(K::KIND, &self.id, hook);
         dispatch::turns_in(
             &self.mods,
             &[self.index],
@@ -602,14 +663,23 @@ impl LuaBlockPart {
         ) -> mlua::Result<crate::dispatch::Event>,
         answer: &mut dyn FnMut(&str, Value, &crate::hostcall::TurnHost<'_>) -> bool,
     ) -> Result<(), String> {
-        let key = declare::part_handler_key(&self.id, hook);
+        let key = declare::part_handler_key(K::KIND, &self.id, hook);
         dispatch::replace_in(&self.mods, &[self.index], hook, &key, host, build, answer)
     }
 }
 
-fn lock_subscriptions()
--> MutexGuard<'static, Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>> {
-    SUBSCRIPTIONS.lock().unwrap_or_else(PoisonError::into_inner)
+/// The table of the subscriptions of parts of `kind`.
+fn subscriptions_of(kind: PartKind) -> &'static Mutex<Subscriptions> {
+    match kind {
+        PartKind::Block => &BLOCK_SUBSCRIPTIONS,
+        PartKind::Item => &ITEM_SUBSCRIPTIONS,
+    }
+}
+
+fn lock_subscriptions(kind: PartKind) -> MutexGuard<'static, Subscriptions> {
+    subscriptions_of(kind)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
 }
 
 fn lock_ids(ids: &Mutex<Vec<String>>) -> MutexGuard<'_, Vec<String>> {
@@ -826,6 +896,14 @@ pub(crate) mod tests {
             Ok(_) => panic!("the 65th set was interned"),
         };
         assert!(err.contains("at most 64 different sets"), "got {err}");
+    }
+
+    #[test]
+    fn block_and_item_parts_intern_their_subscriptions_in_separate_tables() {
+        assert!(!std::ptr::eq(
+            subscriptions_of(PartKind::Block),
+            subscriptions_of(PartKind::Item)
+        ));
     }
 
     #[test]
