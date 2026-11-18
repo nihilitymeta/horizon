@@ -83,6 +83,8 @@ struct Plan {
     table: String,
     methods: emit_impl::Emitted,
     first_methods: emit_impl::Emitted,
+    /// `parts.rs`: the BlockPart methods and their handler table.
+    parts: emit_impl::PartsEmitted,
     types: emit_types::TypesPlan,
     /// `hooks_coverage.txt`: every hook of the surface, emitted or with its skip reason.
     hook_coverage: String,
@@ -93,6 +95,7 @@ fn plan_pass(
     surface: &ir::Ir,
     document: &Surface,
     sigs: &[trait_sigs::HookSig],
+    part_sigs: &[trait_sigs::HookSig],
     dispatch: &dispatch_sigs::DispatchSigs,
     members: &[handles::MemberIr],
     families: &[&str],
@@ -120,7 +123,11 @@ fn plan_pass(
         .flatten()
         .flatten()
         .map(|output| output.ty.clone())
-        .chain(sigs.iter().filter_map(|sig| sig.ret.clone()))
+        .chain(
+            sigs.iter()
+                .chain(part_sigs)
+                .filter_map(|sig| sig.ret.clone()),
+        )
         .chain(handle_types.iter().cloned())
         .collect();
     let first = emit_types::plan_decided(
@@ -132,7 +139,10 @@ fn plan_pass(
     );
     let first_methods =
         emit_impl::emit_with_handles(surface, sigs, dispatch, &names, &first.plain, families);
+    let first_parts =
+        emit_impl::emit_block_parts(surface, part_sigs, dispatch, &first.plain, families);
     let mut decided = first_methods.decisions.clone();
+    decided.extend(first_parts.decisions.iter().cloned());
     decided.extend(handle_types.iter().cloned());
     let superset = emit_types::plan_decided(
         &document.types,
@@ -145,6 +155,7 @@ fn plan_pass(
     // argument types, and the plan is made again: no converter is emitted for an unbound member.
     let bound_types = emit_handles::bound_argument_types(members, families, &superset.plain);
     let mut decided = first_methods.decisions.clone();
+    decided.extend(first_parts.decisions.iter().cloned());
     decided.extend(bound_types);
     let types = emit_types::plan_decided(
         &document.types,
@@ -155,17 +166,22 @@ fn plan_pass(
     );
     let methods =
         emit_impl::emit_with_handles(surface, sigs, dispatch, &names, &types.plain, families);
+    let parts = emit_impl::emit_block_parts(surface, part_sigs, dispatch, &types.plain, families);
     if methods.emitted != first_methods.emitted {
         return Err("the two passes emit different hooks".to_owned());
     }
+    if parts.emitted != first_parts.emitted {
+        return Err("the two passes emit different block part methods".to_owned());
+    }
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(surface, &emitted);
-    let hook_coverage = emit_hooks::coverage(
+    let mut hook_coverage = emit_hooks::coverage(
         surface,
         &methods.emitted,
         &methods.host_recorded,
         &first_methods.skipped,
     );
+    hook_coverage.push_str(&block_part_coverage(&parts));
 
     let handles =
         emit_handles::emit_listing(members, families, dropped, &types.plain, &document.hash);
@@ -180,9 +196,31 @@ fn plan_pass(
         table,
         methods,
         first_methods,
+        parts,
         types,
         hook_coverage,
     })
+}
+
+/// The BlockPart lines of `hooks_coverage.txt`: `block_part.<method> emitted` or `... skipped: <reason>`.
+fn block_part_coverage(parts: &emit_impl::PartsEmitted) -> String {
+    let mut out = String::from("\n# block parts (issue 74, P1): the BlockPart trait's methods\n");
+    let mut lines: Vec<(String, String)> = parts
+        .emitted
+        .iter()
+        .map(|name| (name.clone(), "emitted".to_owned()))
+        .chain(
+            parts
+                .skipped
+                .iter()
+                .map(|(name, reason)| (name.clone(), format!("skipped: {reason}"))),
+        )
+        .collect();
+    lines.sort();
+    for (name, status) in lines {
+        out.push_str(&format!("block_part.{name} {status}\n"));
+    }
+    out
 }
 
 fn run(args: Args) -> Result<ExitCode, String> {
@@ -207,6 +245,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
     // A family that binds no member is dropped and the pass made again: dropping one can only
     // narrow the others' conversions, so the loop ends with every generated family bound.
     let mut families = requested.clone();
+    let part_sigs = trait_sigs::parse_trait(&trait_text, "BlockPart")
+        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
     let plan = loop {
         let refs: Vec<&str> = families.iter().map(String::as_str).collect();
         let dropped: Vec<&str> = requested
@@ -215,7 +255,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             .filter(|family| !refs.contains(family))
             .collect();
         let plan = plan_pass(
-            &surface, &document, &sigs, &dispatch, &members, &refs, &dropped,
+            &surface, &document, &sigs, &part_sigs, &dispatch, &members, &refs, &dropped,
         )?;
         let empty: Vec<String> = plan
             .handles
@@ -238,6 +278,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         table,
         methods,
         first_methods,
+        parts,
         types,
         hook_coverage,
     } = plan;
@@ -247,6 +288,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
     let handles_path = args.out.join("handles.rs");
     let coverage_path = args.out.join("handles_coverage.txt");
     let hook_coverage_path = args.out.join("hooks_coverage.txt");
+    let parts_path = args.out.join("parts.rs");
     if args.check {
         let mut differ = Vec::new();
         for (path, text) in [
@@ -256,6 +298,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             (&handles_path, &handles_out.text),
             (&coverage_path, &handles_out.coverage),
             (&hook_coverage_path, &hook_coverage),
+            (&parts_path, &parts.text),
         ] {
             let current = std::fs::read_to_string(path).ok();
             if current.as_deref() != Some(text.as_str()) {
@@ -290,6 +333,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .map_err(|error| format!("cannot write {}: {error}", coverage_path.display()))?;
     std::fs::write(&hook_coverage_path, &hook_coverage)
         .map_err(|error| format!("cannot write {}: {error}", hook_coverage_path.display()))?;
+    std::fs::write(&parts_path, &parts.text)
+        .map_err(|error| format!("cannot write {}: {error}", parts_path.display()))?;
     println!("handle families: {}", families.join(", "));
     for (family, members, bound) in &handles_out.per_family {
         println!("  {family}: {members} members, {bound} bound");

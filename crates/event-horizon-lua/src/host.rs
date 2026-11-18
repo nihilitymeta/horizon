@@ -17,9 +17,9 @@ use horizon_client::save::level_mods::{self, ModRecord};
 use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
-use crate::declare::{self, BlockRecord, ItemRecord, ListenerOptions};
+use crate::declare::{self, BlockRecord, ItemRecord, ListenerOptions, PartRecord};
 use crate::discover::{Discovered, ENTRY, Side};
-use crate::dispatch::new_event;
+use crate::dispatch::{self, new_event};
 use crate::generated::hooks::{hook_id, is_emitted};
 use crate::ratelimit::{RateLimit, Verdict};
 use crate::state;
@@ -52,6 +52,8 @@ pub struct LuaMod {
     /// The blocks and items the mod declared with `horizon.block` and `horizon.item`.
     blocks: Vec<BlockRecord>,
     items: Vec<ItemRecord>,
+    /// The block parts the mod declared with `horizon.block_part`.
+    parts: Vec<PartRecord>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -145,6 +147,7 @@ impl LuaMod {
             options: declaration.options,
             blocks: declaration.blocks,
             items: declaration.items,
+            parts: declaration.parts,
             lua,
             log,
             turn: Turn::default(),
@@ -159,6 +162,11 @@ impl LuaMod {
     /// The items this mod declared, in declaration order.
     pub fn items(&self) -> &[ItemRecord] {
         &self.items
+    }
+
+    /// The block parts this mod declared, in declaration order.
+    pub fn parts(&self) -> &[PartRecord] {
+        &self.parts
     }
 
     pub fn id(&self) -> &str {
@@ -229,7 +237,8 @@ pub fn merged_records(existing: Option<Vec<ModRecord>>, mods: &[LuaMod]) -> Vec<
 /// between the Lua mods is the host's own job: `order` holds, for each hook a mod declared, the
 /// mods in the order they run.
 pub struct LuaHost {
-    mods: Vec<LuaMod>,
+    /// The loaded mods, shared with the block parts that run their handlers.
+    mods: Arc<[LuaMod]>,
     subscribed: &'static [Option<mod_api::HookId>],
     listeners: &'static [mod_api::Listener],
     order: Vec<(String, Vec<usize>)>,
@@ -291,7 +300,7 @@ impl LuaHost {
             }
         }
         LuaHost {
-            mods,
+            mods: Arc::from(mods),
             subscribed: Box::leak(subscribed.into_boxed_slice()),
             listeners: Box::leak(listeners.into_boxed_slice()),
             order,
@@ -386,8 +395,12 @@ impl LuaHost {
 
     /// Requests the key of each block and item every loaded mod declared, in declaration order. A
     /// mod whose request is refused is dropped from the answers, and the others are not affected.
+    ///
+    /// Then each block part is attached to its block: the block's key is requested again (the game
+    /// keeps one key per id), and the part is handed over. A part that cannot be made (its
+    /// subscription is over the interning cap) refuses its mod, as a refused key does.
     pub(crate) fn request_keys(&self, keys: &mut dyn DeclaredKeys) {
-        for m in &self.mods {
+        for m in self.mods.iter() {
             let refusal = m
                 .blocks
                 .iter()
@@ -400,6 +413,17 @@ impl LuaHost {
             if let Some(reason) = refusal {
                 log::warn!("Lua mod {} refused its declarations: {reason}", m.id);
                 lock_ids(&self.refused_keys).push(m.id.clone());
+            }
+        }
+        for (index, m) in self.mods.iter().enumerate() {
+            for part in 0..m.parts.len() {
+                let id = m.parts[part].id.clone();
+                let attached = LuaBlockPart::new(Arc::clone(&self.mods), index, part)
+                    .and_then(|block_part| keys.block_part(&id, block_part));
+                if let Err(reason) = attached {
+                    log::warn!("Lua mod {} refused its block parts: {reason}", m.id);
+                    lock_ids(&self.refused_keys).push(m.id.clone());
+                }
             }
         }
     }
@@ -432,6 +456,10 @@ pub(crate) trait DeclaredKeys {
     fn block_key(&mut self, id: &str) -> Result<(), String>;
     /// Requests the key of item `id`. An `Err` refuses the mod that declared it.
     fn item_key(&mut self, id: &str) -> Result<(), String>;
+    /// Attaches `part` to block `id`. An `Err` refuses the mod that declared the part. The game's
+    /// Registrar cannot refuse one mod's part (its refusals are game-wide), so `RegistrarKeys` never
+    /// returns one; a test double does, to check the refusal path.
+    fn block_part(&mut self, id: &str, part: LuaBlockPart) -> Result<(), String>;
 }
 
 /// The game's Registrar as the keys' requester.
@@ -449,6 +477,139 @@ impl DeclaredKeys for RegistrarKeys<'_> {
         let _key = mod_api::ItemsRegistrar::item_key(&mut *self.0, id);
         Ok(())
     }
+
+    fn block_part(&mut self, id: &str, part: LuaBlockPart) -> Result<(), String> {
+        let key = mod_api::BlocksRegistrar::block_key(&mut *self.0, id);
+        self.0.block_part(key, part);
+        Ok(())
+    }
+}
+
+/// The most distinct sets of block part handler names one process interns. Each set's subscription
+/// is leaked once, because the game reads it as `'static`.
+pub const MAX_PART_SETS: usize = 64;
+
+/// The interned subscriptions, by their sorted handler names.
+static SUBSCRIPTIONS: Mutex<Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>> =
+    Mutex::new(Vec::new());
+
+/// The subscription of a set of handler names (sorted, no repeats) in `table`: the same slice for
+/// the same set, a new one for a new set, and an error once `MAX_PART_SETS` sets are interned.
+fn intern_in(
+    table: &mut Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>,
+    names: &[String],
+) -> Result<&'static [Option<mod_api::HookId>], String> {
+    if let Some((_, known)) = table.iter().find(|(known, _)| known == names) {
+        return Ok(known);
+    }
+    if table.len() >= MAX_PART_SETS {
+        return Err(format!(
+            "a process may hold at most {MAX_PART_SETS} different sets of block part handlers"
+        ));
+    }
+    let ids = names
+        .iter()
+        .map(|name| {
+            hook_id(name)
+                .map(Some)
+                .ok_or_else(|| format!("'{name}' has no hook id"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let slice: &'static [Option<mod_api::HookId>] = Box::leak(ids.into_boxed_slice());
+    table.push((names.to_vec(), slice));
+    Ok(slice)
+}
+
+/// One block part of a loaded mod: the BlockPart the game calls for a block the mod attached to. It
+/// runs that mod's handlers for the hooks the part declared, and no other mod's.
+pub struct LuaBlockPart {
+    mods: Arc<[LuaMod]>,
+    index: usize,
+    id: String,
+    hooks: Vec<String>,
+    subscribed: &'static [Option<mod_api::HookId>],
+}
+
+impl LuaBlockPart {
+    /// Part `part` (an index into the mod's `parts()`) of the mod at `index` in `mods`.
+    pub(crate) fn new(
+        mods: Arc<[LuaMod]>,
+        index: usize,
+        part: usize,
+    ) -> Result<LuaBlockPart, String> {
+        let (id, hooks) = {
+            let record = &mods[index].parts[part];
+            (record.id.clone(), record.hooks.clone())
+        };
+        let subscribed = intern_in(&mut lock_subscriptions(), &hooks)?;
+        Ok(LuaBlockPart {
+            mods,
+            index,
+            id,
+            hooks,
+            subscribed,
+        })
+    }
+
+    /// The hook ids the part subscribes to: the generated `BlockPart::block_subscribed`.
+    pub(crate) fn subscribed(&self) -> &'static [Option<mod_api::HookId>] {
+        self.subscribed
+    }
+
+    /// Whether the part has a handler for `hook` that its mod runs (see `dispatch::side_runs`).
+    pub(crate) fn has_handlers(&self, hook: &str) -> bool {
+        self.hooks.iter().any(|name| name == hook)
+            && dispatch::side_runs(&self.mods[self.index], hook)
+    }
+
+    /// The generated methods' turn: the part's handler, as `LuaHost::dispatch_turns` runs a hook.
+    pub(crate) fn dispatch_turns(
+        &self,
+        hook: &str,
+        host: crate::hostcall::TurnHost<'_>,
+        is_cancelled: &dyn Fn() -> bool,
+        build: &dyn Fn(
+            &Lua,
+            &crate::hostcall::TurnHost<'_>,
+        ) -> mlua::Result<crate::dispatch::Event>,
+        commit: &mut dyn FnMut(
+            &str,
+            &crate::dispatch::Event,
+            &crate::hostcall::TurnHost<'_>,
+        ) -> bool,
+    ) -> Result<(), String> {
+        let key = declare::part_handler_key(&self.id, hook);
+        dispatch::turns_in(
+            &self.mods,
+            &[self.index],
+            hook,
+            &key,
+            host,
+            is_cancelled,
+            build,
+            commit,
+        )
+    }
+
+    /// The generated methods' replace turn, as `LuaHost::dispatch_replace` runs a replace hook.
+    pub(crate) fn dispatch_replace(
+        &self,
+        hook: &str,
+        host: crate::hostcall::TurnHost<'_>,
+        build: &dyn Fn(
+            &Lua,
+            &crate::hostcall::TurnHost<'_>,
+        ) -> mlua::Result<crate::dispatch::Event>,
+        answer: &mut dyn FnMut(&str, Value, &crate::hostcall::TurnHost<'_>) -> bool,
+    ) -> Result<(), String> {
+        let key = declare::part_handler_key(&self.id, hook);
+        dispatch::replace_in(&self.mods, &[self.index], hook, &key, host, build, answer)
+    }
+}
+
+fn lock_subscriptions()
+-> MutexGuard<'static, Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>> {
+    SUBSCRIPTIONS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn lock_ids(ids: &Mutex<Vec<String>>) -> MutexGuard<'_, Vec<String>> {
@@ -646,6 +807,25 @@ pub(crate) mod tests {
         let root = tempfile::tempdir().unwrap();
         let found = mod_folder(root.path(), "mod_a", source, Side::Both);
         LuaMod::load(&found)
+    }
+
+    #[test]
+    fn the_part_subscription_table_interns_each_set_once_and_refuses_the_65th() {
+        let names: Vec<String> = crate::generated::hooks::HOOKS
+            .iter()
+            .map(|hook| hook.name.to_owned())
+            .collect();
+        let mut table = Vec::new();
+        for name in names.iter().take(MAX_PART_SETS) {
+            intern_in(&mut table, std::slice::from_ref(name)).unwrap();
+        }
+        let first = intern_in(&mut table, &names[..1]).unwrap();
+        assert!(std::ptr::eq(first, table[0].1));
+        let err = match intern_in(&mut table, &names[MAX_PART_SETS..=MAX_PART_SETS]) {
+            Err(err) => err,
+            Ok(_) => panic!("the 65th set was interned"),
+        };
+        assert!(err.contains("at most 64 different sets"), "got {err}");
     }
 
     #[test]

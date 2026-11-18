@@ -51,19 +51,24 @@ impl HookSig {
 /// methods (`register`, `subscribed`, `listeners`) are skipped. A method whose second parameter
 /// is `&mut T` but which has a third parameter after it is an error naming the method.
 ///
-/// Only the `Hooks` trait is read. The per-instance `*Part` traits (block, block entity, item,
-/// menu, fluid, entity) are not read here: that is phase 2f.
+/// Reads the `Hooks` trait (see [`parse_trait`] for a Part trait such as `BlockPart`).
 pub fn parse(source: &str) -> Result<Vec<HookSig>, String> {
+    parse_trait(source, "Hooks")
+}
+
+/// [`parse`] for the trait named `trait_name` (`Hooks`, or a per-instance Part trait such as
+/// `BlockPart`, whose hook-shaped methods take the same host and event arguments).
+pub fn parse_trait(source: &str, trait_name: &str) -> Result<Vec<HookSig>, String> {
     let file =
         syn::parse_file(source).map_err(|error| format!("cannot parse the trait: {error}"))?;
     let hooks = file
         .items
         .iter()
         .find_map(|item| match item {
-            Item::Trait(item) if item.ident == "Hooks" => Some(item),
+            Item::Trait(item) if item.ident == trait_name => Some(item),
             _ => None,
         })
-        .ok_or_else(|| "no `trait Hooks` in the source".to_string())?;
+        .ok_or_else(|| format!("no `trait {trait_name}` in the source"))?;
     let mut sigs = Vec::new();
     for item in &hooks.items {
         let TraitItem::Fn(method) = item else {

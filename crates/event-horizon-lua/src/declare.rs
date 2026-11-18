@@ -21,6 +21,9 @@ pub const MAX_BLOCKS: usize = 256;
 /// The most `horizon.item` calls one mod may make.
 pub const MAX_ITEMS: usize = 256;
 
+/// The most `horizon.block_part` calls one mod may make.
+pub const MAX_PARTS: usize = 128;
+
 /// The time a mod's top level may run while it loads.
 pub const DECLARE_BUDGET: Duration = Duration::from_secs(2);
 
@@ -49,6 +52,23 @@ pub struct Declaration {
     pub blocks: Vec<BlockRecord>,
     /// The items `horizon.item` declared, in declaration order.
     pub items: Vec<ItemRecord>,
+    /// The block parts `horizon.block_part` declared, in declaration order.
+    pub parts: Vec<PartRecord>,
+}
+
+/// A block part a mod declared with `horizon.block_part(id, {hook = fn, ...})`: the block it attaches
+/// to (any namespace) and the BlockPart handler names it has, sorted. Each handler is stored under
+/// [`part_handler_key`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartRecord {
+    pub id: String,
+    pub hooks: Vec<String>,
+}
+
+/// The key a block part's handler is stored under in the mod's handler table. A space cannot be in a
+/// hook name or an id, so the key is never a hook's own name.
+pub fn part_handler_key(id: &str, hook: &str) -> String {
+    format!("block_part {id} {hook}")
 }
 
 /// A block a mod declared with `horizon.block{id, template}`. The id is in the mod's own
@@ -124,6 +144,7 @@ pub fn declare_with_budget(
             options: recorded.options,
             blocks: recorded.blocks,
             items: recorded.items,
+            parts: recorded.parts,
         })
         .map_err(|e| e.to_string())
 }
@@ -207,6 +228,7 @@ struct Recorded {
     options: Vec<(String, ListenerOptions)>,
     blocks: Vec<BlockRecord>,
     items: Vec<ItemRecord>,
+    parts: Vec<PartRecord>,
 }
 
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
@@ -245,6 +267,7 @@ fn run(
     let recorded = RefCell::new(Vec::<(String, ListenerOptions)>::new());
     let blocks = RefCell::new(Vec::<BlockRecord>::new());
     let items = RefCell::new(Vec::<ItemRecord>::new());
+    let parts = RefCell::new(Vec::<PartRecord>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
@@ -333,9 +356,65 @@ fn run(
                 records.push(ItemRecord { id, template });
                 Ok(())
             })?;
+            let block_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
+                let id = part_id(lua, id)?;
+                let Value::Table(table) = spec else {
+                    return Err(at_line(
+                        lua,
+                        "horizon.block_part needs its handlers as a table".to_owned(),
+                    ));
+                };
+                let mut records = parts.borrow_mut();
+                if records.len() >= MAX_PARTS {
+                    return Err(at_line(
+                        lua,
+                        format!("a mod may declare at most {MAX_PARTS} block parts"),
+                    ));
+                }
+                if records.iter().any(|record| record.id == id) {
+                    return Err(at_line(
+                        lua,
+                        format!("horizon.block_part: block '{id}' has two parts in this mod"),
+                    ));
+                }
+                let mut hooks = Vec::new();
+                for pair in table.pairs::<Value, Value>() {
+                    let (key, value) = pair?;
+                    let Value::String(name) = key else {
+                        return Err(at_line(
+                            lua,
+                            "horizon.block_part handler names are strings".to_owned(),
+                        ));
+                    };
+                    let name = name.to_str()?.to_string();
+                    let Value::Function(handler) = value else {
+                        return Err(at_line(
+                            lua,
+                            format!("horizon.block_part handler '{name}' needs a function"),
+                        ));
+                    };
+                    check_part_handler(&name).map_err(|reason| {
+                        at_line(lua, format!("horizon.block_part '{name}': {reason}"))
+                    })?;
+                    let list = lua.create_table()?;
+                    list.raw_set(1, handler)?;
+                    handlers.raw_set(part_handler_key(&id, &name), list)?;
+                    hooks.push(name);
+                }
+                if hooks.is_empty() {
+                    return Err(at_line(
+                        lua,
+                        format!("horizon.block_part for '{id}' needs at least one handler"),
+                    ));
+                }
+                hooks.sort();
+                records.push(PartRecord { id, hooks });
+                Ok(())
+            })?;
             horizon.raw_set("on", on)?;
             horizon.raw_set("block", block)?;
             horizon.raw_set("item", item)?;
+            horizon.raw_set("block_part", block_part)?;
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
@@ -360,6 +439,7 @@ fn run(
         ("on", LATE_ON),
         ("block", LATE_DECLARE),
         ("item", LATE_DECLARE),
+        ("block_part", LATE_DECLARE),
     ] {
         let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
             Err(Error::runtime(message))
@@ -372,6 +452,7 @@ fn run(
         options: recorded.into_inner(),
         blocks: blocks.into_inner(),
         items: items.into_inner(),
+        parts: parts.into_inner(),
     };
     Ok((recorded, loaded))
 }
@@ -445,6 +526,43 @@ fn parse_record(
     check_template(&template)
         .map_err(|reason| at_line(lua, format!("horizon.{kind} field 'template': {reason}")))?;
     Ok((id, template))
+}
+
+/// Whether `name` is a BlockPart handler the host binds: an error with the reason when it is not.
+fn check_part_handler(name: &str) -> Result<(), String> {
+    match crate::generated::parts::BLOCK_PARTS
+        .iter()
+        .find(|(hook, _)| *hook == name)
+    {
+        None => Err("not a block part handler".to_owned()),
+        Some((_, None)) => Ok(()),
+        Some((_, Some(reason))) => Err(format!("not available: {reason}")),
+    }
+}
+
+/// The block id of `horizon.block_part`: `namespace:path` in any namespace, with a valid path. A part
+/// may attach to a block of another mod or a vanilla block, so the namespace is not checked here.
+fn part_id(lua: &Lua, value: Value) -> mlua::Result<String> {
+    let Value::String(text) = value else {
+        return Err(at_line(
+            lua,
+            "horizon.block_part needs the block id as a string".to_owned(),
+        ));
+    };
+    let id = text.to_str()?.to_string();
+    let valid = match id.split_once(':') {
+        Some((namespace, path)) => !namespace.is_empty() && check_path(&id, path).is_ok(),
+        None => false,
+    };
+    if !valid {
+        return Err(at_line(
+            lua,
+            format!(
+                "horizon.block_part: '{id}' needs a namespaced block id such as minecraft:stone"
+            ),
+        ));
+    }
+    Ok(id)
 }
 
 /// An id `namespace:path` in `owner`'s own namespace, with a valid path.
@@ -900,6 +1018,98 @@ mod tests {
         let too_many: String = (0..=MAX_ITEMS).map(line).collect();
         let err = declare_in_fresh_state(&too_many).unwrap_err();
         assert!(err.contains("at most 256 items"), "got {err}");
+    }
+
+    /// The declared parts of `source`, or the load error.
+    fn parts_of(source: &str) -> Result<Vec<PartRecord>, String> {
+        declare_in_fresh_state(source).map(|declaration| declaration.parts)
+    }
+
+    #[test]
+    fn a_block_part_records_its_block_and_sorted_handler_names() {
+        let parts = parts_of(
+            "horizon.block_part(\"minecraft:stone\", {can_survive = function() return nil end, may_place_on = function() end})",
+        )
+        .unwrap();
+        assert_eq!(
+            parts,
+            [PartRecord {
+                id: "minecraft:stone".to_owned(),
+                hooks: vec!["can_survive".to_owned(), "may_place_on".to_owned()],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_block_part_may_attach_to_any_namespace_but_needs_one() {
+        assert!(
+            parts_of("horizon.block_part(\"other_mod:lamp\", {can_survive = function() end})")
+                .is_ok()
+        );
+        let err =
+            parts_of("horizon.block_part(\"lamp\", {can_survive = function() end})").unwrap_err();
+        assert!(err.contains("namespaced block id"), "got {err}");
+    }
+
+    #[test]
+    fn a_block_part_handler_must_be_an_emitted_block_part_method() {
+        let unknown = parts_of("horizon.block_part(\"mymod:x\", {server_tick = function() end})")
+            .unwrap_err();
+        assert!(
+            unknown.contains("not a block part handler"),
+            "got {unknown}"
+        );
+        let hot =
+            parts_of("horizon.block_part(\"mymod:x\", {block_render_visibility = function() end})")
+                .unwrap_err();
+        assert!(hot.contains("hot path (needs measurement)"), "got {hot}");
+        let not_function =
+            parts_of("horizon.block_part(\"mymod:x\", {can_survive = 1})").unwrap_err();
+        assert!(
+            not_function.contains("needs a function"),
+            "got {not_function}"
+        );
+    }
+
+    #[test]
+    fn a_second_block_part_for_one_block_is_refused() {
+        let err = parts_of(
+            "horizon.block_part(\"mymod:x\", {can_survive = function() end})\n\
+             horizon.block_part(\"mymod:x\", {may_place_on = function() end})",
+        )
+        .unwrap_err();
+        assert!(err.contains("two parts in this mod"), "got {err}");
+    }
+
+    #[test]
+    fn a_mod_may_declare_at_most_128_block_parts() {
+        let source = |count: usize| -> String {
+            (0..count)
+                .map(|i| {
+                    format!(
+                        "horizon.block_part(\"mymod:p{i}\", {{can_survive = function() end}})\n"
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(parts_of(&source(MAX_PARTS)).unwrap().len(), MAX_PARTS);
+        let err = parts_of(&source(MAX_PARTS + 1)).unwrap_err();
+        assert!(err.contains("at most 128 block parts"), "got {err}");
+    }
+
+    #[test]
+    fn a_block_part_after_loading_is_refused() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"tick\", function() horizon.block_part(\"mymod:x\", {can_survive = function() end}) end)";
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        assert!(declaration.parts.is_empty());
+        let tick = handlers(&lua, "tick").unwrap();
+        let err = tick[0].call::<()>(()).unwrap_err().to_string();
+        assert!(
+            err.contains("declarations are only allowed while the mod loads"),
+            "got {err}"
+        );
     }
 
     #[test]

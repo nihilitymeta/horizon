@@ -4539,6 +4539,23 @@ impl ToLuaValue for mod_api::InteractionResult {
     }
 }
 
+const INTERACTION_RESULT_NAMES: &[&str] = &["success", "success_server", "consume", "fail", "pass", "try_with_empty_hand"];
+
+impl FromLuaValue for mod_api::InteractionResult {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "success" => Ok(mod_api::InteractionResult::Success),
+            "success_server" => Ok(mod_api::InteractionResult::SuccessServer),
+            "consume" => Ok(mod_api::InteractionResult::Consume),
+            "fail" => Ok(mod_api::InteractionResult::Fail),
+            "pass" => Ok(mod_api::InteractionResult::Pass),
+            "try_with_empty_hand" => Ok(mod_api::InteractionResult::TryWithEmptyHand),
+            _ => Err(ConvertError::unknown_variant(&name, INTERACTION_RESULT_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::Interpolation {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -11402,6 +11419,12 @@ mod unit_enum_tests {
     fn hand_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::HAND_NAMES, vec![mod_api::Hand::Main, mod_api::Hand::Off]);
+    }
+
+    #[test]
+    fn interaction_result_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::INTERACTION_RESULT_NAMES, vec![mod_api::InteractionResult::Success, mod_api::InteractionResult::SuccessServer, mod_api::InteractionResult::Consume, mod_api::InteractionResult::Fail, mod_api::InteractionResult::Pass, mod_api::InteractionResult::TryWithEmptyHand]);
     }
 
     #[test]

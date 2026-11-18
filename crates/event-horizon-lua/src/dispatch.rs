@@ -19,7 +19,7 @@ use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
-use crate::host::{LOG_TARGET, LuaHost, call_handler, call_handler_value};
+use crate::host::{LOG_TARGET, LuaHost, LuaMod, call_handler, call_handler_value};
 use crate::hostcall::{TurnHost, note_skipped, open_call, run_hosted, scoped};
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
@@ -340,10 +340,43 @@ impl LuaHost {
         build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
         commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
     ) -> Result<(), String> {
+        turns_in(
+            self.mods(),
+            self.run_order(hook),
+            hook,
+            hook,
+            host,
+            is_cancelled,
+            build,
+            commit,
+        )
+    }
+}
+
+/// Whether a hook of `hook`'s side runs for mod `m`: a client-only mod does not run a server hook.
+pub(crate) fn side_runs(m: &LuaMod, hook: &str) -> bool {
+    let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
+    !(server_hook && m.side() == Side::Client)
+}
+
+/// The body of `LuaHost::dispatch_turns`, over the mods at `order` in `mods`. A mod's handlers for
+/// `hook` are read under `key`: the hook's own name, or a block part's key (see
+/// `declare::part_handler_key`), so a part reaches only its own mod's handler.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn turns_in(
+    mods: &[LuaMod],
+    order: &[usize],
+    hook: &str,
+    key: &str,
+    host: TurnHost<'_>,
+    is_cancelled: &dyn Fn() -> bool,
+    build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+    commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
+) -> Result<(), String> {
+    {
         let _open = open_call(hook)?;
         let mut host = host;
-        let mods = self.mods();
-        for &index in self.run_order(hook) {
+        for &index in order {
             let m = &mods[index];
             if is_cancelled() && !m.options(hook).receive_cancelled {
                 continue;
@@ -357,7 +390,7 @@ impl LuaHost {
                 continue;
             }
             let _turn = m.turn().enter();
-            let handlers = match declare::handlers(m.lua(), hook) {
+            let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
                     log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
@@ -405,10 +438,33 @@ impl LuaHost {
         build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
         answer: &mut dyn FnMut(&str, Value, &TurnHost<'_>) -> bool,
     ) -> Result<(), String> {
+        replace_in(
+            self.mods(),
+            self.run_order(hook),
+            hook,
+            hook,
+            host,
+            build,
+            answer,
+        )
+    }
+}
+
+/// The body of `LuaHost::dispatch_replace`, over the mods at `order` in `mods`, with the handler
+/// `key` as `turns_in` reads it.
+pub(crate) fn replace_in(
+    mods: &[LuaMod],
+    order: &[usize],
+    hook: &str,
+    key: &str,
+    host: TurnHost<'_>,
+    build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+    answer: &mut dyn FnMut(&str, Value, &TurnHost<'_>) -> bool,
+) -> Result<(), String> {
+    {
         let _open = open_call(hook)?;
         let mut host = host;
-        let mods = self.mods();
-        for &index in self.run_order(hook) {
+        for &index in order {
             let m = &mods[index];
             let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
             if server_hook && m.side() == Side::Client {
@@ -419,7 +475,7 @@ impl LuaHost {
                 continue;
             }
             let _turn = m.turn().enter();
-            let handlers = match declare::handlers(m.lua(), hook) {
+            let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
                     log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
@@ -1268,6 +1324,28 @@ mod accept_by_tests {
     use mlua::Value;
 
     use super::accept_by;
+
+    #[test]
+    fn an_interaction_result_answer_is_its_name_and_an_unknown_name_is_no_answer() {
+        let lua = mlua::Lua::new();
+        let name = |text: &str| Value::String(lua.create_string(text).unwrap());
+        assert!(matches!(
+            crate::dispatch::answer_of::<mod_api::InteractionResult>(
+                "m",
+                "use_without_item",
+                &name("success_server")
+            ),
+            Some(mod_api::InteractionResult::SuccessServer)
+        ));
+        assert!(
+            crate::dispatch::answer_of::<mod_api::InteractionResult>(
+                "m",
+                "use_without_item",
+                &name("bogus")
+            )
+            .is_none()
+        );
+    }
 
     #[test]
     fn a_refused_value_keeps_the_previous_one_and_nil_is_no_answer() {

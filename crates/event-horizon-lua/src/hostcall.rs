@@ -32,10 +32,31 @@
 
 use std::cell::{Cell, RefCell};
 
-use mlua::{AnyUserData, Error, Lua, MultiValue, Value};
-use mod_api::{ClientHost, Host, HostSide, ServerHost};
+use event_horizon_lua_convert::scalar::ToLuaValue;
+use mlua::{AnyUserData, Error, Lua, MultiValue, Table, Value};
+use mod_api::{BlockClick, ClientHost, Host, HostSide, ServerHost};
 
 use crate::host::{LOG_TARGET, LuaMod};
+
+/// A right click as a Lua handler reads it (`click` in `use_without_item` and `use_item_on`): its
+/// side, dimension, block position, hit, hand, player, the held stack (`stack`, already converted by
+/// the generated code: nil for an empty hand) and the player's entity id.
+pub(crate) fn block_click_lua(
+    lua: &Lua,
+    click: &BlockClick<'_>,
+    stack: Value,
+) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    table.raw_set("side", click.side.to_lua_value(lua)?)?;
+    table.raw_set("dimension", click.dimension.to_lua_value(lua)?)?;
+    table.raw_set("pos", click.pos.to_lua_value(lua)?)?;
+    table.raw_set("hit", click.hit.to_lua_value(lua)?)?;
+    table.raw_set("hand", click.hand.to_lua_value(lua)?)?;
+    table.raw_set("stack", stack)?;
+    table.raw_set("player", click.player.to_lua_value(lua)?)?;
+    table.raw_set("player_entity_id", click.player_entity_id)?;
+    Ok(table)
+}
 
 /// The units one turn may spend on host calls.
 pub const TURN_BUDGET: u32 = 10_000;
@@ -1625,14 +1646,37 @@ mod tests {
         let lines: Vec<&str> = coverage
             .lines()
             .filter(|line| !line.starts_with('#') && !line.is_empty())
+            .filter(|line| !line.starts_with("block_part."))
             .collect();
         assert_eq!(lines.len(), 749);
+        // The BlockPart methods: one line each, emitted or with its reason.
+        let parts: Vec<&str> = coverage
+            .lines()
+            .filter(|line| line.starts_with("block_part."))
+            .collect();
+        assert_eq!(parts.len(), 81);
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|line| line.ends_with(" emitted"))
+                .count(),
+            23
+        );
+        assert!(parts.contains(&"block_part.can_survive emitted"));
+        assert!(parts.contains(&"block_part.use_without_item emitted"));
+        assert!(
+            parts.contains(
+                &"block_part.block_render_visibility skipped: hot path (needs measurement)"
+            )
+        );
+        assert!(parts.contains(&"block_part.rotate skipped: worldgen worker"));
         let emitted = lines
             .iter()
             .filter(|line| line.ends_with(" emitted"))
             .count();
         assert_eq!(emitted, crate::generated::hooks::EMITTED.len());
-        assert!(coverage.contains("# hooks: 749, emitted: 395, skipped: 354\n"));
+        assert!(coverage.contains("# hooks: 749, emitted: 397, skipped: 352\n"));
+        assert!(lines.contains(&"right_click_block emitted"));
         // The declaration hooks are answered from the records, and no mod can subscribe to them.
         assert!(lines.contains(&"blocks emitted (host records)"));
         assert!(lines.contains(&"items emitted (host records)"));

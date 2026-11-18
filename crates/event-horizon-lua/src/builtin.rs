@@ -196,11 +196,13 @@ mod tests {
         out.into_iter().map(|block| block.id).collect()
     }
 
-    /// Records the keys asked for, and refuses the requests for `refuse` (a block or item id).
+    /// Records the keys asked for and the parts attached, and refuses the requests for `refuse` (a
+    /// block or item id).
     #[derive(Default)]
     struct RecordingKeys {
         asked: Vec<String>,
         refuse: Option<String>,
+        parts: Vec<crate::host::LuaBlockPart>,
     }
 
     impl crate::host::DeclaredKeys for RecordingKeys {
@@ -211,6 +213,12 @@ mod tests {
 
         fn item_key(&mut self, id: &str) -> Result<(), String> {
             self.asked.push(format!("item {id}"));
+            self.answer(id)
+        }
+
+        fn block_part(&mut self, id: &str, part: crate::host::LuaBlockPart) -> Result<(), String> {
+            self.asked.push(format!("part {id}"));
+            self.parts.push(part);
             self.answer(id)
         }
     }
@@ -374,6 +382,107 @@ mod tests {
         };
         host.request_keys(&mut keys);
         assert_eq!(answered_blocks(&host), ["second_mod:cube"]);
+    }
+
+    /// The host of the mods in `folders` (`(folder, id, script)`), with its keys requested.
+    fn requested(folders: &[(&str, &str, &str)]) -> (LuaHost, RecordingKeys) {
+        let root = tempfile::tempdir().unwrap();
+        for (folder, id, script) in folders {
+            mod_folder(root.path(), folder, id, script);
+        }
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        let mut keys = RecordingKeys::default();
+        host.request_keys(&mut keys);
+        (host, keys)
+    }
+
+    /// Runs the part's `can_survive` handler: its answer, as the generated method would pass it on.
+    fn survives(part: &crate::host::LuaBlockPart) -> Option<bool> {
+        let mut found = None;
+        let build = |lua: &mlua::Lua, _: &crate::hostcall::TurnHost<'_>| {
+            crate::dispatch::new_event(lua, lua.create_table()?, &[])
+        };
+        let mut answer = |id: &str, value: mlua::Value, _: &crate::hostcall::TurnHost<'_>| {
+            found = crate::dispatch::answer_of::<bool>(id, "can_survive", &value);
+            true
+        };
+        part.dispatch_replace(
+            "can_survive",
+            crate::hostcall::TurnHost::None,
+            &build,
+            &mut answer,
+        )
+        .unwrap();
+        found
+    }
+
+    #[test]
+    fn parts_with_one_handler_set_share_one_subscription() {
+        let (_, keys) = requested(&[
+            (
+                "a_first",
+                "first_mod",
+                "horizon.block_part(\"first_mod:lamp\", {can_survive = function() end})\n\
+                horizon.block_part(\"first_mod:pipe\", {can_survive = function() end})",
+            ),
+            (
+                "b_second",
+                "second_mod",
+                "horizon.block_part(\"second_mod:x\", {can_survive = function() end, may_place_on = function() end})",
+            ),
+        ]);
+        assert_eq!(keys.parts.len(), 3);
+        assert!(std::ptr::eq(
+            keys.parts[0].subscribed(),
+            keys.parts[1].subscribed()
+        ));
+        assert!(!std::ptr::eq(
+            keys.parts[0].subscribed(),
+            keys.parts[2].subscribed()
+        ));
+        assert_eq!(keys.parts[2].subscribed().len(), 2);
+    }
+
+    #[test]
+    fn a_part_runs_only_its_own_mods_handler() {
+        let (host, keys) = requested(&[
+            (
+                "a_first",
+                "first_mod",
+                "horizon.block_part(\"first_mod:lamp\", {can_survive = function() horizon.log(\"lamp answered\") return true end})",
+            ),
+            (
+                "b_second",
+                "second_mod",
+                "horizon.block_part(\"second_mod:x\", {can_survive = function() horizon.log(\"second ran\") return false end})",
+            ),
+        ]);
+        assert_eq!(survives(&keys.parts[0]), Some(true));
+        assert_eq!(host.mods()[0].log_lines(), ["lamp answered"]);
+        assert!(host.mods()[1].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_failing_part_handler_voids_its_answer() {
+        let (_, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.block_part(\"first_mod:lamp\", {can_survive = function() error(\"boom\") end})",
+        )]);
+        assert_eq!(survives(&keys.parts[0]), None);
+    }
+
+    #[test]
+    fn a_block_part_and_a_hook_handler_of_one_mod_both_work() {
+        let (host, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.on(\"server_tick\", function() horizon.log(\"tick\") end)\n\
+             horizon.block_part(\"first_mod:lamp\", {can_survive = function() return false end})",
+        )]);
+        assert_eq!(host.subscribed_slice().len(), 1);
+        assert_eq!(survives(&keys.parts[0]), Some(false));
     }
 
     #[test]
