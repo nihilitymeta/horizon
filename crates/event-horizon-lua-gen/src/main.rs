@@ -84,6 +84,8 @@ struct Plan {
     methods: emit_impl::Emitted,
     first_methods: emit_impl::Emitted,
     types: emit_types::TypesPlan,
+    /// `hooks_coverage.txt`: every hook of the surface, emitted or with its skip reason.
+    hook_coverage: String,
 }
 
 /// One pass over the surface for the handle families `families`.
@@ -128,7 +130,8 @@ fn plan_pass(
         &hook_types,
         &candidates,
     );
-    let first_methods = emit_impl::emit(surface, sigs, dispatch, &names, &first.plain);
+    let first_methods =
+        emit_impl::emit_with_handles(surface, sigs, dispatch, &names, &first.plain, families);
     let mut decided = first_methods.decisions.clone();
     decided.extend(handle_types.iter().cloned());
     let superset = emit_types::plan_decided(
@@ -150,12 +153,14 @@ fn plan_pass(
         &hook_types,
         &decided,
     );
-    let methods = emit_impl::emit(surface, sigs, dispatch, &names, &types.plain);
+    let methods =
+        emit_impl::emit_with_handles(surface, sigs, dispatch, &names, &types.plain, families);
     if methods.emitted != first_methods.emitted {
         return Err("the two passes emit different hooks".to_owned());
     }
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(surface, &emitted);
+    let hook_coverage = emit_hooks::coverage(surface, &methods.emitted, &first_methods.skipped);
 
     let handles =
         emit_handles::emit_listing(members, families, dropped, &types.plain, &document.hash);
@@ -171,6 +176,7 @@ fn plan_pass(
         methods,
         first_methods,
         types,
+        hook_coverage,
     })
 }
 
@@ -228,12 +234,14 @@ fn run(args: Args) -> Result<ExitCode, String> {
         methods,
         first_methods,
         types,
+        hook_coverage,
     } = plan;
 
     let table_path = args.out.join("hooks.rs");
     let methods_path = args.out.join("hooks_impl.rs");
     let handles_path = args.out.join("handles.rs");
     let coverage_path = args.out.join("handles_coverage.txt");
+    let hook_coverage_path = args.out.join("hooks_coverage.txt");
     if args.check {
         let mut differ = Vec::new();
         for (path, text) in [
@@ -242,6 +250,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             (&args.types, &types.text),
             (&handles_path, &handles_out.text),
             (&coverage_path, &handles_out.coverage),
+            (&hook_coverage_path, &hook_coverage),
         ] {
             let current = std::fs::read_to_string(path).ok();
             if current.as_deref() != Some(text.as_str()) {
@@ -274,6 +283,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .map_err(|error| format!("cannot write {}: {error}", handles_path.display()))?;
     std::fs::write(&coverage_path, &handles_out.coverage)
         .map_err(|error| format!("cannot write {}: {error}", coverage_path.display()))?;
+    std::fs::write(&hook_coverage_path, &hook_coverage)
+        .map_err(|error| format!("cannot write {}: {error}", hook_coverage_path.display()))?;
     println!("handle families: {}", families.join(", "));
     for (family, members, bound) in &handles_out.per_family {
         println!("  {family}: {members} members, {bound} bound");

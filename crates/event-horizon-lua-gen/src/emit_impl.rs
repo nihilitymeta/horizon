@@ -113,6 +113,19 @@ pub fn emit(
     hooks: &[&str],
     plain: &Plain,
 ) -> Emitted {
+    emit_with_handles(ir, sigs, dispatch, hooks, plain, &[])
+}
+
+/// [`emit`], with the handle families the generated handle file binds (`handles`): a hook argument
+/// of one of those types is carried to the event as its userdata (see [`handle_input`]).
+pub fn emit_with_handles(
+    ir: &Ir,
+    sigs: &[HookSig],
+    dispatch: &DispatchSigs,
+    hooks: &[&str],
+    plain: &Plain,
+    handles: &[&str],
+) -> Emitted {
     let mut names = hooks.to_vec();
     names.sort_unstable();
     names.dedup();
@@ -120,7 +133,7 @@ pub fn emit(
     let mut methods = Vec::new();
     let mut skipped = Vec::new();
     for name in names {
-        match plan(ir, sigs, dispatch, name, plain) {
+        match plan(ir, sigs, dispatch, name, plain, handles) {
             Ok(method) => methods.push(method),
             Err(reason) => skipped.push((name.to_owned(), reason)),
         }
@@ -229,6 +242,9 @@ fn replace_answer(sig: &HookSig, plain: &Plain, reach: Reach) -> Result<String, 
     else {
         return Err(format!("replace hook does not return an Option: `{ret}`"));
     };
+    if mentions_handle(inner) {
+        return Err(HANDLE_OUTPUT.to_owned());
+    }
     if let Some(shape) = carried::shape_of(inner) {
         // A stack or a block state answer converts through the host; a list or an option of one
         // does not answer a replace hook.
@@ -293,6 +309,9 @@ fn outputs_of(
     // The spelling a dispatch function gives a type may carry the mod API's path (`mod_api::X`).
     let shown = |ty: &str| ty.replace("mod_api::", "");
     for param in params {
+        if mentions_handle(&param.ty) {
+            return Err(HANDLE_OUTPUT.to_owned());
+        }
         match carried::shape_of(&param.ty) {
             Some(shape) if !carried::allowed(shape, reach) => {
                 return Err(carried::refusal(shape));
@@ -368,6 +387,7 @@ fn plan<'a>(
     dispatch: &DispatchSigs,
     name: &str,
     plain: &Plain,
+    handles: &[&str],
 ) -> Result<Method<'a>, String> {
     let Some(sig) = sigs.iter().find(|sig| sig.name == name) else {
         return Err("not a method of the Hooks trait".to_owned());
@@ -381,6 +401,9 @@ fn plan<'a>(
     // A collect hook's `&mut` output is one of its dispatch outputs. A list kind is taken here: the
     // mod assigns the list, which replaces the current value. Any other output stays out.
     if let Some(output) = &hook.output {
+        if mentions_handle(&output.rust_type) {
+            return Err(HANDLE_OUTPUT.to_owned());
+        }
         let list = hook.kind == Kind::Collect
             && (is_list_kind(&collect_type(&output.rust_type))
                 || carried::shape_of(&output.rust_type).is_some());
@@ -458,6 +481,18 @@ fn plan<'a>(
             ));
             continue;
         }
+        if is_generated_handle(&arg.rust_type, handles) {
+            let field = format!("{}.{}", sig.event_name, arg.name);
+            let expr = handle_input(&hook.name, &arg.name, &arg.rust_type, &field)?;
+            if turn.is_none() {
+                return Err(match sig.host_ty.as_deref() {
+                    Some(host) => format!("handle input: host `{host}` is not carried by a turn"),
+                    None => "handle input: the hook has no host".to_owned(),
+                });
+            }
+            fields.push((arg.name.clone(), expr));
+            continue;
+        }
         let mapped = map_type(&arg.rust_type)
             .map_err(|error| format!("argument `{}`: {error}", arg.name))?;
         let shown = format!(
@@ -495,6 +530,91 @@ fn plan<'a>(
         turn,
         turn_view,
         checks,
+    })
+}
+
+/// The skip reason of a hook that carries or answers a handle as an output (a `&mut` parameter, a
+/// collect output or a replace answer): a mod cannot make the game store a handle.
+pub const HANDLE_OUTPUT: &str = "handle output";
+
+/// Whether a type's text names a handle (an identifier ending in `Ref`, such as `Option<EntityRef>`).
+pub fn mentions_handle(ty: &str) -> bool {
+    ty.split(|ch: char| !(ch.is_alphanumeric() || ch == '_'))
+        .any(|word| word.len() > 3 && word.ends_with("Ref"))
+}
+
+/// The shape of a handle-typed hook argument, without its family name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HandleIn {
+    Plain,
+    Ref,
+    Opt,
+    OptRef,
+    RefOpt,
+    List,
+}
+
+/// The shape and family name of a handle-typed argument (`&'a Option<EntityRef>`, `Vec<EntityRef>`),
+/// or `None` for a spelling the conversion does not take.
+fn handle_parts(ty: &str) -> Option<(HandleIn, &str)> {
+    let wrapped = |prefix: &str| {
+        ty.strip_prefix(prefix)
+            .and_then(|rest| rest.strip_suffix('>'))
+    };
+    let (shape, inner) = if let Some(inner) = wrapped("&Option<") {
+        (HandleIn::RefOpt, inner)
+    } else if let Some(inner) = wrapped("Option<&") {
+        (HandleIn::OptRef, inner)
+    } else if let Some(inner) = wrapped("Option<") {
+        (HandleIn::Opt, inner)
+    } else if let Some(inner) = wrapped("Vec<") {
+        (HandleIn::List, inner)
+    } else if let Some(inner) = ty.strip_prefix('&') {
+        (HandleIn::Ref, inner)
+    } else {
+        (HandleIn::Plain, ty)
+    };
+    let plain_name = !inner.is_empty() && inner.chars().all(|ch| ch.is_alphanumeric() || ch == '_');
+    plain_name.then_some((shape, inner))
+}
+
+/// The argument type's text without its lifetimes and spaces.
+fn compact(ty: &str) -> String {
+    ty.replace("'a", "")
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect()
+}
+
+/// Whether a hook argument of type `ty` is a handle of a generated family (a `&mut` one too, which
+/// is then a `handle output`), in a shape [`handle_input`] converts. Any other handle-named type keeps its old conversion (a `ChannelRef`
+/// is a plain record, not a handle), so its hook's emission does not change.
+fn is_generated_handle(ty: &str, handles: &[&str]) -> bool {
+    let text = compact(ty);
+    let family = handle_parts(text.trim_start_matches("&mut")).map(|(_, family)| family);
+    family.is_some_and(|family| handles.contains(&family))
+}
+
+/// The Lua value of a handle-typed hook argument of a generated family: its userdata, nil for none,
+/// or the list of userdata (capped by the handle module). `field` is the event field the value is
+/// read from. A `&mut` handle writes back, so it is an output (`handle output`).
+fn handle_input(hook: &str, name: &str, ty: &str, field: &str) -> Result<String, String> {
+    let text = compact(ty);
+    if text.starts_with("&mut") {
+        return Err(HANDLE_OUTPUT.to_owned());
+    }
+    let Some((shape, _)) = handle_parts(&text) else {
+        return Err(format!(
+            "handle input `{name}`: `{ty}` is not a handle shape"
+        ));
+    };
+    Ok(match shape {
+        HandleIn::Plain => format!("crate::handles::family_out(lua, {field})?"),
+        HandleIn::Ref => format!("crate::handles::family_out(lua, *{field})?"),
+        HandleIn::Opt => format!("crate::handles::family_opt_out(lua, {field})?"),
+        HandleIn::OptRef => format!("crate::handles::family_opt_out(lua, {field}.copied())?"),
+        HandleIn::RefOpt => format!("crate::handles::family_opt_out(lua, *{field})?"),
+        HandleIn::List => format!("crate::handles::family_capped_out(lua, {hook:?}, &{field})?"),
     })
 }
 
@@ -1883,5 +2003,182 @@ impl mod_api::Hooks for LuaHost {
                 "{name}"
             );
         }
+    }
+    /// The handle families a test generates, for the handle inputs.
+    const HANDLE_FAMILIES: &[&str] = &["EntityRef", "PlayerRef", "LivingRef"];
+
+    /// A server hook `strike` that carries an `EntityRef` and an `Option<PlayerRef>` to its event.
+    fn strike_ir() -> Ir {
+        ir(vec![hook(
+            "strike",
+            Kind::Listen,
+            vec![
+                arg("entity", "EntityRef"),
+                arg("placer", "Option<PlayerRef>"),
+            ],
+        )])
+    }
+
+    fn strike_sig() -> HookSig {
+        sig(
+            "strike",
+            Some(("host", "&mut dyn ServerHost")),
+            "event",
+            "StrikeEvent",
+            None,
+        )
+    }
+
+    fn emit_handles(ir: &Ir, sigs: &[HookSig], hooks: &[&str]) -> Emitted {
+        let dispatch = DispatchSigs {
+            hooks: ir
+                .hooks
+                .iter()
+                .map(|hook| (hook.name.clone(), Some(Vec::new())))
+                .collect(),
+            structs: BTreeMap::new(),
+        };
+        emit_with_handles(
+            ir,
+            sigs,
+            &dispatch,
+            hooks,
+            &Plain::default(),
+            HANDLE_FAMILIES,
+        )
+    }
+
+    #[test]
+    fn a_hook_with_handle_inputs_carries_their_userdata_to_the_event() {
+        let out = emit_handles(&strike_ir(), &[strike_sig()], &["strike"]);
+        assert_eq!(out.emitted, ["strike"], "{:?}", out.skipped);
+        let expected = r#"    fn strike(&self, host: &mut dyn ServerHost, event: &mut StrikeEvent) {
+        let _ = &host;
+        crate::hostcall::refused(self.dispatch_turns(
+            "strike",
+            crate::hostcall::TurnHost::Server(host),
+            &|| false,
+            &|lua, _turn| {
+                let data = lua.create_table()?;
+                data.raw_set("entity", crate::handles::family_out(lua, event.entity)?)?;
+                data.raw_set("placer", crate::handles::family_opt_out(lua, event.placer)?)?;
+                crate::dispatch::new_event(lua, data, &[])
+            },
+            &mut |_, _, _| true,
+        ));
+    }
+"#;
+        assert!(out.text.contains(expected), "{}", out.text);
+    }
+
+    #[test]
+    fn handle_shapes_are_read_by_their_spelling() {
+        assert_eq!(
+            handle_parts("EntityRef"),
+            Some((HandleIn::Plain, "EntityRef"))
+        );
+        assert_eq!(
+            handle_parts("&EntityRef"),
+            Some((HandleIn::Ref, "EntityRef"))
+        );
+        assert_eq!(
+            handle_parts("Option<EntityRef>"),
+            Some((HandleIn::Opt, "EntityRef"))
+        );
+        assert_eq!(
+            handle_parts("Option<&EntityRef>"),
+            Some((HandleIn::OptRef, "EntityRef"))
+        );
+        assert_eq!(
+            handle_parts("&Option<EntityRef>"),
+            Some((HandleIn::RefOpt, "EntityRef"))
+        );
+        assert_eq!(
+            handle_parts("Vec<EntityRef>"),
+            Some((HandleIn::List, "EntityRef"))
+        );
+        assert_eq!(handle_parts("Option<Option<EntityRef>>"), None);
+        assert_eq!(handle_parts("&Vec<EntityRef>"), None);
+        assert!(is_generated_handle(
+            "&'a mut Option<LivingRef>",
+            HANDLE_FAMILIES
+        ));
+        assert!(!is_generated_handle("&'a ChannelRef", HANDLE_FAMILIES));
+        assert!(mentions_handle("Option<EntityRef>") && !mentions_handle("EntityRefs"));
+    }
+
+    #[test]
+    fn a_mutable_handle_is_a_handle_output_and_a_handle_answer_too() {
+        let hook_with_output = HookIr {
+            output: Some(ArgIr {
+                name: "entities".to_owned(),
+                rust_type: "&'a mut Vec<EntityRef>".to_owned(),
+            }),
+            ..hook("explode", Kind::Collect, vec![arg("level", "u32")])
+        };
+        let explode = ir(vec![hook_with_output]);
+        let explode_sig = sig("explode", None, "event", "ExplodeEvent", None);
+        let out = emit_handles(&explode, &[explode_sig], &["explode"]);
+        assert_eq!(
+            out.skipped,
+            [("explode".to_owned(), HANDLE_OUTPUT.to_owned())]
+        );
+
+        let replace = hook(
+            "pick",
+            Kind::Replace,
+            vec![arg("player", "Option<PlayerRef>")],
+        );
+        let pick_sig = sig(
+            "pick",
+            Some(("host", "&dyn Host")),
+            "event",
+            "PickEvent",
+            Some("Option<PlayerRef>"),
+        );
+        let out = emit_handles(&ir(vec![replace]), &[pick_sig], &["pick"]);
+        assert_eq!(out.skipped, [("pick".to_owned(), HANDLE_OUTPUT.to_owned())]);
+    }
+
+    #[test]
+    fn a_handle_input_with_no_host_to_read_it_is_skipped_with_its_reason() {
+        let sig = sig("strike", None, "event", "StrikeEvent", None);
+        let out = emit_handles(&strike_ir(), &[sig], &["strike"]);
+        assert_eq!(
+            out.skipped,
+            [(
+                "strike".to_owned(),
+                "handle input: the hook has no host".to_owned()
+            )]
+        );
+    }
+    #[test]
+    fn each_handle_shape_reads_its_event_field_by_the_shape() {
+        let expr = |ty: &str| handle_input("hook_x", "h", ty, "event.h");
+        assert_eq!(
+            expr("EntityRef"),
+            Ok("crate::handles::family_out(lua, event.h)?".to_owned())
+        );
+        assert_eq!(
+            expr("&'a EntityRef"),
+            Ok("crate::handles::family_out(lua, *event.h)?".to_owned())
+        );
+        assert_eq!(
+            expr("Option<&'a EntityRef>"),
+            Ok("crate::handles::family_opt_out(lua, event.h.copied())?".to_owned())
+        );
+        assert_eq!(
+            expr("&'a Option<LivingRef>"),
+            Ok("crate::handles::family_opt_out(lua, *event.h)?".to_owned())
+        );
+        assert_eq!(
+            expr("Vec<PlayerRef>"),
+            Ok("crate::handles::family_capped_out(lua, \"hook_x\", &event.h)?".to_owned())
+        );
+        assert_eq!(
+            expr("&'a mut Option<LivingRef>"),
+            Err(HANDLE_OUTPUT.to_owned())
+        );
+        assert!(handle_parts("Option<Option<EntityRef>>").is_none());
     }
 }

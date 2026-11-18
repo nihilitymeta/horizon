@@ -14,6 +14,7 @@ use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{AnyUserData, Error, Lua, MetaMethod, MultiValue, UserData, UserDataMethods, Value};
 use mod_api::{BlockState, Host, ServerHost};
 
+use crate::host::LOG_TARGET;
 use crate::hostcall::{NOT_HERE, TurnHost};
 use crate::stacks;
 
@@ -175,6 +176,23 @@ pub fn family_list_out<F: Family>(lua: &Lua, handles: Vec<F>) -> mlua::Result<Va
     Ok(Value::Table(table))
 }
 
+/// A hook's list of handles as a Lua array of userdata. Unlike [`family_list_out`] it does not
+/// refuse a long list: the first [`MAX_LIST`] items are given and one warning names the hook.
+pub fn family_capped_out<F: Family>(lua: &Lua, hook: &str, handles: &[F]) -> mlua::Result<Value> {
+    if handles.len() > MAX_LIST {
+        log::warn!(
+            target: LOG_TARGET,
+            "{hook}: a list of {} handles is capped at {MAX_LIST}",
+            handles.len()
+        );
+    }
+    let table = lua.create_table()?;
+    for (index, handle) in handles.iter().take(MAX_LIST).enumerate() {
+        table.raw_set(index + 1, family_out(lua, *handle)?)?;
+    }
+    Ok(Value::Table(table))
+}
+
 /// An optional list of handles: nil for none.
 pub fn family_opt_list_out<F: Family>(lua: &Lua, handles: Option<Vec<F>>) -> mlua::Result<Value> {
     match handles {
@@ -328,5 +346,25 @@ mod tests {
             crate::generated::handles::cost("EntityRef::position"),
             Some(1)
         );
+    }
+    #[test]
+    fn a_hook_list_of_handles_is_usable_and_capped_at_1024_with_one_warning() {
+        use crate::host::tests::{captured_with_prefix, install_capture};
+        install_capture();
+        let lua = Lua::new();
+        let three = family_capped_out(&lua, "list_hook", &[Probe(1), Probe(2), Probe(3)]).unwrap();
+        lua.globals().set("three", three).unwrap();
+        assert_eq!(
+            lua.load("return three[3]:value()").eval::<u32>().unwrap(),
+            3
+        );
+        let long: Vec<Probe> = (0..1025).map(Probe).collect();
+        let capped = family_capped_out(&lua, "list_hook", &long).unwrap();
+        let Value::Table(table) = capped else {
+            panic!("a list is a table");
+        };
+        assert_eq!(table.raw_len(), MAX_LIST);
+        let warnings = captured_with_prefix("list_hook: a list of 1025 handles is capped at 1024");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 }

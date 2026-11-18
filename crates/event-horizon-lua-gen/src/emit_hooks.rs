@@ -4,6 +4,9 @@
 //! hooks the game's `HookId` names), `RENDER_HOOKS` with `is_render_hook`, and the lookups
 //! `hook_info` (binary search) and `hook_id`. Nothing is written to disk here.
 
+use std::collections::BTreeMap;
+
+use crate::emit_impl::group_key;
 use crate::ir::{HookIr, Ir, Kind, Side};
 
 /// The fixed part of the file, before the table.
@@ -94,6 +97,47 @@ pub fn emit(ir: &Ir, emitted: &[&str]) -> String {
     out.push_str(&emitted_table(emitted));
     out.push_str(&render_table(&render));
     out.push_str(LOOKUPS);
+    out
+}
+
+/// `hooks_coverage.txt` (issue 74, H3): one line per hook of the surface, sorted by name, `<hook>
+/// emitted` or `<hook> skipped: <reason>`, under a header with the counts per reason. `emitted` names
+/// the hooks with a method; `skipped` gives the reason of every other hook asked for.
+pub fn coverage(ir: &Ir, emitted: &[String], skipped: &[(String, String)]) -> String {
+    let mut hooks: Vec<&HookIr> = ir.hooks.iter().collect();
+    hooks.sort_by(|a, b| a.name.cmp(&b.name));
+    let reasons: BTreeMap<&str, &str> = skipped
+        .iter()
+        .map(|(name, reason)| (name.as_str(), reason.as_str()))
+        .collect();
+    let mut by_reason: BTreeMap<String, usize> = BTreeMap::new();
+    let mut lines = String::new();
+    let mut count = 0;
+    for hook in &hooks {
+        if emitted.contains(&hook.name) {
+            count += 1;
+            lines.push_str(&format!("{} emitted\n", hook.name));
+        } else {
+            let reason = reasons
+                .get(hook.name.as_str())
+                .copied()
+                .unwrap_or("not emitted");
+            *by_reason.entry(group_key(reason)).or_default() += 1;
+            lines.push_str(&format!("{} skipped: {reason}\n", hook.name));
+        }
+    }
+    let mut out = format!(
+        "# Hook coverage (issue 74, H3) from surface {}, by event-horizon-lua-gen: do not edit.\n\
+         # hooks: {}, emitted: {count}, skipped: {}\n",
+        ir.document_hash,
+        hooks.len(),
+        hooks.len() - count
+    );
+    for (reason, n) in &by_reason {
+        out.push_str(&format!("# skipped, {reason}: {n}\n"));
+    }
+    out.push('\n');
+    out.push_str(&lines);
     out
 }
 
@@ -243,6 +287,38 @@ mod tests {
         assert!(text.ends_with("}\n"));
         assert!(!text.ends_with("\n\n"));
         assert!(text.lines().all(|line| line.trim_end() == line));
+    }
+
+    #[test]
+    fn the_coverage_lists_every_hook_once_with_its_reason() {
+        let ir = fixture();
+        let skipped = [("attack_entity".to_owned(), "handle output".to_owned())];
+        let text = coverage(&ir, &["add_attribute_tooltips".to_owned()], &skipped);
+        let lines: Vec<&str> = text
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.is_empty())
+            .collect();
+        assert_eq!(lines.len(), ir.hooks.len(), "{text}");
+        assert!(lines.contains(&"add_attribute_tooltips emitted"));
+        assert!(lines.contains(&"attack_entity skipped: handle output"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.ends_with("skipped: not emitted"))
+        );
+        assert!(text.contains("# skipped, handle output: 1\n"), "{text}");
+        assert!(
+            text.contains(&format!(
+                "# hooks: {}, emitted: 1, skipped: {}\n",
+                ir.hooks.len(),
+                ir.hooks.len() - 1
+            )),
+            "{text}"
+        );
+        assert_eq!(
+            text,
+            coverage(&ir, &["add_attribute_tooltips".to_owned()], &skipped)
+        );
     }
 
     #[test]

@@ -2627,6 +2627,20 @@ impl ToLuaValue for mod_api::Despawn {
     }
 }
 
+const DESPAWN_NAMES: &[&str] = &["allow", "default", "deny"];
+
+impl FromLuaValue for mod_api::Despawn {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "allow" => Ok(mod_api::Despawn::Allow),
+            "default" => Ok(mod_api::Despawn::Default),
+            "deny" => Ok(mod_api::Despawn::Deny),
+            _ => Err(ConvertError::unknown_variant(&name, DESPAWN_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::Difficulty {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -11352,6 +11366,12 @@ mod unit_enum_tests {
     fn deflection_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::DEFLECTION_NAMES, vec![mod_api::Deflection::Reverse, mod_api::Deflection::AimDeflect, mod_api::Deflection::MomentumDeflect]);
+    }
+
+    #[test]
+    fn despawn_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::DESPAWN_NAMES, vec![mod_api::Despawn::Allow, mod_api::Despawn::Default, mod_api::Despawn::Deny]);
     }
 
     #[test]

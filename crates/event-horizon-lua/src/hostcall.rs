@@ -1521,4 +1521,123 @@ mod tests {
             "one more read past the budget voids the turn"
         );
     }
+    /// The generated `Hooks` method of `entity_struck_by_lightning`, a server hook with two
+    /// `EntityRef` inputs, fired with `fake` as its server host. `entity` and `bolt` are `ME`.
+    fn strike(host: &LuaHost, fake: &mut Fake) {
+        use mod_api::Hooks;
+        let mut event = mod_api::EntityStruckByLightningEvent {
+            entity: me(),
+            bolt: me(),
+            cancelled: false,
+        };
+        let _ = host.entity_struck_by_lightning(fake, &mut event);
+    }
+
+    #[test]
+    fn a_carried_entity_handle_is_usable_in_a_server_turn() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_carried",
+            "horizon.on(\"entity_struck_by_lightning\", function(event)\n\
+               horizon.log(tostring(event.entity:position().x))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        strike(&host, &mut Fake::at([1.0, 2.0, 3.0]));
+        assert_eq!(host.mods()[0].log_lines(), ["1"]);
+    }
+
+    #[test]
+    fn a_carried_handle_kept_in_a_global_uses_the_next_fires_host_and_none_outside_a_turn() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_carried_kept",
+            "horizon.on(\"entity_struck_by_lightning\", function(event)\n\
+               if kept == nil then kept = event.entity\n\
+               else horizon.log(tostring(kept:position().x)) end\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        strike(&host, &mut Fake::at([1.0, 0.0, 0.0]));
+        strike(&host, &mut Fake::at([7.0, 0.0, 0.0]));
+        assert_eq!(host.mods()[0].log_lines(), ["7"]);
+        let lua = host.mods()[0].lua();
+        let err = lua
+            .load("return kept:position()")
+            .set_environment(declare::environment(lua).unwrap())
+            .eval::<Value>()
+            .unwrap_err();
+        assert!(err.to_string().contains(OUTSIDE), "{err}");
+    }
+
+    #[test]
+    fn a_carried_option_handle_is_nil_for_none_and_a_userdata_for_some() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_carried_option",
+            "horizon.on(\"living_visibility\", function(event)\n\
+               horizon.log(tostring(event.looking == nil))\n\
+               if event.looking ~= nil then horizon.log(tostring(event.looking:position().x)) end\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let fake = Fake::at([1.0, 2.0, 3.0]);
+        let mut none = mod_api::LivingVisibilityEvent {
+            entity: LivingRef::new(me()),
+            looking: None,
+            visibility: 0.5,
+        };
+        mod_api::Hooks::living_visibility(&host, &fake, &mut none);
+        let mut some = mod_api::LivingVisibilityEvent {
+            looking: Some(me()),
+            ..none
+        };
+        mod_api::Hooks::living_visibility(&host, &fake, &mut some);
+        assert_eq!(host.mods()[0].log_lines(), ["true", "false", "1"]);
+    }
+
+    #[test]
+    fn a_carried_handle_cannot_be_written_back() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_carried_write",
+            "horizon.on(\"entity_struck_by_lightning\", function(event)\n\
+               local ok, err = pcall(function() event.entity = 1 end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        strike(&host, &mut Fake::at([1.0, 2.0, 3.0]));
+        let line = &host.mods()[0].log_lines()[0];
+        assert!(
+            line.starts_with("false ") && line.contains("event.entity is read-only"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn the_coverage_file_lists_every_hook_and_keeps_the_handle_outputs_skipped() {
+        let coverage = include_str!("generated/hooks_coverage.txt");
+        let lines: Vec<&str> = coverage
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.is_empty())
+            .collect();
+        assert_eq!(lines.len(), 749);
+        let emitted = lines
+            .iter()
+            .filter(|line| line.ends_with(" emitted"))
+            .count();
+        assert_eq!(emitted, crate::generated::hooks::EMITTED.len());
+        assert!(coverage.contains("# hooks: 749, emitted: 393, skipped: 356\n"));
+        assert!(lines.contains(&"explosion_detonate skipped: handle output"));
+        assert!(lines.contains(&"chunk_sent emitted"));
+        assert!(lines.contains(&"play_sound_source emitted"));
+        assert!(lines.contains(
+            &"block_drops skipped: handle input: host `&dyn LevelHost` is not carried by a turn"
+        ));
+    }
 }
