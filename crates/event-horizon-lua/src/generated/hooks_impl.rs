@@ -8553,13 +8553,18 @@ impl mod_api::Hooks for LuaHost {
         ));
     }
 
-    fn blocks(&self, context: &mod_api::RegistrationContext, event: &mut mod_api::BlocksEvent<'_>) {
+    fn blocks(&self, context: &RegistrationContext, event: &mut mod_api::BlocksEvent<'_>) {
         let _ = context;
         self.declared_blocks(event.blocks);
     }
 
-    fn items(&self, context: &mod_api::RegistrationContext, event: &mut mod_api::ItemsEvent<'_>) {
+    fn items(&self, context: &RegistrationContext, event: &mut mod_api::ItemsEvent<'_>) {
         let _ = context;
         self.declared_items(event.items);
+    }
+
+    fn register_client_commands(&self, host: &mut dyn ClientHost, event: &mut mod_api::RegisterClientCommandsEvent<'_>) {
+        let _ = host;
+        self.declared_client_commands(event.commands);
     }
 }

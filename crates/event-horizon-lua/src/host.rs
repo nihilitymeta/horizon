@@ -18,7 +18,8 @@ use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
 use crate::declare::{
-    self, BlockEntityTypeRecord, BlockRecord, ItemRecord, ListenerOptions, PartKind, PartRecord,
+    self, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, ItemRecord, ListenerOptions,
+    PartKind, PartRecord,
 };
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::{self, new_event};
@@ -62,6 +63,8 @@ pub struct LuaMod {
     /// parts with `horizon.block_entity_part`.
     block_entity_types: Vec<BlockEntityTypeRecord>,
     block_entity_parts: Vec<PartRecord>,
+    /// The client commands the mod declared with `horizon.client_command`.
+    client_commands: Vec<ClientCommandRecord>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -159,6 +162,7 @@ impl LuaMod {
             item_parts: declaration.item_parts,
             block_entity_types: declaration.block_entity_types,
             block_entity_parts: declaration.block_entity_parts,
+            client_commands: declaration.client_commands,
             lua,
             log,
             turn: Turn::default(),
@@ -209,6 +213,11 @@ impl LuaMod {
 
     pub fn side(&self) -> Side {
         self.side
+    }
+
+    /// Whether the mod runs on a client: a client or a both-sides mod.
+    fn runs_on_client(&self) -> bool {
+        self.side != Side::Server
     }
 
     pub fn hooks(&self) -> &[String] {
@@ -309,6 +318,11 @@ impl LuaHost {
         for (name, declared) in [
             ("blocks", mods.iter().any(|m| !m.blocks.is_empty())),
             ("items", mods.iter().any(|m| !m.items.is_empty())),
+            (
+                "register_client_commands",
+                mods.iter()
+                    .any(|m| m.runs_on_client() && !m.client_commands.is_empty()),
+            ),
         ] {
             if let (true, Some(id)) = (declared, hook_id(name)) {
                 subscribed.push(Some(id));
@@ -492,6 +506,23 @@ impl LuaHost {
     pub(crate) fn declared_items(&self, out: &mut Vec<mod_api::Item>) {
         for m in self.mods.iter().filter(|m| !self.is_refused(m)) {
             out.extend(m.items.iter().map(ItemRecord::to_item));
+        }
+    }
+
+    /// The client commands of every loaded mod that runs on a client and was not refused, in load
+    /// and declaration order: the answer to the game's `register_client_commands` hook. A server-only
+    /// mod's commands are left out, since the client never runs that mod.
+    pub(crate) fn declared_client_commands(&self, out: &mut Vec<mod_api::Command>) {
+        for m in self
+            .mods
+            .iter()
+            .filter(|m| m.runs_on_client() && !self.is_refused(m))
+        {
+            out.extend(
+                m.client_commands
+                    .iter()
+                    .map(ClientCommandRecord::to_command),
+            );
         }
     }
 }

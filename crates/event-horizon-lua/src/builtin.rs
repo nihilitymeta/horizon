@@ -300,6 +300,80 @@ mod tests {
         assert_eq!(items, ["first_mod:wand"]);
     }
 
+    /// A mod folder that declares its manifest's `side`, with `script` as its main.luau.
+    fn mod_folder_on(root: &Path, name: &str, id: &str, side: &str, script: &str) {
+        let dir = root.join(discover::DIR).join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(discover::MANIFEST),
+            format!("id = \"{id}\"\nversion = \"1.0.0\"\nside = \"{side}\"\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join(discover::ENTRY), script).unwrap();
+    }
+
+    #[test]
+    fn declared_client_commands_are_answered_for_every_client_mod_in_order() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(
+            root.path(),
+            "a_first",
+            "first_mod",
+            "horizon.client_command{usage = \"hello <who:word>\"}\n\
+             horizon.client_command{usage = \"mode <m:word>\"}\n",
+        );
+        mod_folder(
+            root.path(),
+            "b_none",
+            "empty_mod",
+            "horizon.on(\"server_tick\", function() end)\n",
+        );
+        mod_folder_on(
+            root.path(),
+            "c_server",
+            "server_mod",
+            "server",
+            "horizon.client_command{usage = \"unseen\"}\n",
+        );
+        mod_folder(
+            root.path(),
+            "d_second",
+            "second_mod",
+            "horizon.client_command{usage = \"hi\"}\n",
+        );
+        let (mods, refused) = load_mods(root.path());
+        assert!(refused.is_empty(), "got {refused:?}");
+        let host = LuaHost::new(mods);
+        let mut commands = Vec::new();
+        host.declared_client_commands(&mut commands);
+        let usages: Vec<(&str, u8)> = commands
+            .iter()
+            .map(|c| (c.usage.as_str(), c.level))
+            .collect();
+        assert_eq!(
+            usages,
+            [("hello <who:word>", 0), ("mode <m:word>", 0), ("hi", 0)]
+        );
+        assert!(subscribes_to(&host, "register_client_commands"));
+    }
+
+    #[test]
+    fn a_mod_without_client_commands_does_not_subscribe_to_the_client_hook() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(
+            root.path(),
+            "a_none",
+            "empty_mod",
+            "horizon.on(\"server_tick\", function() end)\n",
+        );
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        let mut commands = Vec::new();
+        host.declared_client_commands(&mut commands);
+        assert!(commands.is_empty());
+        assert!(!subscribes_to(&host, "register_client_commands"));
+    }
+
     #[test]
     fn a_mod_that_declares_nothing_contributes_nothing_and_no_subscription() {
         let root = tempfile::tempdir().unwrap();

@@ -56,15 +56,34 @@ pub struct Emitted {
 pub const HOST_RECORDED: &[(&str, &str, &str, &str)] = &[
     ("blocks", "BlocksEvent", "blocks", "declared_blocks"),
     ("items", "ItemsEvent", "items", "declared_items"),
+    (
+        "register_client_commands",
+        "RegisterClientCommandsEvent",
+        "commands",
+        "declared_client_commands",
+    ),
 ];
 
-/// The method of a host-recorded hook: it passes the event's output to the host method.
-fn host_recorded_text(hook: &str, event: &str, field: &str, host_method: &str) -> String {
+/// The method of a host-recorded hook: it passes the event's output to the host method. The
+/// method takes the hook's host parameter as the trait declares it (`context`, or `host`), if any.
+fn host_recorded_text(
+    hook: &str,
+    event: &str,
+    field: &str,
+    host_method: &str,
+    sig: &HookSig,
+) -> String {
+    let (host, unused) = match (&sig.host_name, &sig.host_ty) {
+        (Some(name), Some(ty)) => (
+            format!("{name}: {ty}, "),
+            format!("let _ = {name};\n        "),
+        ),
+        _ => (String::new(), String::new()),
+    };
     format!(
         "
-    fn {hook}(&self, context: &mod_api::RegistrationContext, event: &mut mod_api::{event}<'_>) {{
-        let _ = context;
-        self.{host_method}(event.{field});
+    fn {hook}(&self, {host}event: &mut mod_api::{event}<'_>) {{
+        {unused}self.{host_method}(event.{field});
     }}
 "
     )
@@ -181,14 +200,21 @@ pub fn emit_with_handles(
         if let Some((hook, event, field, host_method)) =
             HOST_RECORDED.iter().find(|entry| entry.0 == name)
         {
-            if sigs.iter().any(|sig| sig.name == name) && ir.hooks.iter().any(|h| h.name == name) {
-                host_recorded.push((*hook).to_owned());
-                recorded_text.push_str(&host_recorded_text(hook, event, field, host_method));
-            } else {
-                skipped.push((
+            match sigs.iter().find(|sig| sig.name == name) {
+                Some(sig) if ir.hooks.iter().any(|h| h.name == name) => {
+                    host_recorded.push((*hook).to_owned());
+                    recorded_text.push_str(&host_recorded_text(
+                        hook,
+                        event,
+                        field,
+                        host_method,
+                        sig,
+                    ));
+                }
+                _ => skipped.push((
                     name.to_owned(),
                     "not a method of the Hooks trait".to_owned(),
-                ));
+                )),
             }
             continue;
         }
