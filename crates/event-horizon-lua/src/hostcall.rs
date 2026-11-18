@@ -493,6 +493,7 @@ mod tests {
     struct Fake {
         at: [f64; 3],
         velocity: Option<[f64; 3]>,
+        glowing: Option<bool>,
         writes: u32,
         calls: Cell<u32>,
     }
@@ -502,6 +503,7 @@ mod tests {
             Fake {
                 at,
                 velocity: None,
+                glowing: None,
                 writes: 0,
                 calls: Cell::new(0),
             }
@@ -560,6 +562,18 @@ mod tests {
             self.velocity = Some(velocity);
             true
         }
+        fn entity_set_glowing(&mut self, entity: EntityRef, glowing: bool) -> bool {
+            self.writes += 1;
+            if !is_me(entity) {
+                return false;
+            }
+            self.glowing = Some(glowing);
+            true
+        }
+        fn entity_leash_to(&mut self, _: EntityRef, _: EntityRef) -> bool {
+            self.writes += 1;
+            true
+        }
     }
 
     /// Writes `source` as mod `id` and loads it.
@@ -582,6 +596,7 @@ mod tests {
             let data = lua.create_table()?;
             data.raw_set("entity", lua.create_userdata(ME)?)?;
             data.raw_set("stranger", lua.create_userdata(STRANGER)?)?;
+            data.raw_set("level", lua.create_userdata(Token(level()))?)?;
             data.raw_set("n", n)?;
             new_event(lua, data, &["cancelled", "result"])
         }
@@ -779,20 +794,20 @@ mod tests {
 
     /// A handler that reads `n` times, split over ten handlers of 1,000 reads so each one stays
     /// inside its own time budget. The eleventh does `n` more.
-    fn counted_reads(method: &str) -> String {
+    fn counted_reads(call: &str) -> String {
         let mut source = String::new();
         for _ in 0..10 {
             source.push_str(&format!(
                 "horizon.on(\"block_receive_game\", function(event)\n\
                    local e = event.entity\n\
-                   for i = 1, 1000 do e:{method}() end\n\
+                   for i = 1, 1000 do e:{call} end\n\
                  end)\n"
             ));
         }
         source.push_str(&format!(
             "horizon.on(\"block_receive_game\", function(event)\n\
                local e = event.entity\n\
-               for i = 1, event.n do e:{method}() end\n\
+               for i = 1, event.n do e:{call} end\n\
              end)\n"
         ));
         source
@@ -801,7 +816,7 @@ mod tests {
     #[test]
     fn ten_thousand_reads_fit_the_budget_and_the_next_one_voids_the_turn() {
         let root = tempfile::tempdir().unwrap();
-        let m = load(root.path(), "hc_budget", &counted_reads("position"));
+        let m = load(root.path(), "hc_budget", &counted_reads("position()"));
         let host = LuaHost::new(vec![m]);
         let fake = Fake::at([0.0; 3]);
         assert_eq!(
@@ -833,7 +848,7 @@ mod tests {
                    local e = event.entity\n\
                    for i = 1, 5 do pcall(e.position, e) end\n\
                  end)",
-                counted_reads("position")
+                counted_reads("position()")
             ),
         );
         let host = LuaHost::new(vec![m]);
@@ -1181,7 +1196,7 @@ mod tests {
         let host = LuaHost::new(vec![load(
             root.path(),
             "hc_gen_read",
-            &counted_reads("position"),
+            &counted_reads("position()"),
         )]);
         let fake = Fake::at([0.0; 3]);
         assert_eq!(
@@ -1358,5 +1373,152 @@ mod tests {
             "{line}"
         );
         assert_eq!(fake.calls.get(), 0, "the host was not called");
+    }
+
+    #[test]
+    fn a_bool_write_reaches_the_double_with_its_converted_argument() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_glow",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               horizon.log(tostring(event.entity:set_glowing(true)))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let mut fake = Fake::at([0.0; 3]);
+        fire_real(&host, TurnHost::Server(&mut fake), 0);
+        assert_eq!(fake.glowing, Some(true));
+        assert_eq!(host.mods()[0].log_lines(), ["true"]);
+    }
+
+    #[test]
+    fn a_bad_argument_to_a_write_raises_and_the_host_is_not_called() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_bad_write",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               local e = event.entity\n\
+               local ok, err = pcall(function() e:leash_to(event.level) end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+               ok, err = pcall(function() e:set_glowing(\"yes\") end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let mut fake = Fake::at([0.0; 3]);
+        fire_real(&host, TurnHost::Server(&mut fake), 0);
+        let lines = host.mods()[0].log_lines();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines[0].starts_with("false ")
+                && lines[0].contains("leash_to: argument 1: must be a EntityRef"),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[1].starts_with("false ") && lines[1].contains("set_glowing: argument 1"),
+            "{}",
+            lines[1]
+        );
+        assert_eq!(fake.writes, 0);
+        assert_eq!(fake.glowing, None);
+    }
+
+    #[test]
+    fn a_write_on_a_turn_without_a_server_host_is_refused_before_its_arguments() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_nohost_write",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               local ok, err = pcall(function() event.entity:set_glowing(\"not a bool\") end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let read = Fake::at([0.0; 3]);
+        let mut client = Fake::at([0.0; 3]);
+        let turns: [TurnHost<'_>; 4] = [
+            TurnHost::Read(&read),
+            TurnHost::ClientRead(&read),
+            TurnHost::Client(&mut client),
+            TurnHost::None,
+        ];
+        for turn in turns {
+            fire_real(&host, turn, 0);
+            let line = host.mods().last().unwrap().log_lines().pop().unwrap();
+            assert!(
+                line.starts_with("false ") && line.contains(NOT_HERE),
+                "{line}"
+            );
+            assert!(!line.contains("argument 1"), "{line}");
+        }
+        assert_eq!(read.writes, 0);
+        assert_eq!(client.writes, 0);
+    }
+
+    #[test]
+    fn a_thousand_writes_fit_the_budget_and_the_next_one_voids_the_turn() {
+        let root = tempfile::tempdir().unwrap();
+        // Ten handlers of 100 writes (1,000 writes, 10,000 units), then one more that writes `n`.
+        let mut source = String::new();
+        for _ in 0..10 {
+            source.push_str(
+                "horizon.on(\"block_receive_game\", function(event)\n\
+                   local e = event.entity\n\
+                   for i = 1, 100 do e:set_glowing(true) end\n\
+                 end)\n",
+            );
+        }
+        source.push_str(
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               for i = 1, event.n do event.entity:set_glowing(true) end\n\
+             end)",
+        );
+        let m = load(root.path(), "hc_wbudget", &source);
+        let host = LuaHost::new(vec![m]);
+        let mut fake = Fake::at([0.0; 3]);
+        assert_eq!(
+            fire_real(&host, TurnHost::Server(&mut fake), 0),
+            1,
+            "1,000 writes are 10,000 units"
+        );
+        assert_eq!(fake.writes, 1000);
+        assert_eq!(
+            fire_real(&host, TurnHost::Server(&mut fake), 1),
+            0,
+            "the 1,001st write raises and the turn is void"
+        );
+    }
+
+    #[test]
+    fn reads_and_writes_share_one_budget() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_mixed",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               local e = event.entity\n\
+               for i = 1, 500 do e:position() end\n\
+               for i = 1, 950 do e:set_glowing(true) end\n\
+             end)\n\
+             horizon.on(\"block_receive_game\", function(event)\n\
+               for i = 1, event.n do event.entity:position() end\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let mut fake = Fake::at([0.0; 3]);
+        assert_eq!(
+            fire_real(&host, TurnHost::Server(&mut fake), 0),
+            1,
+            "500 reads and 950 writes are exactly 10,000 units"
+        );
+        assert_eq!(
+            fire_real(&host, TurnHost::Server(&mut fake), 1),
+            0,
+            "one more read past the budget voids the turn"
+        );
     }
 }

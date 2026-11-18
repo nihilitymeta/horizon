@@ -7,12 +7,12 @@
 //! A token exposes no fields and cannot be built from Lua: the only tokens are the ones a method
 //! returns.
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use event_horizon_lua_convert::item::BlockStateSpec;
 use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{AnyUserData, Error, Lua, MetaMethod, MultiValue, UserData, UserDataMethods, Value};
-use mod_api::{BlockState, Host};
+use mod_api::{BlockState, Host, ServerHost};
 
 use crate::hostcall::{NOT_HERE, TurnHost};
 use crate::stacks;
@@ -66,6 +66,29 @@ pub fn receiver<F: Family>(this: &AnyUserData, method: &str) -> mlua::Result<F> 
 /// The host a read goes through. A turn with no host at all refuses the call.
 pub fn read_of<'a>(host: &'a TurnHost<'_>) -> mlua::Result<&'a dyn Host> {
     host.read().ok_or_else(|| Error::runtime(NOT_HERE))
+}
+
+/// The server host a write goes through. A turn that is not a server hook refuses the call.
+pub fn server_of<'a>(host: &'a mut TurnHost<'_>) -> mlua::Result<&'a mut dyn ServerHost> {
+    host.server().ok_or_else(|| Error::runtime(NOT_HERE))
+}
+
+/// The most characters of a refusal's text a Lua error carries.
+const REFUSAL_CHARS: usize = 120;
+
+/// A refusal's `Debug` text cut to [`REFUSAL_CHARS`] characters, with `...` after a cut. The whole
+/// value never reaches the mod.
+pub fn refusal_text(debug: &str) -> String {
+    let mut text: String = debug.chars().take(REFUSAL_CHARS).collect();
+    if debug.chars().count() > REFUSAL_CHARS {
+        text.push_str("...");
+    }
+    text
+}
+
+/// The `Ok` value of a method's `Result`, or a Lua error with the refusal's text.
+pub fn ok_or_raise<T, E: Debug>(result: Result<T, E>) -> mlua::Result<T> {
+    result.map_err(|err| Error::runtime(refusal_text(&format!("{err:?}"))))
 }
 
 /// The arguments of one method call, with the method's name for the errors.
@@ -236,5 +259,74 @@ mod tests {
         };
         let second: AnyUserData = table.get(2).unwrap();
         assert_eq!(second.borrow::<Token<Probe>>().unwrap().0, Probe(2));
+    }
+
+    #[test]
+    fn a_refusal_raises_its_debug_text_clipped_to_120_characters() {
+        let payload = "x".repeat(300);
+        let clipped = refusal_text(&format!("{payload:?}"));
+        assert_eq!(clipped.chars().count(), REFUSAL_CHARS + 3);
+        assert!(clipped.ends_with("..."), "{clipped}");
+        let err = ok_or_raise::<(), _>(Err(payload.clone()))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&clipped), "{err}");
+        assert!(
+            !err.contains(&"x".repeat(121)),
+            "the whole value must not reach the mod"
+        );
+        assert_eq!(refusal_text("short"), "short");
+        assert_eq!(ok_or_raise::<u32, ()>(Ok(5)).ok(), Some(5));
+    }
+
+    #[test]
+    fn the_powerful_writes_are_not_generated_and_say_why() {
+        let coverage = include_str!("generated/handles_coverage.txt");
+        let text = include_str!("generated/handles.rs");
+        let denied = [
+            "EntityRef::run_command",
+            "EntityRef::teleport_to_level",
+            "EntityRef::merge_nbt",
+            "LevelRef::spawn_mob",
+            "LevelRef::explode",
+            "LevelRef::set_game_rule",
+            "EntityRef::remove",
+            "EntityRef::discard",
+            "LevelRef::strike_lightning",
+            "LevelRef::set_world_border_size",
+            "PlayerRef::disconnect",
+            "PlayerRef::set_game_mode",
+            "LevelRef::invalidate_capabilities",
+            "PlayerRef::award_stat",
+            "PlayerRef::reset_stat",
+        ];
+        for member in denied {
+            assert!(
+                coverage.contains(&format!(
+                    "handle:{member} skipped: powerful (needs manifest power)"
+                )),
+                "{member} is listed as powerful"
+            );
+            assert!(
+                !text.contains(&format!("\"{member}\"")),
+                "{member} is not bound"
+            );
+        }
+        assert!(
+            !text.contains("Registrar"),
+            "no Registrar member is generated"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_write_is_bound_with_its_cost() {
+        assert_eq!(
+            crate::generated::handles::cost("EntityRef::set_glowing"),
+            Some(10)
+        );
+        assert_eq!(
+            crate::generated::handles::cost("EntityRef::position"),
+            Some(1)
+        );
     }
 }

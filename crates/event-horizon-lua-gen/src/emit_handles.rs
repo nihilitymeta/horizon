@@ -7,7 +7,9 @@
 //! its receiver is `self` or `&self`, its first parameter is `&dyn Host` or there is none, and every
 //! other parameter and the return type convert. A `BlockState` argument or result needs the host
 //! (it converts through it). Anything else is skipped with a reason, and the coverage text lists
-//! each member. Writes take `&mut` hosts, so none is bound here.
+//! each member. A write (`&mut dyn ServerHost`, H2) binds through the turn's server host and is
+//! refused by the powerful table ([`powerful`]) when it is powerful; a `&mut dyn ClientHost` write
+//! is never bound.
 //!
 //! The text is one `impl` of the hand-written `Family` trait per family, one function per bound
 //! member, and the table `cost`/`run` that the host's scoped function calls.
@@ -49,6 +51,116 @@ const HEAVY_NAMES: &[&str] = &[
 ];
 /// Method name prefixes that are heavy.
 const HEAVY_PREFIXES: &[&str] = &["datapack_", "find_", "ray_trace"];
+/// The cost of a write (a method with `&mut dyn ServerHost`), in budget units.
+const WRITE: u32 = 10;
+
+/// The powerful writes, which are never bound here (design rule 7: they wait for the manifest's
+/// `powers` flag). This is the one table of them. A write is powerful when any rule matches:
+///
+/// * its name contains one of [`POWERFUL_NAME_PARTS`] (commands, teleports, NBT, spawns,
+///   explosions, lightning, game rules, world borders, passages, map data, capabilities,
+///   datapacks, registration, removal, kills, saves, tickets, tick clocks, weather, respawns,
+///   random sources, item grants through `give`, `pop_resource` and `award_experience`);
+/// * its owner is one of [`POWERFUL_OWNERS`] (every `Registrar`, whatever its name);
+/// * its owner and name part match one of [`POWERFUL_OWNER_NAMES`] (a merchant's offers, which
+///   carry items);
+/// * one of its parameters mentions one of [`POWERFUL_ARG_TYPES`] (NBT, a transaction, an item
+///   stack, a permission level).
+///
+/// The rules read writes only: a read's name is not judged here (a read that merely contains a
+/// name part, such as `raiders`, stays bound). When in doubt, add a rule: it is cheap to allow
+/// later and expensive to take back.
+const POWERFUL_NAME_PARTS: &[&str] = &[
+    "run_command",
+    "teleport_to_level",
+    "nbt",
+    "spawn",
+    "explo",
+    "lightning",
+    "game_rule",
+    "world_border",
+    "passage",
+    "map_data",
+    "capabilit",
+    "datapack",
+    "register",
+    "remove",
+    "discard",
+    "kill",
+    "command",
+    "ticket",
+    "save",
+    "relight",
+    "raid",
+    "give",
+    "pop_resource",
+    "award_experience",
+    "weather",
+    "clock",
+    "difficulty",
+    "respawn",
+    "random",
+    "disconnect",
+    "set_game_mode",
+    "award_stat",
+    "reset_stat",
+];
+/// Owners whose every member is powerful.
+const POWERFUL_OWNERS: &[&str] = &["Registrar"];
+/// Owner and name part: a method of the owner whose name contains the part is powerful.
+const POWERFUL_OWNER_NAMES: &[(&str, &str)] = &[("MerchantRef", "offer")];
+/// Parameter types that make a write powerful: NBT, a transaction, an item stack, a permission level.
+const POWERFUL_ARG_TYPES: &[&str] = &[
+    "Compound",
+    "Transaction",
+    "ItemStack",
+    "PermissionLevel",
+    "MerchantOffer",
+];
+/// The reason a powerful write is skipped: the category `powerful (needs manifest power)`, then
+/// the rule that matched. [`reason_category`] keeps the category.
+fn powerful(member: &MemberIr) -> Option<String> {
+    let name = member.name.as_str();
+    let owner = member.owner.as_str();
+    let rule = if POWERFUL_OWNERS
+        .iter()
+        .any(|powerful| owner.contains(powerful))
+    {
+        format!("owner {owner}")
+    } else if !is_server_write(member) {
+        return None;
+    } else if let Some(part) = POWERFUL_NAME_PARTS
+        .iter()
+        .find(|part| name.contains(**part))
+    {
+        format!("name contains `{part}`")
+    } else if let Some((_, part)) = POWERFUL_OWNER_NAMES
+        .iter()
+        .find(|(powerful, part)| *powerful == owner && name.contains(part))
+    {
+        format!("{owner} method containing `{part}`")
+    } else {
+        let param = member.params.iter().find(|param| {
+            POWERFUL_ARG_TYPES
+                .iter()
+                .any(|ty| param.rust_type.contains(ty))
+        })?;
+        format!("argument `{}`", param.rust_type)
+    };
+    Some(format!("powerful (needs manifest power): {rule}"))
+}
+
+/// Whether a member takes `&mut dyn ServerHost` as its first parameter: an ordinary write.
+fn is_server_write(member: &MemberIr) -> bool {
+    member.params.first().is_some_and(|first| {
+        first
+            .rust_type
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            == "&mut dyn ServerHost"
+    })
+}
 /// The arrays a Lua value converts into (`vector.rs`), by element type and length.
 const FROM_LUA_ARRAYS: &[(&str, usize)] = &[
     ("i32", 2),
@@ -104,6 +216,8 @@ enum Arg {
     OptHandle { ty: String },
     /// A block state, read with `Args::state` through the host.
     State,
+    /// An optional string, `Option<&str>`: read as `Option<String>`, passed as `Option<&str>`.
+    OptStr,
 }
 
 /// How the result becomes a Lua value.
@@ -124,6 +238,8 @@ enum Ret {
     State,
     /// A world epoch, as its number.
     Epoch,
+    /// Nothing: `()`, or no `->`. The Lua call returns nil.
+    Unit,
 }
 
 /// A member the generator binds.
@@ -132,9 +248,14 @@ struct Bound {
     id: String,
     op: String,
     name: String,
+    /// The member takes a host: the read host, or the server host when `write`.
     host: bool,
+    /// The member takes `&mut dyn ServerHost`: a write, which needs the turn's server host.
+    write: bool,
     args: Vec<Arg>,
     ret: Ret,
+    /// The member returns `Result<T, E>`: an `Err` raises, and `ret` converts the `Ok` value.
+    refusal: bool,
     /// The result is an integer: an id accessor with one of these shows in `tostring`.
     int_ret: bool,
     cost: u32,
@@ -162,9 +283,10 @@ pub fn reason_category(reason: &str) -> &str {
     reason.split(':').next().unwrap_or(reason).trim()
 }
 
-/// The names of the types the families' read members take as owned arguments, which the type
-/// emitter must decide (a unit enum among them converts from Lua). A family's own handles are left
-/// out, and so are the writes' types: a write is not bound in this slice.
+/// The names of the types the families' members (reads and server writes) take as owned arguments,
+/// which the type emitter must decide (a unit enum among them converts from Lua). A family's own
+/// handles are left out. This is the superset: [`bound_argument_types`] narrows it to the members
+/// that bind.
 pub fn argument_types(members: &[MemberIr], families: &[&str]) -> Vec<String> {
     let mut names = Vec::new();
     for member in members
@@ -180,7 +302,7 @@ pub fn argument_types(members: &[MemberIr], families: &[&str]) -> Vec<String> {
     names
 }
 
-/// The types of the arguments of the read members that [`classify`] binds under `plain`: the
+/// The types of the arguments of the members (reads and writes) that [`classify`] binds under `plain`: the
 /// converters the type emitter must decide, and no more. A bound member's enum argument is always
 /// among them, so deciding exactly these leaves every bound member bound.
 pub fn bound_argument_types(members: &[MemberIr], families: &[&str], plain: &Plain) -> Vec<String> {
@@ -222,15 +344,16 @@ fn named_arguments(member: &MemberIr, families: &[&str]) -> Vec<String> {
     names
 }
 
-/// Whether a member takes no host or the read host (`&dyn Host`) as its first parameter.
+/// Whether a member takes no host, the read host (`&dyn Host`) or the server host
+/// (`&mut dyn ServerHost`) as its first parameter: the members this generator can bind.
 fn reads_only(member: &MemberIr) -> bool {
     member.params.first().is_none_or(|first| {
-        first
+        let text = first
             .rust_type
             .split_whitespace()
             .collect::<Vec<_>>()
-            .join(" ")
-            == "&dyn Host"
+            .join(" ");
+        text == "&dyn Host" || text == "&mut dyn ServerHost"
     })
 }
 
@@ -257,11 +380,13 @@ pub fn emit_listing(
 ) -> Emitted {
     let mut text = format!(
         "// @generated by event-horizon-lua-gen from surface {hash}: do not edit.\n\
-         // Families: {}. Coverage: handles_coverage.txt.\n",
+         // Families: {}. Coverage: handles_coverage.txt.\n\
+         // Writes (`&mut dyn ServerHost`) run through the turn's server host and are NOT rolled back\n\
+         // when the turn later errors: the host keeps them (design rule 5). Only outputs are void.\n",
         families.join(", ")
     );
     let mut coverage = format!(
-        "# Handle coverage (issue 74, H1c) from surface {hash}, by event-horizon-lua-gen: do not edit.\n\
+        "# Handle coverage (issue 74, H2) from surface {hash}, by event-horizon-lua-gen: do not edit.\n\
          # families: {}\n# not generated (no member binds): {}\n",
         families.join(", "),
         if dropped.is_empty() {
@@ -378,13 +503,18 @@ fn classify(
     if !member.generics.is_empty() {
         return Err(format!("generics: {}", member.generics));
     }
+    if let Some(reason) = powerful(member) {
+        return Err(reason);
+    }
     if matches!(member.receiver, Receiver::None | Receiver::RefMut) {
         return Err("other: no receiver, or &mut self".to_owned());
     }
-    let host = match member.params.first() {
-        Some(first) => is_host_param(first)?,
-        None => false,
+    let kind = match member.params.first() {
+        Some(first) => host_kind(first)?,
+        None => None,
     };
+    let host = kind.is_some();
+    let write = kind == Some(HostKind::Server);
     let params = if host {
         &member.params[1..]
     } else {
@@ -397,25 +527,27 @@ fn classify(
     if !host && args.contains(&Arg::State) {
         return Err("unconvertible arg: BlockState needs a host".to_owned());
     }
-    let ret_text = member
-        .ret
-        .as_deref()
-        .ok_or_else(|| "unconvertible return: no return type".to_owned())?;
-    if ret_text.starts_with("Result<") {
-        return Err(format!("Result: {ret_text}"));
-    }
-    let (ret, ret_ty) = match ret_text {
+    // `Result<T, E>` binds as its `Ok` value: an `Err` raises (see `ok_or_raise`).
+    let (value_text, refusal) = match ok_type(member.ret.as_deref().unwrap_or("()")) {
+        Some(ok) => (ok, true),
+        None => (member.ret.as_deref().unwrap_or("()"), false),
+    };
+    let (ret, ret_ty) = match value_text {
+        "()" => (Ret::Unit, None),
         "WorldEpoch" => (Ret::Epoch, None),
         _ => {
             let mapped =
-                map_type(ret_text).map_err(|_| format!("unconvertible return: {ret_text}"))?;
+                map_type(value_text).map_err(|_| format!("unconvertible return: {value_text}"))?;
             let ret = ret_of(&mapped.ty, families, plain)
-                .ok_or_else(|| format!("unconvertible return: {ret_text}"))?;
+                .ok_or_else(|| format!("unconvertible return: {value_text}"))?;
             (ret, Some(mapped.ty))
         }
     };
     if ret == Ret::State && !host {
         return Err("unconvertible return: BlockState needs a host".to_owned());
+    }
+    if ret == Ret::State && write {
+        return Err("unconvertible return: BlockState needs the read host".to_owned());
     }
     let heavy = HEAVY_NAMES.contains(&member.name.as_str())
         || HEAVY_PREFIXES
@@ -428,27 +560,64 @@ fn classify(
         op: format!("{family}::{}", member.name),
         name: member.name.clone(),
         host,
+        write,
         args,
         ret,
+        refusal,
         int_ret: ret_ty
             .as_ref()
             .is_some_and(|ty| matches!(ty, TypeIr::Int(_))),
-        cost: if heavy { HEAVY } else { READ },
+        cost: if heavy {
+            HEAVY
+        } else if write {
+            WRITE
+        } else {
+            READ
+        },
     })
 }
 
-/// Whether the first parameter is the read host (`&dyn Host`). Any other host is an error that
-/// names it, so a write's host is never mistaken for a read.
-fn is_host_param(param: &ParamIr) -> Result<bool, String> {
+/// The success type's text of a `Result<T, E>` return, or `None` for any other return.
+fn ok_type(text: &str) -> Option<&str> {
+    let inner = text.strip_prefix("Result<")?.strip_suffix('>')?;
+    let mut depth = 0i32;
+    for (index, c) in inner.char_indices() {
+        match c {
+            '<' | '(' | '[' => depth += 1,
+            '>' | ')' | ']' => depth -= 1,
+            ',' if depth == 0 => return Some(inner[..index].trim()),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The host a method takes as its first parameter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostKind {
+    /// `&dyn Host`: a read.
+    Read,
+    /// `&mut dyn ServerHost`: a write on the server.
+    Server,
+}
+
+/// The host kind of the first parameter, or `None` when it is not a host (a handle argument, say).
+/// A client's write is refused by name, as are other hosts: `&dyn ClientHost` is a client read
+/// this slice does not bind.
+fn host_kind(param: &ParamIr) -> Result<Option<HostKind>, String> {
     let text = param.rust_type.as_str();
     let Ok(mapped) = map_type(text) else {
-        return Ok(false);
+        return Ok(None);
     };
     match (mapped.access, &mapped.ty) {
-        (Access::Ref, TypeIr::Dyn(name)) if name == "Host" => Ok(true),
+        (Access::Ref, TypeIr::Dyn(name)) if name == "Host" => Ok(Some(HostKind::Read)),
+        (Access::RefMut, TypeIr::Dyn(name)) if name == "ServerHost" => Ok(Some(HostKind::Server)),
+        (Access::RefMut, TypeIr::Dyn(name)) if name == "ClientHost" => {
+            Err(format!("client write: {text}"))
+        }
         (Access::RefMut, TypeIr::Dyn(_)) => Err(format!("&mut host: {text}")),
         (_, TypeIr::Dyn(_)) => Err(format!("other: host kind {text}")),
-        _ => Ok(false),
+        _ => Ok(None),
     }
 }
 
@@ -470,6 +639,10 @@ fn arg_of(text: &str, families: &[&str], plain: &Plain) -> Result<Arg, String> {
             format!("other: unparsed type: {text}")
         }
     })?;
+    // `Option<&str>` loses its reference in `map_type`, so it is recognised by its text.
+    if text.split_whitespace().collect::<String>() == "Option<&str>" {
+        return Ok(Arg::OptStr);
+    }
     match mapped.access {
         Access::RefMut => return Err(format!("other: &mut argument: {text}")),
         Access::Ref => {
@@ -614,6 +787,11 @@ fn operation(family: &str, bound: &Bound) -> String {
     let fn_name = format!("{}_{}", snake_case(family), bound.name);
     let op = &bound.op;
     let mut body = String::new();
+    // A write needs the server host before anything else: a turn without one refuses the call
+    // before its arguments are converted or the game is asked anything.
+    if bound.write {
+        body.push_str("    let server = crate::handles::server_of(host)?;\n");
+    }
     if bound.args.is_empty() {
         let _ = writeln!(body, "    crate::handles::Args::new(\"{op}\", args, 0)?;");
     } else {
@@ -627,11 +805,19 @@ fn operation(family: &str, bound: &Bound) -> String {
         body,
         "    let this: mod_api::{family} = crate::handles::receiver(this, \"{op}\")?;"
     );
-    if bound.host {
-        body.push_str("    let read = crate::handles::read_of(host)?;\n");
-    }
+    // The host a state argument reads through: the read host, or the server host as a read.
     let mut call_args = Vec::new();
-    if bound.host {
+    let read_host = if bound.write {
+        "&*server"
+    } else {
+        if bound.host {
+            body.push_str("    let read = crate::handles::read_of(host)?;\n");
+        }
+        "read"
+    };
+    if bound.write {
+        call_args.push("server".to_owned());
+    } else if bound.host {
         call_args.push("read".to_owned());
     }
     for (index, arg) in bound.args.iter().enumerate() {
@@ -647,23 +833,33 @@ fn operation(family: &str, bound: &Bound) -> String {
             ),
             Arg::Handle { .. } => (format!("args.handle({index})?"), name.clone()),
             Arg::OptHandle { .. } => (format!("args.opt_handle({index})?"), name.clone()),
-            Arg::State => (format!("args.state({index}, read)?"), name.clone()),
+            Arg::State => (format!("args.state({index}, {read_host})?"), name.clone()),
+            Arg::OptStr => (format!("args.get({index})?"), format!("{name}.as_deref()")),
         };
         let ty = match arg {
             Arg::Get { ty, .. } | Arg::Handle { ty } => ty.clone(),
             Arg::OptHandle { ty } => format!("Option<{ty}>"),
             Arg::State => "mod_api::BlockState".to_owned(),
+            Arg::OptStr => "Option<String>".to_owned(),
         };
         let _ = writeln!(body, "    let {name}: {ty} = {line};");
         call_args.push(pass);
     }
-    let _ = writeln!(
-        body,
-        "    let out = this.{}({});",
-        bound.name,
-        call_args.join(", ")
-    );
+    let call = format!("this.{}({})", bound.name, call_args.join(", "));
+    // A `Result` raises its `Err` (`ok_or_raise`). A unit result is a statement, not a binding.
+    let (call, unit) = match (bound.ret, bound.refusal) {
+        (Ret::Unit, true) => (format!("crate::handles::ok_or_raise({call})?"), true),
+        (Ret::Unit, false) => (call, true),
+        (_, true) => (format!("crate::handles::ok_or_raise({call})?"), false),
+        (_, false) => (call, false),
+    };
+    if unit {
+        let _ = writeln!(body, "    {call};");
+    } else {
+        let _ = writeln!(body, "    let out = {call};");
+    }
     let result = match bound.ret {
+        Ret::Unit => "Ok(mlua::Value::Nil)".to_owned(),
         Ret::Value => "event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)".to_owned(),
         Ret::Text => "event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out.to_string(), lua)".to_owned(),
         Ret::OptText => {
@@ -678,8 +874,14 @@ fn operation(family: &str, bound: &Bound) -> String {
         Ret::Epoch => "event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out.get(), lua)".to_owned(),
     };
     let host_param = if bound.host { "host" } else { "_host" };
+    // A unit result converts nothing, so the Lua state is not used.
+    let lua_param = if bound.ret == Ret::Unit {
+        "_lua"
+    } else {
+        "lua"
+    };
     format!(
-        "fn {fn_name}(lua: &mlua::Lua, {host_param}: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {{\n{body}    {result}\n}}\n\n"
+        "fn {fn_name}({lua_param}: &mlua::Lua, {host_param}: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {{\n{body}    {result}\n}}\n\n"
     )
 }
 
@@ -830,13 +1032,19 @@ mod tests {
     #[test]
     fn the_skip_reasons_are_the_named_categories() {
         let cases = [
-            ("fn set(self, _: &mut dyn ServerHost) -> bool", "&mut host"),
+            (
+                "fn set(self, _: &mut dyn ClientHost) -> bool",
+                "client write",
+            ),
             ("fn f(self, _: &dyn Host, _: &mut Vec<u8>) -> bool", "other"),
             (
                 "fn f<T: Copy>(self, _: &dyn Host, _: T) -> Option<bool>",
                 "generics",
             ),
-            ("fn f(self, _: &dyn Host) -> Result<bool, Error>", "Result"),
+            (
+                "fn f(self, _: &dyn Host) -> Result<LivingRef, Error>",
+                "unconvertible return",
+            ),
             (
                 "fn f(self, _: &dyn Host) -> Option<LivingRef>",
                 "unconvertible return",
@@ -895,12 +1103,12 @@ mod tests {
         let all = members(&[(
             "EntityRef",
             "set",
-            "fn set(self, _: &mut dyn ServerHost) -> bool",
+            "fn set(self, _: &mut dyn ClientHost) -> bool",
         )]);
         let out = emit(&all, &["EntityRef"], &plain(), "ab");
         assert!(
             out.coverage
-                .contains("handle:EntityRef::set skipped: &mut host: &mut dyn ServerHost"),
+                .contains("handle:EntityRef::set skipped: client write: &mut dyn ClientHost"),
             "{}",
             out.coverage
         );
@@ -1014,7 +1222,7 @@ mod tests {
         );
         assert!(
             out.coverage
-                .contains("handle:SoundRef::fade skipped: &mut host: &mut dyn ClientHost"),
+                .contains("handle:SoundRef::fade skipped: client write: &mut dyn ClientHost"),
             "{}",
             out.coverage
         );
@@ -1031,5 +1239,148 @@ mod tests {
         let text = emit(&all, &["BossBarRef"], &plain(), "ab").text;
         assert!(text.contains("String::from(\"BossBarRef\")"), "{text}");
         assert!(!text.contains("self.id()"), "{text}");
+    }
+
+    /// The function text of one write, from a one-member family of `EntityRef`.
+    fn write_text(signature: &str) -> String {
+        let name = signature
+            .trim_start_matches("fn ")
+            .split(['(', '<'])
+            .next()
+            .unwrap_or_default();
+        let all = members(&[("EntityRef", name, signature)]);
+        emit(&all, &["EntityRef"], &plain(), "ab").text
+    }
+
+    #[test]
+    fn a_bool_write_golden_runs_through_the_server_host_before_its_arguments() {
+        let text = write_text("fn set_glowing(self, _: &mut dyn ServerHost, _: bool) -> bool");
+        let golden = "fn entity_ref_set_glowing(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {\n    let server = crate::handles::server_of(host)?;\n    let args = crate::handles::Args::new(\"EntityRef::set_glowing\", args, 1)?;\n    let this: mod_api::EntityRef = crate::handles::receiver(this, \"EntityRef::set_glowing\")?;\n    let a0: bool = args.get(0)?;\n    let out = this.set_glowing(server, a0);\n    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)\n}\n";
+        assert!(text.contains(golden), "{text}");
+        assert!(text.contains("\"EntityRef::set_glowing\" => 10,"), "{text}");
+    }
+
+    #[test]
+    fn an_option_write_golden_passes_an_optional_str_as_a_str() {
+        let text = write_text(
+            "fn set_name(self, _: &mut dyn ServerHost, _: Option<&str>) -> Option<bool>",
+        );
+        let golden = "    let a0: Option<String> = args.get(0)?;\n    let out = this.set_name(server, a0.as_deref());\n    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)\n}\n";
+        assert!(text.contains(golden), "{text}");
+    }
+
+    #[test]
+    fn a_result_write_golden_raises_its_err_and_returns_its_ok() {
+        let text = write_text(
+            "fn set_data(self, _: &mut dyn ServerHost, _: u32) -> Result<bool, ChunkRefusal>",
+        );
+        let golden = "    let a0: u32 = args.get(0)?;\n    let out = crate::handles::ok_or_raise(this.set_data(server, a0))?;\n    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)\n}\n";
+        assert!(text.contains(golden), "{text}");
+    }
+
+    #[test]
+    fn a_unit_result_write_golden_returns_nil() {
+        let text = write_text("fn nudge(self, _: &mut dyn ServerHost) -> Result<(), ChunkRefusal>");
+        let golden =
+            "    crate::handles::ok_or_raise(this.nudge(server))?;\n    Ok(mlua::Value::Nil)\n}\n";
+        assert!(text.contains(golden), "{text}");
+        assert!(
+            text.contains("fn entity_ref_nudge(_lua: &mlua::Lua"),
+            "{text}"
+        );
+        assert!(text.contains("\"EntityRef::nudge\" => 10,"), "{text}");
+    }
+
+    #[test]
+    fn a_write_that_returns_a_list_costs_a_heavy_read() {
+        let bound =
+            one("fn drop_all(self, _: &mut dyn ServerHost) -> Option<Vec<EntityRef>>").unwrap();
+        assert!(bound.write);
+        assert_eq!(bound.cost, HEAVY);
+    }
+
+    #[test]
+    fn a_write_with_no_server_host_is_bound_only_with_its_host_kind() {
+        let client =
+            one("fn set(self, _: &mut dyn ClientHost, _: bool) -> bool").expect_err("client");
+        assert_eq!(reason_category(&client), "client write");
+        let write = one("fn set(self, _: &mut dyn ServerHost, _: bool) -> bool").unwrap();
+        assert!(write.host && write.write);
+        assert_eq!(write.cost, WRITE);
+    }
+
+    #[test]
+    fn a_read_is_not_judged_by_the_powerful_name_parts() {
+        let read = one("fn raiders(self, _: &dyn Host) -> Option<bool>").unwrap();
+        assert!(!read.write);
+    }
+
+    /// The reason a signature (a write of `EntityRef`) is skipped, or the panic when it binds.
+    fn powerful_reason(signature: &str) -> String {
+        one(signature).expect_err(signature)
+    }
+
+    #[test]
+    fn the_powerful_table_denies_the_names_the_design_lists() {
+        let cases = [
+            "fn run_command(self, _: &mut dyn ServerHost, _: &str) -> bool",
+            "fn teleport_to_level(self, _: &mut dyn ServerHost, _: &str) -> bool",
+            "fn merge_nbt(self, _: &mut dyn ServerHost) -> bool",
+            "fn spawn_mob(self, _: &mut dyn ServerHost) -> bool",
+            "fn explode(self, _: &mut dyn ServerHost) -> bool",
+            "fn set_game_rule(self, _: &mut dyn ServerHost) -> bool",
+            "fn remove(self, _: &mut dyn ServerHost) -> bool",
+            "fn discard(self, _: &mut dyn ServerHost) -> bool",
+            "fn strike_lightning(self, _: &mut dyn ServerHost) -> bool",
+            "fn set_world_border_size(self, _: &mut dyn ServerHost) -> bool",
+            "fn disconnect(self, _: &mut dyn ServerHost) -> bool",
+            "fn set_game_mode(self, _: &mut dyn ServerHost) -> bool",
+            "fn invalidate_capabilities(self, _: &mut dyn ServerHost) -> bool",
+            "fn award_stat(self, _: &mut dyn ServerHost) -> bool",
+            "fn reset_stat(self, _: &mut dyn ServerHost) -> bool",
+        ];
+        for signature in cases {
+            let reason = powerful_reason(signature);
+            assert_eq!(
+                reason_category(&reason),
+                "powerful (needs manifest power)",
+                "{signature}: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_powerful_write_is_denied_by_its_owner_name_or_argument_rule() {
+        let registrar = members(&[(
+            "Registrar",
+            "add",
+            "fn add(self, _: &mut dyn ServerHost) -> bool",
+        )])
+        .remove(0);
+        assert_eq!(
+            powerful(&registrar).as_deref(),
+            Some("powerful (needs manifest power): owner Registrar")
+        );
+        let offer = members(&[(
+            "MerchantRef",
+            "set_offer",
+            "fn set_offer(self, _: &mut dyn ServerHost, _: u32) -> bool",
+        )])
+        .remove(0);
+        assert_eq!(
+            powerful(&offer).as_deref(),
+            Some("powerful (needs manifest power): MerchantRef method containing `offer`")
+        );
+        let transaction =
+            powerful_reason("fn put(self, _: &mut dyn ServerHost, _: &Transaction) -> bool");
+        assert!(
+            transaction.ends_with("argument `&Transaction`"),
+            "{transaction}"
+        );
+    }
+
+    #[test]
+    fn the_powerful_table_leaves_an_ordinary_write_bound() {
+        assert!(one("fn set_velocity(self, _: &mut dyn ServerHost, _: [f64; 3]) -> bool").is_ok());
     }
 }

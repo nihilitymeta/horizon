@@ -296,6 +296,20 @@ impl ToLuaValue for mod_api::ArrowPickup {
     }
 }
 
+const ARROW_PICKUP_NAMES: &[&str] = &["disallowed", "allowed", "creative_only"];
+
+impl FromLuaValue for mod_api::ArrowPickup {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "disallowed" => Ok(mod_api::ArrowPickup::Disallowed),
+            "allowed" => Ok(mod_api::ArrowPickup::Allowed),
+            "creative_only" => Ok(mod_api::ArrowPickup::CreativeOnly),
+            _ => Err(ConvertError::unknown_variant(&name, ARROW_PICKUP_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::AtlasRegion {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -482,6 +496,21 @@ impl ToLuaValue for mod_api::Billboard {
             _ => return Err(mlua::Error::runtime("unknown variant of Billboard")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const BILLBOARD_NAMES: &[&str] = &["fixed", "vertical", "horizontal", "center"];
+
+impl FromLuaValue for mod_api::Billboard {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "fixed" => Ok(mod_api::Billboard::Fixed),
+            "vertical" => Ok(mod_api::Billboard::Vertical),
+            "horizontal" => Ok(mod_api::Billboard::Horizontal),
+            "center" => Ok(mod_api::Billboard::Center),
+            _ => Err(ConvertError::unknown_variant(&name, BILLBOARD_NAMES)),
+        }
     }
 }
 
@@ -1117,6 +1146,24 @@ impl ToLuaValue for mod_api::BossBarColor {
     }
 }
 
+const BOSS_BAR_COLOR_NAMES: &[&str] = &["pink", "blue", "red", "green", "yellow", "purple", "white"];
+
+impl FromLuaValue for mod_api::BossBarColor {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "pink" => Ok(mod_api::BossBarColor::Pink),
+            "blue" => Ok(mod_api::BossBarColor::Blue),
+            "red" => Ok(mod_api::BossBarColor::Red),
+            "green" => Ok(mod_api::BossBarColor::Green),
+            "yellow" => Ok(mod_api::BossBarColor::Yellow),
+            "purple" => Ok(mod_api::BossBarColor::Purple),
+            "white" => Ok(mod_api::BossBarColor::White),
+            _ => Err(ConvertError::unknown_variant(&name, BOSS_BAR_COLOR_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::BossBarOverlay {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -1128,6 +1175,22 @@ impl ToLuaValue for mod_api::BossBarOverlay {
             _ => return Err(mlua::Error::runtime("unknown variant of BossBarOverlay")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const BOSS_BAR_OVERLAY_NAMES: &[&str] = &["progress", "notched6", "notched10", "notched12", "notched20"];
+
+impl FromLuaValue for mod_api::BossBarOverlay {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "progress" => Ok(mod_api::BossBarOverlay::Progress),
+            "notched6" => Ok(mod_api::BossBarOverlay::Notched6),
+            "notched10" => Ok(mod_api::BossBarOverlay::Notched10),
+            "notched12" => Ok(mod_api::BossBarOverlay::Notched12),
+            "notched20" => Ok(mod_api::BossBarOverlay::Notched20),
+            _ => Err(ConvertError::unknown_variant(&name, BOSS_BAR_OVERLAY_NAMES)),
+        }
     }
 }
 
@@ -2512,6 +2575,20 @@ impl ToLuaValue for mod_api::Deflection {
     }
 }
 
+const DEFLECTION_NAMES: &[&str] = &["reverse", "aim_deflect", "momentum_deflect"];
+
+impl FromLuaValue for mod_api::Deflection {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "reverse" => Ok(mod_api::Deflection::Reverse),
+            "aim_deflect" => Ok(mod_api::Deflection::AimDeflect),
+            "momentum_deflect" => Ok(mod_api::Deflection::MomentumDeflect),
+            _ => Err(ConvertError::unknown_variant(&name, DEFLECTION_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::DependencyKind {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -2708,6 +2785,28 @@ impl ToLuaValue for mod_api::DragonPhase {
             _ => return Err(mlua::Error::runtime("unknown variant of DragonPhase")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const DRAGON_PHASE_NAMES: &[&str] = &["holding_pattern", "strafe_player", "landing_approach", "landing", "takeoff", "sitting_flaming", "sitting_scanning", "sitting_attacking", "charging_player", "dying", "hover"];
+
+impl FromLuaValue for mod_api::DragonPhase {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "holding_pattern" => Ok(mod_api::DragonPhase::HoldingPattern),
+            "strafe_player" => Ok(mod_api::DragonPhase::StrafePlayer),
+            "landing_approach" => Ok(mod_api::DragonPhase::LandingApproach),
+            "landing" => Ok(mod_api::DragonPhase::Landing),
+            "takeoff" => Ok(mod_api::DragonPhase::Takeoff),
+            "sitting_flaming" => Ok(mod_api::DragonPhase::SittingFlaming),
+            "sitting_scanning" => Ok(mod_api::DragonPhase::SittingScanning),
+            "sitting_attacking" => Ok(mod_api::DragonPhase::SittingAttacking),
+            "charging_player" => Ok(mod_api::DragonPhase::ChargingPlayer),
+            "dying" => Ok(mod_api::DragonPhase::Dying),
+            "hover" => Ok(mod_api::DragonPhase::Hover),
+            _ => Err(ConvertError::unknown_variant(&name, DRAGON_PHASE_NAMES)),
+        }
     }
 }
 
@@ -4046,6 +4145,19 @@ impl ToLuaValue for mod_api::Hand {
     }
 }
 
+const HAND_NAMES: &[&str] = &["main", "off"];
+
+impl FromLuaValue for mod_api::Hand {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "main" => Ok(mod_api::Hand::Main),
+            "off" => Ok(mod_api::Hand::Off),
+            _ => Err(ConvertError::unknown_variant(&name, HAND_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::HandlerThread {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -4530,6 +4642,27 @@ impl ToLuaValue for mod_api::ItemDisplayContext {
             _ => return Err(mlua::Error::runtime("unknown variant of ItemDisplayContext")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const ITEM_DISPLAY_CONTEXT_NAMES: &[&str] = &["none", "third_person_left_hand", "third_person_right_hand", "first_person_left_hand", "first_person_right_hand", "head", "gui", "ground", "fixed", "on_shelf"];
+
+impl FromLuaValue for mod_api::ItemDisplayContext {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "none" => Ok(mod_api::ItemDisplayContext::None),
+            "third_person_left_hand" => Ok(mod_api::ItemDisplayContext::ThirdPersonLeftHand),
+            "third_person_right_hand" => Ok(mod_api::ItemDisplayContext::ThirdPersonRightHand),
+            "first_person_left_hand" => Ok(mod_api::ItemDisplayContext::FirstPersonLeftHand),
+            "first_person_right_hand" => Ok(mod_api::ItemDisplayContext::FirstPersonRightHand),
+            "head" => Ok(mod_api::ItemDisplayContext::Head),
+            "gui" => Ok(mod_api::ItemDisplayContext::Gui),
+            "ground" => Ok(mod_api::ItemDisplayContext::Ground),
+            "fixed" => Ok(mod_api::ItemDisplayContext::Fixed),
+            "on_shelf" => Ok(mod_api::ItemDisplayContext::OnShelf),
+            _ => Err(ConvertError::unknown_variant(&name, ITEM_DISPLAY_CONTEXT_NAMES)),
+        }
     }
 }
 
@@ -9154,6 +9287,28 @@ impl ToLuaValue for mod_api::SoundSource {
     }
 }
 
+const SOUND_SOURCE_NAMES: &[&str] = &["master", "music", "records", "weather", "blocks", "hostile", "neutral", "players", "ambient", "voice", "ui"];
+
+impl FromLuaValue for mod_api::SoundSource {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "master" => Ok(mod_api::SoundSource::Master),
+            "music" => Ok(mod_api::SoundSource::Music),
+            "records" => Ok(mod_api::SoundSource::Records),
+            "weather" => Ok(mod_api::SoundSource::Weather),
+            "blocks" => Ok(mod_api::SoundSource::Blocks),
+            "hostile" => Ok(mod_api::SoundSource::Hostile),
+            "neutral" => Ok(mod_api::SoundSource::Neutral),
+            "players" => Ok(mod_api::SoundSource::Players),
+            "ambient" => Ok(mod_api::SoundSource::Ambient),
+            "voice" => Ok(mod_api::SoundSource::Voice),
+            "ui" => Ok(mod_api::SoundSource::Ui),
+            _ => Err(ConvertError::unknown_variant(&name, SOUND_SOURCE_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::SoundState {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -9781,6 +9936,20 @@ impl ToLuaValue for mod_api::TextAlignment {
             _ => return Err(mlua::Error::runtime("unknown variant of TextAlignment")),
         };
         Ok(Value::String(lua.create_string(name)?))
+    }
+}
+
+const TEXT_ALIGNMENT_NAMES: &[&str] = &["center", "left", "right"];
+
+impl FromLuaValue for mod_api::TextAlignment {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "center" => Ok(mod_api::TextAlignment::Center),
+            "left" => Ok(mod_api::TextAlignment::Left),
+            "right" => Ok(mod_api::TextAlignment::Right),
+            _ => Err(ConvertError::unknown_variant(&name, TEXT_ALIGNMENT_NAMES)),
+        }
     }
 }
 
@@ -11126,6 +11295,18 @@ mod unit_enum_tests {
     }
 
     #[test]
+    fn arrow_pickup_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::ARROW_PICKUP_NAMES, vec![mod_api::ArrowPickup::Disallowed, mod_api::ArrowPickup::Allowed, mod_api::ArrowPickup::CreativeOnly]);
+    }
+
+    #[test]
+    fn billboard_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::BILLBOARD_NAMES, vec![mod_api::Billboard::Fixed, mod_api::Billboard::Vertical, mod_api::Billboard::Horizontal, mod_api::Billboard::Center]);
+    }
+
+    #[test]
     fn block_face_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::BLOCK_FACE_NAMES, vec![mod_api::BlockFace::Down, mod_api::BlockFace::Up, mod_api::BlockFace::North, mod_api::BlockFace::South, mod_api::BlockFace::West, mod_api::BlockFace::East]);
@@ -11135,6 +11316,18 @@ mod unit_enum_tests {
     fn block_shape_kind_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::BLOCK_SHAPE_KIND_NAMES, vec![mod_api::BlockShapeKind::Outline, mod_api::BlockShapeKind::Collision]);
+    }
+
+    #[test]
+    fn boss_bar_color_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::BOSS_BAR_COLOR_NAMES, vec![mod_api::BossBarColor::Pink, mod_api::BossBarColor::Blue, mod_api::BossBarColor::Red, mod_api::BossBarColor::Green, mod_api::BossBarColor::Yellow, mod_api::BossBarColor::Purple, mod_api::BossBarColor::White]);
+    }
+
+    #[test]
+    fn boss_bar_overlay_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::BOSS_BAR_OVERLAY_NAMES, vec![mod_api::BossBarOverlay::Progress, mod_api::BossBarOverlay::Notched6, mod_api::BossBarOverlay::Notched10, mod_api::BossBarOverlay::Notched12, mod_api::BossBarOverlay::Notched20]);
     }
 
     #[test]
@@ -11156,9 +11349,21 @@ mod unit_enum_tests {
     }
 
     #[test]
+    fn deflection_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::DEFLECTION_NAMES, vec![mod_api::Deflection::Reverse, mod_api::Deflection::AimDeflect, mod_api::Deflection::MomentumDeflect]);
+    }
+
+    #[test]
     fn direction_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::DIRECTION_NAMES, vec![mod_api::Direction::Down, mod_api::Direction::Up, mod_api::Direction::North, mod_api::Direction::South, mod_api::Direction::West, mod_api::Direction::East]);
+    }
+
+    #[test]
+    fn dragon_phase_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::DRAGON_PHASE_NAMES, vec![mod_api::DragonPhase::HoldingPattern, mod_api::DragonPhase::StrafePlayer, mod_api::DragonPhase::LandingApproach, mod_api::DragonPhase::Landing, mod_api::DragonPhase::Takeoff, mod_api::DragonPhase::SittingFlaming, mod_api::DragonPhase::SittingScanning, mod_api::DragonPhase::SittingAttacking, mod_api::DragonPhase::ChargingPlayer, mod_api::DragonPhase::Dying, mod_api::DragonPhase::Hover]);
     }
 
     #[test]
@@ -11171,6 +11376,18 @@ mod unit_enum_tests {
     fn game_mode_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::GAME_MODE_NAMES, vec![mod_api::GameMode::Survival, mod_api::GameMode::Creative, mod_api::GameMode::Adventure, mod_api::GameMode::Spectator]);
+    }
+
+    #[test]
+    fn hand_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::HAND_NAMES, vec![mod_api::Hand::Main, mod_api::Hand::Off]);
+    }
+
+    #[test]
+    fn item_display_context_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::ITEM_DISPLAY_CONTEXT_NAMES, vec![mod_api::ItemDisplayContext::None, mod_api::ItemDisplayContext::ThirdPersonLeftHand, mod_api::ItemDisplayContext::ThirdPersonRightHand, mod_api::ItemDisplayContext::FirstPersonLeftHand, mod_api::ItemDisplayContext::FirstPersonRightHand, mod_api::ItemDisplayContext::Head, mod_api::ItemDisplayContext::Gui, mod_api::ItemDisplayContext::Ground, mod_api::ItemDisplayContext::Fixed, mod_api::ItemDisplayContext::OnShelf]);
     }
 
     #[test]
@@ -11192,6 +11409,12 @@ mod unit_enum_tests {
     }
 
     #[test]
+    fn sound_source_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::SOUND_SOURCE_NAMES, vec![mod_api::SoundSource::Master, mod_api::SoundSource::Music, mod_api::SoundSource::Records, mod_api::SoundSource::Weather, mod_api::SoundSource::Blocks, mod_api::SoundSource::Hostile, mod_api::SoundSource::Neutral, mod_api::SoundSource::Players, mod_api::SoundSource::Ambient, mod_api::SoundSource::Voice, mod_api::SoundSource::Ui]);
+    }
+
+    #[test]
     fn stat_type_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::STAT_TYPE_NAMES, vec![mod_api::StatType::Mined, mod_api::StatType::Crafted, mod_api::StatType::Used, mod_api::StatType::Broken, mod_api::StatType::PickedUp, mod_api::StatType::Dropped, mod_api::StatType::Killed, mod_api::StatType::KilledBy, mod_api::StatType::Custom]);
@@ -11201,6 +11424,12 @@ mod unit_enum_tests {
     fn support_type_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::SUPPORT_TYPE_NAMES, vec![mod_api::SupportType::Full, mod_api::SupportType::Center, mod_api::SupportType::Rigid]);
+    }
+
+    #[test]
+    fn text_alignment_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::TEXT_ALIGNMENT_NAMES, vec![mod_api::TextAlignment::Center, mod_api::TextAlignment::Left, mod_api::TextAlignment::Right]);
     }
 
     #[test]
