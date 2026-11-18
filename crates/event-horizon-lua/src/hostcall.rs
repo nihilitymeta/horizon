@@ -1697,7 +1697,7 @@ mod tests {
                 .count(),
             9
         );
-        // The BlockEntityPart methods: 20 lines, 2 emitted; the nine hot ones, the two NBT ones and the
+        // The BlockEntityPart methods: 20 lines, 4 emitted; the nine hot ones, the two NBT ones and the
         // attachment one skipped.
         let block_entities: Vec<&str> = coverage
             .lines()
@@ -1709,9 +1709,11 @@ mod tests {
                 .iter()
                 .filter(|line| line.ends_with(" emitted"))
                 .count(),
-            2
+            4
         );
         assert!(block_entities.contains(&"block_entity_part.on_chunk_unloaded emitted"));
+        assert!(block_entities.contains(&"block_entity_part.block_entity_on_load emitted"));
+        assert!(block_entities.contains(&"block_entity_part.screen_click emitted"));
         assert!(block_entities.contains(&"block_entity_part.block_entity_data_received emitted"));
         assert!(block_entities.contains(
             &"block_entity_part.block_entity_tick skipped: hot path (needs measurement)"

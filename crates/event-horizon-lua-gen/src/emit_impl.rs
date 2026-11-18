@@ -722,6 +722,10 @@ fn to_lua_expr(field_expr: &str, mapped: &Mapped, plain: &Plain) -> Option<Strin
         TypeIr::Option(inner) if matches!(**inner, TypeIr::Str) => Some(format!(
             "{field_expr}.as_ref().map(|value| value.to_string()).to_lua_value(lua)?"
         )),
+        // A list of numbers or booleans is a Lua array table: `[T]` converts (a borrowed slice too).
+        TypeIr::List(elem) if scalar_name(elem).is_some() => {
+            Some(format!("{field_expr}.to_lua_value(lua)?"))
+        }
         ty => convertible(ty, plain).then(|| format!("{field_expr}.to_lua_value(lua)?")),
     }
 }
@@ -756,7 +760,8 @@ pub fn scalar_name(ty: &TypeIr) -> Option<&'static str> {
 /// Whether `ty` has a `ToLuaValue` impl in `event-horizon-lua-convert`, or is a plain surface type
 /// whose impl `generated_types` has (for a reference, the referent). `u128` (a UUID, as text),
 /// `usize` and `Identifier` have impls in its `ids` module; `i128` and `isize` have none. `Duration`
-/// has one in `scalar.rs`; `char`, `Path` and `PathBuf` have one in `generated_types` (the std impls).
+/// has one in `scalar.rs`; a block entity type key has one in `ids.rs` (its id string);
+/// `char`, `Path` and `PathBuf` have one in `generated_types` (the std impls).
 pub fn convertible(ty: &TypeIr, plain: &Plain) -> bool {
     match ty {
         TypeIr::Str => true,
@@ -769,6 +774,7 @@ pub fn convertible(ty: &TypeIr, plain: &Plain) -> bool {
             matches!(
                 name.as_str(),
                 "BlockPos"
+                    | "BlockEntityTypeKey"
                     | "Compound"
                     | "Text"
                     | "text::Text"
@@ -1956,6 +1962,42 @@ impl mod_api::Hooks for LuaHost {
             with.text
         );
         syn::parse_file(&with.text).expect("the text parses");
+    }
+
+    #[test]
+    fn a_block_entity_key_and_a_slice_of_ints_convert_and_a_slice_of_strings_does_not() {
+        let ir = ir(vec![
+            hook("keyed", Kind::Listen, vec![arg("id", "BlockEntityTypeKey")]),
+            hook("ints", Kind::Listen, vec![arg("data", "&'a[i32]")]),
+            hook("strings", Kind::Listen, vec![arg("data", "&'a[String]")]),
+        ]);
+        let sigs = [
+            sig("keyed", None, "event", "KeyedEvent<'_>", None),
+            sig("ints", None, "event", "IntsEvent<'_>", None),
+            sig("strings", None, "event", "StringsEvent<'_>", None),
+        ];
+        let emitted = emit_plain(&ir, &sigs, &["keyed", "ints", "strings"], &Plain::default());
+        assert_eq!(emitted.emitted, ["ints", "keyed"]);
+        assert!(
+            emitted
+                .text
+                .contains("data.raw_set(\"id\", event.id.to_lua_value(lua)?)?;"),
+            "{}",
+            emitted.text
+        );
+        assert!(
+            emitted
+                .text
+                .contains("data.raw_set(\"data\", event.data.to_lua_value(lua)?)?;"),
+            "{}",
+            emitted.text
+        );
+        assert!(
+            emitted.skipped[0].1.contains("no Lua conversion"),
+            "{:?}",
+            emitted.skipped
+        );
+        syn::parse_file(&emitted.text).expect("the text parses");
     }
 
     #[test]

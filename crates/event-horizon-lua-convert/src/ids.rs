@@ -1,5 +1,5 @@
 //! Identifier-like values between Lua and Rust: UUIDs (`u128`), `usize`, and mod
-//! identifiers (`mod_api::Identifier`).
+//! identifiers (`mod_api::Identifier`), and a block entity type key as its id string.
 //!
 //! A player or entity id is a 128-bit UUID, which a Lua number cannot hold, so it
 //! travels as the canonical lowercase hyphenated string
@@ -90,6 +90,16 @@ impl ToLuaValue for usize {
         let wide = u64::try_from(*self)
             .map_err(|_| mlua::Error::runtime(format!("usize {self} does not fit a u64")))?;
         wide.to_lua_value(lua)
+    }
+}
+
+/// A block entity type key is the canonical id of its type (`"mymod:press"`), the string the mod
+/// wrote. A key with no name in the load-owned registry is an error, never an empty string.
+impl ToLuaValue for mod_api::BlockEntityTypeKey {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let name = mod_api::__private::block_entity_type_name(*self)
+            .ok_or_else(|| mlua::Error::runtime("unknown block entity type key"))?;
+        Ok(Value::String(lua.create_string(name)?))
     }
 }
 

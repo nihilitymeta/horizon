@@ -1725,3 +1725,183 @@ pub(crate) mod tests {
         assert!(!event.cancelled);
     }
 }
+
+/// The generated BlockEntityPart methods' turns, run on a loaded part with no host: the handler sees
+/// the converted argument, another mod's handler does not run, and an error voids the turn.
+#[cfg(test)]
+mod block_entity_turn_tests {
+    use super::*;
+    use crate::hostcall::TurnHost;
+    use event_horizon_lua_convert::scalar::ToLuaValue;
+
+    /// A mod named `name` with `source` as its main.luau, loaded.
+    fn load(root: &Path, name: &str, source: &str) -> LuaMod {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(ENTRY), source).unwrap();
+        let found = Discovered {
+            dir,
+            id: name.to_string(),
+            version: "1".to_string(),
+            side: Side::Both,
+        };
+        LuaMod::load(&found).unwrap()
+    }
+
+    /// A block and a block entity type `ns:press` on it, with one part whose handlers are `handlers`.
+    fn source(ns: &str, handlers: &str) -> String {
+        format!(
+            "horizon.block{{id = \"{ns}:press_block\", template = \"minecraft:stone\"}}\n\
+             horizon.block_entity_type{{id = \"{ns}:press\", blocks = {{\"{ns}:press_block\"}}}}\n\
+             horizon.block_entity_part(\"{ns}:press\", {{{handlers}}})\n"
+        )
+    }
+
+    /// The block entity part of the mod at `index` (each mod here declares one).
+    fn part(mods: &Arc<[LuaMod]>, index: usize) -> LuaBlockEntityPart {
+        LuaPart::new(mods.clone(), index, 0).unwrap()
+    }
+
+    fn event(lua: &Lua, data: Table) -> mlua::Result<crate::dispatch::Event> {
+        new_event(lua, data, &[])
+    }
+
+    #[test]
+    fn a_block_entity_on_load_handler_sees_the_id_and_no_other_mod_runs() {
+        let root = tempfile::tempdir().unwrap();
+        let mods: Arc<[LuaMod]> = Arc::from(vec![
+            load(
+                root.path(),
+                "first_mod",
+                &source(
+                    "first_mod",
+                    "block_entity_on_load = function(event) horizon.log(event.id) end",
+                ),
+            ),
+            load(
+                root.path(),
+                "second_mod",
+                &source(
+                    "second_mod",
+                    "block_entity_on_load = function() horizon.log(\"second ran\") end",
+                ),
+            ),
+        ]);
+        let build = |lua: &Lua, _: &TurnHost<'_>| {
+            let data = lua.create_table()?;
+            data.raw_set("id", "first_mod:press".to_owned().to_lua_value(lua)?)?;
+            event(lua, data)
+        };
+        let mut committed = 0;
+        part(&mods, 0)
+            .dispatch_turns(
+                "block_entity_on_load",
+                TurnHost::None,
+                &|| false,
+                &build,
+                &mut |_, _, _| {
+                    committed += 1;
+                    true
+                },
+            )
+            .unwrap();
+        assert_eq!(committed, 1);
+        assert_eq!(mods[0].log_lines(), ["first_mod:press"]);
+        assert!(mods[1].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_failing_block_entity_on_load_handler_voids_its_turn() {
+        let root = tempfile::tempdir().unwrap();
+        let mods: Arc<[LuaMod]> = Arc::from(vec![load(
+            root.path(),
+            "first_mod",
+            &source(
+                "first_mod",
+                "block_entity_on_load = function() error(\"boom\") end",
+            ),
+        )]);
+        let build = |lua: &Lua, _: &TurnHost<'_>| event(lua, lua.create_table()?);
+        let mut committed = 0;
+        part(&mods, 0)
+            .dispatch_turns(
+                "block_entity_on_load",
+                TurnHost::None,
+                &|| false,
+                &build,
+                &mut |_, _, _| {
+                    committed += 1;
+                    true
+                },
+            )
+            .unwrap();
+        assert_eq!(committed, 0);
+    }
+
+    #[test]
+    fn a_screen_click_handler_sees_the_slice_as_an_array_and_its_answer_is_taken() {
+        let root = tempfile::tempdir().unwrap();
+        let mods: Arc<[LuaMod]> = Arc::from(vec![
+            load(
+                root.path(),
+                "first_mod",
+                &source(
+                    "first_mod",
+                    "screen_click = function(event)\n\
+                     if #event.data == 3 and event.data[1] == 1 and event.data[3] == 3 then return 7 end\n\
+                     end",
+                ),
+            ),
+            load(
+                root.path(),
+                "second_mod",
+                &source(
+                    "second_mod",
+                    "screen_click = function() horizon.log(\"second ran\") return 9 end",
+                ),
+            ),
+        ]);
+        let build = |lua: &Lua, _: &TurnHost<'_>| {
+            let data = lua.create_table()?;
+            data.raw_set("data", [1_i32, 2, 3].as_slice().to_lua_value(lua)?)?;
+            event(lua, data)
+        };
+        let mut answer = None;
+        part(&mods, 0)
+            .dispatch_replace(
+                "screen_click",
+                TurnHost::None,
+                &build,
+                &mut |_, value, _| {
+                    match value {
+                        Value::Integer(found) => answer = Some(found),
+                        Value::Number(found) => answer = Some(found as i64),
+                        _ => {}
+                    }
+                    true
+                },
+            )
+            .unwrap();
+        assert_eq!(answer, Some(7));
+        assert!(mods[1].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_failing_screen_click_handler_gives_no_answer() {
+        let root = tempfile::tempdir().unwrap();
+        let mods: Arc<[LuaMod]> = Arc::from(vec![load(
+            root.path(),
+            "first_mod",
+            &source("first_mod", "screen_click = function() error(\"boom\") end"),
+        )]);
+        let build = |lua: &Lua, _: &TurnHost<'_>| event(lua, lua.create_table()?);
+        let mut answered = false;
+        part(&mods, 0)
+            .dispatch_replace("screen_click", TurnHost::None, &build, &mut |_, _, _| {
+                answered = true;
+                true
+            })
+            .unwrap();
+        assert!(!answered);
+    }
+}

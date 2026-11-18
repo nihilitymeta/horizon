@@ -275,6 +275,13 @@ impl<T: FromLuaValue> FromLuaValue for Vec<T> {
 
 impl<T: ToLuaValue> ToLuaValue for Vec<T> {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        self.as_slice().to_lua_value(lua)
+    }
+}
+
+/// A slice (a borrowed list, such as a hook's `&[i32]`) is the same Lua array table as a `Vec`.
+impl<T: ToLuaValue> ToLuaValue for [T] {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         if self.len() > MAX_LIST_ITEMS {
             return Err(mlua::Error::runtime(format!(
                 "a list of {} items is over the cap of {MAX_LIST_ITEMS}",
@@ -556,6 +563,25 @@ mod tests {
         full.raw_set(MAX_LIST_ITEMS + 1, 0).expect("set");
         let err = <Vec<i32>>::from_lua_value(&Value::Table(full)).expect_err("over the cap");
         assert!(err.to_string().contains("over the cap of 1024"), "{err}");
+    }
+
+    #[test]
+    fn a_slice_of_ints_converts_to_an_array_table_and_the_empty_slice_to_an_empty_one() {
+        let lua = Lua::new();
+        let value = [1_i32, 2, 3].as_slice().to_lua_value(&lua).expect("to lua");
+        let table = match value {
+            Value::Table(table) => table,
+            other => panic!("expected a table, got {other:?}"),
+        };
+        assert_eq!(table.raw_len(), 3);
+        assert_eq!(table.raw_get::<i32>(1).expect("first"), 1);
+        assert_eq!(table.raw_get::<i32>(2).expect("second"), 2);
+        assert_eq!(table.raw_get::<i32>(3).expect("third"), 3);
+        let empty: &[i32] = &[];
+        match empty.to_lua_value(&lua).expect("to lua") {
+            Value::Table(table) => assert_eq!(table.raw_len(), 0),
+            other => panic!("expected a table, got {other:?}"),
+        }
     }
 
     #[test]
