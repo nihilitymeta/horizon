@@ -935,3 +935,25 @@ item_part.use_duration skipped: hot path (needs measurement)
 item_part.use_item emitted
 item_part.use_on emitted
 item_part.xp_repair_ratio emitted
+
+# block entity parts (issue 74, P3): the BlockEntityPart trait's methods
+block_entity_part.block_entity skipped: NBT output (Compound is denied)
+block_entity_part.block_entity_client_tick skipped: hot path (needs measurement)
+block_entity_part.block_entity_client_ticks skipped: hot path (needs measurement)
+block_entity_part.block_entity_data_received emitted
+block_entity_part.block_entity_on_load skipped: argument `id` has type `BlockEntityTypeKey` (kind Other): no Lua conversion
+block_entity_part.block_entity_render_bounding_box skipped: hot path (needs measurement)
+block_entity_part.block_entity_submit skipped: hot path (needs measurement)
+block_entity_part.block_entity_tick skipped: hot path (needs measurement)
+block_entity_part.block_entity_ticks skipped: hot path (needs measurement)
+block_entity_part.block_entity_update_tag skipped: NBT output (Compound is denied)
+block_entity_part.block_entity_view_distance skipped: hot path (needs measurement)
+block_entity_part.menu_button skipped: output: ModBlockEntity
+block_entity_part.menu_quick_move skipped: cancel hook has no `cancelled: bool` argument
+block_entity_part.on_chunk_unloaded emitted
+block_entity_part.pre_remove_side_effects skipped: no host path for stacks
+block_entity_part.screen skipped: answer: Screen
+block_entity_part.screen_click skipped: argument `data` has type `&'a[i32]` (kind Collection): no Lua conversion
+block_entity_part.screen_draw skipped: hot path (needs measurement)
+block_entity_part.screen_tooltip skipped: hot path (needs measurement)
+block_entity_part.stateful_block_entity skipped: attachment state: not a Part state in v1

@@ -1646,7 +1646,11 @@ mod tests {
         let lines: Vec<&str> = coverage
             .lines()
             .filter(|line| !line.starts_with('#') && !line.is_empty())
-            .filter(|line| !line.starts_with("block_part.") && !line.starts_with("item_part."))
+            .filter(|line| {
+                !line.starts_with("block_part.")
+                    && !line.starts_with("item_part.")
+                    && !line.starts_with("block_entity_part.")
+            })
             .collect();
         assert_eq!(lines.len(), 749);
         // The BlockPart methods: one line each, emitted or with its reason.
@@ -1688,6 +1692,37 @@ mod tests {
         assert!(items.contains(&"item_part.tooltip skipped: hot path (needs measurement)"));
         assert_eq!(
             items
+                .iter()
+                .filter(|line| line.ends_with("hot path (needs measurement)"))
+                .count(),
+            9
+        );
+        // The BlockEntityPart methods: 20 lines, 2 emitted; the nine hot ones, the two NBT ones and the
+        // attachment one skipped.
+        let block_entities: Vec<&str> = coverage
+            .lines()
+            .filter(|line| line.starts_with("block_entity_part."))
+            .collect();
+        assert_eq!(block_entities.len(), 20);
+        assert_eq!(
+            block_entities
+                .iter()
+                .filter(|line| line.ends_with(" emitted"))
+                .count(),
+            2
+        );
+        assert!(block_entities.contains(&"block_entity_part.on_chunk_unloaded emitted"));
+        assert!(block_entities.contains(&"block_entity_part.block_entity_data_received emitted"));
+        assert!(block_entities.contains(
+            &"block_entity_part.block_entity_tick skipped: hot path (needs measurement)"
+        ));
+        assert!(
+            block_entities.contains(
+                &"block_entity_part.block_entity skipped: NBT output (Compound is denied)"
+            )
+        );
+        assert_eq!(
+            block_entities
                 .iter()
                 .filter(|line| line.ends_with("hot path (needs measurement)"))
                 .count(),

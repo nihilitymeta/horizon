@@ -204,6 +204,10 @@ mod tests {
         refuse: Option<String>,
         parts: Vec<crate::host::LuaBlockPart>,
         item_parts: Vec<crate::host::LuaItemPart>,
+        block_entity_types: Vec<(String, Vec<String>)>,
+        block_entity_parts: Vec<crate::host::LuaBlockEntityPart>,
+        /// Refuses the block entity part of this type id (the type's own request is answered).
+        refuse_part: Option<String>,
     }
 
     impl crate::host::DeclaredKeys for RecordingKeys {
@@ -226,6 +230,26 @@ mod tests {
         fn item_part(&mut self, id: &str, part: crate::host::LuaItemPart) -> Result<(), String> {
             self.asked.push(format!("item part {id}"));
             self.item_parts.push(part);
+            self.answer(id)
+        }
+
+        fn block_entity_type(&mut self, id: &str, blocks: &[String]) -> Result<(), String> {
+            self.asked.push(format!("block entity type {id}"));
+            self.block_entity_types
+                .push((id.to_owned(), blocks.to_vec()));
+            self.answer(id)
+        }
+
+        fn block_entity_part(
+            &mut self,
+            id: &str,
+            part: crate::host::LuaBlockEntityPart,
+        ) -> Result<(), String> {
+            self.asked.push(format!("block entity part {id}"));
+            self.block_entity_parts.push(part);
+            if self.refuse_part.as_deref() == Some(id) {
+                return Err(format!("the game refused the part of {id}"));
+            }
             self.answer(id)
         }
     }
@@ -499,6 +523,167 @@ mod tests {
         )
         .unwrap();
         found
+    }
+
+    /// A mod with one block, one block entity type on it and that type's part (`on_chunk_unloaded`
+    /// logs a line), as `first_mod`.
+    const PRESS: &str = "horizon.block{id = \"first_mod:press_block\", template = \"minecraft:stone\"}\n\
+        horizon.block_entity_type{id = \"first_mod:press\", blocks = {\"first_mod:press_block\"}}\n\
+        horizon.block_entity_part(\"first_mod:press\", {on_chunk_unloaded = function() horizon.log(\"unloaded\") end})\n";
+
+    /// Runs the block entity part's `on_chunk_unloaded` turn with no host (as the generated method
+    /// does for a hook that gets none), and returns how many times its turn committed.
+    fn chunk_unloaded_commits(part: &crate::host::LuaBlockEntityPart) -> usize {
+        let mut committed = 0;
+        let build = |lua: &mlua::Lua, _: &crate::hostcall::TurnHost<'_>| {
+            crate::dispatch::new_event(lua, lua.create_table()?, &[])
+        };
+        part.dispatch_turns(
+            "on_chunk_unloaded",
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &build,
+            &mut |_, _, _| {
+                committed += 1;
+                true
+            },
+        )
+        .unwrap();
+        committed
+    }
+
+    #[test]
+    fn a_block_entity_type_is_requested_before_its_part() {
+        let (_, keys) = requested(&[("a_first", "first_mod", PRESS)]);
+        assert_eq!(
+            keys.asked,
+            [
+                "block first_mod:press_block",
+                "block entity type first_mod:press",
+                "block entity part first_mod:press",
+            ]
+        );
+        assert_eq!(
+            keys.block_entity_types,
+            [(
+                "first_mod:press".to_owned(),
+                vec!["first_mod:press_block".to_owned()]
+            )]
+        );
+    }
+
+    #[test]
+    fn a_block_entity_part_is_a_block_part_that_subscribes_to_no_block_hook() {
+        use mod_api::{BlockEntityPart, BlockPart};
+        let (_, keys) = requested(&[("a_first", "first_mod", PRESS)]);
+        let part = &keys.block_entity_parts[0];
+        assert!(part.block_subscribed().is_empty());
+        assert_eq!(part.block_entity_subscribed().len(), 1);
+    }
+
+    #[test]
+    fn a_block_entity_part_runs_only_its_own_mods_handler() {
+        let (host, keys) = requested(&[
+            ("a_first", "first_mod", PRESS),
+            (
+                "b_second",
+                "second_mod",
+                "horizon.block{id = \"second_mod:x\", template = \"minecraft:stone\"}\n\
+                 horizon.block_entity_type{id = \"second_mod:press\", blocks = {\"second_mod:x\"}}\n\
+                 horizon.block_entity_part(\"second_mod:press\", {on_chunk_unloaded = function() horizon.log(\"second ran\") end})",
+            ),
+        ]);
+        assert_eq!(keys.block_entity_parts.len(), 2);
+        assert_eq!(chunk_unloaded_commits(&keys.block_entity_parts[0]), 1);
+        assert_eq!(host.mods()[0].log_lines(), ["unloaded"]);
+        assert!(host.mods()[1].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_failing_block_entity_part_handler_voids_its_turn() {
+        let (_, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.block{id = \"first_mod:press_block\", template = \"minecraft:stone\"}\n\
+             horizon.block_entity_type{id = \"first_mod:press\", blocks = {\"first_mod:press_block\"}}\n\
+             horizon.block_entity_part(\"first_mod:press\", {on_chunk_unloaded = function() error(\"boom\") end})",
+        )]);
+        assert_eq!(chunk_unloaded_commits(&keys.block_entity_parts[0]), 0);
+    }
+
+    #[test]
+    fn a_refused_block_entity_type_refuses_only_its_mod() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(root.path(), "a_first", "first_mod", PRESS);
+        mod_folder(
+            root.path(),
+            "b_second",
+            "second_mod",
+            "horizon.block{id = \"second_mod:x\", template = \"minecraft:stone\"}\n\
+             horizon.block_entity_type{id = \"second_mod:press\", blocks = {\"second_mod:x\"}}\n\
+             horizon.block_entity_part(\"second_mod:press\", {on_chunk_unloaded = function() end})",
+        );
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        let mut keys = RecordingKeys {
+            refuse: Some("first_mod:press".to_owned()),
+            ..RecordingKeys::default()
+        };
+        host.request_keys(&mut keys);
+        assert_eq!(answered_blocks(&host), ["second_mod:x"]);
+        assert!(
+            !keys
+                .asked
+                .contains(&"block entity part first_mod:press".to_owned())
+        );
+        assert_eq!(keys.block_entity_parts.len(), 1);
+    }
+
+    #[test]
+    fn a_refused_block_entity_part_refuses_only_its_mod() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(root.path(), "a_first", "first_mod", PRESS);
+        mod_folder(
+            root.path(),
+            "b_second",
+            "second_mod",
+            "horizon.block{id = \"second_mod:x\", template = \"minecraft:stone\"}\n\
+             horizon.block_entity_type{id = \"second_mod:press\", blocks = {\"second_mod:x\"}}\n\
+             horizon.block_entity_part(\"second_mod:press\", {on_chunk_unloaded = function() end})",
+        );
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        let mut keys = RecordingKeys {
+            refuse_part: Some("first_mod:press".to_owned()),
+            ..RecordingKeys::default()
+        };
+        host.request_keys(&mut keys);
+        assert_eq!(answered_blocks(&host), ["second_mod:x"]);
+        assert_eq!(keys.block_entity_parts.len(), 2);
+    }
+
+    #[test]
+    fn a_block_part_an_item_part_and_a_block_entity_part_of_one_mod_all_work() {
+        let (host, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.block{id = \"first_mod:press_block\", template = \"minecraft:stone\"}\n\
+             horizon.item{id = \"first_mod:wand\", template = \"minecraft:stick\"}\n\
+             horizon.block_entity_type{id = \"first_mod:press\", blocks = {\"first_mod:press_block\"}}\n\
+             horizon.block_part(\"first_mod:press_block\", {can_survive = function() return true end})\n\
+             horizon.item_part(\"first_mod:wand\", {use_item = function() return \"success\" end})\n\
+             horizon.block_entity_part(\"first_mod:press\", {on_chunk_unloaded = function() horizon.log(\"unloaded\") end})",
+        )]);
+        assert_eq!(keys.parts.len(), 1);
+        assert_eq!(keys.item_parts.len(), 1);
+        assert_eq!(keys.block_entity_parts.len(), 1);
+        assert!(matches!(
+            use_item_answer(&keys.item_parts[0]),
+            Some(mod_api::InteractionResult::Success)
+        ));
+        assert_eq!(survives(&keys.parts[0]), Some(true));
+        assert_eq!(chunk_unloaded_commits(&keys.block_entity_parts[0]), 1);
+        assert_eq!(host.mods()[0].log_lines(), ["unloaded"]);
     }
 
     #[test]

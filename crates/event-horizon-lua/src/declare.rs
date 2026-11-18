@@ -24,6 +24,12 @@ pub const MAX_ITEMS: usize = 256;
 /// The most `horizon.block_part` calls one mod may make, and the most `horizon.item_part` calls.
 pub const MAX_PARTS: usize = 128;
 
+/// The most `horizon.block_entity_type` calls one mod may make.
+pub const MAX_BLOCK_ENTITY_TYPES: usize = 64;
+
+/// The most blocks one `horizon.block_entity_type` may name.
+pub const MAX_BLOCKS_PER_TYPE: usize = 32;
+
 /// The time a mod's top level may run while it loads.
 pub const DECLARE_BUDGET: Duration = Duration::from_secs(2);
 
@@ -56,14 +62,20 @@ pub struct Declaration {
     pub parts: Vec<PartRecord>,
     /// The item parts `horizon.item_part` declared, in declaration order.
     pub item_parts: Vec<PartRecord>,
+    /// The block entity types `horizon.block_entity_type` declared, in declaration order.
+    pub block_entity_types: Vec<BlockEntityTypeRecord>,
+    /// The block entity parts `horizon.block_entity_part` declared, in declaration order.
+    pub block_entity_parts: Vec<PartRecord>,
 }
 
-/// The kind of a part a mod declares: `horizon.block_part` (a BlockPart) or `horizon.item_part` (an
-/// ItemPart). Each kind has its own handler table, its own id check and its own cap.
+/// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
+/// ItemPart) or `horizon.block_entity_part` (a BlockEntityPart). Each kind has its own handler table,
+/// its own id check and its own cap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartKind {
     Block,
     Item,
+    BlockEntity,
 }
 
 impl PartKind {
@@ -72,14 +84,16 @@ impl PartKind {
         match self {
             PartKind::Block => "block_part",
             PartKind::Item => "item_part",
+            PartKind::BlockEntity => "block_entity_part",
         }
     }
 
-    /// What the id names, in the errors (`block`, `item`).
+    /// What the id names, in the errors (`block`, `item`, `block entity`).
     fn noun(self) -> &'static str {
         match self {
             PartKind::Block => "block",
             PartKind::Item => "item",
+            PartKind::BlockEntity => "block entity",
         }
     }
 
@@ -88,8 +102,18 @@ impl PartKind {
         match self {
             PartKind::Block => crate::generated::parts::BLOCK_PARTS,
             PartKind::Item => crate::generated::item_parts::ITEM_PARTS,
+            PartKind::BlockEntity => crate::generated::block_entity_parts::BLOCK_ENTITY_PARTS,
         }
     }
+}
+
+/// A block entity type a mod declared with `horizon.block_entity_type{id, blocks}`: its id in the
+/// mod's own namespace, and the blocks that hold it (each declared by this mod with `horizon.block`),
+/// in the order given.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockEntityTypeRecord {
+    pub id: String,
+    pub blocks: Vec<String>,
 }
 
 /// A block part a mod declared with `horizon.block_part(id, {hook = fn, ...})`: the block it attaches
@@ -174,16 +198,47 @@ pub fn declare_with_budget(
         .iter()
         .map(|(name, _)| name.clone())
         .collect();
-    loaded
-        .map(|()| Declaration {
-            hooks,
-            options: recorded.options,
-            blocks: recorded.blocks,
-            items: recorded.items,
-            parts: recorded.parts,
-            item_parts: recorded.item_parts,
-        })
-        .map_err(|e| e.to_string())
+    loaded.map_err(|e| e.to_string())?;
+    check_block_entities(&recorded)?;
+    Ok(Declaration {
+        hooks,
+        options: recorded.options,
+        blocks: recorded.blocks,
+        items: recorded.items,
+        parts: recorded.parts,
+        item_parts: recorded.item_parts,
+        block_entity_types: recorded.block_entity_types,
+        block_entity_parts: recorded.block_entity_parts,
+    })
+}
+
+/// The checks that need the whole chunk, after it ran: each block entity type names only blocks this
+/// mod declared with `horizon.block` (the game refuses an unknown block at start-up), and each block
+/// entity part attaches to a type this mod declared.
+fn check_block_entities(recorded: &Recorded) -> Result<(), String> {
+    for ty in &recorded.block_entity_types {
+        for block in &ty.blocks {
+            if !recorded.blocks.iter().any(|record| record.id == *block) {
+                return Err(format!(
+                    "horizon.block_entity_type '{}': block '{block}' is not declared by this mod with horizon.block",
+                    ty.id
+                ));
+            }
+        }
+    }
+    for part in &recorded.block_entity_parts {
+        if !recorded
+            .block_entity_types
+            .iter()
+            .any(|ty| ty.id == part.id)
+        {
+            return Err(format!(
+                "horizon.block_entity_part for '{}' needs a horizon.block_entity_type of this mod with that id",
+                part.id
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The handlers a mod registered for `hook`, in registration order.
@@ -267,6 +322,8 @@ struct Recorded {
     items: Vec<ItemRecord>,
     parts: Vec<PartRecord>,
     item_parts: Vec<PartRecord>,
+    block_entity_types: Vec<BlockEntityTypeRecord>,
+    block_entity_parts: Vec<PartRecord>,
 }
 
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
@@ -307,6 +364,8 @@ fn run(
     let items = RefCell::new(Vec::<ItemRecord>::new());
     let parts = RefCell::new(Vec::<PartRecord>::new());
     let item_parts = RefCell::new(Vec::<PartRecord>::new());
+    let block_entity_types = RefCell::new(Vec::<BlockEntityTypeRecord>::new());
+    let block_entity_parts = RefCell::new(Vec::<PartRecord>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
@@ -401,11 +460,26 @@ fn run(
             let item_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
                 declare_part(lua, PartKind::Item, id, spec, &item_parts, &handlers)
             })?;
+            let block_entity_type = scope.create_function(|lua, value: Value| {
+                declare_block_entity_type(lua, owner, value, &block_entity_types)
+            })?;
+            let block_entity_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
+                declare_part(
+                    lua,
+                    PartKind::BlockEntity,
+                    id,
+                    spec,
+                    &block_entity_parts,
+                    &handlers,
+                )
+            })?;
             horizon.raw_set("on", on)?;
             horizon.raw_set("block", block)?;
             horizon.raw_set("item", item)?;
             horizon.raw_set("block_part", block_part)?;
             horizon.raw_set("item_part", item_part)?;
+            horizon.raw_set("block_entity_type", block_entity_type)?;
+            horizon.raw_set("block_entity_part", block_entity_part)?;
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
@@ -432,6 +506,8 @@ fn run(
         ("item", LATE_DECLARE),
         ("block_part", LATE_DECLARE),
         ("item_part", LATE_DECLARE),
+        ("block_entity_type", LATE_DECLARE),
+        ("block_entity_part", LATE_DECLARE),
     ] {
         let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
             Err(Error::runtime(message))
@@ -446,6 +522,8 @@ fn run(
         items: items.into_inner(),
         parts: parts.into_inner(),
         item_parts: item_parts.into_inner(),
+        block_entity_types: block_entity_types.into_inner(),
+        block_entity_parts: block_entity_parts.into_inner(),
     };
     Ok((recorded, loaded))
 }
@@ -519,6 +597,149 @@ fn parse_record(
     check_template(&template)
         .map_err(|reason| at_line(lua, format!("horizon.{kind} field 'template': {reason}")))?;
     Ok((id, template))
+}
+
+/// Reads `horizon.block_entity_type{id, blocks}`: `id` in the mod's own namespace, `blocks` a list of
+/// block ids in that namespace (at least one, at most `MAX_BLOCKS_PER_TYPE`, none named twice among
+/// this mod's types). The record is kept in `records`.
+fn declare_block_entity_type(
+    lua: &Lua,
+    owner: &str,
+    value: Value,
+    records: &RefCell<Vec<BlockEntityTypeRecord>>,
+) -> mlua::Result<()> {
+    let table = match value {
+        Value::Table(table) => table,
+        other => {
+            return Err(at_line(
+                lua,
+                format!(
+                    "horizon.block_entity_type needs its fields as a table, not {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    };
+    let mut id = None;
+    let mut blocks = None;
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let name = match &key {
+            Value::String(name) => name.to_str()?.to_string(),
+            _ => {
+                return Err(at_line(
+                    lua,
+                    "horizon.block_entity_type field names are strings".to_owned(),
+                ));
+            }
+        };
+        match (name.as_str(), value) {
+            ("id", Value::String(text)) => id = Some(text.to_str()?.to_string()),
+            ("blocks", Value::Table(list)) => {
+                let mut named = Vec::<(i64, String)>::new();
+                for item in list.pairs::<Value, Value>() {
+                    match item? {
+                        (Value::Integer(at), Value::String(block)) => {
+                            named.push((at, block.to_str()?.to_string()));
+                        }
+                        _ => {
+                            return Err(at_line(
+                                lua,
+                                "horizon.block_entity_type field 'blocks' needs a list of block id strings"
+                                    .to_owned(),
+                            ));
+                        }
+                    }
+                }
+                named.sort_by_key(|(at, _)| *at);
+                blocks = Some(
+                    named
+                        .into_iter()
+                        .map(|(_, block)| block)
+                        .collect::<Vec<_>>(),
+                );
+            }
+            ("id" | "blocks", _) => {
+                return Err(at_line(
+                    lua,
+                    format!("horizon.block_entity_type field '{name}' has the wrong type"),
+                ));
+            }
+            (other, _) => {
+                return Err(at_line(
+                    lua,
+                    format!(
+                        "horizon.block_entity_type has no field '{other}'; its fields are id and blocks"
+                    ),
+                ));
+            }
+        }
+    }
+    let id = id.ok_or_else(|| {
+        at_line(
+            lua,
+            "horizon.block_entity_type needs a field 'id'".to_owned(),
+        )
+    })?;
+    let blocks = blocks.ok_or_else(|| {
+        at_line(
+            lua,
+            "horizon.block_entity_type needs a field 'blocks'".to_owned(),
+        )
+    })?;
+    check_id(owner, &id).map_err(|reason| {
+        at_line(
+            lua,
+            format!("horizon.block_entity_type field 'id': {reason}"),
+        )
+    })?;
+    if blocks.is_empty() {
+        return Err(at_line(
+            lua,
+            format!("horizon.block_entity_type for '{id}' needs at least one block"),
+        ));
+    }
+    if blocks.len() > MAX_BLOCKS_PER_TYPE {
+        return Err(at_line(
+            lua,
+            format!("a block entity type may name at most {MAX_BLOCKS_PER_TYPE} blocks"),
+        ));
+    }
+    for block in &blocks {
+        check_id(owner, block).map_err(|reason| {
+            at_line(
+                lua,
+                format!("horizon.block_entity_type field 'blocks': {reason}"),
+            )
+        })?;
+    }
+    let mut records = records.borrow_mut();
+    if records.len() >= MAX_BLOCK_ENTITY_TYPES {
+        return Err(at_line(
+            lua,
+            format!("a mod may declare at most {MAX_BLOCK_ENTITY_TYPES} block entity types"),
+        ));
+    }
+    if records.iter().any(|record| record.id == id) {
+        return Err(at_line(
+            lua,
+            format!("horizon.block_entity_type: type '{id}' is declared twice"),
+        ));
+    }
+    for (at, block) in blocks.iter().enumerate() {
+        let twice = blocks[..at].contains(block);
+        let elsewhere = records.iter().any(|record| record.blocks.contains(block));
+        if twice || elsewhere {
+            return Err(at_line(
+                lua,
+                format!(
+                    "horizon.block_entity_type: block '{block}' is in two block entity types of this mod"
+                ),
+            ));
+        }
+    }
+    records.push(BlockEntityTypeRecord { id, blocks });
+    Ok(())
 }
 
 /// Reads `horizon.block_part(id, {hook = fn, ...})` or `horizon.item_part(...)` (`kind` names it): the
@@ -600,6 +821,7 @@ fn check_part_handler(kind: PartKind, name: &str) -> Result<(), String> {
         None => Err(match kind {
             PartKind::Block => "not a block part handler".to_owned(),
             PartKind::Item => "not an item part handler".to_owned(),
+            PartKind::BlockEntity => "not a block entity part handler".to_owned(),
         }),
         Some((_, None)) => Ok(()),
         Some((_, Some(reason))) => Err(format!("not available: {reason}")),
@@ -626,6 +848,7 @@ fn part_id(lua: &Lua, kind: PartKind, value: Value) -> mlua::Result<String> {
         let example = match kind {
             PartKind::Block => "minecraft:stone",
             PartKind::Item => "minecraft:stick",
+            PartKind::BlockEntity => "mymod:press",
         };
         return Err(at_line(
             lua,
@@ -1277,6 +1500,259 @@ mod tests {
         let declaration =
             declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
         assert!(declaration.item_parts.is_empty());
+        let tick = handlers(&lua, "tick").unwrap();
+        let err = tick[0].call::<()>(()).unwrap_err().to_string();
+        assert!(
+            err.contains("declarations are only allowed while the mod loads"),
+            "got {err}"
+        );
+    }
+
+    /// The block entity types of `source`, or the load error.
+    fn block_entity_types_of(source: &str) -> Result<Vec<BlockEntityTypeRecord>, String> {
+        declare_in_fresh_state(source).map(|declaration| declaration.block_entity_types)
+    }
+
+    /// One block of this mod, which a block entity type of the tests names.
+    const PRESS_BLOCK: &str =
+        "horizon.block{id = \"mymod:press_block\", template = \"minecraft:stone\"}\n";
+
+    #[test]
+    fn a_block_entity_type_and_its_part_are_recorded() {
+        let declaration = declare_in_fresh_state(&format!(
+            "{PRESS_BLOCK}\
+             horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}\n\
+             horizon.block_entity_part(\"mymod:press\", {{on_chunk_unloaded = function() end, block_entity_data_received = function() end}})"
+        ))
+        .unwrap();
+        assert_eq!(
+            declaration.block_entity_types,
+            [BlockEntityTypeRecord {
+                id: "mymod:press".to_owned(),
+                blocks: vec!["mymod:press_block".to_owned()],
+            }]
+        );
+        assert_eq!(
+            declaration.block_entity_parts,
+            [PartRecord {
+                id: "mymod:press".to_owned(),
+                hooks: vec![
+                    "block_entity_data_received".to_owned(),
+                    "on_chunk_unloaded".to_owned()
+                ],
+            }]
+        );
+        assert!(declaration.parts.is_empty() && declaration.item_parts.is_empty());
+    }
+
+    #[test]
+    fn a_block_part_an_item_part_and_a_block_entity_part_of_one_mod_are_all_recorded() {
+        let declaration = declare_in_fresh_state(&format!(
+            "{PRESS_BLOCK}\
+             horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}\n\
+             horizon.block_part(\"mymod:press_block\", {{can_survive = function() end}})\n\
+             horizon.item_part(\"mymod:press_block\", {{use_item = function() end}})\n\
+             horizon.block_entity_part(\"mymod:press\", {{on_chunk_unloaded = function() end}})"
+        ))
+        .unwrap();
+        assert_eq!(declaration.parts.len(), 1);
+        assert_eq!(declaration.item_parts.len(), 1);
+        assert_eq!(declaration.block_entity_parts.len(), 1);
+    }
+
+    #[test]
+    fn a_type_keeps_its_blocks_in_the_order_given() {
+        let types = block_entity_types_of(
+            "horizon.block{id = \"mymod:b\", template = \"minecraft:stone\"}\n\
+             horizon.block{id = \"mymod:a\", template = \"minecraft:stone\"}\n\
+             horizon.block_entity_type{id = \"mymod:press\", blocks = {\"mymod:b\", \"mymod:a\"}}",
+        )
+        .unwrap();
+        assert_eq!(types[0].blocks, ["mymod:b", "mymod:a"]);
+    }
+
+    #[test]
+    fn a_block_entity_type_needs_an_id_in_the_mods_namespace() {
+        let err = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"other:press\", blocks = {{\"mymod:press_block\"}}}}"
+        ))
+        .unwrap_err();
+        assert!(err.contains("outside this mod's namespace"), "got {err}");
+        let bare = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"press\", blocks = {{\"mymod:press_block\"}}}}"
+        ))
+        .unwrap_err();
+        assert!(bare.contains("needs a namespaced id"), "got {bare}");
+    }
+
+    #[test]
+    fn a_block_entity_type_names_only_its_mods_blocks_and_each_must_be_declared_here() {
+        let foreign = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"minecraft:furnace\"}}}}"
+        ))
+        .unwrap_err();
+        assert!(
+            foreign.contains("outside this mod's namespace"),
+            "got {foreign}"
+        );
+        let undeclared = block_entity_types_of(
+            "horizon.block_entity_type{id = \"mymod:press\", blocks = {\"mymod:ghost\"}}",
+        )
+        .unwrap_err();
+        assert!(
+            undeclared.contains("is not declared by this mod with horizon.block"),
+            "got {undeclared}"
+        );
+        let empty = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"mymod:press\", blocks = {{}}}}"
+        ))
+        .unwrap_err();
+        assert!(empty.contains("needs at least one block"), "got {empty}");
+    }
+
+    #[test]
+    fn a_block_entity_type_has_only_id_and_blocks_and_both_are_needed() {
+        let extra = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}, colour = 1}}"
+        ))
+        .unwrap_err();
+        assert!(extra.contains("has no field 'colour'"), "got {extra}");
+        let no_blocks =
+            block_entity_types_of("horizon.block_entity_type{id = \"mymod:press\"}").unwrap_err();
+        assert!(
+            no_blocks.contains("needs a field 'blocks'"),
+            "got {no_blocks}"
+        );
+        let not_a_list = block_entity_types_of(
+            "horizon.block_entity_type{id = \"mymod:press\", blocks = {x = \"mymod:press_block\"}}",
+        )
+        .unwrap_err();
+        assert!(
+            not_a_list.contains("needs a list of block id strings"),
+            "got {not_a_list}"
+        );
+    }
+
+    #[test]
+    fn a_block_is_in_at_most_one_block_entity_type_of_a_mod() {
+        let twice_in_one = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\", \"mymod:press_block\"}}}}"
+        ))
+        .unwrap_err();
+        assert!(
+            twice_in_one.contains("in two block entity types"),
+            "got {twice_in_one}"
+        );
+        let two_types = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}\
+             horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}\n\
+             horizon.block_entity_type{{id = \"mymod:oven\", blocks = {{\"mymod:press_block\"}}}}"
+        ))
+        .unwrap_err();
+        assert!(
+            two_types.contains("in two block entity types"),
+            "got {two_types}"
+        );
+        let twice_id = block_entity_types_of(&format!(
+            "{PRESS_BLOCK}\
+             horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}\n\
+             horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}"
+        ))
+        .unwrap_err();
+        assert!(twice_id.contains("declared twice"), "got {twice_id}");
+    }
+
+    #[test]
+    fn a_block_entity_type_names_at_most_32_blocks_and_a_mod_declares_at_most_64_types() {
+        let blocks = |count: usize| -> String {
+            (0..count)
+                .map(|i| format!("\"mymod:b{i}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let too_many_blocks = block_entity_types_of(&format!(
+            "horizon.block_entity_type{{id = \"mymod:press\", blocks = {{{}}}}}",
+            blocks(MAX_BLOCKS_PER_TYPE + 1)
+        ))
+        .unwrap_err();
+        assert!(
+            too_many_blocks.contains("at most 32 blocks"),
+            "got {too_many_blocks}"
+        );
+        let source = |count: usize| -> String {
+            (0..count)
+                .map(|i| format!("horizon.block_entity_type{{id = \"mymod:t{i}\", blocks = {{\"mymod:b{i}\"}}}}\n"))
+                .collect()
+        };
+        let err = block_entity_types_of(&source(MAX_BLOCK_ENTITY_TYPES + 1)).unwrap_err();
+        assert!(err.contains("at most 64 block entity types"), "got {err}");
+    }
+
+    #[test]
+    fn a_block_entity_part_needs_its_type_to_be_declared_by_this_mod() {
+        let undeclared = declare_in_fresh_state(
+            "horizon.block_entity_part(\"mymod:press\", {on_chunk_unloaded = function() end})",
+        )
+        .unwrap_err();
+        assert!(
+            undeclared.contains("needs a horizon.block_entity_type of this mod"),
+            "got {undeclared}"
+        );
+        let foreign = declare_in_fresh_state(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}\n\
+             horizon.block_entity_part(\"other:press\", {{on_chunk_unloaded = function() end}})"
+        ))
+        .unwrap_err();
+        assert!(
+            foreign.contains("needs a horizon.block_entity_type of this mod"),
+            "got {foreign}"
+        );
+    }
+
+    #[test]
+    fn a_block_entity_part_handler_must_be_an_emitted_block_entity_method() {
+        let typed = format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}\n"
+        );
+        let part = |handler: &str| {
+            format!("{typed}horizon.block_entity_part(\"mymod:press\", {{{handler}}})")
+        };
+        let block_only = declare_in_fresh_state(&part("can_survive = function() end")).unwrap_err();
+        assert!(
+            block_only.contains("not a block entity part handler"),
+            "got {block_only}"
+        );
+        let hot = declare_in_fresh_state(&part("block_entity_tick = function() end")).unwrap_err();
+        assert!(hot.contains("hot path (needs measurement)"), "got {hot}");
+        let nbt = declare_in_fresh_state(&part("block_entity = function() end")).unwrap_err();
+        assert!(nbt.contains("NBT output"), "got {nbt}");
+        let not_function = declare_in_fresh_state(&part("on_chunk_unloaded = 1")).unwrap_err();
+        assert!(
+            not_function.contains("needs a function"),
+            "got {not_function}"
+        );
+        let empty = declare_in_fresh_state(&part("")).unwrap_err();
+        assert!(empty.contains("needs at least one handler"), "got {empty}");
+    }
+
+    #[test]
+    fn a_second_block_entity_part_for_one_type_is_refused() {
+        let err = declare_in_fresh_state(&format!(
+            "{PRESS_BLOCK}horizon.block_entity_type{{id = \"mymod:press\", blocks = {{\"mymod:press_block\"}}}}\n\
+             horizon.block_entity_part(\"mymod:press\", {{on_chunk_unloaded = function() end}})\n\
+             horizon.block_entity_part(\"mymod:press\", {{block_entity_data_received = function() end}})"
+        ))
+        .unwrap_err();
+        assert!(err.contains("two parts in this mod"), "got {err}");
+    }
+
+    #[test]
+    fn a_block_entity_declaration_after_loading_is_refused() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"tick\", function() horizon.block_entity_type{id = \"mymod:press\", blocks = {\"mymod:x\"}} end)";
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        assert!(declaration.block_entity_types.is_empty());
         let tick = handlers(&lua, "tick").unwrap();
         let err = tick[0].call::<()>(()).unwrap_err().to_string();
         assert!(

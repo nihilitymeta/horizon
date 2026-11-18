@@ -1131,11 +1131,13 @@ fn commit_text(method: &Method<'_>) -> String {
     )
 }
 
-/// The Part traits the Lua host binds one adapter for: the BlockPart and the ItemPart methods.
+/// The Part traits the Lua host binds one adapter for: the BlockPart, the ItemPart and the
+/// BlockEntityPart methods.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartTrait {
     Block,
     Item,
+    BlockEntity,
 }
 
 impl PartTrait {
@@ -1144,6 +1146,7 @@ impl PartTrait {
         match self {
             PartTrait::Block => "BlockPart",
             PartTrait::Item => "ItemPart",
+            PartTrait::BlockEntity => "BlockEntityPart",
         }
     }
 
@@ -1152,6 +1155,7 @@ impl PartTrait {
         match self {
             PartTrait::Block => "LuaBlockPart",
             PartTrait::Item => "LuaItemPart",
+            PartTrait::BlockEntity => "LuaBlockEntityPart",
         }
     }
 
@@ -1160,6 +1164,7 @@ impl PartTrait {
         match self {
             PartTrait::Block => "block_subscribed",
             PartTrait::Item => "item_subscribed",
+            PartTrait::BlockEntity => "block_entity_subscribed",
         }
     }
 
@@ -1168,6 +1173,7 @@ impl PartTrait {
         match self {
             PartTrait::Block => "BLOCK_PARTS",
             PartTrait::Item => "ITEM_PARTS",
+            PartTrait::BlockEntity => "BLOCK_ENTITY_PARTS",
         }
     }
 }
@@ -1192,7 +1198,30 @@ pub const PART_HOT: &[(&str, &str)] = &[
     ("ItemPart", "highlight_tip"),
     ("ItemPart", "use_animation"),
     ("ItemPart", "use_duration"),
+    ("BlockEntityPart", "block_entity_tick"),
+    ("BlockEntityPart", "block_entity_ticks"),
+    ("BlockEntityPart", "block_entity_client_tick"),
+    ("BlockEntityPart", "block_entity_client_ticks"),
+    ("BlockEntityPart", "block_entity_view_distance"),
+    ("BlockEntityPart", "block_entity_render_bounding_box"),
+    ("BlockEntityPart", "block_entity_submit"),
+    ("BlockEntityPart", "screen_draw"),
+    ("BlockEntityPart", "screen_tooltip"),
 ];
+/// The Part methods skipped for a reason of their own, as `(trait, method, reason)`: a block entity's
+/// saved data is NBT output, which the Lua host does not hand out; attachment state is not a Part
+/// state in v1.
+pub const PART_EXCLUDED: &[(&str, &str, &str)] = &[
+    ("BlockEntityPart", "block_entity", NBT_REASON),
+    ("BlockEntityPart", "block_entity_update_tag", NBT_REASON),
+    (
+        "BlockEntityPart",
+        "stateful_block_entity",
+        ATTACHMENT_REASON,
+    ),
+];
+const NBT_REASON: &str = "NBT output (Compound is denied)";
+const ATTACHMENT_REASON: &str = "attachment state: not a Part state in v1";
 const HOT_REASON: &str = "hot path (needs measurement)";
 const WORKER_REASON: &str = "worldgen worker";
 /// Part methods that take or answer a container, a capability or a payload handler: the Lua host
@@ -1245,8 +1274,14 @@ pub fn emit_parts(
                 .iter()
                 .any(|name| sig.event_ty.contains(name));
         let hot = PART_HOT.contains(&(part.name(), name));
+        let excluded = PART_EXCLUDED
+            .iter()
+            .find(|(trait_name, method, _)| *trait_name == part.name() && *method == name)
+            .map(|(_, _, reason)| (*reason).to_owned());
         let result = if hot {
             Err(HOT_REASON.to_owned())
+        } else if let Some(reason) = excluded {
+            Err(reason)
         } else if worldgen {
             Err(WORKER_REASON.to_owned())
         } else if container {
@@ -1307,6 +1342,14 @@ pub fn emit_parts(
         text.push_str(&method_text(method));
     }
     text.push_str("}\n");
+    if part == PartTrait::BlockEntity {
+        // A block entity part is a BlockPart too (the supertrait), and it subscribes to no block hook:
+        // the game's block dispatch never calls it, so its block-side answers stay the game's.
+        text.push_str(&format!(
+            "\nimpl mod_api::BlockPart for {adapter} {{\n    \
+             fn block_subscribed(&self) -> &'static [Option<mod_api::HookId>] {{\n        &[]\n    }}\n}}\n"
+        ));
+    }
     PartsEmitted {
         text,
         emitted,
