@@ -1,5 +1,5 @@
 # Hook coverage (issue 74, H3) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
-# hooks: 749, emitted: 400, skipped: 349
+# hooks: 749, emitted: 401, skipped: 348
 # skipped, answer: ArmPose: 1
 # skipped, answer: Minimap: 1
 # skipped, answer: Vec<GuiDraw>: 1
@@ -9,7 +9,7 @@
 # skipped, argument <..> has type <..> (kind Collection): no Lua conversion: 10
 # skipped, argument <..> has type <..> (kind DynHost): a mutable argument writes back, not in this slice: 30
 # skipped, argument <..> has type <..> (kind Event): a mutable argument writes back, not in this slice: 5
-# skipped, argument <..> has type <..> (kind Event): no Lua conversion: 19
+# skipped, argument <..> has type <..> (kind Event): no Lua conversion: 18
 # skipped, argument <..> has type <..> (kind Identifier): a mutable argument writes back, not in this slice: 2
 # skipped, argument <..> has type <..> (kind Other): a reference inside Option has no Lua conversion: 5
 # skipped, argument <..> has type <..> (kind Other): no Lua conversion: 9
@@ -690,7 +690,7 @@ right_click_block emitted
 right_click_empty emitted
 right_click_item skipped: argument `click` has type `&'a ItemClick<'a>` (kind Event): no Lua conversion
 rotate skipped: not a method of the Hooks trait
-run_mod_command skipped: argument `source` has type `&'a command::CommandSource` (kind Event): no Lua conversion
+run_mod_command emitted
 scheduled_task emitted
 screen skipped: not a method of the Hooks trait
 screen_char_typed_post emitted

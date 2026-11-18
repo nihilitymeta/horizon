@@ -125,6 +125,9 @@ impl mod_api::Hooks for LuaHost {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Output {
     key: String,
+    /// The event struct's field the output is read from and written to. It is `key` except for a
+    /// cancel flag, whose field is always `cancelled` (see [`cancel_key`]).
+    field: String,
     ty: String,
     /// The event field is a `&mut` reference (`pub lines: &'a mut Vec<String>`), read and written
     /// through it.
@@ -393,6 +396,16 @@ fn is_list_kind(ty: &str) -> bool {
     .contains(&ty)
 }
 
+/// The Lua key a cancel hook's flag is read and written under: `ran` for `run_mod_command` (its
+/// dispatch names the flag `ran`), `cancelled` for the other cancel hooks. The event struct's field
+/// is `cancelled` for all of them.
+pub fn cancel_key(hook: &str) -> &'static str {
+    match hook {
+        "run_mod_command" => "ran",
+        _ => "cancelled",
+    }
+}
+
 /// Whether a dispatch parameter is a cancel hook's flag: the bool its body copies the event's
 /// `cancelled` into. A cancel hook's other bools (`is_drowning`) are ordinary outputs.
 fn is_cancel_flag(param: &OutputSig) -> bool {
@@ -451,13 +464,19 @@ fn outputs_of(
     let fields = dispatch.structs.get(event);
     let mut outputs = Vec::new();
     for param in params {
-        let key = if cancel && is_cancel_flag(param) {
-            "cancelled".to_owned()
+        let flag = cancel && is_cancel_flag(param);
+        let key = if flag {
+            cancel_key(&hook.name).to_owned()
         } else {
             param.param.clone()
         };
+        let field_name = if flag {
+            "cancelled".to_owned()
+        } else {
+            key.clone()
+        };
         let field = fields
-            .and_then(|fields| fields.get(&key))
+            .and_then(|fields| fields.get(&field_name))
             .map(String::as_str);
         // An output field is a `&mut` reference in the event struct (`&'a mut Vec<String>`), or a
         // plain value; the reference's referent is the output's type.
@@ -477,12 +496,13 @@ fn outputs_of(
         }
         outputs.push(Output {
             key,
+            field: field_name,
             ty: shown(&param.ty),
             by_ref,
             shape: carried::shape_of(&param.ty),
         });
     }
-    if cancel && !outputs.iter().any(|output| output.key == "cancelled") {
+    if cancel && !outputs.iter().any(|output| output.field == "cancelled") {
         if fields
             .and_then(|fields| fields.get("cancelled"))
             .map(String::as_str)
@@ -491,7 +511,8 @@ fn outputs_of(
             return Err(format!("`{event}` has no `cancelled: bool` field"));
         }
         outputs.push(Output {
-            key: "cancelled".to_owned(),
+            key: cancel_key(&hook.name).to_owned(),
+            field: "cancelled".to_owned(),
             ty: "bool".to_owned(),
             by_ref: false,
             shape: None,
@@ -619,6 +640,29 @@ fn plan<'a>(
             ));
             continue;
         }
+        if let Some(kind) = command_input(&arg.rust_type) {
+            // A command's source or invocation converts read-only (`crate::commands`); a `&mut` one
+            // would write back, which this slice does not do.
+            if arg.rust_type.contains("mut") {
+                return Err(format!(
+                    "argument `{}`: a mutable argument writes back, not in this slice",
+                    arg.name
+                ));
+            }
+            let field = format!("{}.{}", sig.event_name, arg.name);
+            let built = match (turn.is_some(), turn_view.as_deref()) {
+                (true, Some(built)) => built,
+                _ => {
+                    return Err(format!(
+                        "argument `{}`: the hook has no turn host",
+                        arg.name
+                    ));
+                }
+            };
+            let expr = format!("crate::commands::{kind}_lua(lua, {built}, {field})?");
+            fields.push((arg.name.clone(), expr));
+            continue;
+        }
         if is_generated_handle(&arg.rust_type, handles) {
             let field = format!("{}.{}", sig.event_name, arg.name);
             let expr = handle_input(&hook.name, &arg.name, &arg.rust_type, &field)?;
@@ -702,6 +746,16 @@ fn plan<'a>(
         stack_turn_view,
         checks,
     })
+}
+
+/// The kind of a command argument (`source` or `invocation`), when its type is one of the command
+/// types `crate::commands` converts: `&'a command::CommandSource`, `&'a CommandInvocation`.
+fn command_input(ty: &str) -> Option<&'static str> {
+    match compact(ty).trim_start_matches('&') {
+        "command::CommandSource" | "CommandSource" => Some("source"),
+        "command::CommandInvocation" | "CommandInvocation" => Some("invocation"),
+        _ => None,
+    }
 }
 
 /// Whether an argument type (`&'a BlockClick<'a>`) is the right click view, read by value.
@@ -1172,15 +1226,21 @@ fn turn_body(method: &Method<'_>) -> String {
             ""
         };
         out.push_str(&format!(
-            "        let out_{key} = std::cell::RefCell::new({event}.{key}{copy});\n",
-            key = output.key
+            "        let out_{key} = std::cell::RefCell::new({event}.{field}{copy});\n",
+            key = output.key,
+            field = output.field
         ));
     }
     out.push_str(&checks_text(method, true));
     let is_cancelled = if method.cancel {
-        "&|| *out_cancelled.borrow()"
+        let key = method
+            .outputs
+            .iter()
+            .find(|output| output.field == "cancelled")
+            .map_or("cancelled", |output| output.key.as_str());
+        format!("&|| *out_{key}.borrow()")
     } else {
-        "&|| false"
+        "&|| false".to_owned()
     };
     out.push_str("        crate::hostcall::refused(self.dispatch_turns(\n");
     out.push_str(&format!("            {hook:?},\n"));
@@ -1192,8 +1252,9 @@ fn turn_body(method: &Method<'_>) -> String {
     for output in &method.outputs {
         let deref = if output.by_ref { "*" } else { "" };
         out.push_str(&format!(
-            "        {deref}{event}.{key} = out_{key}.into_inner();\n",
-            key = output.key
+            "        {deref}{event}.{field} = out_{key}.into_inner();\n",
+            key = output.key,
+            field = output.field
         ));
     }
     if method.cancel {

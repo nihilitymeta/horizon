@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 pub mod budget;
 pub mod builtin;
+pub mod commands;
 pub mod declare;
 pub mod discover;
 pub mod dispatch;

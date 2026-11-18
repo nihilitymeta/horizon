@@ -12,6 +12,8 @@
 //! keys. The proxy is read-only too, so `rawset` cannot store a field on it and shadow the data.
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
+use std::sync::Mutex;
 
 use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
@@ -160,6 +162,25 @@ fn keep<T>(
     }
 }
 
+/// The most distinct build failures remembered (and so logged) per process.
+const MAX_BUILD_FAILURES: usize = 256;
+
+/// The build failures already logged, as `mod`, `hook` and the error, one per line. A player who
+/// repeats a refused command does not flood the log: each reason is logged once per process.
+static BUILD_FAILURES: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Logs that a mod's event could not be built for `hook`, once per process for each reason.
+fn warn_build_failure(id: &str, hook: &str, err: &mlua::Error) {
+    let key = format!("{id}\n{hook}\n{err}");
+    let mut seen = BUILD_FAILURES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Bounded: an error text that varies per command cannot grow the set without limit.
+    if seen.len() < MAX_BUILD_FAILURES && seen.insert(key) {
+        log::warn!(target: LOG_TARGET, "{id}: {hook}: {err}");
+    }
+}
+
 /// Logs the one warning for a refused output and returns `true`.
 fn refuse(id: &str, hook: &str, output: &str, why: &str) -> bool {
     log::warn!(target: LOG_TARGET, "{id}: {hook}: output `{output}` refused, {why}");
@@ -305,7 +326,7 @@ impl LuaHost {
             let event = match build(m.lua()) {
                 Ok(event) => event,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
             };
@@ -433,7 +454,7 @@ pub(crate) fn turns_in(
             let event = match build(m.lua(), &host) {
                 Ok(event) => event,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
             };
@@ -518,7 +539,7 @@ pub(crate) fn replace_in(
             let event = match build(m.lua(), &host) {
                 Ok(event) => event,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
             };

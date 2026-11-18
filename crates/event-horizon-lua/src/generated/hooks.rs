@@ -5578,6 +5578,7 @@ pub const EMITTED: &[&str] = &[
     "resource_pack_status",
     "right_click_block",
     "right_click_empty",
+    "run_mod_command",
     "scheduled_task",
     "screen_char_typed_post",
     "screen_closing",
