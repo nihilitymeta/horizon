@@ -62,6 +62,20 @@ pub const HOST_RECORDED: &[(&str, &str, &str, &str)] = &[
         "commands",
         "declared_client_commands",
     ),
+    (
+        "register_configs",
+        "RegisterConfigsEvent",
+        "configs",
+        "declared_configs",
+    ),
+];
+
+/// The hooks whose event carries one mod's own file: `(hook, event field)`, the field a `ConfigFile`.
+/// Their handlers run only in the mod named by that file's `mod_id`, so no mod reads another's config.
+pub const OWNED_HOOKS: &[(&str, &str)] = &[
+    ("config_loading", "config"),
+    ("config_reloading", "config"),
+    ("config_unloading", "config"),
 ];
 
 /// The method of a host-recorded hook: it passes the event's output to the host method. The
@@ -1046,8 +1060,20 @@ fn build_text(method: &Method<'_>, outputs: bool) -> String {
 
 /// The body of a hook with no outputs: its handlers run in the turn, and nothing is committed.
 fn plain_body(method: &Method<'_>) -> String {
-    let mut out = String::from("        crate::hostcall::refused(self.dispatch_turns(\n");
+    // A hook whose event names one mod's own data goes to that mod only (`OWNED_HOOKS`).
+    let owned = OWNED_HOOKS
+        .iter()
+        .find(|(hook, _)| *hook == method.hook.name);
+    let (dispatch, owner) = match owned {
+        Some((_, field)) => (
+            "dispatch_turns_owned",
+            format!("            &event.{field}.mod_id,\n"),
+        ),
+        None => ("dispatch_turns", String::new()),
+    };
+    let mut out = format!("        crate::hostcall::refused(self.{dispatch}(\n");
     out.push_str(&format!("            {:?},\n", method.hook.name));
+    out.push_str(&owner);
     out.push_str(&format!("            {},\n", turn_text(method)));
     out.push_str("            &|| false,\n");
     out.push_str(&build_text(method, false));

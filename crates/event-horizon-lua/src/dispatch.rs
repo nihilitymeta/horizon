@@ -351,6 +351,36 @@ impl LuaHost {
             commit,
         )
     }
+
+    /// `dispatch_turns` for a hook whose event carries one mod's own data, such as a config file's
+    /// `mod_id` (see the generator's `OWNED_HOOKS`): only the mod named `owner` runs its handlers, so
+    /// the data reaches no other mod. The other mods' turns do not open and their handlers do not run.
+    pub fn dispatch_turns_owned(
+        &self,
+        hook: &str,
+        owner: &str,
+        host: TurnHost<'_>,
+        is_cancelled: &dyn Fn() -> bool,
+        build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+        commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
+    ) -> Result<(), String> {
+        let order: Vec<usize> = self
+            .run_order(hook)
+            .iter()
+            .copied()
+            .filter(|&index| self.mods()[index].id() == owner)
+            .collect();
+        turns_in(
+            self.mods(),
+            &order,
+            hook,
+            hook,
+            host,
+            is_cancelled,
+            build,
+            commit,
+        )
+    }
 }
 
 /// Whether a hook of `hook`'s side runs for mod `m`: a client-only mod does not run a server hook.

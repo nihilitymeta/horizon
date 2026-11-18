@@ -39,6 +39,15 @@ pub const MAX_USAGE: usize = 256;
 /// The longest first word (the command's name) of a client command's usage, in characters.
 pub const MAX_COMMAND_NAME: usize = 32;
 
+/// The most `horizon.config` calls one mod may make.
+pub const MAX_CONFIGS: usize = 8;
+
+/// The longest config file path `horizon.config` accepts, in characters.
+pub const MAX_CONFIG_FILE: usize = 128;
+
+/// The most bytes of a `horizon.config` default. Smaller than the game's config file cap on purpose.
+pub const MAX_CONFIG_DEFAULT: usize = 65536;
+
 /// The time a mod's top level may run while it loads.
 pub const DECLARE_BUDGET: Duration = Duration::from_secs(2);
 
@@ -77,6 +86,8 @@ pub struct Declaration {
     pub block_entity_parts: Vec<PartRecord>,
     /// The client commands `horizon.client_command` declared, in declaration order.
     pub client_commands: Vec<ClientCommandRecord>,
+    /// The configs `horizon.config` declared, in declaration order. Each names the mod as its owner.
+    pub configs: Vec<mod_api::Config>,
 }
 
 /// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
@@ -236,6 +247,7 @@ pub fn declare_with_budget(
         block_entity_types: recorded.block_entity_types,
         block_entity_parts: recorded.block_entity_parts,
         client_commands: recorded.client_commands,
+        configs: recorded.configs,
     })
 }
 
@@ -352,6 +364,7 @@ struct Recorded {
     block_entity_types: Vec<BlockEntityTypeRecord>,
     block_entity_parts: Vec<PartRecord>,
     client_commands: Vec<ClientCommandRecord>,
+    configs: Vec<mod_api::Config>,
 }
 
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
@@ -395,6 +408,7 @@ fn run(
     let block_entity_types = RefCell::new(Vec::<BlockEntityTypeRecord>::new());
     let block_entity_parts = RefCell::new(Vec::<PartRecord>::new());
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
+    let configs = RefCell::new(Vec::<mod_api::Config>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
@@ -505,8 +519,12 @@ fn run(
             let client_command = scope.create_function(|lua, value: Value| {
                 declare_client_command(lua, value, &client_commands)
             })?;
+            let config = scope.create_function(|lua, value: Value| {
+                declare_config(lua, owner, value, &configs)
+            })?;
             horizon.raw_set("on", on)?;
             horizon.raw_set("client_command", client_command)?;
+            horizon.raw_set("config", config)?;
             horizon.raw_set("block", block)?;
             horizon.raw_set("item", item)?;
             horizon.raw_set("block_part", block_part)?;
@@ -542,6 +560,7 @@ fn run(
         ("block_entity_type", LATE_DECLARE),
         ("block_entity_part", LATE_DECLARE),
         ("client_command", LATE_DECLARE),
+        ("config", LATE_DECLARE),
     ] {
         let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
             Err(Error::runtime(message))
@@ -559,6 +578,7 @@ fn run(
         block_entity_types: block_entity_types.into_inner(),
         block_entity_parts: block_entity_parts.into_inner(),
         client_commands: client_commands.into_inner(),
+        configs: configs.into_inner(),
     };
     Ok((recorded, loaded))
 }
@@ -891,6 +911,163 @@ fn declare_client_command(
         ));
     }
     records.push(ClientCommandRecord { usage });
+    Ok(())
+}
+
+/// Checks a config file a mod named with `horizon.config{file}`: a relative path of at most
+/// `MAX_CONFIG_FILE` characters, segments of `a-z`, `0-9`, `_`, `.` and `-`, no empty segment and no
+/// `..`, ending in `.toml`. It must be the mod's own under the game's rule (`ConfigPath::owned_by`):
+/// a folder `<owner>/`, or a file `<owner>-...` or `<owner>.toml`. The game checks it again.
+pub fn check_config_file(owner: &str, file: &str) -> Result<(), String> {
+    if file.is_empty() {
+        return Err("the file is empty".to_owned());
+    }
+    if file.len() > MAX_CONFIG_FILE {
+        return Err(format!(
+            "the file is longer than {MAX_CONFIG_FILE} characters"
+        ));
+    }
+    if !file.bytes().all(|b| {
+        b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'.' | b'-' | b'/')
+    }) {
+        return Err(format!(
+            "the file '{file}' must use only a-z, 0-9, '_', '.', '-' and '/'"
+        ));
+    }
+    if file
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "..")
+    {
+        return Err("the file has an empty folder name or '..'".to_owned());
+    }
+    if !file.ends_with(".toml") {
+        return Err(format!("the file '{file}' must end with .toml"));
+    }
+    let path = mod_api::ConfigPath::new(file)
+        .map_err(|_| format!("the file '{file}' is not a checked relative path"))?;
+    if !path.owned_by(owner) {
+        return Err(format!(
+            "the file '{file}' is not this mod's: it must be '{owner}/...', '{owner}-...' or '{owner}.toml'"
+        ));
+    }
+    Ok(())
+}
+
+/// Reads `horizon.config{kind, file, default}`: `kind` is "client", "common" or "server"; `default`
+/// is the text written when the file is missing (a string of at most `MAX_CONFIG_DEFAULT` bytes,
+/// UTF-8, no NUL); `file` is optional and checked by `check_config_file`, else the game names it
+/// `<owner>-<kind>.toml`. The owner is the host's id, never the script's. At most `MAX_CONFIGS`, and
+/// no file twice.
+fn declare_config(
+    lua: &Lua,
+    owner: &str,
+    value: Value,
+    configs: &RefCell<Vec<mod_api::Config>>,
+) -> mlua::Result<()> {
+    let table = match value {
+        Value::Table(table) => table,
+        other => {
+            return Err(at_line(
+                lua,
+                format!(
+                    "horizon.config needs its fields as a table, not {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    };
+    let (mut kind, mut file, mut default) = (None, None, None);
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let name = match &key {
+            Value::String(name) => name.to_str()?.to_string(),
+            _ => {
+                return Err(at_line(
+                    lua,
+                    "horizon.config field names are strings".to_owned(),
+                ));
+            }
+        };
+        let text = match (name.as_str(), value) {
+            ("kind" | "file" | "default", Value::String(text)) => text,
+            ("kind" | "file" | "default", _) => {
+                return Err(at_line(
+                    lua,
+                    format!("horizon.config field '{name}' needs a string"),
+                ));
+            }
+            (other, _) => {
+                return Err(at_line(
+                    lua,
+                    format!(
+                        "horizon.config has no field '{other}'; its fields are kind, file and default"
+                    ),
+                ));
+            }
+        };
+        match name.as_str() {
+            "kind" => kind = Some(text),
+            "file" => file = Some(text),
+            _ => default = Some(text),
+        }
+    }
+    let kind = match kind.map(|text| text.to_str().map(|t| t.to_string())) {
+        None => {
+            return Err(at_line(
+                lua,
+                "horizon.config needs a field 'kind'".to_owned(),
+            ));
+        }
+        Some(Ok(kind)) => match kind.as_str() {
+            "client" => mod_api::ConfigKind::Client,
+            "common" => mod_api::ConfigKind::Common,
+            "server" => mod_api::ConfigKind::Server,
+            _ => {
+                return Err(at_line(
+                    lua,
+                    "horizon.config field 'kind' must be \"client\", \"common\" or \"server\""
+                        .to_owned(),
+                ));
+            }
+        },
+        Some(Err(err)) => return Err(err),
+    };
+    let default =
+        default.ok_or_else(|| at_line(lua, "horizon.config needs a field 'default'".to_owned()))?;
+    let default = default.to_str()?;
+    if default.len() > MAX_CONFIG_DEFAULT {
+        return Err(at_line(
+            lua,
+            format!("horizon.config field 'default' is larger than {MAX_CONFIG_DEFAULT} bytes"),
+        ));
+    }
+    if default.contains('\0') {
+        return Err(at_line(
+            lua,
+            "horizon.config field 'default' has a NUL byte".to_owned(),
+        ));
+    }
+    let mut config = mod_api::Config::new(owner, kind, &default);
+    if let Some(file) = file {
+        let file = file.to_str()?.to_string();
+        check_config_file(owner, &file)
+            .map_err(|reason| at_line(lua, format!("horizon.config field 'file': {reason}")))?;
+        config = config.file(&file);
+    }
+    let mut configs = configs.borrow_mut();
+    if configs.len() >= MAX_CONFIGS {
+        return Err(at_line(
+            lua,
+            format!("a mod may declare at most {MAX_CONFIGS} configs"),
+        ));
+    }
+    if configs.iter().any(|other| other.file == config.file) {
+        return Err(at_line(
+            lua,
+            format!("horizon.config: file '{}' is declared twice", config.file),
+        ));
+    }
+    configs.push(config);
     Ok(())
 }
 
@@ -1508,6 +1685,157 @@ mod tests {
             err.contains("unknown hook 'register_client_commands'"),
             "got {err}"
         );
+    }
+
+    fn config_error(source: &str) -> String {
+        declare_in_fresh_state(source).unwrap_err()
+    }
+
+    #[test]
+    fn a_config_gets_the_game_default_file_and_the_host_owner() {
+        let declaration = declare_in_fresh_state(
+            "horizon.config{kind = \"common\", default = \"answer = 42\\n\"}\n\
+             horizon.config{kind = \"server\", default = \"\", file = \"mymod/machines.toml\"}\n",
+        )
+        .unwrap();
+        let files: Vec<(&str, &str, mod_api::ConfigKind)> = declaration
+            .configs
+            .iter()
+            .map(|c| (c.mod_id.as_str(), c.file.as_str(), c.kind))
+            .collect();
+        assert_eq!(
+            files,
+            [
+                ("mymod", "mymod-common.toml", mod_api::ConfigKind::Common),
+                ("mymod", "mymod/machines.toml", mod_api::ConfigKind::Server),
+            ]
+        );
+        assert_eq!(declaration.configs[0].default, "answer = 42\n");
+    }
+
+    #[test]
+    fn a_config_file_must_belong_to_the_mod_and_be_a_checked_toml_path() {
+        let cases = [
+            ("mymod.toml", None),
+            ("mymod-extra.toml", None),
+            ("mymod/a/b.toml", None),
+            ("mymod/x_1-2.toml", None),
+            ("../mymod.toml", Some("empty folder name")),
+            ("mymod/../x.toml", Some("empty folder name")),
+            ("/mymod.toml", Some("empty folder name")),
+            ("mymod//x.toml", Some("empty folder name")),
+            ("mymod\\x.toml", Some("must use only")),
+            ("mymod:x.toml", Some("must use only")),
+            ("MyMod-x.toml", Some("must use only")),
+            ("mymod-x.json", Some("must end with .toml")),
+            ("other-x.toml", Some("is not this mod's")),
+            ("mymodx/y.toml", Some("is not this mod's")),
+            ("mymod-x/y.toml", Some("is not this mod's")),
+            ("", Some("the file is empty")),
+        ];
+        for (file, reason) in cases {
+            let source =
+                format!("horizon.config{{kind = \"common\", default = \"\", file = {file:?}}}");
+            match reason {
+                None => {
+                    assert!(
+                        declare_in_fresh_state(&source).is_ok(),
+                        "{file} should pass"
+                    );
+                }
+                Some(reason) => {
+                    let err = config_error(&source);
+                    assert!(err.contains(reason), "{file:?}: got {err}");
+                }
+            }
+        }
+        let long = format!("mymod/{}.toml", "a".repeat(MAX_CONFIG_FILE));
+        assert!(
+            config_error(&format!(
+                "horizon.config{{kind = \"common\", default = \"\", file = \"{long}\"}}"
+            ))
+            .contains("longer than 128")
+        );
+    }
+
+    #[test]
+    fn a_bad_config_refuses_the_mod_with_the_reason() {
+        let cases = [
+            ("kind = \"both\", default = \"\"", "must be \"client\""),
+            ("default = \"\"", "needs a field 'kind'"),
+            ("kind = \"common\"", "needs a field 'default'"),
+            (
+                "kind = \"common\", default = 3",
+                "field 'default' needs a string",
+            ),
+            ("kind = 1, default = \"\"", "field 'kind' needs a string"),
+            ("kind = \"common\", default = \"a\\0b\"", "has a NUL byte"),
+            (
+                "kind = \"common\", default = \"\", mod_id = \"other\"",
+                "has no field 'mod_id'",
+            ),
+            (
+                "kind = \"common\", default = \"\", level = 0",
+                "has no field 'level'",
+            ),
+        ];
+        for (fields, reason) in cases {
+            let err = config_error(&format!("horizon.config{{{fields}}}"));
+            assert!(err.contains(reason), "{fields}: got {err}");
+        }
+        let big = "x".repeat(MAX_CONFIG_DEFAULT + 1);
+        let err = config_error(&format!(
+            "horizon.config{{kind = \"common\", default = \"{big}\"}}"
+        ));
+        assert!(err.contains("larger than 65536 bytes"), "got {err}");
+        let edge = "x".repeat(MAX_CONFIG_DEFAULT);
+        assert!(
+            declare_in_fresh_state(&format!(
+                "horizon.config{{kind = \"common\", default = \"{edge}\"}}"
+            ))
+            .is_ok()
+        );
+        assert!(config_error("horizon.config \"x\"").contains("needs its fields as a table"));
+    }
+
+    #[test]
+    fn at_most_eight_configs_and_no_file_twice() {
+        let mut source = String::new();
+        for at in 0..=MAX_CONFIGS {
+            source.push_str(&format!(
+                "horizon.config{{kind = \"common\", default = \"\", file = \"mymod/f{at}.toml\"}}\n"
+            ));
+        }
+        assert!(config_error(&source).contains("at most 8 configs"));
+        let twice = "horizon.config{kind = \"common\", default = \"\"}\n\
+                     horizon.config{kind = \"common\", default = \"\", file = \"mymod-common.toml\"}";
+        assert!(config_error(twice).contains("declared twice"));
+    }
+
+    #[test]
+    fn a_config_after_loading_is_refused() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"tick\", function() horizon.config{kind = \"common\", default = \"\"} end)";
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        assert!(declaration.configs.is_empty());
+        let tick = handlers(&lua, "tick").unwrap();
+        let err = tick[0].call::<()>(()).unwrap_err().to_string();
+        assert!(
+            err.contains("declarations are only allowed while the mod loads"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn the_register_configs_hook_cannot_be_subscribed_to() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"register_configs\", function() end)";
+        let err = declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &|name| {
+            crate::generated::hooks::is_emitted(name)
+        })
+        .unwrap_err();
+        assert!(err.contains("unknown hook 'register_configs'"), "got {err}");
     }
 
     #[test]

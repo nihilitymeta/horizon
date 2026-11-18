@@ -1568,8 +1568,9 @@ impl mod_api::Hooks for LuaHost {
 
     fn config_loading(&self, host: HostSide, event: &mut ConfigLoadingEvent<'_>) {
         let _ = &host;
-        crate::hostcall::refused(self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns_owned(
             "config_loading",
+            &event.config.mod_id,
             crate::hostcall::TurnHost::of_side(host),
             &|| false,
             &|lua, _turn| {
@@ -1583,8 +1584,9 @@ impl mod_api::Hooks for LuaHost {
 
     fn config_reloading(&self, host: HostSide, event: &mut ConfigReloadingEvent<'_>) {
         let _ = &host;
-        crate::hostcall::refused(self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns_owned(
             "config_reloading",
+            &event.config.mod_id,
             crate::hostcall::TurnHost::of_side(host),
             &|| false,
             &|lua, _turn| {
@@ -1598,8 +1600,9 @@ impl mod_api::Hooks for LuaHost {
 
     fn config_unloading(&self, host: &mut dyn ServerHost, event: &mut ConfigUnloadingEvent<'_>) {
         let _ = &host;
-        crate::hostcall::refused(self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns_owned(
             "config_unloading",
+            &event.config.mod_id,
             crate::hostcall::TurnHost::Server(host),
             &|| false,
             &|lua, _turn| {
@@ -8566,5 +8569,10 @@ impl mod_api::Hooks for LuaHost {
     fn register_client_commands(&self, host: &mut dyn ClientHost, event: &mut mod_api::RegisterClientCommandsEvent<'_>) {
         let _ = host;
         self.declared_client_commands(event.commands);
+    }
+
+    fn register_configs(&self, host: HostSide, event: &mut mod_api::RegisterConfigsEvent<'_>) {
+        let _ = host;
+        self.declared_configs(event.configs);
     }
 }

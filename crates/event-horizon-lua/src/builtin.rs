@@ -374,6 +374,142 @@ mod tests {
         assert!(!subscribes_to(&host, "register_client_commands"));
     }
 
+    /// The configs the host answers `register_configs` with, as (mod id, file, kind, default).
+    fn answered_configs(host: &LuaHost) -> Vec<(String, String, mod_api::ConfigKind, String)> {
+        let mut out = Vec::new();
+        host.declared_configs(&mut out);
+        out.into_iter()
+            .map(|c| (c.mod_id, c.file, c.kind, c.default))
+            .collect()
+    }
+
+    #[test]
+    fn declared_configs_are_answered_in_load_order_under_each_host_id() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(
+            root.path(),
+            "a_first",
+            "first_mod",
+            "horizon.config{kind = \"common\", default = \"a = 1\\n\"}\n\
+             horizon.config{kind = \"server\", default = \"\", file = \"first_mod/machines.toml\"}\n",
+        );
+        mod_folder(
+            root.path(),
+            "b_second",
+            "second_mod",
+            "horizon.config{kind = \"common\", default = \"b\"}\n",
+        );
+        let (mods, refused) = load_mods(root.path());
+        assert!(refused.is_empty(), "got {refused:?}");
+        let host = LuaHost::new(mods);
+        use mod_api::ConfigKind::{Common, Server};
+        assert_eq!(
+            answered_configs(&host),
+            [
+                (
+                    "first_mod".into(),
+                    "first_mod-common.toml".into(),
+                    Common,
+                    "a = 1\n".into()
+                ),
+                (
+                    "first_mod".into(),
+                    "first_mod/machines.toml".into(),
+                    Server,
+                    String::new()
+                ),
+                (
+                    "second_mod".into(),
+                    "second_mod-common.toml".into(),
+                    Common,
+                    "b".into()
+                ),
+            ]
+        );
+        assert!(subscribes_to(&host, "register_configs"));
+    }
+
+    #[test]
+    fn a_config_is_answered_only_where_its_mod_runs() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder_on(
+            root.path(),
+            "a_client",
+            "client_mod",
+            "client",
+            "horizon.config{kind = \"server\", default = \"\"}\n\
+             horizon.config{kind = \"client\", default = \"\"}\n",
+        );
+        mod_folder_on(
+            root.path(),
+            "b_server",
+            "server_mod",
+            "server",
+            "horizon.config{kind = \"client\", default = \"\"}\n",
+        );
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        let files: Vec<String> = answered_configs(&host).into_iter().map(|c| c.1).collect();
+        assert_eq!(files, ["client_mod-client.toml"]);
+    }
+
+    #[test]
+    fn a_mod_without_configs_does_not_subscribe_to_the_config_hook() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(
+            root.path(),
+            "a_none",
+            "empty_mod",
+            "horizon.on(\"server_tick\", function() end)\n",
+        );
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        assert!(answered_configs(&host).is_empty());
+        assert!(!subscribes_to(&host, "register_configs"));
+    }
+
+    #[test]
+    fn a_config_hook_reaches_only_the_mod_that_owns_the_file() {
+        let root = tempfile::tempdir().unwrap();
+        for (name, id) in [("a_first", "mod_a"), ("b_second", "mod_b")] {
+            mod_folder(
+                root.path(),
+                name,
+                id,
+                "horizon.on(\"config_loading\", function(e) horizon.log(\"saw \" .. e.config.file) end)\n",
+            );
+        }
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        let build = |lua: &mlua::Lua, _: &crate::hostcall::TurnHost<'_>| {
+            let config = lua.create_table()?;
+            config.raw_set("mod_id", "mod_b")?;
+            config.raw_set("file", "mod_b-common.toml")?;
+            config.raw_set("text", "answer = 42\n")?;
+            let data = lua.create_table()?;
+            data.raw_set("config", config)?;
+            crate::dispatch::new_event(lua, data, &[])
+        };
+        host.dispatch_turns_owned(
+            "config_loading",
+            "mod_b",
+            crate::hostcall::TurnHost::None,
+            &|| false,
+            &build,
+            &mut |_, _, _| true,
+        )
+        .unwrap();
+        let seen = |id: &str| {
+            host.mods()
+                .iter()
+                .find(|m| m.id() == id)
+                .unwrap()
+                .log_lines()
+        };
+        assert!(seen("mod_a").is_empty(), "mod_a saw {:?}", seen("mod_a"));
+        assert_eq!(seen("mod_b"), ["saw mod_b-common.toml"]);
+    }
+
     #[test]
     fn a_mod_that_declares_nothing_contributes_nothing_and_no_subscription() {
         let root = tempfile::tempdir().unwrap();

@@ -65,6 +65,8 @@ pub struct LuaMod {
     block_entity_parts: Vec<PartRecord>,
     /// The client commands the mod declared with `horizon.client_command`.
     client_commands: Vec<ClientCommandRecord>,
+    /// The configs the mod declared with `horizon.config`, each owned by this mod's id.
+    configs: Vec<mod_api::Config>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -163,6 +165,7 @@ impl LuaMod {
             block_entity_types: declaration.block_entity_types,
             block_entity_parts: declaration.block_entity_parts,
             client_commands: declaration.client_commands,
+            configs: declaration.configs,
             lua,
             log,
             turn: Turn::default(),
@@ -218,6 +221,22 @@ impl LuaMod {
     /// Whether the mod runs on a client: a client or a both-sides mod.
     fn runs_on_client(&self) -> bool {
         self.side != Side::Server
+    }
+
+    /// Whether the mod runs on a server: a server or a both-sides mod.
+    fn runs_on_server(&self) -> bool {
+        self.side != Side::Client
+    }
+
+    /// Whether the mod's config is read where the mod runs. A `client` config is read by the window
+    /// only, a `server` one by the server only, and a `common` one by both. The side is the manifest's.
+    fn contributes_config(&self, config: &mod_api::Config) -> bool {
+        match config.kind {
+            mod_api::ConfigKind::Client => self.runs_on_client(),
+            mod_api::ConfigKind::Server => self.runs_on_server(),
+            mod_api::ConfigKind::Common => true,
+            _ => false,
+        }
     }
 
     pub fn hooks(&self) -> &[String] {
@@ -322,6 +341,11 @@ impl LuaHost {
                 "register_client_commands",
                 mods.iter()
                     .any(|m| m.runs_on_client() && !m.client_commands.is_empty()),
+            ),
+            (
+                "register_configs",
+                mods.iter()
+                    .any(|m| m.configs.iter().any(|c| m.contributes_config(c))),
             ),
         ] {
             if let (true, Some(id)) = (declared, hook_id(name)) {
@@ -522,6 +546,20 @@ impl LuaHost {
                 m.client_commands
                     .iter()
                     .map(ClientCommandRecord::to_command),
+            );
+        }
+    }
+
+    /// The configs of every loaded mod that was not refused, in load and declaration order: the
+    /// answer to the game's `register_configs` hook. A config is left out where its mod does not run
+    /// (see `LuaMod::contributes_config`). Each one's `mod_id` is the host's id for the mod.
+    pub(crate) fn declared_configs(&self, out: &mut Vec<mod_api::Config>) {
+        for m in self.mods.iter().filter(|m| !self.is_refused(m)) {
+            out.extend(
+                m.configs
+                    .iter()
+                    .filter(|config| m.contributes_config(config))
+                    .cloned(),
             );
         }
     }
