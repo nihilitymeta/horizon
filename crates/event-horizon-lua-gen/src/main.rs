@@ -460,6 +460,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         ],
         families: &families,
         members: &bound_members,
+        plain: &types.plain,
     })
     .map_err(|error| format!("horizon.d.luau: {error}"))?;
     let lua_types_dir = args
@@ -597,6 +598,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
     for (ty, count) in &any_by_type {
         println!("{count:5}  {ty}");
     }
+    println!("horizon.d.luau: {} named plain types emitted", luau.named);
     println!("plain types emitted: {}", types.emitted.len());
     println!("types refused: {}", types.refused.len());
     let mut refused_by_reason = BTreeMap::<String, usize>::new();

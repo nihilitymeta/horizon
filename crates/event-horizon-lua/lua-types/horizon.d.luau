@@ -37,22 +37,24 @@ export type ItemStackSpec = { id: string, count: number, nbt: Compound? }
 -- A handle of an entity, a level, a block entity, ... is a userdata. Each family's methods are
 -- generated below as a `*Ref` type; a method is called with a colon: `player:name()`.
 
--- The right-click of a block (hostcall.rs block_click_lua). `hit` and `player` are described by
--- their own generated types where those exist; `hit` is `any` here.
+-- The right-click of a block (hostcall.rs block_click_lua). `dimension` is a LevelDimension (a
+-- string, or a table for a custom dimension), `hand` a Hand, and `hit` a BlockHit. `player` is the
+-- player's id as a string (a u128); the Lua handle is `event.player` of the events that give one.
 export type BlockClick = {
-	side: string,
-	dimension: string,
+	side: LogicalSide,
+	dimension: LevelDimension,
 	pos: BlockPos,
-	hit: any,
-	hand: string,
+	hit: BlockHit,
+	hand: Hand,
 	stack: ItemStackSpec?,
-	player: any,
+	player: string,
 	player_entity_id: number,
 }
 
 -- `event.source` of `run_mod_command`: `kind` names what sent the command, `permission` is its
 -- level. The other keys depend on `kind` (commands.rs source_lua): `player` and `entity` are
--- handles; `position` is a BlockPos; `level` names the dimension for a command block.
+-- handles; `position` is a BlockPos. For a command block, `level` is the dimension's id as text
+-- (for example `minecraft:overworld`), not a handle (commands.rs `dimension_text`).
 export type CommandSource = { kind: string, permission: number, [string]: any }
 
 -- `event.command` of `run_mod_command`: the word path (`literals`), each argument by name (`args`;
@@ -64,9 +66,10 @@ export type CommandInvocation = {
 	position: BlockPos,
 }
 
--- `horizon.none`: the answer that clears an optional output (dispatch.rs). It is a userdata; no
--- other value clears one.
-export type NoneAnswer = any
+-- `horizon.none`: the answer that clears an optional output (dispatch.rs). At runtime it is a
+-- userdata, which Luau cannot name, so this table type stands for it; an optional output takes it
+-- as `T | NoneMarker?`. No other value clears one.
+export type NoneMarker = { horizon_none: true }
 
 -- Feedback: `event.feedback(text)` in a `run_mod_command` handler sends one literal line to the
 -- sender. At most 32 calls per command, each at most 4096 bytes (commands.rs MAX_FEEDBACK,
@@ -125,9 +128,12 @@ export type ConfigRecord = {
 -- The `horizon` global. Its functions split by time: the declaring functions (block, item,
 -- block_entity_type, world_fluid, block_part, item_part, block_entity_part, fluid_part,
 -- client_command, config, command) and `on` work only while the mod loads; `log` and `none` work
--- only inside a handler. `horizon.log` takes a string, at most 1000 bytes per line (longer lines
--- are cut), and is rate-limited: a line over the rate is dropped without an error; the first 100
--- lines are kept for the log view. Outside its own handler, `horizon.<name>` raises
+-- only inside a handler. `horizon.log` takes a string. Control characters are written as `\u{..}`
+-- escapes, and a line is cut at 1000 characters after escaping (host.rs MAX_LOG_LINE; an escape is
+-- never split). A mod may write 20 lines at once, then 20 a second (host.rs LOG_BURST, LOG_PER_SECOND);
+-- a line over that rate is dropped without an error. The mod keeps its last 100 lines
+-- (MAX_LOG_LINES), dropping the oldest. Log lines have no per-turn cap: the per-turn cap of 16 lines
+-- (4096 bytes each) is for a `Vec<Text>` output (dispatch.rs MAX_LINES). Outside its own handler, `horizon.<name>` raises
 -- "not available yet" (host.rs runtime_table).
 export type HorizonApi = {
 	on: OnHook,
@@ -145,7 +151,7 @@ export type HorizonApi = {
 	config: (record: ConfigRecord) -> (),
 	command: (record: CommandRecord) -> (),
 	log: (message: string) -> (),
-	none: NoneAnswer,
+	none: NoneMarker,
 }
 
 declare horizon: HorizonApi
@@ -186,7 +192,7 @@ export type ArrowNockEvent = {
 	player: string, -- read-only
 	name: string, -- read-only
 	bow: ItemStackSpec, -- read-only
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	has_ammo: boolean, -- read-only
 	cancelled: boolean, -- answer
 }
@@ -214,7 +220,7 @@ export type BeaconStateChangeEvent = {
 }
 
 export type BellRingEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	player: string?, -- read-only
 	pos: BlockPos, -- read-only
 	cancelled: boolean, -- answer
@@ -228,13 +234,13 @@ export type BlockBreakProgressUpdateEvent = {
 }
 
 export type BlockBurnEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type BlockChangedEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	old: BlockStateSpec, -- read-only
 	new: BlockStateSpec, -- read-only
@@ -260,7 +266,7 @@ export type BlockDispenseArmorEvent = {
 }
 
 export type BlockFadeEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	from: BlockStateSpec, -- read-only
 	to: BlockStateSpec, -- read-only
@@ -274,7 +280,7 @@ export type BlockFailedDispenseEvent = {
 }
 
 export type BlockFormEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	from: BlockStateSpec, -- read-only
 	to: BlockStateSpec, -- read-only
@@ -282,9 +288,9 @@ export type BlockFormEvent = {
 }
 
 export type BlockGrowFeatureEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
-	feature: string?, -- answer
+	feature: string | NoneMarker?, -- answer
 	cancelled: boolean, -- answer
 }
 
@@ -296,7 +302,7 @@ export type BlockHighlightEvent = {
 }
 
 export type BlockIgniteEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	player: string?, -- read-only
 	pos: BlockPos, -- read-only
 	cause: string, -- read-only
@@ -326,7 +332,7 @@ export type BlockShearEntityEvent = {
 }
 
 export type BlockSpreadEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	kind: string, -- read-only
 	from: BlockPos, -- read-only
 	to: BlockPos, -- read-only
@@ -335,15 +341,15 @@ export type BlockSpreadEvent = {
 
 export type BlockToolModificationEvent = {
 	stack: ItemStackSpec, -- read-only
-	tool: any, -- read-only -- Rust: ToolUse
-	final_state: BlockStateSpec?, -- answer
+	tool: ToolUse, -- read-only
+	final_state: BlockStateSpec | NoneMarker?, -- answer
 	cancelled: boolean, -- answer
 }
 
 export type BreakBlockEvent = {
 	pos: { x: number, y: number, z: number }, -- read-only
 	state: BlockStateSpec, -- read-only
-	exp_to_drop: number?, -- answer
+	exp_to_drop: number | NoneMarker?, -- answer
 	cancelled: boolean, -- answer
 }
 
@@ -395,8 +401,8 @@ export type CameraPoseEvent = {
 }
 
 export type CameraTypeCycleEvent = {
-	previous: any, -- read-only -- Rust: CameraType
-	next: any, -- answer -- Rust: CameraType
+	previous: CameraType, -- read-only
+	next: CameraType, -- answer
 }
 
 export type CampfireStartEvent = {
@@ -408,11 +414,11 @@ export type CanPlayerSleepEvent = {
 	player: string, -- read-only
 	name: string, -- read-only
 	pos: { x: number, y: number, z: number }, -- read-only
-	problem: string?, -- answer
+	problem: string | NoneMarker?, -- answer
 }
 
 export type CauldronLevelChangedEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	player: string?, -- read-only
 	pos: BlockPos, -- read-only
 	from_level: number, -- read-only
@@ -450,8 +456,8 @@ export type ChunkSentEvent = {
 
 export type ChunkTicketLevelUpdatedEvent = {
 	chunk: ChunkRef, -- read-only
-	old: any, -- read-only -- Rust: ChunkTicketLevel
-	new: any, -- read-only -- Rust: ChunkTicketLevel
+	old: ChunkTicketLevel, -- read-only
+	new: ChunkTicketLevel, -- read-only
 }
 
 export type ChunkUnloadEvent = {
@@ -494,8 +500,8 @@ export type ClientInformationUpdatedEvent = {
 	player: string, -- read-only
 	player_entity_id: number, -- read-only
 	name: string, -- read-only
-	old: any, -- read-only -- Rust: ClientInfo
-	new: any, -- read-only -- Rust: ClientInfo
+	old: ClientInfo, -- read-only
+	new: ClientInfo, -- read-only
 }
 
 export type ClientLevelLoadEvent = {
@@ -507,7 +513,7 @@ export type ClientLevelUnloadEvent = {
 }
 
 export type ClientMiningPredictEvent = {
-	prediction: any, -- read-only -- Rust: ClientMiningPrediction
+	prediction: ClientMiningPrediction, -- read-only
 	cancelled: boolean, -- answer
 }
 
@@ -580,7 +586,7 @@ export type CompostItemEvent = {
 export type ComputeFogColorEvent = {
 	partial: number, -- read-only
 	camera: { x: number, y: number, z: number }, -- read-only
-	fog_type: any, -- read-only -- Rust: FogType
+	fog_type: FogType, -- read-only
 	rgb: { x: number, y: number, z: number }, -- answer
 }
 
@@ -609,7 +615,7 @@ export type ConsoleLineEvent = {
 }
 
 export type ContainerLootFilledEvent = {
-	context: any, -- read-only -- Rust: ContainerLootFilled
+	context: ContainerLootFilled, -- read-only
 	drops: {ItemStackSpec}, -- answer
 }
 
@@ -627,7 +633,7 @@ export type CrafterCraftEvent = {
 }
 
 export type CreateFluidSourceEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 	can_convert: boolean, -- answer
@@ -661,27 +667,27 @@ export type CriticalHitEvent = {
 }
 
 export type CropGrowPostEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	original_state: BlockStateSpec, -- read-only
 	state: BlockStateSpec, -- read-only
 }
 
 export type CropGrowPreEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	result: any, -- answer -- Rust: TriState
+	result: TriState, -- answer
 }
 
 export type CustomSpawnerTickEvent = {
 	dimension: string, -- read-only
-	key: any, -- read-only -- Rust: SpawnerKey
+	key: SpawnerKey, -- read-only
 	spawn_enemies: boolean, -- read-only
 }
 
 export type CustomizeBossEventProgressEvent = {
-	bar: any, -- read-only -- Rust: ClientBossBar
+	bar: ClientBossBar, -- read-only
 	x: number, -- answer
 	y: number, -- answer
 	increment: number, -- answer
@@ -698,7 +704,7 @@ export type CustomizeChatOverlayEvent = {
 
 export type DataMapsUpdatedEvent = {
 	registry: string, -- read-only
-	cause: any, -- read-only -- Rust: DataMapsUpdateCause
+	cause: DataMapsUpdateCause, -- read-only
 }
 
 export type DatapackSyncEvent = {
@@ -711,7 +717,7 @@ export type DebugEntryLinesEvent = {
 }
 
 export type DefaultComponentsBoundEvent = {
-	cause: any, -- read-only -- Rust: TagsUpdateCause
+	cause: TagsUpdateCause, -- read-only
 }
 
 export type DifficultyChangedEvent = {
@@ -720,7 +726,7 @@ export type DifficultyChangedEvent = {
 }
 
 export type DragonEggFormEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	cancelled: boolean, -- answer
 }
@@ -735,7 +741,7 @@ export type EnchantItemEvent = {
 
 export type EnchantedEntityLootEvent = {
 	entity: LivingRef, -- read-only
-	source: any, -- read-only -- Rust: HurtSource
+	source: HurtSource, -- read-only
 	attacker: EntityRef?, -- read-only
 	enchantment: string, -- read-only
 	level: number, -- answer
@@ -798,7 +804,7 @@ export type EntityChangeBlockPreEvent = {
 }
 
 export type EntityConstructingEvent = {
-	holder: any, -- read-only -- Rust: Holder
+	holder: Holder, -- read-only
 	kind: string, -- read-only
 }
 
@@ -840,7 +846,7 @@ export type EntityInteractSpecificEvent = {
 export type EntityInvulnerabilityCheckEvent = {
 	entity: number, -- read-only
 	kind: string, -- read-only
-	source: any, -- read-only -- Rust: HurtSource
+	source: HurtSource, -- read-only
 	original_invulnerability: boolean, -- read-only
 	invulnerable: boolean, -- answer
 }
@@ -878,7 +884,7 @@ export type EntityMountEvent = {
 export type EntityMoveEvent = {
 	entity: number, -- read-only
 	kind: string, -- read-only
-	cause: any, -- read-only -- Rust: MoveCause
+	cause: MoveCause, -- read-only
 	delta: { x: number, y: number, z: number }, -- answer
 	cancelled: boolean, -- answer
 }
@@ -886,7 +892,7 @@ export type EntityMoveEvent = {
 export type EntityOutlineEvent = {
 	entity_id: number, -- read-only
 	kind: string, -- read-only
-	outline: number?, -- answer
+	outline: number | NoneMarker?, -- answer
 }
 
 export type EntityPortalEvent = {
@@ -911,7 +917,7 @@ export type EntityShootBowEvent = {
 
 export type EntitySizeEvent = {
 	entity: EntityRef, -- read-only
-	pose: any, -- read-only -- Rust: Pose
+	pose: Pose, -- read-only
 	old_size: { x: number, y: number, z: number }, -- read-only
 	size: { x: number, y: number, z: number }, -- answer
 }
@@ -997,12 +1003,12 @@ export type ExplosionPrimeEvent = {
 }
 
 export type ExplosionStartEvent = {
-	explosion: any, -- read-only -- Rust: ExplosionStart
+	explosion: ExplosionStart, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type ExtractBlockScreenEffectEvent = {
-	effect: any, -- read-only -- Rust: BlockScreenEffect
+	effect: BlockScreenEffect, -- read-only
 	state: BlockStateSpec, -- read-only
 	pos: BlockPos, -- read-only
 	partial_tick: number, -- read-only
@@ -1040,7 +1046,7 @@ export type FluidFlowEvent = {
 }
 
 export type FluidLevelChangeEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	fluid: string, -- read-only
 	from: number, -- read-only
@@ -1049,7 +1055,7 @@ export type FluidLevelChangeEvent = {
 }
 
 export type FluidPlaceBlockEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	liquid_pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
@@ -1058,7 +1064,7 @@ export type FluidPlaceBlockEvent = {
 }
 
 export type FluidTickEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	fluid: string, -- read-only
 	cancelled: boolean, -- answer
@@ -1109,8 +1115,8 @@ export type GameShuttingDownEvent = {
 export type GetEquipmentDropChanceEvent = {
 	entity: number, -- read-only
 	kind: string, -- read-only
-	slot: any, -- read-only -- Rust: EquipmentSlot
-	source: any, -- read-only -- Rust: HurtSource
+	slot: EquipmentSlot, -- read-only
+	source: HurtSource, -- read-only
 	recently_hit: boolean, -- read-only
 	stack: ItemStackSpec, -- read-only
 	original_chance: number, -- read-only
@@ -1140,7 +1146,7 @@ export type HopperInventorySearchEvent = {
 }
 
 export type HopperPickupItemEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	item: string, -- read-only
 	count: number, -- read-only
@@ -1157,14 +1163,14 @@ export type InputKeyEvent = {
 	key: string, -- read-only
 	layout_key: string?, -- read-only
 	raw_code: number, -- read-only
-	action: any, -- read-only -- Rust: KeyAction
+	action: KeyAction, -- read-only
 	modifiers: number, -- read-only
 }
 
 export type InteractionKeyMappingTriggeredEvent = {
-	key: any, -- read-only -- Rust: InteractionKey
-	hand: any, -- read-only -- Rust: Hand
-	attempt: any, -- read-only -- Rust: InteractionAttempt
+	key: InteractionKey, -- read-only
+	hand: Hand, -- read-only
+	attempt: InteractionAttempt, -- read-only
 	swing_hand: boolean, -- answer
 	cancelled: boolean, -- answer
 }
@@ -1222,26 +1228,26 @@ export type ItemModelSelectPropertyEvent = {
 	property: string, -- read-only
 	stack: ItemStackSpec, -- read-only
 	bundle_selected: number, -- read-only
-	value: string?, -- answer
+	value: string | NoneMarker?, -- answer
 }
 
 export type ItemPickedUpEvent = {
 	player: string, -- read-only
 	item: ItemEntityRef, -- read-only
-	can_pickup: any, -- answer -- Rust: TriState
+	can_pickup: TriState, -- answer
 }
 
 export type ItemPickedUpPartialEvent = {
 	player: string, -- read-only
 	original: ItemStackSpec, -- read-only
-	remaining: ItemStackSpec?, -- answer
+	remaining: ItemStackSpec | NoneMarker?, -- answer
 }
 
 export type ItemPickedUpPostEvent = {
 	player: string, -- read-only
 	item: ItemEntityRef, -- read-only
 	original: ItemStackSpec, -- read-only
-	remaining: ItemStackSpec?, -- answer
+	remaining: ItemStackSpec | NoneMarker?, -- answer
 }
 
 export type ItemSmeltedEvent = {
@@ -1271,7 +1277,7 @@ export type KeyMappingPreEvent = {
 }
 
 export type LeavesDecayEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	cancelled: boolean, -- answer
 }
@@ -1338,7 +1344,7 @@ export type LivingConversionPreEvent = {
 export type LivingDeathEvent = {
 	entity: number, -- read-only
 	kind: string, -- read-only
-	source: any, -- read-only -- Rust: HurtSource
+	source: HurtSource, -- read-only
 	weapon: ItemStackSpec?, -- read-only
 	cancelled: boolean, -- answer
 }
@@ -1369,15 +1375,15 @@ export type LivingDrownEvent = {
 export type LivingEntityUseItemFinishEvent = {
 	stack: ItemStackSpec, -- read-only
 	entity: number?, -- read-only
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	duration: number, -- read-only
-	result: ItemStackSpec?, -- answer
+	result: ItemStackSpec | NoneMarker?, -- answer
 }
 
 export type LivingEntityUseItemStartEvent = {
 	stack: ItemStackSpec, -- read-only
 	entity: number?, -- read-only
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	duration: number, -- answer
 	cancelled: boolean, -- answer
 }
@@ -1385,7 +1391,7 @@ export type LivingEntityUseItemStartEvent = {
 export type LivingEntityUseItemStopEvent = {
 	stack: ItemStackSpec, -- read-only
 	entity: number?, -- read-only
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	duration: number, -- read-only
 	cancelled: boolean, -- answer
 }
@@ -1393,7 +1399,7 @@ export type LivingEntityUseItemStopEvent = {
 export type LivingEntityUseItemTickEvent = {
 	stack: ItemStackSpec, -- read-only
 	entity: number?, -- read-only
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	duration: number, -- answer
 	cancelled: boolean, -- answer
 }
@@ -1435,7 +1441,7 @@ export type LivingGetProjectileEvent = {
 	entity: number?, -- read-only
 	kind: string, -- read-only
 	weapon: ItemStackSpec, -- read-only
-	projectile: ItemStackSpec?, -- answer
+	projectile: ItemStackSpec | NoneMarker?, -- answer
 }
 
 export type LivingHealEvent = {
@@ -1458,11 +1464,11 @@ export type LivingJumpPowerEvent = {
 export type LivingKnockbackEvent = {
 	entity: number, -- read-only
 	kind: string, -- read-only
-	source: any, -- read-only -- Rust: HurtSource
+	source: HurtSource, -- read-only
 	attacker: number, -- read-only
 	attacker_main: ItemStackSpec?, -- read-only
 	attacker_off: ItemStackSpec?, -- read-only
-	entry: any, -- read-only -- Rust: KnockbackEntry
+	entry: KnockbackEntry, -- read-only
 	strength: number, -- read-only
 	x: number, -- read-only
 	z: number, -- read-only
@@ -1478,8 +1484,8 @@ export type LivingSpeedEvent = {
 export type LivingUseTotemEvent = {
 	entity: number, -- read-only
 	kind: string, -- read-only
-	source: any, -- read-only -- Rust: HurtSource
-	hand: any, -- read-only -- Rust: Hand
+	source: HurtSource, -- read-only
+	hand: Hand, -- read-only
 	item: string, -- read-only
 	cancelled: boolean, -- answer
 }
@@ -1491,7 +1497,7 @@ export type LivingVisibilityEvent = {
 }
 
 export type MenuBackgroundEvent = {
-	radius: number?, -- answer
+	radius: number | NoneMarker?, -- answer
 }
 
 export type MenuClickedEvent = {
@@ -1519,7 +1525,7 @@ export type MobDespawnEvent = {
 	mob: MobRef, -- read-only
 	kind: string, -- read-only
 	pos: { x: number, y: number, z: number }, -- read-only
-	result: any, -- answer -- Rust: Despawn
+	result: Despawn, -- answer
 }
 
 export type MobKilledEvent = {
@@ -1555,7 +1561,7 @@ export type ModelBakingCompletedEvent = {
 }
 
 export type MoistureChangeEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	from: number, -- read-only
 	to: number, -- read-only
@@ -1597,15 +1603,15 @@ export type MovementInputEvent = {
 }
 
 export type NeighborNotifyEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	skipped_side: any?, -- read-only -- Rust: Direction
+	skipped_side: Direction?, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type NoteBlockChangeEvent = {
-	context: any, -- read-only -- Rust: NoteBlockChange
+	context: NoteBlockChange, -- read-only
 	new_note: number, -- answer
 	cancelled: boolean, -- answer
 }
@@ -1619,8 +1625,8 @@ export type PermissionsChangedEvent = {
 	player: string, -- read-only
 	player_entity_id: number?, -- read-only
 	name: string, -- read-only
-	old: any, -- read-only -- Rust: PermissionLevel
-	new: any, -- read-only -- Rust: PermissionLevel
+	old: PermissionLevel, -- read-only
+	new: PermissionLevel, -- read-only
 	cancelled: boolean, -- answer
 }
 
@@ -1634,13 +1640,13 @@ export type PickupXpEvent = {
 }
 
 export type PlaySoundSourceEvent = {
-	sound: any, -- read-only -- Rust: SoundPlay
-	channel: any, -- read-only -- Rust: ChannelRef
+	sound: SoundPlay, -- read-only
+	channel: ChannelRef, -- read-only
 }
 
 export type PlayStreamingSourceEvent = {
-	sound: any, -- read-only -- Rust: SoundPlay
-	channel: any, -- read-only -- Rust: ChannelRef
+	sound: SoundPlay, -- read-only
+	channel: ChannelRef, -- read-only
 }
 
 export type PlayerAdvancementDoneEvent = {
@@ -1825,8 +1831,8 @@ export type PlayerFlyableFallEvent = {
 export type PlayerGameModeChangedEvent = {
 	player: string, -- read-only
 	name: string, -- read-only
-	from: any, -- read-only -- Rust: GameMode
-	to: any, -- answer -- Rust: GameMode
+	from: GameMode, -- read-only
+	to: GameMode, -- answer
 	cancelled: boolean, -- answer
 }
 
@@ -1918,7 +1924,7 @@ export type PlayerLoggedOutEvent = {
 export type PlayerLoginEvent = {
 	player: string, -- read-only
 	name: string, -- read-only
-	reason: Text?, -- answer
+	reason: Text | NoneMarker?, -- answer
 	cancelled: boolean, -- answer
 }
 
@@ -1989,7 +1995,7 @@ export type PlayerRecipeBookClickEvent = {
 export type PlayerRecipeBookSettingsChangeEvent = {
 	player: string, -- read-only
 	name: string, -- read-only
-	book: any, -- read-only -- Rust: RecipeBookIdentity
+	book: RecipeBookIdentity, -- read-only
 	open: boolean, -- read-only
 	filtering: boolean, -- read-only
 }
@@ -2103,8 +2109,8 @@ export type PlayerStopUsingItemEvent = {
 export type PlayerSwapHandsEvent = {
 	player: string, -- read-only
 	name: string, -- read-only
-	to_main_hand: ItemStackSpec?, -- answer
-	to_off_hand: ItemStackSpec?, -- answer
+	to_main_hand: ItemStackSpec | NoneMarker?, -- answer
+	to_off_hand: ItemStackSpec | NoneMarker?, -- answer
 	cancelled: boolean, -- answer
 }
 
@@ -2223,10 +2229,10 @@ export type PortalCreateEvent = {
 }
 
 export type PortalSpawnEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	shape: any, -- read-only -- Rust: PortalShape
+	shape: PortalShape, -- read-only
 	cancelled: boolean, -- answer
 }
 
@@ -2342,7 +2348,7 @@ export type RenderNameTagEvent = {
 	kind: string, -- read-only
 	vanilla_visible: boolean, -- read-only
 	visible: boolean, -- answer
-	text: string?, -- answer
+	text: string | NoneMarker?, -- answer
 }
 
 export type ResourcePackStatusEvent = {
@@ -2353,14 +2359,14 @@ export type ResourcePackStatusEvent = {
 
 export type RightClickBlockEvent = {
 	click: BlockClick, -- read-only
-	use_block: any, -- answer -- Rust: TriState
-	use_item: any, -- answer -- Rust: TriState
-	cancellation_result: any, -- answer -- Rust: InteractionResult
+	use_block: TriState, -- answer
+	use_item: TriState, -- answer
+	cancellation_result: InteractionResult, -- answer
 	cancelled: boolean, -- answer
 }
 
 export type RightClickEmptyEvent = {
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 }
 
 export type RunModCommandEvent = {
@@ -2371,28 +2377,28 @@ export type RunModCommandEvent = {
 }
 
 export type ScheduledTaskEvent = {
-	id: any, -- read-only -- Rust: TaskId
+	id: TaskId, -- read-only
 	owner: string, -- read-only
 	token: number, -- read-only
 }
 
 export type ScreenCharTypedPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	c: string, -- read-only
 	modifiers: number, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type ScreenClosingEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 }
 
 export type ScreenInitPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 }
 
 export type ScreenKeyPressedPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	key: string, -- read-only
 	["repeat"]: boolean, -- read-only
 	modifiers: number, -- read-only
@@ -2400,7 +2406,7 @@ export type ScreenKeyPressedPostEvent = {
 }
 
 export type ScreenKeyPressedPreEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	key: string, -- read-only
 	["repeat"]: boolean, -- read-only
 	modifiers: number, -- read-only
@@ -2408,54 +2414,54 @@ export type ScreenKeyPressedPreEvent = {
 }
 
 export type ScreenKeyReleasedPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	key: string, -- read-only
 	modifiers: number, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type ScreenKeyReleasedPreEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	key: string, -- read-only
 	modifiers: number, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type ScreenMouseButtonPressedPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	button: number, -- read-only
 	modifiers: number, -- read-only
 }
 
 export type ScreenMouseButtonPressedPreEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	button: number, -- read-only
 	modifiers: number, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type ScreenMouseButtonReleasedPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	button: number, -- read-only
 	modifiers: number, -- read-only
 }
 
 export type ScreenMouseButtonReleasedPreEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	button: number, -- read-only
 	modifiers: number, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type ScreenMouseDraggedPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	button: number, -- read-only
 	delta: { x: number, y: number }, -- read-only
 	modifiers: number, -- read-only
 }
 
 export type ScreenMouseDraggedPreEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	button: number, -- read-only
 	delta: { x: number, y: number }, -- read-only
 	modifiers: number, -- read-only
@@ -2463,20 +2469,20 @@ export type ScreenMouseDraggedPreEvent = {
 }
 
 export type ScreenMouseScrolledPostEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	scroll: { x: number, y: number }, -- read-only
 	modifiers: number, -- read-only
 }
 
 export type ScreenMouseScrolledPreEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	scroll: { x: number, y: number }, -- read-only
 	modifiers: number, -- read-only
 	cancelled: boolean, -- answer
 }
 
 export type ScreenRenderInventoryMobEffectsEvent = {
-	screen: any, -- read-only -- Rust: ScreenView
+	screen: ScreenView, -- read-only
 	available_space: number, -- read-only
 	compact: boolean, -- answer
 	horizontal_offset: number, -- answer
@@ -2509,8 +2515,8 @@ export type ServerStoppingEvent = {
 }
 
 export type ServerTickEvent = {
-	context: any, -- read-only -- Rust: LifecycleContext
-	phase: any, -- read-only -- Rust: ServerTickPhase
+	context: LifecycleContext, -- read-only
+	phase: ServerTickPhase, -- read-only
 }
 
 export type ServerTickRateChangedEvent = {
@@ -2530,7 +2536,7 @@ export type SpawnChangeEvent = {
 }
 
 export type SpongeAbsorbEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 }
 
@@ -2551,7 +2557,7 @@ export type SweepAttackEvent = {
 }
 
 export type TagsUpdatedEvent = {
-	cause: any, -- read-only -- Rust: TagsUpdateCause
+	cause: TagsUpdateCause, -- read-only
 }
 
 export type TargetHitEvent = {
@@ -2569,7 +2575,7 @@ export type TeleportCommandEvent = {
 }
 
 export type TextureAtlasStitchedEvent = {
-	atlas: any, -- read-only -- Rust: TextureAtlas
+	atlas: TextureAtlas, -- read-only
 }
 
 export type ThunderChangeEvent = {
@@ -2597,9 +2603,9 @@ export type TntPrimedEvent = {
 }
 
 export type ToastAddEvent = {
-	kind: any, -- read-only -- Rust: ToastKind
+	kind: ToastKind, -- read-only
 	title: Text, -- answer
-	description: Text?, -- answer
+	description: Text | NoneMarker?, -- answer
 	cancelled: boolean, -- answer
 }
 
@@ -2612,8 +2618,8 @@ export type TradeSelectEvent = {
 
 export type UseItemOnBlockEvent = {
 	click: BlockClick, -- read-only
-	phase: any, -- read-only -- Rust: UsePhase
-	cancellation_result: any, -- answer -- Rust: InteractionResult
+	phase: UsePhase, -- read-only
+	cancellation_result: InteractionResult, -- answer
 	cancelled: boolean, -- answer
 }
 
@@ -2701,8 +2707,8 @@ export type WorldBorderCenterChangedEvent = {
 }
 
 export type WorldLifecycleEvent = {
-	context: any, -- read-only -- Rust: LifecycleContext
-	phase: any, -- read-only -- Rust: WorldPhase
+	context: LifecycleContext, -- read-only
+	phase: WorldPhase, -- read-only
 	error_text: string, -- read-only
 }
 
@@ -3114,7 +3120,7 @@ export type OnHook =
 export type AdjacentBlockPathTypeEvent = {
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	path_type: any, -- read-only -- Rust: PathType
+	path_type: PathType, -- read-only
 }
 
 export type BlockPathTypeEvent = {
@@ -3123,10 +3129,10 @@ export type BlockPathTypeEvent = {
 }
 
 export type BlockSignalEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	face: any, -- read-only -- Rust: Direction
+	face: Direction, -- read-only
 	direct: boolean, -- read-only
 	signal: number, -- answer
 }
@@ -3141,36 +3147,36 @@ export type BounceOnEvent = {
 }
 
 export type CanBeConnectedToEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 	connector: BlockStateSpec, -- read-only
-	kind: any, -- read-only -- Rust: ConnectionKind
-	direction: any, -- read-only -- Rust: Direction
+	kind: ConnectionKind, -- read-only
+	direction: Direction, -- read-only
 	face_solid: boolean, -- read-only
 }
 
 export type CanDropFromExplosionEvent = {
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	explosion: any, -- read-only -- Rust: ExplosionStart
+	explosion: ExplosionStart, -- read-only
 }
 
 export type CanSurviveEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 }
 
 export type CanSustainPlantEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	state: BlockStateSpec, -- read-only
 	ground: BlockStateSpec, -- read-only
 	ground_pos: BlockPos, -- read-only
 }
 
 export type CloneItemStackEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	block: string, -- read-only
 	state: BlockStateSpec, -- read-only
@@ -3186,14 +3192,14 @@ export type ContentsChangedEvent = {
 export type ExplosionResistanceEvent = {
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	explosion: any, -- read-only -- Rust: ExplosionStart
+	explosion: ExplosionStart, -- read-only
 }
 
 export type IgnitedByLavaEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	state: BlockStateSpec, -- read-only
 	pos: BlockPos, -- read-only
-	face: any, -- read-only -- Rust: Direction
+	face: Direction, -- read-only
 }
 
 export type IsSignalSourceEvent = {
@@ -3202,13 +3208,13 @@ export type IsSignalSourceEvent = {
 }
 
 export type IsValidBonemealTargetEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 }
 
 export type MayPlaceOnEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	state: BlockStateSpec, -- read-only
 	ground: BlockStateSpec, -- read-only
 	ground_pos: BlockPos, -- read-only
@@ -3218,11 +3224,11 @@ export type OnBlockExplodedEvent = {
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 	block_entity: BlockEntityRef?, -- read-only
-	explosion: any, -- read-only -- Rust: ExplosionStart
+	explosion: ExplosionStart, -- read-only
 }
 
 export type OnBlockStateChangeEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 	old: BlockStateSpec, -- read-only
@@ -3231,10 +3237,10 @@ export type OnBlockStateChangeEvent = {
 }
 
 export type OnCaughtFireEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	state: BlockStateSpec, -- read-only
 	pos: BlockPos, -- read-only
-	face: any, -- read-only -- Rust: Direction
+	face: Direction, -- read-only
 }
 
 export type OnDestroyedByPlayerEvent = {
@@ -3246,20 +3252,20 @@ export type OnDestroyedByPlayerEvent = {
 }
 
 export type OnNeighborChangeEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 	neighbor: BlockPos, -- read-only
 }
 
 export type PerformBonemealEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 }
 
 export type PistonCarriesBlockEntityEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 }
@@ -3269,14 +3275,14 @@ export type PistonPushReactionEvent = {
 }
 
 export type RemoveBlockEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
 	moved_by_piston: boolean, -- read-only
 }
 
 export type SmokeSourceEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	state: BlockStateSpec, -- read-only
 }
 
@@ -3291,8 +3297,8 @@ export type UseWithoutItemEvent = {
 }
 
 export type BlockPartHandlers = {
-	adjacent_block_path_type: ((event: AdjacentBlockPathTypeEvent) -> (any)?)?,
-	block_path_type: ((event: BlockPathTypeEvent) -> (any)?)?,
+	adjacent_block_path_type: ((event: AdjacentBlockPathTypeEvent) -> (PathType)?)?,
+	block_path_type: ((event: BlockPathTypeEvent) -> (PathType)?)?,
 	block_signal: ((event: BlockSignalEvent) -> ())?,
 	bounce_on: ((event: BounceOnEvent) -> ())?,
 	can_be_connected_to: ((event: CanBeConnectedToEvent) -> (boolean)?)?,
@@ -3313,11 +3319,11 @@ export type BlockPartHandlers = {
 	on_neighbor_change: ((event: OnNeighborChangeEvent) -> ())?,
 	perform_bonemeal: ((event: PerformBonemealEvent) -> ())?,
 	piston_carries_block_entity: ((event: PistonCarriesBlockEntityEvent) -> (boolean)?)?,
-	piston_push_reaction: ((event: PistonPushReactionEvent) -> (any)?)?,
+	piston_push_reaction: ((event: PistonPushReactionEvent) -> (PushReaction)?)?,
 	remove_block: ((event: RemoveBlockEvent) -> (BlockStateSpec)?)?,
 	smoke_source: ((event: SmokeSourceEvent) -> (boolean)?)?,
-	use_item_on: ((event: UseItemOnEvent) -> (any)?)?,
-	use_without_item: ((event: UseWithoutItemEvent) -> (any)?)?,
+	use_item_on: ((event: UseItemOnEvent) -> (InteractionResult)?)?,
+	use_without_item: ((event: UseWithoutItemEvent) -> (InteractionResult)?)?,
 }
 
 export type CanEquipEvent = {
@@ -3346,7 +3352,7 @@ export type CanPerformActionEvent = {
 
 export type CraftingRemainderEvent = {
 	stack: ItemStackSpec, -- read-only
-	remainder: ItemStackSpec?, -- answer
+	remainder: ItemStackSpec | NoneMarker?, -- answer
 }
 
 export type HurtEnemyEvent = {
@@ -3379,7 +3385,7 @@ export type IsPrimaryItemForEvent = {
 }
 
 export type ItemInteractMobEvent = {
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	entity: number, -- read-only
 	kind: string, -- read-only
 	stack: ItemStackSpec, -- read-only
@@ -3396,7 +3402,7 @@ export type OnBlockPlacedByEvent = {
 	placer: PlayerRef?, -- read-only
 	pos: { x: number, y: number, z: number }, -- read-only
 	state: BlockStateSpec, -- read-only
-	face: any, -- read-only -- Rust: BlockFace
+	face: BlockFace, -- read-only
 	click: { x: number, y: number, z: number }, -- read-only
 }
 
@@ -3415,14 +3421,14 @@ export type ReleaseUsingEvent = {
 export type ShouldCauseReequipAnimationEvent = {
 	stack: ItemStackSpec, -- read-only
 	old: ItemStackSpec?, -- read-only
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	slot_changed: boolean, -- read-only
 	reequip: boolean, -- answer
 }
 
 export type UseItemEvent = {
 	stack: ItemStackSpec, -- read-only
-	hand: any, -- read-only -- Rust: Hand
+	hand: Hand, -- read-only
 	player: string, -- read-only
 	player_entity_id: number, -- read-only
 }
@@ -3431,8 +3437,8 @@ export type UseOnEvent = {
 	stack: ItemStackSpec, -- read-only
 	pos: { x: number, y: number, z: number }, -- read-only
 	face: { x: number, y: number, z: number }, -- read-only
-	hand: any, -- read-only -- Rust: Hand
-	hit: any, -- read-only -- Rust: BlockHit
+	hand: Hand, -- read-only
+	hit: BlockHit, -- read-only
 	player: string, -- read-only
 	player_entity_id: number, -- read-only
 }
@@ -3455,20 +3461,20 @@ export type ItemPartHandlers = {
 	is_not_replaceable_by_pick_action: ((event: IsNotReplaceableByPickActionEvent) -> ())?,
 	is_piglin_currency: ((event: IsPiglinCurrencyEvent) -> ())?,
 	is_primary_item_for: ((event: IsPrimaryItemForEvent) -> ())?,
-	item_interact_mob: ((event: ItemInteractMobEvent) -> (any)?)?,
+	item_interact_mob: ((event: ItemInteractMobEvent) -> (InteractionResult)?)?,
 	makes_piglins_neutral: ((event: MakesPiglinsNeutralEvent) -> ())?,
 	on_block_placed_by: ((event: OnBlockPlacedByEvent) -> ())?,
-	on_item_use_first: ((event: OnItemUseFirstEvent) -> (any)?)?,
+	on_item_use_first: ((event: OnItemUseFirstEvent) -> (InteractionResult)?)?,
 	release_using: ((event: ReleaseUsingEvent) -> ())?,
 	should_cause_reequip_animation: ((event: ShouldCauseReequipAnimationEvent) -> ())?,
-	use_item: ((event: UseItemEvent) -> (any)?)?,
-	use_on: ((event: UseOnEvent) -> (any)?)?,
+	use_item: ((event: UseItemEvent) -> (InteractionResult)?)?,
+	use_on: ((event: UseOnEvent) -> (InteractionResult)?)?,
 	xp_repair_ratio: ((event: XpRepairRatioEvent) -> ())?,
 }
 
 export type BlockEntityDataReceivedEvent = {
 	entity: BlockEntityRef, -- read-only
-	source: any, -- read-only -- Rust: BlockEntityDataSource
+	source: BlockEntityDataSource, -- read-only
 	tag: Compound, -- read-only
 }
 
@@ -3480,13 +3486,13 @@ export type BlockEntityOnLoadEvent = {
 export type OnChunkUnloadedEvent = {
 	pos: { x: number, y: number, z: number }, -- read-only
 	block_entity: BlockEntityRef, -- read-only
-	entity: any, -- read-only -- Rust: ModBlockEntity
+	entity: ModBlockEntity, -- read-only
 }
 
 export type PreRemoveSideEffectsEvent = {
 	pos: BlockPos, -- read-only
 	state: BlockStateSpec, -- read-only
-	entity: any, -- read-only -- Rust: ModBlockEntity
+	entity: ModBlockEntity, -- read-only
 	drops: {ItemStackSpec}, -- answer
 }
 
@@ -3506,7 +3512,7 @@ export type BlockEntityPartHandlers = {
 }
 
 export type FluidRulesEvent = {
-	dimension: any, -- read-only -- Rust: LevelDimension
+	dimension: LevelDimension, -- read-only
 	pos: BlockPos, -- read-only
 	fluid: string, -- read-only
 	tick_delay: number, -- answer
@@ -3535,21 +3541,21 @@ export type BlockEntityRef = {
 
 export type BossBarRef = {
 	add_player: (BossBarRef, PlayerRef) -> boolean,
-	color: (BossBarRef) -> any?,
+	color: (BossBarRef) -> BossBarColor?,
 	create_world_fog: (BossBarRef) -> boolean?,
 	darken_screen: (BossBarRef) -> boolean?,
 	id: (BossBarRef) -> string?,
 	max: (BossBarRef) -> number?,
 	name: (BossBarRef) -> Text?,
-	overlay: (BossBarRef) -> any?,
+	overlay: (BossBarRef) -> BossBarOverlay?,
 	play_boss_music: (BossBarRef) -> boolean?,
 	players: (BossBarRef) -> {PlayerRef}?,
-	set_color: (BossBarRef, any) -> boolean, -- Rust: BossBarColor
+	set_color: (BossBarRef, BossBarColor) -> boolean,
 	set_create_world_fog: (BossBarRef, boolean) -> boolean,
 	set_darken_screen: (BossBarRef, boolean) -> boolean,
 	set_max: (BossBarRef, number) -> boolean,
 	set_name: (BossBarRef, Text) -> boolean,
-	set_overlay: (BossBarRef, any) -> boolean, -- Rust: BossBarOverlay
+	set_overlay: (BossBarRef, BossBarOverlay) -> boolean,
 	set_play_boss_music: (BossBarRef, boolean) -> boolean,
 	set_value: (BossBarRef, number) -> boolean,
 	set_visible: (BossBarRef, boolean) -> boolean,
@@ -3565,33 +3571,33 @@ export type ChunkRef = {
 	pos: (ChunkRef) -> { x: number, y: number },
 	resend: (ChunkRef) -> (),
 	set_forced: (ChunkRef, boolean) -> boolean,
-	status: (ChunkRef) -> any?,
+	status: (ChunkRef) -> ChunkStatus?,
 	watchers: (ChunkRef) -> {PlayerRef}?,
 }
 
 export type DisplayRef = {
-	alignment: (DisplayRef) -> any?,
+	alignment: (DisplayRef) -> TextAlignment?,
 	background: (DisplayRef) -> number?,
-	billboard: (DisplayRef) -> any?,
+	billboard: (DisplayRef) -> Billboard?,
 	block_state: (DisplayRef) -> BlockStateSpec?,
 	default_background: (DisplayRef) -> boolean?,
 	entity: (DisplayRef) -> EntityRef,
 	glow_color_override: (DisplayRef) -> number?,
 	height: (DisplayRef) -> number?,
 	interpolation_duration: (DisplayRef) -> number?,
-	item_context: (DisplayRef) -> any?,
-	kind: (DisplayRef) -> any?,
+	item_context: (DisplayRef) -> ItemDisplayContext?,
+	kind: (DisplayRef) -> DisplayKind?,
 	line_width: (DisplayRef) -> number?,
 	see_through: (DisplayRef) -> boolean?,
-	set_alignment: (DisplayRef, any) -> boolean, -- Rust: TextAlignment
+	set_alignment: (DisplayRef, TextAlignment) -> boolean,
 	set_background: (DisplayRef, number) -> boolean,
-	set_billboard: (DisplayRef, any) -> boolean, -- Rust: Billboard
+	set_billboard: (DisplayRef, Billboard) -> boolean,
 	set_block_state: (DisplayRef, BlockStateSpec) -> boolean,
 	set_default_background: (DisplayRef, boolean) -> boolean,
 	set_glow_color_override: (DisplayRef, number) -> boolean,
 	set_height: (DisplayRef, number) -> boolean,
 	set_interpolation_duration: (DisplayRef, number) -> boolean,
-	set_item_context: (DisplayRef, any) -> boolean, -- Rust: ItemDisplayContext
+	set_item_context: (DisplayRef, ItemDisplayContext) -> boolean,
 	set_line_width: (DisplayRef, number) -> boolean,
 	set_see_through: (DisplayRef, boolean) -> boolean,
 	set_shadow_radius: (DisplayRef, number) -> boolean,
@@ -3610,7 +3616,7 @@ export type DisplayRef = {
 	text: (DisplayRef) -> Text?,
 	text_opacity: (DisplayRef) -> number?,
 	text_shadow: (DisplayRef) -> boolean?,
-	transformation: (DisplayRef) -> any?,
+	transformation: (DisplayRef) -> Transformation?,
 	view_range: (DisplayRef) -> number?,
 	width: (DisplayRef) -> number?,
 }
@@ -3619,9 +3625,9 @@ export type DragonRef = {
 	alive_crystals: (DragonRef) -> number?,
 	entity: (DragonRef) -> EntityRef,
 	mob: (DragonRef) -> MobRef,
-	phase: (DragonRef) -> any?,
+	phase: (DragonRef) -> DragonPhase?,
 	previously_killed: (DragonRef) -> boolean?,
-	set_phase: (DragonRef, any) -> boolean, -- Rust: DragonPhase
+	set_phase: (DragonRef, DragonPhase) -> boolean,
 }
 
 export type EntityRef = {
@@ -3630,7 +3636,7 @@ export type EntityRef = {
 	air_supply: (EntityRef) -> number?,
 	block_position: (EntityRef) -> { x: number, y: number, z: number }?,
 	broadcast_event: (EntityRef, number) -> boolean,
-	classification: (EntityRef) -> any?,
+	classification: (EntityRef) -> MobCategory?,
 	clear_fire: (EntityRef) -> boolean,
 	controlling_passenger: (EntityRef) -> LivingRef?,
 	custom_name_visible: (EntityRef) -> boolean?,
@@ -3642,7 +3648,7 @@ export type EntityRef = {
 	distance_to_sqr: (EntityRef, { x: number, y: number, z: number }) -> number?,
 	eject_passengers: (EntityRef) -> boolean,
 	entities_team_damage_allowed: (EntityRef, EntityRef) -> boolean?,
-	epoch: (EntityRef) -> any,
+	epoch: (EntityRef) -> WorldEpoch,
 	extinguish_fire: (EntityRef) -> boolean,
 	eye_fluid: (EntityRef) -> string??,
 	eye_height: (EntityRef) -> number?,
@@ -3669,7 +3675,7 @@ export type EntityRef = {
 	is_silent: (EntityRef) -> boolean?,
 	is_sprinting: (EntityRef) -> boolean?,
 	is_vehicle: (EntityRef) -> boolean?,
-	leash_holder: (EntityRef) -> any?,
+	leash_holder: (EntityRef) -> LeashHolder?,
 	leash_to: (EntityRef, EntityRef) -> boolean,
 	leash_to_knot: (EntityRef, { x: number, y: number, z: number }) -> boolean,
 	level: (EntityRef) -> LevelRef?,
@@ -3682,8 +3688,8 @@ export type EntityRef = {
 	parts: (EntityRef) -> {EntityRef}?,
 	passengers: (EntityRef) -> {EntityRef}?,
 	permanently_invulnerable: (EntityRef) -> boolean?,
-	pick: (EntityRef, number) -> any?,
-	play_bound_sound: (EntityRef, string, any, number, number) -> boolean, -- Rust: SoundSource
+	pick: (EntityRef, number) -> ClipHit?,
+	play_bound_sound: (EntityRef, string, SoundSource, number, number) -> boolean,
 	play_sound: (EntityRef, string, number, number) -> boolean,
 	portal_cooldown: (EntityRef) -> number?,
 	pose: (EntityRef) -> string?,
@@ -3697,7 +3703,7 @@ export type EntityRef = {
 	set_custom_name_visible: (EntityRef, boolean) -> boolean,
 	set_damage_cooldown_time: (EntityRef, number) -> boolean,
 	set_glowing: (EntityRef, boolean) -> boolean,
-	set_hanging_direction: (EntityRef, any) -> boolean, -- Rust: Direction
+	set_hanging_direction: (EntityRef, Direction) -> boolean,
 	set_head_yaw: (EntityRef, number) -> boolean,
 	set_invisible: (EntityRef, boolean) -> boolean,
 	set_invulnerable: (EntityRef, boolean) -> boolean,
@@ -3711,7 +3717,7 @@ export type EntityRef = {
 	set_silent: (EntityRef, boolean) -> boolean,
 	set_ticks_frozen: (EntityRef, number) -> boolean,
 	set_velocity: (EntityRef, { x: number, y: number, z: number }) -> boolean,
-	sound_source: (EntityRef) -> any?,
+	sound_source: (EntityRef) -> SoundSource?,
 	spectator: (EntityRef) -> boolean?,
 	start_riding: (EntityRef, EntityRef, boolean) -> boolean,
 	stop_riding: (EntityRef) -> boolean,
@@ -3750,42 +3756,42 @@ export type LevelRef = {
 	all_entities: (LevelRef) -> {EntityRef}?,
 	best_neighbor_signal: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	biome_at: (LevelRef, { x: number, y: number, z: number }) -> string?,
-	biome_effects: (LevelRef, string) -> any?,
+	biome_effects: (LevelRef, string) -> BiomeEffects?,
 	biome_in_tag: (LevelRef, string, string) -> boolean?,
-	biome_properties: (LevelRef, string) -> any?,
-	block_face_sturdy: (LevelRef, { x: number, y: number, z: number }, any, any) -> boolean?, -- Rust: BlockFace -- Rust: SupportType
+	biome_properties: (LevelRef, string) -> BiomeProperties?,
+	block_face_sturdy: (LevelRef, { x: number, y: number, z: number }, BlockFace, SupportType) -> boolean?,
 	block_floor_height: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	block_property: (LevelRef, { x: number, y: number, z: number }, string) -> string?,
-	block_shape: (LevelRef, BlockStateSpec, { x: number, y: number, z: number }, any) -> {{number}}?, -- Rust: BlockShapeKind
+	block_shape: (LevelRef, BlockStateSpec, { x: number, y: number, z: number }, BlockShapeKind) -> {{number}}?,
 	block_state: (LevelRef, { x: number, y: number, z: number }) -> BlockStateSpec?,
 	block_tick: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	bone_meal: (LevelRef, { x: number, y: number, z: number }) -> boolean,
-	brightness: (LevelRef, any, { x: number, y: number, z: number }) -> number?, -- Rust: LightLayer
+	brightness: (LevelRef, LightLayer, { x: number, y: number, z: number }) -> number?,
 	can_see_sky: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
 	can_spawn_entities_in_chunk: (LevelRef, { x: number, y: number }) -> boolean?,
 	capability_generation: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	check_light: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	chunk_ref: (LevelRef, { x: number, y: number }) -> ChunkRef?,
 	client_biome: (LevelRef, { x: number, y: number, z: number }) -> string?,
-	clip: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }, any, any) -> any?, -- Rust: ClipBlock -- Rust: ClipFluid
+	clip: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }, ClipBlock, ClipFluid) -> ClipHit?,
 	clock_marker_time: (LevelRef, string) -> number?,
 	clock_time: (LevelRef) -> number?,
 	datapack_entries: (LevelRef, string) -> {string}?,
 	day_time: (LevelRef) -> number?,
 	difficulty: (LevelRef) -> string?,
-	dimension_shape: (LevelRef) -> any?,
-	direct_signal: (LevelRef, { x: number, y: number, z: number }, any) -> number?, -- Rust: Direction
+	dimension_shape: (LevelRef) -> LevelDimensionShape?,
+	direct_signal: (LevelRef, { x: number, y: number, z: number }, Direction) -> number?,
 	direct_signal_to: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	entities_in: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }) -> {EntityRef}?,
 	entity_ticking: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
-	epoch: (LevelRef) -> any,
-	fluid_flow: (LevelRef, { x: number, y: number, z: number }) -> any?,
+	epoch: (LevelRef) -> WorldEpoch,
+	fluid_flow: (LevelRef, { x: number, y: number, z: number }) -> Vec3?,
 	fluid_height: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	fluid_height_for_camera: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	fluid_shape: (LevelRef, { x: number, y: number, z: number }) -> {{number}}?,
 	fluid_tick: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	forced_chunks: (LevelRef) -> {{ x: number, y: number }}?,
-	game_rule: (LevelRef, string) -> any?,
+	game_rule: (LevelRef, string) -> GameRuleValue?,
 	game_time: (LevelRef) -> number?,
 	get_sky_darken: (LevelRef) -> number?,
 	global_level_event: (LevelRef, number, { x: number, y: number, z: number }, number) -> boolean,
@@ -3801,25 +3807,25 @@ export type LevelRef = {
 	level_event: (LevelRef, number, { x: number, y: number, z: number }, number) -> boolean,
 	line_of_sight: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }) -> boolean?,
 	loaded_chunks: (LevelRef) -> {ChunkRef}?,
-	local_difficulty: (LevelRef, { x: number, y: number, z: number }) -> any?,
+	local_difficulty: (LevelRef, { x: number, y: number, z: number }) -> Difficulty?,
 	logical_height: (LevelRef) -> number?,
 	neighbor_changed: (LevelRef, { x: number, y: number, z: number }, BlockStateSpec) -> boolean,
 	online_players: (LevelRef) -> {PlayerRef}?,
-	play_sound: (LevelRef, string, { x: number, y: number, z: number }, any, number, number) -> boolean, -- Rust: SoundSource
+	play_sound: (LevelRef, string, { x: number, y: number, z: number }, SoundSource, number, number) -> boolean,
 	raid: (LevelRef, number) -> RaidRef?,
 	raid_at: (LevelRef, { x: number, y: number, z: number }) -> RaidRef?,
 	raids: (LevelRef) -> {RaidRef}?,
-	ray_trace_entities: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }, number, EntityRef?) -> {any}?,
-	respawn_data: (LevelRef) -> any?,
+	ray_trace_entities: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }, number, EntityRef?) -> {EntityRayHit}?,
+	respawn_data: (LevelRef) -> RespawnData?,
 	sea_level: (LevelRef) -> number?,
 	seed: (LevelRef) -> number?,
 	send_block_updated: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	set_biome: (LevelRef, { x: number, y: number, z: number }, string) -> boolean,
 	set_break_progress: (LevelRef, number, { x: number, y: number, z: number }, number) -> boolean,
 	should_tick_blocks_at: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
-	signal: (LevelRef, { x: number, y: number, z: number }, any) -> number?, -- Rust: Direction
-	spawn_flags: (LevelRef) -> any?,
-	spawn_limits: (LevelRef) -> any?,
+	signal: (LevelRef, { x: number, y: number, z: number }, Direction) -> number?,
+	spawn_flags: (LevelRef) -> SpawnFlags?,
+	spawn_limits: (LevelRef) -> SpawnLimits?,
 	world_border: (LevelRef) -> {number}?,
 }
 
@@ -3828,16 +3834,16 @@ export type LivingRef = {
 	alive: (LivingRef) -> boolean?,
 	arrow_count: (LivingRef) -> number?,
 	attribute_base: (LivingRef, string) -> number?,
-	attribute_modifiers: (LivingRef, string) -> {any}?,
+	attribute_modifiers: (LivingRef, string) -> {AttributeModifier}?,
 	attribute_value: (LivingRef, string) -> number?,
 	attributes: (LivingRef) -> {string}?,
 	baby: (LivingRef) -> boolean?,
-	bed_orientation: (LivingRef) -> any?,
+	bed_orientation: (LivingRef) -> Direction?,
 	can_breathe_underwater: (LivingRef) -> boolean?,
 	can_freeze: (LivingRef) -> boolean?,
 	can_use_portal: (LivingRef) -> boolean?,
 	clear_sleeping_pos: (LivingRef) -> boolean,
-	dimensions_for_pose: (LivingRef, any) -> { x: number, y: number, z: number }?, -- Rust: Pose
+	dimensions_for_pose: (LivingRef, Pose) -> { x: number, y: number, z: number }?,
 	entity: (LivingRef) -> EntityRef,
 	gliding_ticks: (LivingRef) -> number?,
 	has_line_of_sight: (LivingRef, EntityRef) -> boolean?,
@@ -3872,12 +3878,12 @@ export type LivingRef = {
 	set_waypoint_style: (LivingRef, string) -> boolean,
 	sleeping_pos: (LivingRef) -> { x: number, y: number, z: number }?,
 	start_sleeping: (LivingRef, { x: number, y: number, z: number }) -> boolean,
-	start_using_item: (LivingRef, any) -> boolean, -- Rust: Hand
+	start_using_item: (LivingRef, Hand) -> boolean,
 	stinger_count: (LivingRef) -> number?,
 	stop_gliding: (LivingRef) -> boolean,
 	stop_sleeping: (LivingRef) -> boolean,
-	swing: (LivingRef, any, boolean) -> boolean, -- Rust: Hand
-	used_item_hand: (LivingRef) -> any?,
+	swing: (LivingRef, Hand, boolean) -> boolean,
+	used_item_hand: (LivingRef) -> Hand?,
 }
 
 export type MenuRef = {
@@ -3912,7 +3918,7 @@ export type MinecartRef = {
 	hopper_enabled: (MinecartRef) -> boolean?,
 	hurt_time: (MinecartRef) -> number?,
 	is_on_rails: (MinecartRef) -> boolean?,
-	kind: (MinecartRef) -> any?,
+	kind: (MinecartRef) -> MinecartKind?,
 	max_speed: (MinecartRef) -> number?,
 	prime_fuse: (MinecartRef) -> boolean,
 	push: (MinecartRef) -> { x: number, y: number, z: number }?,
@@ -3946,7 +3952,7 @@ export type MobRef = {
 	navigation_speed: (MobRef) -> number?,
 	no_action_time: (MobRef) -> number?,
 	no_ai: (MobRef) -> boolean?,
-	pathfinding_malus: (MobRef, any) -> number?, -- Rust: PathType
+	pathfinding_malus: (MobRef, PathType) -> number?,
 	persistence_required: (MobRef) -> boolean?,
 	raid: (MobRef) -> RaidRef?,
 	requires_custom_persistence: (MobRef) -> boolean?,
@@ -3965,7 +3971,7 @@ export type MobRef = {
 	set_navigation_speed: (MobRef, number) -> boolean,
 	set_no_action_time: (MobRef, number) -> boolean,
 	set_no_ai: (MobRef, boolean) -> boolean,
-	set_pathfinding_malus: (MobRef, any, number) -> boolean, -- Rust: PathType
+	set_pathfinding_malus: (MobRef, PathType, number) -> boolean,
 	set_persistence_required: (MobRef) -> boolean,
 	set_target: (MobRef, LivingRef?) -> boolean,
 	set_wanted_position: (MobRef, { x: number, y: number, z: number }, number) -> boolean,
@@ -3977,7 +3983,7 @@ export type MobRef = {
 
 export type OriginalPlayerRef = {
 	dimension: (OriginalPlayerRef) -> string?,
-	experience: (OriginalPlayerRef) -> any?,
+	experience: (OriginalPlayerRef) -> PlayerExperience?,
 	health: (OriginalPlayerRef) -> number?,
 	level: (OriginalPlayerRef) -> LevelRef?,
 	position: (OriginalPlayerRef) -> { x: number, y: number, z: number }?,
@@ -3985,7 +3991,7 @@ export type OriginalPlayerRef = {
 }
 
 export type PlayerRef = {
-	abilities: (PlayerRef) -> any?,
+	abilities: (PlayerRef) -> PlayerAbilities?,
 	ack_block_changes: (PlayerRef, number) -> (),
 	action_bar: (PlayerRef, Text) -> boolean,
 	add_exhaustion: (PlayerRef, number) -> boolean,
@@ -4003,10 +4009,10 @@ export type PlayerRef = {
 	discovered_recipes: (PlayerRef) -> {string}?,
 	entity: (PlayerRef) -> EntityRef,
 	exp_cooldown: (PlayerRef) -> number?,
-	experience: (PlayerRef) -> any?,
+	experience: (PlayerRef) -> PlayerExperience?,
 	feed: (PlayerRef, number, number) -> boolean,
-	food: (PlayerRef) -> any?,
-	game_mode: (PlayerRef) -> any?,
+	food: (PlayerRef) -> PlayerFood?,
+	game_mode: (PlayerRef) -> GameMode?,
 	has_discovered_recipe: (PlayerRef, string) -> boolean?,
 	has_enough_food: (PlayerRef) -> boolean?,
 	has_infinite_materials: (PlayerRef) -> boolean?,
@@ -4017,7 +4023,7 @@ export type PlayerRef = {
 	is_secondary_use_active: (PlayerRef) -> boolean?,
 	is_spectator: (PlayerRef) -> boolean?,
 	item_cooldown_percent: (PlayerRef, string) -> number?,
-	item_cooldowns: (PlayerRef) -> {any}?,
+	item_cooldowns: (PlayerRef) -> {ItemCooldown}?,
 	level: (PlayerRef) -> LevelRef?,
 	may_build: (PlayerRef) -> boolean?,
 	may_fly: (PlayerRef) -> boolean?,
@@ -4027,8 +4033,8 @@ export type PlayerRef = {
 	permission_level: (PlayerRef) -> number?,
 	persistent_data: (PlayerRef) -> Compound?,
 	place_block: (PlayerRef, LevelRef, { x: number, y: number, z: number }, BlockStateSpec, boolean) -> (),
-	play_sound: (PlayerRef, string, any, number, number) -> boolean, -- Rust: SoundSource
-	previous_game_mode: (PlayerRef) -> any??,
+	play_sound: (PlayerRef, string, SoundSource, number, number) -> boolean,
+	previous_game_mode: (PlayerRef) -> GameMode??,
 	sees: (PlayerRef, PlayerRef) -> boolean,
 	selected_slot: (PlayerRef) -> number?,
 	set_exhaustion: (PlayerRef, number) -> boolean,
@@ -4045,28 +4051,28 @@ export type PlayerRef = {
 	show_block: (PlayerRef, { x: number, y: number, z: number }, BlockStateSpec) -> (),
 	sleep_ignored: (PlayerRef) -> boolean?,
 	sleep_timer: (PlayerRef) -> number?,
-	stat: (PlayerRef, any, string) -> number?, -- Rust: StatType
-	stop_sound: (PlayerRef, string?, any?) -> boolean, -- Rust: SoundSource
+	stat: (PlayerRef, StatType, string) -> number?,
+	stop_sound: (PlayerRef, string?, SoundSource?) -> boolean,
 	tell: (PlayerRef, Text) -> boolean,
 	text_filtering: (PlayerRef) -> boolean?,
 	trigger_block_use: (PlayerRef, { x: number, y: number, z: number }) -> (),
 	uuid: (PlayerRef) -> string,
-	within_entity_reach: (PlayerRef, EntityRef, any) -> boolean?, -- Rust: EntityReach
+	within_entity_reach: (PlayerRef, EntityRef, EntityReach) -> boolean?,
 	xp_needed_for_next_level: (PlayerRef) -> number?,
 }
 
 export type ProjectileRef = {
 	base_damage: (ProjectileRef) -> number?,
 	critical: (ProjectileRef) -> boolean?,
-	deflect: (ProjectileRef, any, EntityRef?, EntityRef?, boolean, { x: number, y: number, z: number }) -> boolean, -- Rust: Deflection
+	deflect: (ProjectileRef, Deflection, EntityRef?, EntityRef?, boolean, { x: number, y: number, z: number }) -> boolean,
 	entity: (ProjectileRef) -> EntityRef,
 	owner: (ProjectileRef) -> EntityRef?,
-	pickup: (ProjectileRef) -> any?,
+	pickup: (ProjectileRef) -> ArrowPickup?,
 	pierce_level: (ProjectileRef) -> number,
 	set_base_damage: (ProjectileRef, number) -> boolean,
 	set_critical: (ProjectileRef, boolean) -> boolean,
 	set_owner: (ProjectileRef, EntityRef?) -> boolean,
-	set_pickup: (ProjectileRef, any) -> boolean, -- Rust: ArrowPickup
+	set_pickup: (ProjectileRef, ArrowPickup) -> boolean,
 	set_pierce_level: (ProjectileRef, number) -> (),
 }
 
@@ -4085,7 +4091,7 @@ export type RaidRef = {
 	omen_level: (RaidRef) -> number?,
 	raiders: (RaidRef) -> {EntityRef}?,
 	set_omen_level: (RaidRef, number) -> boolean,
-	status: (RaidRef) -> any?,
+	status: (RaidRef) -> RaidStatus?,
 	stop: (RaidRef) -> boolean,
 	total_health: (RaidRef) -> number?,
 	wave_raiders: (RaidRef, number) -> {EntityRef}?,
@@ -4099,4 +4105,404 @@ export type UnspawnedMobRef = {
 	position: (UnspawnedMobRef) -> { x: number, y: number, z: number },
 	tags: (UnspawnedMobRef) -> {string},
 }
+
+export type ArrowPickup = "disallowed" | "allowed" | "creative_only"
+
+export type AttributeModifier = {
+	id: string,
+	amount: number,
+	operation: AttributeOperation,
+}
+
+export type Billboard = "fixed" | "vertical" | "horizontal" | "center"
+
+export type BiomeEffects = {
+	sky: number?,
+	fog: number?,
+	water: number,
+	water_fog: number,
+}
+
+export type BiomeProperties = {
+	temperature: number,
+	downfall: number,
+	has_precipitation: boolean,
+	frozen: boolean,
+}
+
+export type BlockEntityDataSource = "chunk" | "update_packet"
+
+export type BlockFace = "down" | "up" | "north" | "south" | "west" | "east"
+
+export type BlockHit = {
+	point: { x: number, y: number, z: number },
+	face: { x: number, y: number, z: number },
+	inside: boolean,
+}
+
+export type BlockScreenEffect = "fire" | "block" | "water"
+
+export type BlockShapeKind = "outline" | "collision"
+
+export type BossBarColor = "pink" | "blue" | "red" | "green" | "yellow" | "purple" | "white"
+
+export type BossBarOverlay = "progress" | "notched6" | "notched10" | "notched12" | "notched20"
+
+export type CameraType = "first_person" | "third_person_back" | "third_person_front"
+
+export type ChannelRef = {
+	id: number,
+}
+
+export type ChunkStatus = "full"
+
+export type ChunkTicketLevel =
+	| { tag: "loaded", [number]: number }
+	| { tag: "unloaded" }
+
+export type ClientBossBar = {
+	uuid: string,
+	name: Text,
+	progress: number,
+	color: BossBarColor,
+	overlay: BossBarOverlay,
+	darken_screen: boolean,
+	play_boss_music: boolean,
+	create_world_fog: boolean,
+}
+
+export type ClientInfo = {
+	language: string,
+	view_distance: number,
+	chat_visibility: ChatVisibility,
+	chat_colors: boolean,
+	model_customisation: number,
+	main_hand: MainHand,
+	text_filtering: boolean,
+	allows_listing: boolean,
+	particle_status: ParticleStatus,
+}
+
+export type ClientMiningPrediction = {
+	pos: { x: number, y: number, z: number },
+	face: { x: number, y: number, z: number },
+	starting: boolean,
+	progress: number,
+}
+
+export type ClipBlock = "collider" | "outline"
+
+export type ClipFluid = "none"
+
+export type ClipHit = {
+	miss: boolean,
+	block: { x: number, y: number, z: number },
+	face: BlockFace,
+	location: { x: number, y: number, z: number },
+	inside: boolean,
+	world_border: boolean,
+}
+
+export type ConnectionKind = "fence" | "wall" | "bars"
+
+export type ContainerLootFilled = {
+	table: string,
+	dimension: string,
+	origin: { x: number, y: number, z: number },
+	block: { x: number, y: number, z: number }?,
+	entity: number?,
+	opener: string?,
+}
+
+export type DataMapsUpdateCause = "server_reload" | "client_sync"
+
+export type Deflection = "reverse" | "aim_deflect" | "momentum_deflect"
+
+export type Despawn = "allow" | "default" | "deny"
+
+export type Difficulty = {
+	base: number,
+	effective: number,
+}
+
+export type Direction = "down" | "up" | "north" | "south" | "west" | "east"
+
+export type DisplayKind = "block" | "item" | "text"
+
+export type DragonPhase = "holding_pattern" | "strafe_player" | "landing_approach" | "landing" | "takeoff" | "sitting_flaming" | "sitting_scanning" | "sitting_attacking" | "charging_player" | "dying" | "hover"
+
+export type EntityRayHit = {
+	entity: EntityRef,
+	location: { x: number, y: number, z: number },
+	distance: number,
+}
+
+export type EntityReach = "interact" | "container" | "attack"
+
+export type EquipmentSlot = "main_hand" | "off_hand" | "feet" | "legs" | "chest" | "head" | "body" | "saddle"
+
+export type ExplosionStart = {
+	dimension: string,
+	center: { x: number, y: number, z: number },
+	radius: number,
+	fire: boolean,
+	interaction: BlockInteraction,
+	damage_type: string,
+	source: number?,
+	owner: number?,
+}
+
+export type FogType = "atmospheric" | "water" | "lava" | "powder_snow"
+
+export type GameMode = "survival" | "creative" | "adventure" | "spectator"
+
+export type GameRuleValue =
+	| { tag: "bool", [number]: boolean }
+	| { tag: "int", [number]: number }
+
+export type Hand = "main" | "off"
+
+export type Holder =
+	| { tag: "entity", [number]: number }
+	| { tag: "player", [number]: string }
+	| { tag: "block_entity", [number]: { x: number, y: number, z: number } }
+	| { tag: "chunk", [number]: { x: number, y: number } }
+	| { tag: "level" }
+	| { tag: "original_player", [number]: number }
+
+export type HurtSource = {
+	damage_type: string,
+	causing: number,
+	direct: number,
+	position: { x: number, y: number, z: number }?,
+}
+
+export type InteractionAttempt = "press" | "held"
+
+export type InteractionKey = "attack" | "use" | "pick_block"
+
+export type InteractionResult = "success" | "success_server" | "consume" | "fail" | "pass" | "try_with_empty_hand"
+
+export type ItemCooldown = {
+	group: string,
+	ticks_left: number,
+}
+
+export type ItemDisplayContext = "none" | "third_person_left_hand" | "third_person_right_hand" | "first_person_left_hand" | "first_person_right_hand" | "head" | "gui" | "ground" | "fixed" | "on_shelf"
+
+export type KeyAction = "release" | "press" | "repeat"
+
+export type KnockbackEntry = "short" | "full"
+
+export type LeashHolder =
+	| { tag: "unleashed" }
+	| { tag: "entity", [number]: EntityRef }
+	| { tag: "knot", [number]: { x: number, y: number, z: number } }
+
+export type LevelDimension =
+	| { tag: "overworld" }
+	| { tag: "nether" }
+	| { tag: "end" }
+	| { tag: "custom", [number]: LevelKey }
+
+export type LevelDimensionShape = {
+	min_y: number,
+	height: number,
+	logical_height: number,
+	sky_light: boolean,
+	has_ceiling: boolean,
+}
+
+export type LifecycleContext = {
+	authority: Authority,
+	epoch: WorldEpoch,
+	tick: TickId,
+}
+
+export type LightLayer = "block" | "sky"
+
+export type LogicalSide = "client" | "server"
+
+export type MinecartKind = "rideable" | "chest" | "furnace" | "tnt" | "hopper" | "command_block" | "spawner"
+
+export type MobCategory = "monster" | "creature" | "ambient" | "axolotls" | "underground_water_creature" | "water_creature" | "water_ambient" | "misc"
+
+export type ModBlockEntity = string
+
+export type MoveCause = "self_movement" | "player" | "piston" | "shulker_box" | "shulker"
+
+export type NoteBlockChange = {
+	dimension: LevelDimension,
+	pos: BlockPos,
+	instrument: NoteInstrument,
+	old_note: number,
+}
+
+export type PathType = "blocked" | "open" | "walkable" | "walkable_door" | "trapdoor" | "powder_snow" | "on_top_of_powder_snow" | "fence" | "lava" | "water" | "water_border" | "rail" | "unpassable_rail" | "fire_in_neighbor" | "fire" | "damaging_in_neighbor" | "damaging" | "door_open" | "door_wood_closed" | "door_iron_closed" | "breach" | "leaves" | "sticky_honey" | "cocoa" | "damage_cautious" | "on_top_of_trapdoor" | "big_mobs_close_to_danger"
+
+export type PermissionLevel = "all" | "moderators" | "gamemasters" | "admins" | "owners"
+
+export type PlayerAbilities = {
+	invulnerable: boolean,
+	flying: boolean,
+	may_fly: boolean,
+	instabuild: boolean,
+	may_build: boolean,
+	fly_speed: number,
+	walk_speed: number,
+}
+
+export type PlayerExperience = {
+	level: number,
+	progress: number,
+	total: number,
+}
+
+export type PlayerFood = {
+	level: number,
+	saturation: number,
+	exhaustion: number,
+}
+
+export type PortalShape = {
+	x_axis: boolean,
+	bottom_left: { x: number, y: number, z: number },
+	width: number,
+	height: number,
+}
+
+export type Pose = "standing" | "fall_flying" | "sleeping" | "swimming" | "spin_attack" | "crouching" | "long_jumping" | "dying" | "croaking" | "using_tongue" | "sitting" | "roaring" | "sniffing" | "emerging" | "digging" | "sliding" | "shooting" | "inhaling"
+
+export type PushReaction = "push_pull" | "push" | "popped" | "immoveable" | "ignore_entity"
+
+export type RaidStatus = "ongoing" | "victory" | "loss" | "stopped"
+
+export type RecipeBookIdentity =
+	| { tag: "crafting" }
+	| { tag: "furnace" }
+	| { tag: "blast_furnace" }
+	| { tag: "smoker" }
+	| { tag: "custom", [number]: RecipeBookTypeKey }
+
+export type RespawnData = {
+	pos: { x: number, y: number, z: number },
+	yaw: number,
+	pitch: number,
+}
+
+export type ScreenView = {
+	id: string,
+	menu: string?,
+	title: Text?,
+	rect: {number},
+	slots: number,
+	mouse: { x: number, y: number },
+	partial_tick: number,
+}
+
+export type ServerTickPhase =
+	| { tag: "server_tick_start", world_running: boolean }
+	| { tag: "server_tick_end", world_running: boolean }
+
+export type SoundPlay = {
+	identifier: string,
+	source: SoundSource,
+	volume: number,
+	pitch: number,
+	position: { x: number, y: number, z: number },
+	looping: boolean,
+	delay: number,
+	attenuation: SoundAttenuation,
+	relative: boolean,
+}
+
+export type SoundSource = "master" | "music" | "records" | "weather" | "blocks" | "hostile" | "neutral" | "players" | "ambient" | "voice" | "ui"
+
+export type SpawnFlags = {
+	monsters: boolean,
+	friendlies: boolean,
+}
+
+export type SpawnLimits = {
+	monster: number,
+	creature: number,
+	ambient: number,
+	axolotls: number,
+	underground_water_creature: number,
+	water_creature: number,
+	water_ambient: number,
+}
+
+export type SpawnerKey = string
+
+export type StatType = "mined" | "crafted" | "used" | "broken" | "picked_up" | "dropped" | "killed" | "killed_by" | "custom"
+
+export type SupportType = "full" | "center" | "rigid"
+
+export type TagsUpdateCause =
+	| { tag: "server_data_load", reload: boolean }
+	| { tag: "client_packet_received", integrated_server: boolean }
+
+export type TaskId = { number }
+
+export type TextAlignment = "center" | "left" | "right"
+
+export type TextureAtlas = "blocks" | "gui"
+
+export type ToastKind = "advancement" | "recipe" | "tutorial" | "system" | "other"
+
+export type ToolUse = {
+	player: number?,
+	hand: Hand,
+	pos: { x: number, y: number, z: number },
+	face: { x: number, y: number, z: number },
+	click: { x: number, y: number, z: number },
+	ability: ToolAbility,
+	simulated: boolean,
+}
+
+export type Transformation = {
+	translation: { x: number, y: number, z: number },
+	left_rotation: {number},
+	scale: { x: number, y: number, z: number },
+	right_rotation: {number},
+}
+
+export type TriState = "false" | "default" | "true"
+
+export type UsePhase = "item_before_block" | "block" | "item_after_block"
+
+export type Vec3 = {
+	x: number,
+	y: number,
+	z: number,
+}
+
+export type WorldEpoch = number
+
+export type WorldPhase = "world_open_failed" | "world_close_final" | "world_close_failed"
+
+export type AttributeOperation = "add_value" | "add_multiplied_base" | "add_multiplied_total"
+
+export type Authority = "local_authoritative" | "integrated_server" | "dedicated_server" | "remote_client"
+
+export type BlockInteraction = "keep" | "destroy" | "destroy_with_decay" | "trigger_block"
+
+export type ChatVisibility = "full" | "system" | "hidden"
+
+export type LevelKey = string
+
+export type MainHand = "left" | "right"
+
+export type NoteInstrument = "harp" | "basedrum" | "snare" | "hat" | "bass" | "flute" | "bell" | "guitar" | "chime" | "xylophone" | "iron_xylophone" | "cow_bell" | "didgeridoo" | "bit" | "banjo" | "pling" | "trumpet" | "trumpet_exposed" | "trumpet_oxidized" | "trumpet_weathered" | "zombie" | "skeleton" | "creeper" | "dragon" | "wither_skeleton" | "piglin" | "custom_head"
+
+export type ParticleStatus = "all" | "decreased" | "minimal"
+
+export type RecipeBookTypeKey = string
+
+export type SoundAttenuation = "none" | "linear"
+
+export type TickId = number
+
+export type ToolAbility = "axe_strip" | "axe_scrape" | "axe_wax_off" | "shovel_flatten" | "shovel_douse" | "hoe_till"
 

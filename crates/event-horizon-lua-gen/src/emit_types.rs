@@ -41,6 +41,7 @@ pub const MAX_LIST_LEN: usize = 1024;
 pub struct Plain {
     paths: BTreeSet<String>,
     decided: BTreeSet<String>,
+    bodies: BTreeMap<String, Body>,
 }
 
 impl Plain {
@@ -49,6 +50,7 @@ impl Plain {
         Plain {
             paths: paths.into_iter().map(str::to_owned).collect(),
             decided: BTreeSet::new(),
+            bodies: BTreeMap::new(),
         }
     }
 
@@ -60,6 +62,7 @@ impl Plain {
         Plain {
             paths: paths.into_iter().map(str::to_owned).collect(),
             decided: decided.into_iter().map(str::to_owned).collect(),
+            bodies: BTreeMap::new(),
         }
     }
 
@@ -72,6 +75,20 @@ impl Plain {
     /// emitted with it).
     pub fn decides(&self, path: &str) -> bool {
         self.decided.contains(path)
+    }
+
+    /// The shape of each plain type, by path: what the Luau emitter writes its type from.
+    pub fn bodies(&self) -> &BTreeMap<String, Body> {
+        &self.bodies
+    }
+
+    /// A set of plain types with the given shapes, for the Luau emitter's tests.
+    pub fn from_bodies(bodies: BTreeMap<String, Body>) -> Self {
+        Plain {
+            paths: bodies.keys().cloned().collect(),
+            decided: BTreeSet::new(),
+            bodies,
+        }
     }
 }
 
@@ -114,27 +131,29 @@ const KEYWORDS: &[&str] = &[
 /// One field of a struct or a variant: its name (a tuple field's is its position), its type, and
 /// whether its text is a reference (`&'a T`), which a `ToLuaValue` impl reads by `&self`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Field {
-    name: String,
-    ty: Mapped,
-    by_ref: bool,
+pub struct Field {
+    pub name: String,
+    /// The field's Rust type text, as the surface gives it.
+    pub text: String,
+    pub ty: Mapped,
+    pub by_ref: bool,
 }
 
 /// One variant of an enum.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Variant {
+pub struct Variant {
     /// The Rust name.
-    name: String,
+    pub name: String,
     /// The Lua name: [`snake_case`] of `name`.
-    lua: String,
+    pub lua: String,
     /// Its fields have names (`{ … }`), not positions.
-    named: bool,
-    fields: Vec<Field>,
+    pub named: bool,
+    pub fields: Vec<Field>,
 }
 
 /// The shape of a plain type.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Body {
+pub enum Body {
     /// `struct Name;`
     Unit,
     /// `struct Name { a: A }`
@@ -318,6 +337,10 @@ pub fn plan_decided(
     let plain = Plain {
         paths: accepted.keys().cloned().collect(),
         decided: decided.clone(),
+        bodies: accepted
+            .iter()
+            .map(|(path, def)| (path.clone(), def.body.clone()))
+            .collect(),
     };
     for (path, def) in &pending {
         let reason = match first_blocker(&def.body, def.borrowed, &plain) {
@@ -697,6 +720,7 @@ fn field_of(name: String, text: &str, borrowed: bool) -> Result<Field, String> {
     let ty = map_type(text).map_err(|error| format!("field `{name}`: {error}"))?;
     Ok(Field {
         name,
+        text: text.to_owned(),
         ty,
         by_ref: borrowed && text.contains('&'),
     })

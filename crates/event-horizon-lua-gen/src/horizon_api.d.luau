@@ -34,22 +34,24 @@ export type ItemStackSpec = { id: string, count: number, nbt: Compound? }
 -- A handle of an entity, a level, a block entity, ... is a userdata. Each family's methods are
 -- generated below as a `*Ref` type; a method is called with a colon: `player:name()`.
 
--- The right-click of a block (hostcall.rs block_click_lua). `hit` and `player` are described by
--- their own generated types where those exist; `hit` is `any` here.
+-- The right-click of a block (hostcall.rs block_click_lua). `dimension` is a LevelDimension (a
+-- string, or a table for a custom dimension), `hand` a Hand, and `hit` a BlockHit. `player` is the
+-- player's id as a string (a u128); the Lua handle is `event.player` of the events that give one.
 export type BlockClick = {
-	side: string,
-	dimension: string,
+	side: LogicalSide,
+	dimension: LevelDimension,
 	pos: BlockPos,
-	hit: any,
-	hand: string,
+	hit: BlockHit,
+	hand: Hand,
 	stack: ItemStackSpec?,
-	player: any,
+	player: string,
 	player_entity_id: number,
 }
 
 -- `event.source` of `run_mod_command`: `kind` names what sent the command, `permission` is its
 -- level. The other keys depend on `kind` (commands.rs source_lua): `player` and `entity` are
--- handles; `position` is a BlockPos; `level` names the dimension for a command block.
+-- handles; `position` is a BlockPos. For a command block, `level` is the dimension's id as text
+-- (for example `minecraft:overworld`), not a handle (commands.rs `dimension_text`).
 export type CommandSource = { kind: string, permission: number, [string]: any }
 
 -- `event.command` of `run_mod_command`: the word path (`literals`), each argument by name (`args`;
@@ -61,9 +63,10 @@ export type CommandInvocation = {
 	position: BlockPos,
 }
 
--- `horizon.none`: the answer that clears an optional output (dispatch.rs). It is a userdata; no
--- other value clears one.
-export type NoneAnswer = any
+-- `horizon.none`: the answer that clears an optional output (dispatch.rs). At runtime it is a
+-- userdata, which Luau cannot name, so this table type stands for it; an optional output takes it
+-- as `T | NoneMarker?`. No other value clears one.
+export type NoneMarker = { horizon_none: true }
 
 -- Feedback: `event.feedback(text)` in a `run_mod_command` handler sends one literal line to the
 -- sender. At most 32 calls per command, each at most 4096 bytes (commands.rs MAX_FEEDBACK,
@@ -122,9 +125,12 @@ export type ConfigRecord = {
 -- The `horizon` global. Its functions split by time: the declaring functions (block, item,
 -- block_entity_type, world_fluid, block_part, item_part, block_entity_part, fluid_part,
 -- client_command, config, command) and `on` work only while the mod loads; `log` and `none` work
--- only inside a handler. `horizon.log` takes a string, at most 1000 bytes per line (longer lines
--- are cut), and is rate-limited: a line over the rate is dropped without an error; the first 100
--- lines are kept for the log view. Outside its own handler, `horizon.<name>` raises
+-- only inside a handler. `horizon.log` takes a string. Control characters are written as `\u{..}`
+-- escapes, and a line is cut at 1000 characters after escaping (host.rs MAX_LOG_LINE; an escape is
+-- never split). A mod may write 20 lines at once, then 20 a second (host.rs LOG_BURST, LOG_PER_SECOND);
+-- a line over that rate is dropped without an error. The mod keeps its last 100 lines
+-- (MAX_LOG_LINES), dropping the oldest. Log lines have no per-turn cap: the per-turn cap of 16 lines
+-- (4096 bytes each) is for a `Vec<Text>` output (dispatch.rs MAX_LINES). Outside its own handler, `horizon.<name>` raises
 -- "not available yet" (host.rs runtime_table).
 export type HorizonApi = {
 	on: OnHook,
@@ -142,7 +148,7 @@ export type HorizonApi = {
 	config: (record: ConfigRecord) -> (),
 	command: (record: CommandRecord) -> (),
 	log: (message: string) -> (),
-	none: NoneAnswer,
+	none: NoneMarker,
 }
 
 declare horizon: HorizonApi

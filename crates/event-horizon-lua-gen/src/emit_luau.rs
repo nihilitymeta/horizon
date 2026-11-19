@@ -6,11 +6,12 @@
 //! crate) followed by the generated part. A Rust type with no Lua name is written `any`, with the
 //! Rust type in a comment, and counted in [`Emitted::any`].
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::carried::{self, Shape};
 use crate::emit_hooks::camel;
 use crate::emit_impl::{EventShape, command_input, is_block_click, scalar_name};
+use crate::emit_types::{Body, Field, Plain, Variant};
 use crate::handles::MemberIr;
 use crate::types::{FloatKind, IntKind, TypeIr, map_type};
 
@@ -20,6 +21,11 @@ pub const STATIC_API: &str = include_str!("horizon_api.d.luau");
 /// The `.luaurc` a mod folder may carry (`crates/event-horizon-lua/lua-types/.luaurc.example`). Untested
 /// against luau-lsp: no Luau checker is on the box.
 pub const LUAURC_EXAMPLE: &str = "{\n  \"languageMode\": \"strict\"\n}\n";
+
+/// The plain types the hand-written part names (`BlockClick` in the static file). Each is written
+/// even when no hook names it, so the static part's names always resolve; a name that is not a plain
+/// type is an error.
+pub const STATIC_REFERENCES: &[&str] = &["BlockHit", "Hand", "LevelDimension", "LogicalSide"];
 
 /// The four Part traits, in the order of [`Input::parts`]: the `horizon` function that declares a
 /// Part of the kind, and the handler table type it takes.
@@ -42,6 +48,8 @@ pub struct Input<'a> {
     pub families: &'a [String],
     /// The bound handle members, in family and name order.
     pub members: &'a [&'a MemberIr],
+    /// The plain types: a typed mention of one names its Luau type, which is written with the file.
+    pub plain: &'a Plain,
 }
 
 /// The file, and what the mapper could not name.
@@ -57,11 +65,17 @@ pub struct Emitted {
     pub parts: usize,
     /// The handle members given a method type.
     pub members: usize,
+    /// The plain types a typed mention names, each written as an `export type`.
+    pub named: usize,
 }
 
-/// The mapper's state: the families it can name, the plain types, and the `any` it has written.
+/// The mapper's state: the families it can name, the plain types it can name and the names they
+/// take, the plain types it has named so far, and the `any` it has written.
 struct Mapper<'a> {
     families: &'a [String],
+    /// Each plain type's Luau name, by its path. A type with no entry stays `any`.
+    names: BTreeMap<String, String>,
+    used: BTreeSet<String>,
     any: Vec<String>,
 }
 
@@ -135,7 +149,13 @@ impl Mapper<'_> {
             "ItemStack" => "ItemStackSpec".to_owned(),
             "ConfigFile" => "ConfigFile".to_owned(),
             other if self.families.iter().any(|family| family == other) => other.to_owned(),
-            _ => self.unknown(name),
+            other => match self.names.get(other).cloned() {
+                Some(luau) => {
+                    self.used.insert(other.to_owned());
+                    luau
+                }
+                None => self.unknown(name),
+            },
         }
     }
 
@@ -191,6 +211,11 @@ fn event_type(shape: &EventShape, mapper: &mut Mapper<'_>) -> String {
     }
     for (name, rust) in &shape.outputs {
         let (ty, note) = mapper.typed(rust);
+        // An optional output also takes `horizon.none`, which clears it.
+        let ty = match ty.strip_suffix('?') {
+            Some(inner) => format!("{inner} | NoneMarker?"),
+            None => ty,
+        };
         text.push_str(&format!("\t{}: {ty}, -- answer{note}\n", key(name)));
     }
     text.push_str("}\n\n");
@@ -282,9 +307,128 @@ fn family_type(family: &str, members: &[&MemberIr], mapper: &mut Mapper<'_>) -> 
     text
 }
 
+/// One plain type's Luau type. A struct is a table keyed by its field names; a unit struct is an
+/// empty table; a tuple struct is an array of its field types (`{ A | B }` when they differ); a
+/// newtype whose value is its getter's is that type. An enum with no data is a union of its
+/// variants' names (`"main" | "off"`); any other enum is a union of tables, each with a `tag`.
+fn plain_type(name: &str, body: &Body, mapper: &mut Mapper<'_>) -> String {
+    match body {
+        Body::Unit => format!("export type {name} = {{}}\n\n"),
+        Body::Named(fields) => {
+            let mut text = format!("export type {name} = {{\n");
+            for field in fields {
+                let (ty, note) = mapper.typed(&field.text);
+                text.push_str(&format!("\t{}: {ty},{note}\n", key(&field.name)));
+            }
+            text.push_str("}\n\n");
+            text
+        }
+        Body::Tuple(fields) => {
+            let (union, notes) = positional(fields, mapper);
+            format!("export type {name} = {{ {union} }}{notes}\n\n")
+        }
+        Body::Getter { ty, .. } => format!("export type {name} = {}\n\n", mapper.of(ty, "")),
+        Body::Enum { variants, .. } => {
+            if variants.iter().all(|variant| variant.fields.is_empty()) {
+                let names: Vec<String> = variants
+                    .iter()
+                    .map(|variant| format!("\"{}\"", variant.lua))
+                    .collect();
+                return format!("export type {name} = {}\n\n", names.join(" | "));
+            }
+            let mut text = format!("export type {name} =\n");
+            for variant in variants {
+                let (line, notes) = variant_table(variant, mapper);
+                text.push_str(&format!("\t| {line}{notes}\n"));
+            }
+            text.push('\n');
+            text
+        }
+    }
+}
+
+/// The union of a tuple's field types, and the notes of any `any` among them.
+fn positional(fields: &[Field], mapper: &mut Mapper<'_>) -> (String, String) {
+    let mut types = Vec::new();
+    let mut notes = String::new();
+    for field in fields {
+        let (ty, note) = mapper.typed(&field.text);
+        types.push(ty);
+        notes.push_str(&note);
+    }
+    (types.join(" | "), notes)
+}
+
+/// One variant of a data enum as a table type: its `tag`, then its fields by name, or a
+/// `[number]` indexer for a tuple variant. The notes go after the table, so they never sit inside it.
+fn variant_table(variant: &Variant, mapper: &mut Mapper<'_>) -> (String, String) {
+    let mut parts = vec![format!("tag: \"{}\"", variant.lua)];
+    let mut notes = String::new();
+    if variant.named {
+        for field in &variant.fields {
+            let (ty, note) = mapper.typed(&field.text);
+            notes.push_str(&note);
+            parts.push(format!("{}: {ty}", key(&field.name)));
+        }
+    } else if !variant.fields.is_empty() {
+        let (union, positional_notes) = positional(&variant.fields, mapper);
+        notes.push_str(&positional_notes);
+        parts.push(format!("[number]: {union}"));
+    }
+    (format!("{{ {} }}", parts.join(", ")), notes)
+}
+
+/// The Luau name of each plain type: its last path segment, when that is one name among the plain
+/// types and no name the file already defines (`reserved`). Any other plain type stays `any`.
+fn plain_names(plain: &Plain, reserved: &BTreeSet<String>) -> BTreeMap<String, String> {
+    let last = |path: &str| path.rsplit("::").next().unwrap_or(path).to_owned();
+    let mut count = BTreeMap::<String, usize>::new();
+    for path in plain.bodies().keys() {
+        *count.entry(last(path)).or_default() += 1;
+    }
+    plain
+        .bodies()
+        .keys()
+        .filter_map(|path| {
+            let name = last(path);
+            let unique = count.get(&name) == Some(&1) && !reserved.contains(&name);
+            unique.then(|| (path.clone(), name))
+        })
+        .collect()
+}
+
+/// Names the file defines already, which a plain type may not take: the hand-written part's
+/// `export type`s, the generated families, the Part tables, the events and the `OnHook` overloads.
+fn reserved_names(input: &Input<'_>) -> BTreeSet<String> {
+    let mut names: BTreeSet<String> = STATIC_API
+        .lines()
+        .filter_map(|line| line.strip_prefix("export type "))
+        .map(|rest| rest.split([' ', '<']).next().unwrap_or_default().to_owned())
+        .collect();
+    names.extend(input.families.iter().cloned());
+    names.extend(PART_KINDS.iter().map(|(_, table)| (*table).to_owned()));
+    names.extend(input.hooks.iter().map(|shape| event_name(&shape.hook)));
+    for shapes in input.parts {
+        names.extend(shapes.iter().map(|shape| event_name(&shape.hook)));
+    }
+    for name in [
+        "OnHook", "any", "boolean", "buffer", "never", "nil", "number", "string", "thread",
+        "unknown",
+    ] {
+        names.insert(name.to_owned());
+    }
+    names
+}
+
 /// Writes the file: the hand-written part, then the generated one. Two events, two Parts or two
 /// families may not share a name (the camel case of a hook is its event type's name).
 pub fn emit(input: &Input<'_>) -> Result<Emitted, String> {
+    emit_with(input, STATIC_REFERENCES)
+}
+
+/// [`emit`], naming the plain types the given `references` name as written, instead of the
+/// static part's own.
+fn emit_with(input: &Input<'_>, references: &[&str]) -> Result<Emitted, String> {
     let mut names = BTreeSet::new();
     for shape in input
         .hooks
@@ -300,6 +444,8 @@ pub fn emit(input: &Input<'_>) -> Result<Emitted, String> {
     }
     let mut mapper = Mapper {
         families: input.families,
+        names: plain_names(input.plain, &reserved_names(input)),
+        used: BTreeSet::new(),
         any: Vec::new(),
     };
     let mut text = format!(
@@ -331,12 +477,38 @@ pub fn emit(input: &Input<'_>) -> Result<Emitted, String> {
         members.sort_by(|a, b| a.name.cmp(&b.name));
         text.push_str(&family_type(family, &members, &mut mapper));
     }
+    // A plain type a mention names is written once; its own fields may name more, so this runs
+    // until no new type is named.
+    for name in references {
+        let path = mapper
+            .names
+            .iter()
+            .find_map(|(path, luau)| (luau == name).then(|| path.clone()))
+            .ok_or_else(|| format!("the static part names {name}, which is not a plain type"))?;
+        mapper.used.insert(path);
+    }
+    let mut done = BTreeSet::new();
+    loop {
+        let next: Vec<String> = mapper.used.difference(&done).cloned().collect();
+        if next.is_empty() {
+            break;
+        }
+        for path in next {
+            let Some(body) = input.plain.bodies().get(&path) else {
+                continue;
+            };
+            let name = mapper.names[&path].clone();
+            text.push_str(&plain_type(&name, body, &mut mapper));
+            done.insert(path);
+        }
+    }
     Ok(Emitted {
         text,
         any: mapper.any,
         hooks: input.hooks.len(),
         parts,
         members: input.members.len(),
+        named: done.len(),
     })
 }
 
@@ -344,6 +516,7 @@ pub fn emit(input: &Input<'_>) -> Result<Emitted, String> {
 mod tests {
     use super::*;
     use crate::handles::parse_signature;
+    use std::collections::BTreeMap;
 
     fn shape(
         hook: &str,
@@ -366,10 +539,173 @@ mod tests {
     }
 
     fn mapper(families: &[String]) -> Mapper<'_> {
+        mapper_naming(families, &[])
+    }
+
+    /// A mapper that names the given plain types (path, Luau name).
+    fn mapper_naming<'a>(families: &'a [String], names: &[(&str, &str)]) -> Mapper<'a> {
         Mapper {
             families,
+            names: names
+                .iter()
+                .map(|(path, name)| ((*path).to_owned(), (*name).to_owned()))
+                .collect(),
+            used: BTreeSet::new(),
             any: Vec::new(),
         }
+    }
+
+    fn field(name: &str, text: &str) -> Field {
+        Field {
+            name: name.to_owned(),
+            text: text.to_owned(),
+            ty: map_type(text).expect("a type"),
+            by_ref: false,
+        }
+    }
+
+    fn unit_variant(name: &str) -> Variant {
+        Variant {
+            name: name.to_owned(),
+            lua: crate::emit_types::snake_case(name),
+            named: false,
+            fields: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_unit_enum_is_a_union_of_its_snake_case_names() {
+        let mut m = mapper(&[]);
+        let hand = Body::Enum {
+            non_exhaustive: false,
+            variants: vec![unit_variant("Main"), unit_variant("OffHand")],
+        };
+        assert_eq!(
+            plain_type("Hand", &hand, &mut m),
+            "export type Hand = \"main\" | \"off_hand\"\n\n"
+        );
+        assert!(m.any.is_empty());
+    }
+
+    #[test]
+    fn a_data_enum_is_a_union_of_tagged_tables() {
+        let families: [String; 0] = [];
+        let mut m = mapper_naming(&families, &[("Hand", "Hand")]);
+        let action = Body::Enum {
+            non_exhaustive: true,
+            variants: vec![
+                unit_variant("Idle"),
+                Variant {
+                    name: "Hurt".to_owned(),
+                    lua: "hurt".to_owned(),
+                    named: true,
+                    fields: vec![field("amount", "f32")],
+                },
+                Variant {
+                    name: "Throw".to_owned(),
+                    lua: "throw".to_owned(),
+                    named: false,
+                    fields: vec![field("0", "Hand")],
+                },
+            ],
+        };
+        assert_eq!(
+            plain_type("Action", &action, &mut m),
+            "export type Action =\n\
+             \t| { tag: \"idle\" }\n\
+             \t| { tag: \"hurt\", amount: number }\n\
+             \t| { tag: \"throw\", [number]: Hand }\n\n"
+        );
+        assert_eq!(m.used.iter().collect::<Vec<_>>(), [&"Hand".to_owned()]);
+    }
+
+    #[test]
+    fn a_struct_with_an_option_field_is_an_optional_key() {
+        let mut m = mapper(&[]);
+        let label = Body::Named(vec![field("label", "Option<String>")]);
+        assert_eq!(
+            plain_type("Label", &label, &mut m),
+            "export type Label = {\n\tlabel: string?,\n}\n\n"
+        );
+    }
+
+    #[test]
+    fn a_reserved_word_field_is_a_quoted_key_in_a_struct() {
+        let mut m = mapper(&[]);
+        let span = Body::Named(vec![field("end", "i32"), field("start", "i32")]);
+        assert_eq!(
+            plain_type("Span", &span, &mut m),
+            "export type Span = {\n\t[\"end\"]: number,\n\tstart: number,\n}\n\n"
+        );
+    }
+
+    #[test]
+    fn a_nested_plain_type_is_named_and_written_once() {
+        let inner = Body::Named(vec![field("x", "i32")]);
+        let outer = Body::Named(vec![field("inner", "Inner"), field("again", "Inner")]);
+        let plain = Plain::from_bodies(BTreeMap::from([
+            ("Inner".to_owned(), inner),
+            ("Outer".to_owned(), outer),
+        ]));
+        let hooks = [shape("probe", &[("outer", "Outer")], &[], None)];
+        let emitted = emit_with(
+            &Input {
+                hash: "test",
+                hooks: &hooks,
+                parts: [&[], &[], &[], &[]],
+                families: &[],
+                members: &[],
+                plain: &plain,
+            },
+            &[],
+        )
+        .expect("emits");
+        let tail = emitted
+            .text
+            .split("-- The generated part")
+            .nth(1)
+            .expect("the generated part");
+        assert!(tail.contains("export type Outer = {\n\tinner: Inner,\n\tagain: Inner,\n}\n\n"));
+        assert!(tail.contains("export type Inner = {\n\tx: number,\n}\n\n"));
+        assert_eq!(tail.matches("export type Inner =").count(), 1);
+        assert_eq!(emitted.named, 2);
+        assert!(emitted.any.is_empty());
+    }
+
+    #[test]
+    fn a_name_the_static_part_uses_must_be_a_plain_type() {
+        let plain = Plain::from_bodies(BTreeMap::new());
+        let result = emit(&Input {
+            hash: "test",
+            hooks: &[],
+            parts: [&[], &[], &[], &[]],
+            families: &[],
+            members: &[],
+            plain: &plain,
+        });
+        assert!(result.is_err_and(|error| error.contains("the static part names BlockHit")));
+    }
+
+    #[test]
+    fn a_refused_type_stays_any_with_its_rust_name() {
+        let mut m = mapper(&[]);
+        let odd = Body::Named(vec![field("thing", "Refused")]);
+        assert_eq!(
+            plain_type("Holder", &odd, &mut m),
+            "export type Holder = {\n\tthing: any, -- Rust: Refused\n}\n\n"
+        );
+        assert_eq!(m.any, ["Refused"]);
+    }
+
+    #[test]
+    fn an_optional_output_also_takes_horizon_none() {
+        let families: [String; 0] = [];
+        let mut m = mapper_naming(&families, &[("Hand", "Hand")]);
+        let shape = shape("pick_hand", &[], &[("hand", "Option<Hand>")], None);
+        assert_eq!(
+            event_type(&shape, &mut m),
+            "export type PickHandEvent = {\n\thand: Hand | NoneMarker?, -- answer\n}\n\n"
+        );
     }
 
     #[test]
