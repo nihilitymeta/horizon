@@ -27,6 +27,8 @@ log = "0.4"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# Scoped mod installation for tests (`mod_platform::testing`), so a test can install item tables.
+horizon-mod-api = { path = "../horizon-mod-api", features = ["testing"] }
 
 [lints]
 workspace = true
