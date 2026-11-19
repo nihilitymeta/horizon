@@ -20,7 +20,7 @@ use mod_api::{
     StateConstraint, Tag,
 };
 
-use crate::host::LOG_TARGET;
+use crate::host::warn_once;
 
 /// What a stack conversion needs from a host: the stack's NBT escape (`id`, `count`,
 /// `components`) both ways, and the item's maximum count.
@@ -343,13 +343,12 @@ pub fn state_value<H: StateHost + ?Sized>(host: &H, value: &Value) -> Result<H::
     state_from_spec(host, &read_state(value)?)
 }
 
-/// Logs that a hook is not delivered to Lua because a stack or state in it has no id. The caller
-/// logs once per fire and gives no answer.
+/// Logs that a hook is not delivered to Lua because a stack or state in it has no id. Logged once
+/// per process for each hook, however often it fires; the caller gives no answer.
 pub fn undelivered(hook: &str) {
-    log::warn!(
-        target: LOG_TARGET,
+    warn_once(&format!(
         "{hook}: not delivered to Lua: a stack or block state in it has no id in this game"
-    );
+    ));
 }
 
 fn read_stack(value: &Value) -> Result<ItemStackSpec, String> {
@@ -769,5 +768,15 @@ mod tests {
             panic!("a props table")
         };
         assert_eq!(props.get::<String>("facing").unwrap(), "east");
+    }
+
+    #[test]
+    fn an_undelivered_hook_is_logged_once_however_often_it_fires() {
+        crate::host::tests::install_capture();
+        let hook = "stacks_undelivered_once_hook";
+        for _ in 0..5 {
+            undelivered(hook);
+        }
+        assert_eq!(crate::host::tests::captured_with_prefix(hook).len(), 1);
     }
 }

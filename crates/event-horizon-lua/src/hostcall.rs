@@ -30,13 +30,13 @@
 //! `pcall` cannot keep the turn going. The turn is then void, as a failing handler's is. A write is
 //! not rolled back by a void turn: the host keeps it.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
 use event_horizon_lua_convert::scalar::ToLuaValue;
 use mlua::{AnyUserData, Error, Lua, MultiValue, Table, Value};
 use mod_api::{BlockClick, ClientHost, Host, HostSide, ServerHost};
 
-use crate::host::{Escaped, LOG_TARGET, LuaMod};
+use crate::host::{Escaped, LuaMod, warn_once};
 
 /// A right click as a Lua handler reads it (`click` in `use_without_item` and `use_item_on`): its
 /// side, dimension, block position, hit, hand, player, the held stack (`stack`, already converted by
@@ -146,8 +146,6 @@ impl Host for Unavailable {}
 thread_local! {
     /// The hook calls open on this thread.
     static DEPTH: Cell<u32> = const { Cell::new(0) };
-    /// The mods skipped for being open, in the current top-level hook call.
-    static SKIPPED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Lets go of one open hook call when it ends, also when it panics.
@@ -167,9 +165,6 @@ pub(crate) fn open_call(hook: &str) -> Result<OpenCall, String> {
             "{hook} is refused: hook calls are nested more than {MAX_DEPTH} deep"
         ));
     }
-    if depth == 0 {
-        SKIPPED.with_borrow_mut(Vec::clear);
-    }
     DEPTH.with(|open| open.set(depth + 1));
     Ok(OpenCall)
 }
@@ -178,26 +173,15 @@ pub(crate) fn open_call(hook: &str) -> Result<OpenCall, String> {
 /// on the result of their dispatch.
 pub fn refused(result: Result<(), String>) {
     if let Err(err) = result {
-        log::warn!(target: LOG_TARGET, "{}", Escaped(err));
+        warn_once(&Escaped(err).to_string());
     }
 }
 
-/// Logs that a mod was skipped because its turn is open, once per mod per top-level hook call.
+/// Logs that a mod was skipped because its turn is open: once per process for each mod and hook.
 pub(crate) fn note_skipped(id: &str, hook: &str) {
-    let first = SKIPPED.with_borrow_mut(|seen| {
-        if seen.iter().any(|name| name == id) {
-            false
-        } else {
-            seen.push(id.to_owned());
-            true
-        }
-    });
-    if first {
-        log::warn!(
-            target: LOG_TARGET,
-            "{id}: {hook}: skipped, this mod's turn is already open"
-        );
-    }
+    warn_once(&format!(
+        "{id}: {hook}: skipped, this mod's turn is already open"
+    ));
 }
 
 /// Runs `body` for one mod's turn with `host` open to its handles. A scope holds the scoped
@@ -251,7 +235,7 @@ pub(crate) fn run_hosted(
         let mut failed = false;
         for handler in handlers {
             if let Err(err) = crate::host::call_handler(lua, handler, event) {
-                log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+                warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
                 failed = true;
             }
         }
@@ -260,7 +244,7 @@ pub(crate) fn run_hosted(
     match outcome {
         Ok((failed, spent)) => failed || spent,
         Err(err) => {
-            log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+            warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
             true
         }
     }

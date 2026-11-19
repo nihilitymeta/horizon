@@ -12,8 +12,6 @@
 //! keys. The proxy is read-only too, so `rawset` cannot store a field on it and shadow the data.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
-use std::sync::Mutex;
 
 use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
@@ -22,7 +20,7 @@ use mod_api::Text;
 use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
-use crate::host::{Escaped, LOG_TARGET, LuaHost, LuaMod, call_handler, call_handler_value};
+use crate::host::{Escaped, LuaHost, LuaMod, call_handler, call_handler_value, warn_once};
 use crate::hostcall::{TurnHost, note_skipped, open_call, run_hosted, scoped};
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
@@ -39,6 +37,9 @@ pub enum Order {
 pub struct Event {
     table: Table,
     answers: Table,
+    /// The empty tables seeded into `answers` for writable keys whose data is an empty table: a
+    /// handler can insert into one in place. One nobody wrote to is no answer.
+    seeds: Vec<(&'static str, Table)>,
 }
 
 impl Event {
@@ -49,7 +50,18 @@ impl Event {
 
     /// The raw value the mod wrote to `key` (nil if it wrote nothing there).
     pub fn answer(&self, key: &str) -> Value {
-        self.answers.raw_get(key).unwrap_or(Value::Nil)
+        let value = self.answers.raw_get(key).unwrap_or(Value::Nil);
+        if let Value::Table(table) = &value {
+            let untouched = self
+                .seeds
+                .iter()
+                .any(|(name, seed)| *name == key && seed == table)
+                && table.pairs::<Value, Value>().next().is_none();
+            if untouched {
+                return Value::Nil;
+            }
+        }
+        value
     }
 }
 
@@ -190,28 +202,17 @@ fn keep<T>(
     }
 }
 
-/// The most distinct build failures remembered (and so logged) per process.
-const MAX_BUILD_FAILURES: usize = 256;
-
-/// The build failures already logged, as `mod`, `hook` and the error, one per line. A player who
-/// repeats a refused command does not flood the log: each reason is logged once per process.
-static BUILD_FAILURES: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
-
 /// Logs that a mod's event could not be built for `hook`, once per process for each reason.
 fn warn_build_failure(id: &str, hook: &str, err: &mlua::Error) {
-    let key = format!("{id}\n{hook}\n{err}");
-    let mut seen = BUILD_FAILURES
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // Bounded: an error text that varies per command cannot grow the set without limit.
-    if seen.len() < MAX_BUILD_FAILURES && seen.insert(key) {
-        log::warn!(target: LOG_TARGET, "{id}: {hook}: {}", Escaped(err));
-    }
+    warn_once(&format!("{id}: {hook}: {}", Escaped(err)));
 }
 
 /// Logs the one warning for a refused output and returns `true`.
 fn refuse(id: &str, hook: &str, output: &str, why: &str) -> bool {
-    log::warn!(target: LOG_TARGET, "{id}: {hook}: output `{output}` refused, {}", Escaped(why));
+    warn_once(&format!(
+        "{id}: {hook}: output `{output}` refused, {}",
+        Escaped(why)
+    ));
     true
 }
 
@@ -296,11 +297,10 @@ pub fn answer_by<T>(
     match converted {
         Ok(answer) => Some(answer),
         Err(err) => {
-            log::warn!(
-                target: LOG_TARGET,
+            warn_once(&format!(
                 "{id}: {hook}: answer refused, the mod gives no answer: {}",
                 Escaped(err)
-            );
+            ));
             None
         }
     }
@@ -308,9 +308,24 @@ pub fn answer_by<T>(
 
 /// Makes the event for one mod. `data` is the caller's table of data fields (any shape); it is
 /// frozen here, nested tables included. `writable` names the keys the mod may write.
+///
+/// A writable key whose data is an empty table gets a fresh, unfrozen empty table of its own, so a
+/// handler can `table.insert` into it (`event.replies`). Assigning a whole value still works. An
+/// untouched seed is no answer, so it adds nothing. A non-empty data table stays frozen, and a
+/// handler that inserts into it errors: it answers by assigning a new table.
 pub fn new_event(lua: &Lua, data: Table, writable: &[&'static str]) -> mlua::Result<Event> {
-    freeze(&data);
     let answers = lua.create_table()?;
+    let mut seeds = Vec::new();
+    for &key in writable {
+        if let Value::Table(table) = data.raw_get::<Value>(key)?
+            && table.pairs::<Value, Value>().next().is_none()
+        {
+            let seed = lua.create_table()?;
+            answers.raw_set(key, seed.clone())?;
+            seeds.push((key, seed));
+        }
+    }
+    freeze(&data);
     let answers_meta = lua.create_table()?;
     answers_meta.raw_set("__index", data)?;
     answers.set_metatable(Some(answers_meta))?;
@@ -335,7 +350,11 @@ pub fn new_event(lua: &Lua, data: Table, writable: &[&'static str]) -> mlua::Res
     let table = lua.create_table()?;
     table.set_metatable(Some(meta))?;
     table.set_readonly(true);
-    Ok(Event { table, answers })
+    Ok(Event {
+        table,
+        answers,
+        seeds,
+    })
 }
 
 /// Makes `table` and every table under it read-only. A table already read-only is left alone,
@@ -372,13 +391,17 @@ impl LuaHost {
     /// mod, if `is_cancelled()` says the event is already cancelled, a mod that did not declare
     /// `receive_cancelled` for this hook is skipped; the others see the event as it is.
     /// Whether any mod that declared `hook` will run its handlers for it: the same side rule the
-    /// dispatch loops apply. A hook no mod handles converts nothing (see the generated pre-checks).
+    /// dispatch loops apply. A `run_mod_command` handler runs only for a mod that declared a command,
+    /// so it counts only for such a mod. A hook no mod handles converts nothing (see the generated
+    /// pre-checks).
     pub(crate) fn has_handlers(&self, hook: &str) -> bool {
         let mods = self.mods();
         let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
-        self.run_order(hook)
-            .iter()
-            .any(|&index| !(server_hook && mods[index].side() == Side::Client))
+        self.run_order(hook).iter().any(|&index| {
+            let m = &mods[index];
+            !(server_hook && m.side() == Side::Client)
+                && (hook != "run_mod_command" || m.declares_any_command())
+        })
     }
 
     pub fn dispatch_cancellable(
@@ -402,7 +425,7 @@ impl LuaHost {
             let handlers = match declare::handlers(m.lua(), hook) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -418,7 +441,7 @@ impl LuaHost {
             };
             for handler in &handlers {
                 if let Err(err) = call_handler(m.lua(), handler, event.table()) {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
                 }
                 if !answers(m.id(), &event) {
                     return;
@@ -562,7 +585,7 @@ pub(crate) fn turns_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -577,11 +600,10 @@ pub(crate) fn turns_in(
                 }
             };
             if run_hosted(m, hook, &mut host, &handlers, event.table()) {
-                log::warn!(
-                    target: LOG_TARGET,
+                warn_once(&format!(
                     "{}: {hook}: a handler failed, so this mod's changes to the event are dropped",
                     m.id()
-                );
+                ));
                 continue;
             }
             if !commit(m.id(), &event, &host) {
@@ -647,7 +669,7 @@ pub(crate) fn replace_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -672,7 +694,7 @@ pub(crate) fn replace_in(
                             }
                         }
                         Err(err) => {
-                            log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+                            warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
                             failed = true;
                         }
                     }
@@ -681,16 +703,15 @@ pub(crate) fn replace_in(
             }) {
                 Ok(((found, failed), spent)) => (found, failed || spent),
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
+                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     (None, true)
                 }
             };
             if failed {
-                log::warn!(
-                    target: LOG_TARGET,
+                warn_once(&format!(
                     "{}: {hook}: a handler failed, so this mod gives no answer",
                     m.id()
-                );
+                ));
                 continue;
             }
             let answered = match found {
@@ -1459,6 +1480,17 @@ mod handler_gate_tests {
     use super::*;
 
     #[test]
+    fn run_mod_command_counts_only_for_a_mod_that_declared_a_command() {
+        let root = tempfile::tempdir().unwrap();
+        let handler = "horizon.on(\"run_mod_command\", function(event) end)";
+        let silent = LuaHost::new(vec![load(root.path(), "cmd_none", handler, Side::Both)]);
+        assert!(!silent.has_handlers("run_mod_command"));
+        let declared = format!("horizon.command{{usage = \"demo run <n:integer>\"}}\n{handler}");
+        let host = LuaHost::new(vec![load(root.path(), "cmd_some", &declared, Side::Both)]);
+        assert!(host.has_handlers("run_mod_command"));
+    }
+
+    #[test]
     fn a_hook_is_handled_only_when_a_mod_declared_it() {
         let root = tempfile::tempdir().unwrap();
         let host = LuaHost::new(vec![load(
@@ -1537,5 +1569,87 @@ mod accept_by_tests {
             |_| Ok(7)
         ));
         assert_eq!(*slot.borrow(), 7);
+    }
+}
+
+#[cfg(test)]
+mod empty_list_answer_tests {
+    use super::*;
+
+    /// An event whose data has `replies` set to `data`, writable as `replies`, with the event table
+    /// bound to the global `event` for the script.
+    fn event_with(lua: &Lua, data: &[&str]) -> Event {
+        let table = lua.create_table().unwrap();
+        let list = lua.create_table().unwrap();
+        for (index, line) in data.iter().enumerate() {
+            list.raw_set(index + 1, *line).unwrap();
+        }
+        table.raw_set("replies", list).unwrap();
+        let event = new_event(lua, table, &["replies"]).unwrap();
+        lua.globals().set("event", event.table().clone()).unwrap();
+        event
+    }
+
+    #[test]
+    fn a_handler_can_insert_into_an_empty_writable_list() {
+        let lua = Lua::new();
+        let event = event_with(&lua, &[]);
+        lua.load("table.insert(event.replies, \"x\")")
+            .exec()
+            .unwrap();
+        let Value::Table(answer) = event.answer("replies") else {
+            panic!("the list is not the answer");
+        };
+        assert_eq!(answer.raw_len(), 1);
+        assert_eq!(answer.raw_get::<String>(1).unwrap(), "x");
+    }
+
+    #[test]
+    fn assigning_a_whole_list_still_works() {
+        let lua = Lua::new();
+        let event = event_with(&lua, &[]);
+        lua.load("event.replies = {\"a\", \"b\"}").exec().unwrap();
+        let Value::Table(answer) = event.answer("replies") else {
+            panic!("the assigned list is not the answer");
+        };
+        assert_eq!(answer.raw_get::<String>(2).unwrap(), "b");
+    }
+
+    #[test]
+    fn an_untouched_empty_list_is_no_answer() {
+        let lua = Lua::new();
+        let event = event_with(&lua, &[]);
+        assert!(matches!(event.answer("replies"), Value::Nil));
+    }
+
+    #[test]
+    fn inserting_into_a_non_empty_list_errors_and_leaves_no_answer() {
+        let lua = Lua::new();
+        let event = event_with(&lua, &["a"]);
+        let err = lua
+            .load("table.insert(event.replies, \"b\")")
+            .exec()
+            .unwrap_err();
+        assert!(err.to_string().contains("readonly"), "{err}");
+        assert!(matches!(event.answer("replies"), Value::Nil));
+    }
+
+    #[test]
+    fn a_refused_answer_fired_many_times_logs_once() {
+        crate::host::tests::install_capture();
+        let lua = Lua::new();
+        let slot = RefCell::new(7_i64);
+        let not_a_number = Value::Table(lua.create_table().unwrap());
+        for _ in 0..50 {
+            accept(&slot, "once_refused_mod", "once_hook", "x", &not_a_number);
+        }
+        assert_eq!(*slot.borrow(), 7);
+        assert_eq!(
+            crate::host::tests::captured_with_prefix(
+                "once_refused_mod: once_hook: output `x` refused"
+            )
+            .len(),
+            1
+        );
     }
 }
