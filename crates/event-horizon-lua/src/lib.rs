@@ -1,5 +1,7 @@
 //! Event Horizon's Lua runtime: one built-in host mod that runs .hlua mods (sandboxed Luau) on the mod API
 #![forbid(unsafe_code)]
+#[cfg(test)]
+mod block_state_tests;
 pub mod budget;
 pub mod builtin;
 pub mod commands;
