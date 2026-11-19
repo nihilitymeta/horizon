@@ -1551,6 +1551,93 @@ mod tests {
         let _ = host.entity_struck_by_lightning(fake, &mut event);
     }
 
+    /// A level with nothing to answer: `living_knockback` only passes it on.
+    struct NoLevel;
+    impl mod_api::LevelHost for NoLevel {}
+    impl mod_api::LevelRandomHost for NoLevel {}
+
+    /// Fires `living_knockback` for a melee push of 0.4 on entity 7 from attacker 9, with the
+    /// output `cancelled` given as `cancelled`. Returns the flow and the event's `cancelled`.
+    fn knock(host: &LuaHost, cancelled: bool) -> (mod_api::Flow, bool) {
+        use mod_api::Hooks;
+        let source = mod_api::HurtSource {
+            damage_type: "generic",
+            causing: 9,
+            direct: 9,
+            position: None,
+        };
+        let mut event = mod_api::LivingKnockbackEvent {
+            entity: 7,
+            kind: "hit",
+            source: &source,
+            attacker: 9,
+            attacker_main: None,
+            attacker_off: None,
+            entry: mod_api::KnockbackEntry::Short,
+            strength: 0.4,
+            x: 0.25,
+            z: -0.5,
+            cancelled,
+        };
+        let flow = host.living_knockback(&mut NoLevel, &mut event);
+        (flow, event.cancelled)
+    }
+
+    #[test]
+    fn living_knockback_hands_its_fields_to_the_handler_and_takes_its_cancel_answer() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_knockback_answer",
+            "horizon.on(\"living_knockback\", function(event)\n\
+               horizon.log(event.entity .. \" \" .. event.attacker .. \" \" .. event.kind .. \" \" \
+                 .. event.entry .. \" \" .. event.source.damage_type .. \" \" .. event.strength \
+                 .. \" \" .. event.x .. \" \" .. event.z)\n\
+               event.cancelled = true\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let (flow, cancelled) = knock(&host, false);
+        assert_eq!(
+            host.mods()[0].log_lines(),
+            ["7 9 hit short generic 0.4 0.25 -0.5"]
+        );
+        assert!(cancelled && matches!(flow, mod_api::Flow::Cancel));
+    }
+
+    #[test]
+    fn a_living_knockback_handler_error_voids_the_turn_and_its_cancel_is_not_kept() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_knockback_void",
+            "horizon.on(\"living_knockback\", function(event)\n\
+               event.cancelled = true\n\
+               error(\"a later failure\")\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let (flow, cancelled) = knock(&host, false);
+        assert!(!cancelled && matches!(flow, mod_api::Flow::Continue));
+    }
+
+    #[test]
+    fn a_bad_living_knockback_cancel_is_refused_and_the_previous_value_kept() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_knockback_bad",
+            "horizon.on(\"living_knockback\", function(event)\n\
+               event.cancelled = \"yes\"\n\
+               horizon.log(\"ran to the end\")\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let (flow, cancelled) = knock(&host, false);
+        assert_eq!(host.mods()[0].log_lines(), ["ran to the end"]);
+        assert!(!cancelled && matches!(flow, mod_api::Flow::Continue));
+    }
+
     #[test]
     fn a_carried_entity_handle_is_usable_in_a_server_turn() {
         let root = tempfile::tempdir().unwrap();
@@ -1741,7 +1828,7 @@ mod tests {
             .filter(|line| line.ends_with(" emitted"))
             .count();
         assert_eq!(emitted, crate::generated::hooks::EMITTED.len());
-        assert!(coverage.contains("# hooks: 749, emitted: 403, skipped: 346\n"));
+        assert!(coverage.contains("# hooks: 749, emitted: 404, skipped: 345\n"));
         assert!(lines.contains(&"player_command emitted"));
         assert!(lines.contains(&"right_click_block emitted"));
         // The declaration hooks are answered from the records, and no mod can subscribe to them.

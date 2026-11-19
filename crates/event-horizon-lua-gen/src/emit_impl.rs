@@ -1527,15 +1527,16 @@ const HOT_REASON: &str = "hot path (needs measurement)";
 /// whose call sites run per shape update, per neighbour notify or per hit. Issue 74 removed the
 /// rest of the old list after measuring it: a subscribed delivery costs about 4-5 us (measured on
 /// `can_survive` by `hot_path_bench` in `event-horizon-lua`'s `builtin.rs`, release, 8 cores), and
-/// an unsubscribed hook about 50 ns, since the listen gate runs before any conversion. The five
+/// an unsubscribed hook about 50 ns, since the listen gate runs before any conversion. `living_knockback`
+/// fires once per hit, and its gate-only cost with no subscriber is 48 ns, so it is bound. The four
 /// kept here are kept by decision, not by a conversion: `update_shape` and `neighbor_changed` take
 /// a block state with no host path, `living_incoming_damage` a mutable `DamageContainer`, and
-/// `living_knockback` and `ingredient_test` would convert but have no measurement yet.
+/// `ingredient_test` stays hot because it may run many times per tick during recipe matching and
+/// has no call-frequency measurement.
 pub const HOT_HOOKS: &[&str] = &[
     "update_shape",
     "neighbor_changed",
     "living_incoming_damage",
-    "living_knockback",
     "ingredient_test",
 ];
 const WORKER_REASON: &str = "worldgen worker";

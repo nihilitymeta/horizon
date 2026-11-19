@@ -5443,6 +5443,7 @@ pub const EMITTED: &[&str] = &[
     "living_heal",
     "living_jump",
     "living_jump_power",
+    "living_knockback",
     "living_speed",
     "living_use_totem",
     "living_visibility",
