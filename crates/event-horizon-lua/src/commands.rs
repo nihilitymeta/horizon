@@ -551,6 +551,26 @@ pub(crate) mod tests {
         };
         assert!(source_lua(&lua, &Dims::default(), &block).is_err());
     }
+    #[test]
+    fn an_item_argument_is_its_stack_table_with_the_id_and_count() {
+        // The invocation converter needs a dimension name, which the item double does not give, so
+        // this calls the argument's own conversion: the `args` value of an invocation is this.
+        let lua = Lua::new();
+        let mut host = mod_api::testing::FakeHost::new();
+        let stick = Identifier::parse("minecraft:stick").expect("a valid id");
+        host.registries
+            .resolve_items([stick.clone()])
+            .expect("the item table resolves");
+        let key = mod_api::prelude::ItemsHost::item_key(&host, &stick).expect("the stick key");
+        let stack = mod_api::ItemStack::new(key, 3).expect("a nonempty stack");
+        let spec = table_of(
+            argument_lua(&lua, &host, &CommandArgumentValue::Item(stack))
+                .expect("a stack converts"),
+        );
+        assert_eq!(text_of(&field(&spec, "id")), "minecraft:stick");
+        assert_eq!(number_of(&field(&spec, "count")), 3.0);
+        assert!(matches!(field(&spec, "nbt"), Value::Nil));
+    }
 }
 
 #[cfg(test)]

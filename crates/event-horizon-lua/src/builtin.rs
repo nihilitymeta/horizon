@@ -1066,4 +1066,114 @@ mod tests {
         );
         assert!(built.refused[0].contains("reserved"));
     }
+
+    /// A level double for the hooks that take one; the container hook reads nothing from it.
+    struct Level;
+    impl mod_api::LevelHost for Level {}
+
+    /// A loop context with no registries or settings, for the item hooks' `context` argument.
+    struct NoReader;
+    impl mod_api::LoopReader for NoReader {
+        fn registry(&self, _name: &str) -> Option<std::sync::Arc<[String]>> {
+            None
+        }
+        fn setting(&self, _mod_id: &str, _key: &str) -> Option<String> {
+            None
+        }
+    }
+
+    /// The thread's item table with `minecraft:stick` in it, as the game's load gives it. The
+    /// returned host keeps the table installed while it lives.
+    fn stick_table() -> mod_api::testing::FakeHost {
+        let mut host = mod_api::testing::FakeHost::new();
+        host.registries
+            .resolve_items([mod_api::Identifier::parse("minecraft:stick").unwrap()])
+            .unwrap();
+        host
+    }
+
+    #[test]
+    fn global_item_part_grindstone_handler_sees_the_stack_and_its_answer_is_taken() {
+        use mod_api::ItemPart;
+        let (host, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.item{id = \"first_mod:wand\", template = \"minecraft:stick\"}\n\
+             horizon.item_part(\"first_mod:wand\", {can_grindstone_repair = function(e) horizon.log(e.stack.id .. \" \" .. e.stack.count) e.can_repair = false end})",
+        )]);
+        let _table = stick_table();
+        let stick =
+            mod_api::ItemStack::new(mod_api::__private::item_key("minecraft:stick").unwrap(), 3)
+                .unwrap();
+        let context = mod_api::OwningLoop::new(mod_api::LoopSide::Server, &NoReader);
+        let mut event = mod_api::CanGrindstoneRepairEvent {
+            stack: &stick,
+            can_repair: true,
+        };
+        keys.item_parts[0].can_grindstone_repair(&context, &mut event);
+        assert!(!event.can_repair);
+        assert_eq!(host.mods()[0].log_lines(), ["minecraft:stick 3"]);
+    }
+
+    /// The drops a `container_loot_filled` handler leaves on a list of one stick.
+    fn loot_after(handler: &str) -> Vec<(String, u32)> {
+        let (host, _keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            &format!("horizon.on(\"container_loot_filled\", function(e) {handler} end)"),
+        )]);
+        let _table = stick_table();
+        let context =
+            mod_api::ContainerLootFilled::from(mod_api::__private::built::ContainerLootFilled {
+                table: "test:chest",
+                dimension: "minecraft:overworld",
+                origin: [0.5, 64.5, 0.5],
+                block: Some([0, 64, 0]),
+                entity: None,
+                opener: None,
+            });
+        let mut drops = vec![
+            mod_api::ItemStack::new(mod_api::__private::item_key("minecraft:stick").unwrap(), 1)
+                .unwrap(),
+        ];
+        let mut event = mod_api::ContainerLootFilledEvent {
+            context: &context,
+            drops: &mut drops,
+        };
+        let level = Level;
+        mod_api::Hooks::container_loot_filled(&host, &level, &mut event);
+        drops
+            .iter()
+            .map(|stack| {
+                (
+                    mod_api::__private::item_key_id(stack.item())
+                        .unwrap()
+                        .to_owned(),
+                    stack.count(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn container_loot_handler_adds_a_stack_and_it_reaches_the_output() {
+        let drops = loot_after(
+            "e.drops = {{id = \"minecraft:stick\", count = 1}, {id = \"minecraft:stick\", count = 4}}",
+        );
+        assert_eq!(
+            drops,
+            [
+                ("minecraft:stick".to_owned(), 1),
+                ("minecraft:stick".to_owned(), 4)
+            ]
+        );
+    }
+
+    #[test]
+    fn container_loot_handler_with_a_bad_stack_is_refused_whole_and_the_previous_list_is_kept() {
+        let drops = loot_after(
+            "e.drops = {{id = \"minecraft:stick\", count = 5}, {id = \"minecraft:stick\", count = 0}}",
+        );
+        assert_eq!(drops, [("minecraft:stick".to_owned(), 1)]);
+    }
 }
