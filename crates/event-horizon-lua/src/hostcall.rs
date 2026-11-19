@@ -36,7 +36,7 @@ use event_horizon_lua_convert::scalar::ToLuaValue;
 use mlua::{AnyUserData, Error, Lua, MultiValue, Table, Value};
 use mod_api::{BlockClick, ClientHost, Host, HostSide, ServerHost};
 
-use crate::host::{LOG_TARGET, LuaMod};
+use crate::host::{Escaped, LOG_TARGET, LuaMod};
 
 /// A right click as a Lua handler reads it (`click` in `use_without_item` and `use_item_on`): its
 /// side, dimension, block position, hit, hand, player, the held stack (`stack`, already converted by
@@ -178,7 +178,7 @@ pub(crate) fn open_call(hook: &str) -> Result<OpenCall, String> {
 /// on the result of their dispatch.
 pub fn refused(result: Result<(), String>) {
     if let Err(err) = result {
-        log::warn!(target: LOG_TARGET, "{err}");
+        log::warn!(target: LOG_TARGET, "{}", Escaped(err));
     }
 }
 
@@ -251,7 +251,7 @@ pub(crate) fn run_hosted(
         let mut failed = false;
         for handler in handlers {
             if let Err(err) = crate::host::call_handler(lua, handler, event) {
-                log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
                 failed = true;
             }
         }
@@ -260,7 +260,7 @@ pub(crate) fn run_hosted(
     match outcome {
         Ok((failed, spent)) => failed || spent,
         Err(err) => {
-            log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+            log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
             true
         }
     }

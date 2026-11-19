@@ -7412,8 +7412,9 @@ impl mod_api::Hooks for LuaHost {
     fn run_mod_command(&self, host: &mut dyn ServerHost, event: &mut RunModCommandEvent<'_>) -> Flow {
         let _ = &host;
         let out_ran = std::cell::RefCell::new(event.cancelled);
-        crate::hostcall::refused(self.dispatch_turns(
+        crate::hostcall::refused(self.dispatch_turns_scoped(
             "run_mod_command",
+            &|m| crate::commands::delivers_to(m, event.command),
             crate::hostcall::TurnHost::Server(host),
             &|| *out_ran.borrow(),
             &|lua, turn| {

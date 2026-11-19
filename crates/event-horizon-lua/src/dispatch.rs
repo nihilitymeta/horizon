@@ -22,7 +22,7 @@ use mod_api::Text;
 use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
-use crate::host::{LOG_TARGET, LuaHost, LuaMod, call_handler, call_handler_value};
+use crate::host::{Escaped, LOG_TARGET, LuaHost, LuaMod, call_handler, call_handler_value};
 use crate::hostcall::{TurnHost, note_skipped, open_call, run_hosted, scoped};
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
@@ -205,13 +205,13 @@ fn warn_build_failure(id: &str, hook: &str, err: &mlua::Error) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Bounded: an error text that varies per command cannot grow the set without limit.
     if seen.len() < MAX_BUILD_FAILURES && seen.insert(key) {
-        log::warn!(target: LOG_TARGET, "{id}: {hook}: {err}");
+        log::warn!(target: LOG_TARGET, "{id}: {hook}: {}", Escaped(err));
     }
 }
 
 /// Logs the one warning for a refused output and returns `true`.
 fn refuse(id: &str, hook: &str, output: &str, why: &str) -> bool {
-    log::warn!(target: LOG_TARGET, "{id}: {hook}: output `{output}` refused, {why}");
+    log::warn!(target: LOG_TARGET, "{id}: {hook}: output `{output}` refused, {}", Escaped(why));
     true
 }
 
@@ -298,7 +298,8 @@ pub fn answer_by<T>(
         Err(err) => {
             log::warn!(
                 target: LOG_TARGET,
-                "{id}: {hook}: answer refused, the mod gives no answer: {err}"
+                "{id}: {hook}: answer refused, the mod gives no answer: {}",
+                Escaped(err)
             );
             None
         }
@@ -401,7 +402,7 @@ impl LuaHost {
             let handlers = match declare::handlers(m.lua(), hook) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
                     continue;
                 }
             };
@@ -417,7 +418,7 @@ impl LuaHost {
             };
             for handler in &handlers {
                 if let Err(err) = call_handler(m.lua(), handler, event.table()) {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
                 }
                 if !answers(m.id(), &event) {
                     return;
@@ -452,6 +453,33 @@ impl LuaHost {
             hook,
             hook,
             host,
+            &|_| true,
+            is_cancelled,
+            build,
+            commit,
+        )
+    }
+
+    /// `dispatch_turns` for a hook whose event is delivered only to some mods: `delivers` says, for
+    /// each mod, whether its turn opens for this event (`SCOPED_HOOKS` in the generator names the
+    /// predicate of a hook). A mod it refuses is skipped before its event is built, so the data
+    /// reaches it not at all and it logs nothing.
+    pub fn dispatch_turns_scoped(
+        &self,
+        hook: &str,
+        delivers: &dyn Fn(&LuaMod) -> bool,
+        host: TurnHost<'_>,
+        is_cancelled: &dyn Fn() -> bool,
+        build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+        commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
+    ) -> Result<(), String> {
+        turns_in(
+            self.mods(),
+            self.run_order(hook),
+            hook,
+            hook,
+            host,
+            delivers,
             is_cancelled,
             build,
             commit,
@@ -482,6 +510,7 @@ impl LuaHost {
             hook,
             hook,
             host,
+            &|_| true,
             is_cancelled,
             build,
             commit,
@@ -505,6 +534,7 @@ pub(crate) fn turns_in(
     hook: &str,
     key: &str,
     host: TurnHost<'_>,
+    delivers: &dyn Fn(&LuaMod) -> bool,
     is_cancelled: &dyn Fn() -> bool,
     build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
     commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
@@ -521,6 +551,9 @@ pub(crate) fn turns_in(
             if server_hook && m.side() == Side::Client {
                 continue;
             }
+            if !delivers(m) {
+                continue;
+            }
             if m.turn().held_here() {
                 note_skipped(m.id(), hook);
                 continue;
@@ -529,7 +562,7 @@ pub(crate) fn turns_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
                     continue;
                 }
             };
@@ -614,7 +647,7 @@ pub(crate) fn replace_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
                     continue;
                 }
             };
@@ -639,7 +672,7 @@ pub(crate) fn replace_in(
                             }
                         }
                         Err(err) => {
-                            log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                            log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
                             failed = true;
                         }
                     }
@@ -648,7 +681,7 @@ pub(crate) fn replace_in(
             }) {
                 Ok(((found, failed), spent)) => (found, failed || spent),
                 Err(err) => {
-                    log::warn!(target: LOG_TARGET, "{}: {hook}: {err}", m.id());
+                    log::warn!(target: LOG_TARGET, "{}: {hook}: {}", m.id(), Escaped(err));
                     (None, true)
                 }
             };

@@ -228,6 +228,12 @@ impl LuaMod {
         self.side
     }
 
+    /// Whether the mod declared a server command named `name` with `horizon.command`: the mod's
+    /// `run_mod_command` handler hears only the invocations of its own commands (`commands::delivers_to`).
+    pub(crate) fn declares_command(&self, name: &str) -> bool {
+        self.commands.iter().any(|command| command.name() == name)
+    }
+
     /// Whether the mod runs on a client: a client or a both-sides mod.
     fn runs_on_client(&self) -> bool {
         self.side != Side::Server
@@ -431,7 +437,7 @@ impl LuaHost {
             self.report.len()
         );
         for line in &self.report {
-            log::warn!("Lua mod refused: {line}");
+            log::warn!("Lua mod refused: {}", Escaped(line));
         }
     }
 
@@ -511,7 +517,11 @@ impl LuaHost {
                         .find_map(|fluid| keys.world_fluid(&fluid.id, &fluid.fluid).err())
                 });
             if let Some(reason) = refusal {
-                log::warn!("Lua mod {} refused its declarations: {reason}", m.id);
+                log::warn!(
+                    "Lua mod {} refused its declarations: {}",
+                    m.id,
+                    Escaped(reason)
+                );
                 lock_ids(&self.refused_keys).push(m.id.clone());
             }
         }
@@ -536,9 +546,10 @@ impl LuaHost {
                     .and_then(|made| attach(&record.id, made));
                 if let Err(reason) = attached {
                     log::warn!(
-                        "Lua mod {} refused its {} parts: {reason}",
+                        "Lua mod {} refused its {} parts: {}",
                         m.id,
-                        K::KIND.keyword()
+                        K::KIND.keyword(),
+                        Escaped(reason)
                     );
                     lock_ids(&self.refused_keys).push(m.id.clone());
                 }
@@ -843,6 +854,7 @@ impl<K: PartTag> LuaPart<K> {
             hook,
             &key,
             host,
+            &|_| true,
             is_cancelled,
             build,
             commit,
@@ -956,11 +968,7 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
                 }
                 Verdict::Allowed => {}
             }
-            let line: String = message
-                .to_string_lossy()
-                .chars()
-                .take(MAX_LOG_LINE)
-                .collect();
+            let line = escape_capped(&message.to_string_lossy(), MAX_LOG_LINE);
             keep_line(&log, line.clone());
             log::info!(target: LOG_TARGET, "{id}: {line}");
             Ok(())
@@ -1032,6 +1040,49 @@ fn same_inode(opened: &std::fs::File, now: &std::fs::Metadata) -> bool {
 #[cfg(not(unix))]
 fn same_inode(_opened: &std::fs::File, _now: &std::fs::Metadata) -> bool {
     true
+}
+
+/// One character as it is written in a log line: a control character (a newline, a carriage return,
+/// an escape, ...) as its `\u{..}` escape text, so a mod cannot start a line of its own or forge the
+/// game's own prefix. Any other character is itself.
+fn log_piece(c: char) -> String {
+    if c.is_control() {
+        format!("\\u{{{:x}}}", u32::from(c))
+    } else {
+        c.to_string()
+    }
+}
+
+/// `text` as one log line, with its control characters escaped (`log_piece`) and at most `cap`
+/// characters counted after escaping. An escape is never cut: a piece that would pass the cap is
+/// left out whole.
+pub(crate) fn escape_capped(text: &str, cap: usize) -> String {
+    let mut out = String::new();
+    let mut count = 0;
+    for c in text.chars() {
+        let piece = log_piece(c);
+        let width = piece.chars().count();
+        if count + width > cap {
+            break;
+        }
+        out.push_str(&piece);
+        count += width;
+    }
+    out
+}
+
+/// Any text a mod can shape (a Lua error's message, a refusal's reason, a name it chose), written into
+/// a log message with its control characters escaped, as `horizon.log` writes its line. Use it in
+/// `log::` arguments wherever the text came from a mod.
+pub(crate) struct Escaped<T: std::fmt::Display>(pub T);
+
+impl<T: std::fmt::Display> std::fmt::Display for Escaped<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0
+            .to_string()
+            .chars()
+            .try_for_each(|c| f.write_str(&log_piece(c)))
+    }
 }
 
 /// Appends `line` to a mod's buffer, dropping the oldest lines past `MAX_LOG_LINES`.
@@ -1324,6 +1375,72 @@ pub(crate) mod tests {
         let lines = host.mods[0].log_lines();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].chars().count(), MAX_LOG_LINE);
+    }
+
+    /// Runs a mod whose `block_receive_game` handler is `body` once, and returns its log lines.
+    fn logged(root: &Path, body: &str) -> Vec<String> {
+        let source = format!("horizon.on(\"block_receive_game\", function()\n{body}\nend)");
+        let found = mod_folder(root, "mod_log", &source, Side::Both);
+        let host = LuaHost::new(vec![LuaMod::load(&found).unwrap()]);
+        host.fire(HOOK);
+        host.mods[0].log_lines()
+    }
+
+    #[test]
+    fn control_characters_are_logged_escaped_on_one_line() {
+        // A newline cannot start a line of the game's own, and an escape is shown, not sent.
+        let root = tempfile::tempdir().unwrap();
+        let lines = logged(root.path(), r#"horizon.log("x\ny\rz\27[0m")"#);
+        assert_eq!(lines, [r"x\u{a}y\u{d}z\u{1b}[0m"]);
+
+        let root = tempfile::tempdir().unwrap();
+        let forged = logged(
+            root.path(),
+            r#"horizon.log("x\n[12:00:00] [Server thread/INFO]: <Admin> ok")"#,
+        );
+        assert_eq!(forged.len(), 1, "got {forged:?}");
+        assert_eq!(
+            forged[0],
+            r"x\u{a}[12:00:00] [Server thread/INFO]: <Admin> ok"
+        );
+    }
+
+    #[test]
+    fn a_message_of_4096_characters_is_capped_at_max_log_line() {
+        let root = tempfile::tempdir().unwrap();
+        let lines = logged(root.path(), r#"horizon.log(string.rep("x", 4096))"#);
+        assert_eq!(lines[0].chars().count(), MAX_LOG_LINE);
+        assert!(lines[0].chars().all(|c| c == 'x'));
+    }
+
+    #[test]
+    fn the_cap_counts_escaped_characters_and_never_cuts_an_escape() {
+        // A newline is five characters once escaped: 600 of them fill the cap exactly (200 * 5 = 1000).
+        let root = tempfile::tempdir().unwrap();
+        let lines = logged(root.path(), r#"horizon.log(string.rep("\n", 600))"#);
+        assert_eq!(lines[0].chars().count(), MAX_LOG_LINE);
+        assert_eq!(lines[0], r"\u{a}".repeat(200));
+
+        // 997 characters leave 3: the newline's escape (5) would pass the cap, so it is left out whole.
+        let root = tempfile::tempdir().unwrap();
+        let lines = logged(
+            root.path(),
+            r#"horizon.log(string.rep("x", 997) .. "\n" .. "yyy")"#,
+        );
+        assert_eq!(lines[0], "x".repeat(997));
+    }
+
+    #[test]
+    fn an_ordinary_message_is_logged_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        let lines = logged(root.path(), r#"horizon.log("hello, wörld: 3 + 4 = 7")"#);
+        assert_eq!(lines, ["hello, wörld: 3 + 4 = 7"]);
+    }
+
+    #[test]
+    fn escaped_text_in_a_host_message_has_no_control_characters() {
+        assert_eq!(format!("{}", Escaped("a\nb\u{1b}")), r"a\u{a}b\u{1b}");
+        assert_eq!(escape_capped("a\u{7f}b", 100), r"a\u{7f}b");
     }
 
     #[test]

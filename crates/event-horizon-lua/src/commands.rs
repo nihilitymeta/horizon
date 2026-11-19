@@ -15,6 +15,7 @@ use mod_api::{
 };
 
 use crate::handles::{Family, family_list_out, family_out};
+use crate::host::LuaMod;
 use crate::hostcall::{NOT_HERE, TurnHost};
 use crate::stacks;
 
@@ -193,6 +194,16 @@ pub fn invocation_lua(
             ("position", xyz(lua, invocation.position)?),
         ],
     )
+}
+
+/// Whether `run_mod_command` is delivered to `m` for `command`: only a mod that declared a command
+/// with this invocation's name (its first literal, matched case-sensitively) hears it. A mod with no
+/// declared command never does, so it cannot read another mod's arguments or answer for them.
+pub(crate) fn delivers_to(m: &LuaMod, command: &CommandInvocation) -> bool {
+    command
+        .literals
+        .first()
+        .is_some_and(|name| m.declares_command(name))
 }
 
 /// The operation `event.feedback` runs through the turn's host. It is a write, so it costs what a
@@ -630,6 +641,8 @@ mod dispatch_tests {
     }
 
     const RUN: &str = "horizon.on(\"run_mod_command\", function(event) ";
+    /// The command the RUN handlers below answer to: a mod that handles `run_mod_command` declares it.
+    const DECLARE: &str = "horizon.command{usage = \"demo run <n:integer>\"}\n";
 
     #[test]
     fn setting_ran_true_cancels_the_command() {
@@ -637,7 +650,7 @@ mod dispatch_tests {
         let m = load(
             root.path(),
             "ran_true",
-            &format!("{RUN}event.ran = true end)"),
+            &format!("{DECLARE}{RUN}event.ran = true end)"),
         );
         let host = LuaHost::new(vec![m]);
         assert!(matches!(
@@ -652,7 +665,7 @@ mod dispatch_tests {
         let absent = load(
             root.path(),
             "ran_absent",
-            &format!("{RUN}horizon.log(\"seen\") end)"),
+            &format!("{DECLARE}{RUN}horizon.log(\"seen\") end)"),
         );
         let host = LuaHost::new(vec![absent]);
         assert!(matches!(
@@ -664,7 +677,7 @@ mod dispatch_tests {
         let off = load(
             root.path(),
             "ran_false",
-            &format!("{RUN}event.ran = false end)"),
+            &format!("{DECLARE}{RUN}event.ran = false end)"),
         );
         let host = LuaHost::new(vec![off]);
         assert!(matches!(
@@ -677,7 +690,7 @@ mod dispatch_tests {
     fn a_console_source_and_its_literals_reach_the_handler() {
         let root = tempfile::tempdir().unwrap();
         let source = format!(
-            "{RUN}horizon.log(event.source.kind .. \"|\" .. event.source.permission .. \"|\" .. \
+            "{DECLARE}{RUN}horizon.log(event.source.kind .. \"|\" .. event.source.permission .. \"|\" .. \
              event.command.literals[1] .. \"|\" .. event.command.literals[2] .. \"|\" .. \
              event.command.dimension .. \"|\" .. tostring(event.command.args.n)) end)"
         );
@@ -697,7 +710,7 @@ mod dispatch_tests {
         let host = LuaHost::new(vec![load(
             root.path(),
             id,
-            &format!("{RUN}event.ran = \"yes\" end)"),
+            &format!("{DECLARE}{RUN}event.ran = \"yes\" end)"),
         )]);
         assert!(matches!(
             run(&host, &console(), &invocation()),
@@ -711,12 +724,100 @@ mod dispatch_tests {
     #[test]
     fn an_error_in_the_handler_voids_its_turn() {
         let root = tempfile::tempdir().unwrap();
-        let source = format!("{RUN}event.ran = true error(\"boom\") end)");
+        let source = format!("{DECLARE}{RUN}event.ran = true error(\"boom\") end)");
         let host = LuaHost::new(vec![load(root.path(), "ran_error", &source)]);
         assert!(matches!(
             run(&host, &console(), &invocation()),
             Flow::Continue
         ));
+    }
+
+    /// Fires `run_mod_command` for the invocation named `name`, with no arguments.
+    fn run_named(host: &LuaHost, name: &str) -> Flow {
+        let invocation = CommandInvocation::new(
+            vec![name.to_owned()],
+            Vec::new(),
+            DimensionKey::OVERWORLD,
+            [0.0; 3],
+        );
+        run(host, &console(), &invocation)
+    }
+
+    /// A mod that declares `usage` and handles `run_mod_command` by logging `tag` and answering
+    /// `ran = true`.
+    fn declaring(root: &Path, id: &str, usage: &str, tag: &str) -> LuaMod {
+        let source = format!(
+            "horizon.command{{usage = \"{usage}\"}}\n\
+             {RUN}horizon.log(\"{tag}\") event.ran = true end)"
+        );
+        load(root, id, &source)
+    }
+
+    #[test]
+    fn a_command_reaches_only_the_mod_that_declared_its_name() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            declaring(root.path(), "scope_alpha", "alpha <n:integer>", "A"),
+            declaring(root.path(), "scope_bravo", "bravo", "B"),
+        ]);
+        assert!(matches!(run_named(&host, "alpha"), Flow::Cancel));
+        assert_eq!(host.mods()[0].log_lines(), ["A"]);
+        assert!(host.mods()[1].log_lines().is_empty());
+
+        assert!(matches!(run_named(&host, "bravo"), Flow::Cancel));
+        assert_eq!(host.mods()[0].log_lines(), ["A"]);
+        assert_eq!(host.mods()[1].log_lines(), ["B"]);
+    }
+
+    #[test]
+    fn a_command_of_no_lua_mod_reaches_none() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            declaring(root.path(), "none_alpha", "alpha", "A"),
+            declaring(root.path(), "none_bravo", "bravo", "B"),
+        ]);
+        assert!(matches!(run_named(&host, "charlie"), Flow::Continue));
+        assert!(host.mods()[0].log_lines().is_empty());
+        assert!(host.mods()[1].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_mod_with_no_declared_command_never_hears_run_mod_command() {
+        let root = tempfile::tempdir().unwrap();
+        let silent = load(
+            root.path(),
+            "scope_silent",
+            &format!("{RUN}horizon.log(\"heard\") event.ran = true end)"),
+        );
+        let host = LuaHost::new(vec![silent]);
+        assert!(matches!(run_named(&host, "alpha"), Flow::Continue));
+        assert!(host.mods()[0].log_lines().is_empty());
+    }
+
+    #[test]
+    fn a_mod_cannot_answer_for_a_command_another_mod_declared() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            declaring(root.path(), "answer_alpha", "alpha", "A"),
+            load(
+                root.path(),
+                "answer_bravo_owner",
+                "horizon.command{usage = \"bravo\"}\n",
+            ),
+        ]);
+        assert!(matches!(run_named(&host, "bravo"), Flow::Continue));
+        assert!(host.mods()[0].log_lines().is_empty());
+    }
+
+    #[test]
+    fn the_command_name_matches_case_sensitively_and_exactly() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![declaring(root.path(), "scope_case", "alpha", "A")]);
+        assert!(matches!(run_named(&host, "Alpha"), Flow::Continue));
+        assert!(matches!(run_named(&host, "alpha2"), Flow::Continue));
+        assert!(host.mods()[0].log_lines().is_empty());
+        assert!(matches!(run_named(&host, "alpha"), Flow::Cancel));
+        assert_eq!(host.mods()[0].log_lines(), ["A"]);
     }
 
     #[test]
@@ -739,7 +840,7 @@ mod dispatch_tests {
         let host = LuaHost::new(vec![load(
             root.path(),
             id,
-            &format!("{RUN}event.ran = true end)"),
+            &format!("{DECLARE}{RUN}event.ran = true end)"),
         )]);
         let over_cap = |n: usize| {
             CommandInvocation::new(
@@ -777,7 +878,7 @@ mod dispatch_tests {
 
     /// A host whose `run_mod_command` handler runs `body` (with `event` in scope) and then ends.
     fn feedback_host(root: &Path, id: &str, body: &str) -> LuaHost {
-        LuaHost::new(vec![load(root, id, &format!("{RUN}{body} end)"))])
+        LuaHost::new(vec![load(root, id, &format!("{DECLARE}{RUN}{body} end)"))])
     }
 
     #[test]

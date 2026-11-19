@@ -85,6 +85,13 @@ pub const EXTRA_EVENT_FIELDS: &[(&str, &str, &str)] = &[(
     "crate::commands::feedback_lua(lua)?",
 )];
 
+/// The hooks whose event reaches only the mods a predicate names: `(hook, event field, predicate)`.
+/// The turn of a mod the predicate refuses does not open, so it gets no event and logs nothing
+/// (`LuaHost::dispatch_turns_scoped`). The predicate is `fn(&LuaMod, &field) -> bool` in the host crate:
+/// `run_mod_command` goes only to the mod that declared the command's name (`commands::delivers_to`).
+pub const SCOPED_HOOKS: &[(&str, &str, &str)] =
+    &[("run_mod_command", "command", "crate::commands::delivers_to")];
+
 /// The hooks whose event carries one mod's own file: `(hook, event field)`, the field a `ConfigFile`.
 /// Their handlers run only in the mod named by that file's `mod_id`, so no mod reads another's config.
 pub const OWNED_HOOKS: &[(&str, &str)] = &[
@@ -1149,6 +1156,25 @@ fn build_text(method: &Method<'_>, outputs: bool) -> String {
     )
 }
 
+/// The dispatch method of a hook that has no owner, and the argument that scopes it. A hook in
+/// `SCOPED_HOOKS` goes to `dispatch_turns_scoped` with its predicate on the event's field; any other
+/// hook goes to `dispatch_turns` with no argument.
+fn dispatch_scope(method: &Method<'_>) -> (&'static str, String) {
+    match SCOPED_HOOKS
+        .iter()
+        .find(|(hook, _, _)| *hook == method.hook.name)
+    {
+        Some((_, field, predicate)) => (
+            "dispatch_turns_scoped",
+            format!(
+                "            &|m| {predicate}(m, {}.{field}),\n",
+                method.sig.event_name
+            ),
+        ),
+        None => ("dispatch_turns", String::new()),
+    }
+}
+
 /// The body of a hook with no outputs: its handlers run in the turn, and nothing is committed.
 fn plain_body(method: &Method<'_>) -> String {
     // A hook whose event names one mod's own data goes to that mod only (`OWNED_HOOKS`).
@@ -1160,7 +1186,7 @@ fn plain_body(method: &Method<'_>) -> String {
             "dispatch_turns_owned",
             format!("            &event.{field}.mod_id,\n"),
         ),
-        None => ("dispatch_turns", String::new()),
+        None => dispatch_scope(method),
     };
     let mut out = format!("        crate::hostcall::refused(self.{dispatch}(\n");
     out.push_str(&format!("            {:?},\n", method.hook.name));
@@ -1298,8 +1324,12 @@ fn turn_body(method: &Method<'_>) -> String {
     } else {
         "&|| false".to_owned()
     };
-    out.push_str("        crate::hostcall::refused(self.dispatch_turns(\n");
+    let (dispatch, scope) = dispatch_scope(method);
+    out.push_str(&format!(
+        "        crate::hostcall::refused(self.{dispatch}(\n"
+    ));
     out.push_str(&format!("            {hook:?},\n"));
+    out.push_str(&scope);
     out.push_str(&format!("            {},\n", turn_text(method)));
     out.push_str(&format!("            {is_cancelled},\n"));
     out.push_str(&build_text(method, true));

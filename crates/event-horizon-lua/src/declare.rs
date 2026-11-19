@@ -217,6 +217,11 @@ pub struct CommandRecord {
 }
 
 impl CommandRecord {
+    /// The command's name: the first word of its usage (see [`command_name`]).
+    pub fn name(&self) -> &str {
+        command_name(&self.usage)
+    }
+
     /// The game's declaration of this command: the usage at the declared level.
     pub fn to_command(&self) -> mod_api::Command {
         mod_api::Command::op(&self.usage, self.level)
@@ -958,6 +963,14 @@ fn declare_world_fluid(
     }
     records.push(FluidRecord { id, fluid });
     Ok(())
+}
+
+/// The name a usage gives its command: its first word, which `check_usage` has already made a
+/// literal of `a-z`, `0-9`, `_` and `-`. A usage that passed it has no leading space, so splitting on
+/// a space gives the same word as the game's own split on whitespace (`native_server::usage_nodes`).
+/// Usages that did not pass it are not declared, so this is never asked of them.
+pub fn command_name(usage: &str) -> &str {
+    usage.split(' ').next().unwrap_or_default()
 }
 
 /// Checks a client command's usage. It must be non-empty and at most `MAX_USAGE` characters, with no
@@ -1896,6 +1909,29 @@ mod tests {
         let command = record.to_command();
         assert_eq!(command.usage, "hello <who:word>");
         assert_eq!(command.level, 0);
+    }
+
+    #[test]
+    fn a_command_is_named_by_the_first_word_of_its_usage() {
+        assert_eq!(command_name("alpha <n:integer>"), "alpha");
+        assert_eq!(command_name("bravo"), "bravo");
+        assert_eq!(command_name("demo run [n:integer]"), "demo");
+        assert_eq!(command_name("mode-2  x"), "mode-2");
+    }
+
+    #[test]
+    fn a_usage_that_starts_with_an_argument_is_never_declared() {
+        // The first word of a declared usage is a literal, so its name can match a command word.
+        for usage in [
+            "<n:integer>",
+            "[n:integer] x",
+            "<n:integer> x",
+            "Demo",
+            "/demo",
+            " demo",
+        ] {
+            assert!(check_usage(usage).is_err(), "{usage} should be refused");
+        }
     }
 
     #[test]
