@@ -86,13 +86,16 @@ fn plain(ty: &str) -> String {
     text.replace("'a", "").replace("&mut", "").replace('&', "")
 }
 
-/// Whether a value of `shape` converts through a host of `reach`. Stacks convert whatever the reach
-/// (through the host, or through the global tables). A block state needs a host or a level: the
-/// global tables give none. A list is an output only, and a hook's list input is not converted here
-/// (the caller refuses it).
+/// Whether a value of `shape` converts through a host of `reach`. Stacks and block states convert
+/// through the host, the level, or the global tables (`stacks::GlobalHost`, which reads a state's
+/// block and properties from the installed definitions). A method with no host parameter at all
+/// (`Reach::Nothing`) carries neither. A list is an output only, and a hook's list input is not
+/// converted here (the caller refuses it).
 pub fn allowed(shape: Shape, reach: Reach) -> bool {
     match shape {
-        Shape::State | Shape::OptState => matches!(reach, Reach::Host | Reach::Level),
+        Shape::State | Shape::OptState => {
+            matches!(reach, Reach::Host | Reach::Level | Reach::Global)
+        }
         Shape::Stack | Shape::OptStack | Shape::StackList => true,
     }
 }
@@ -283,7 +286,7 @@ mod tests {
         assert!(allowed(Shape::Stack, Reach::Level));
         assert!(allowed(Shape::StackList, Reach::Level));
         assert!(!allowed(Shape::State, Reach::Nothing));
-        assert!(!allowed(Shape::State, Reach::Global));
+        assert!(allowed(Shape::State, Reach::Global));
         assert!(allowed(Shape::Stack, Reach::Nothing));
         assert_eq!(stack_reach(Reach::Level), Reach::Global);
         assert_eq!(stack_reach(Reach::Host), Reach::Host);
@@ -342,8 +345,8 @@ mod tests {
         assert!(allowed(Shape::Stack, Reach::Global));
         assert!(allowed(Shape::OptStack, Reach::Global));
         assert!(allowed(Shape::StackList, Reach::Global));
-        assert!(!allowed(Shape::State, Reach::Global));
-        assert!(!allowed(Shape::OptState, Reach::Global));
+        assert!(allowed(Shape::State, Reach::Global));
+        assert!(allowed(Shape::OptState, Reach::Global));
     }
 
     #[test]

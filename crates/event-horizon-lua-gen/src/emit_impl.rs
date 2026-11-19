@@ -1524,18 +1524,28 @@ const NBT_REASON: &str = "NBT output (Compound is denied)";
 const ATTACHMENT_REASON: &str = "attachment state: not a Part state in v1";
 const HOT_REASON: &str = "hot path (needs measurement)";
 /// The hooks, on either a Hooks or a Part trait, that stay unbound with [`HOT_REASON`]: the ones
-/// whose call sites run per shape update, per neighbour notify or per hit. Issue 74 removed the
-/// rest of the old list after measuring it: a subscribed delivery costs about 4-5 us (measured on
-/// `can_survive` by `hot_path_bench` in `event-horizon-lua`'s `builtin.rs`, release, 8 cores), and
-/// an unsubscribed hook about 50 ns, since the listen gate runs before any conversion. `living_knockback`
-/// fires once per hit, and its gate-only cost with no subscriber is 48 ns, so it is bound. The four
-/// kept here are kept by decision, not by a conversion: `update_shape` and `neighbor_changed` take
-/// a block state with no host path, `living_incoming_damage` a mutable `DamageContainer`, and
-/// `ingredient_test` stays hot because it may run many times per tick during recipe matching and
-/// has no call-frequency measurement.
+/// whose call sites run per shape update, per neighbour notify, per entity movement step or per hit.
+/// Issue 74 removed the rest of the old list after measuring it: a subscribed delivery costs about
+/// 4-5 us (measured on `can_survive` by `hot_path_bench` in `event-horizon-lua`'s `builtin.rs`,
+/// release, 8 cores), and an unsubscribed hook about 50 ns, since the listen gate runs before any
+/// conversion. `living_knockback` fires once per hit, and its gate-only cost with no subscriber is
+/// 48 ns, so it is bound. The hooks kept here are kept for their call frequency, not for a missing
+/// conversion: `update_shape` and `neighbor_changed` run per block update; `block_jump_factor`,
+/// `block_speed_factor`, `friction`, `is_ladder`, `makes_open_trapdoor_above_climbable` and
+/// `block_step_on` run per entity movement step, under the block a mover stands on or touches;
+/// `living_incoming_damage` takes a mutable `DamageContainer`; and `ingredient_test` may run many
+/// times per tick during recipe matching. None of them has a call-frequency measurement, and the
+/// gate-only and subscribed costs above are the only numbers there are, so enabling any of them
+/// needs that measurement first.
 pub const HOT_HOOKS: &[&str] = &[
     "update_shape",
     "neighbor_changed",
+    "block_jump_factor",
+    "block_speed_factor",
+    "friction",
+    "is_ladder",
+    "makes_open_trapdoor_above_climbable",
+    "block_step_on",
     "living_incoming_damage",
     "ingredient_test",
 ];

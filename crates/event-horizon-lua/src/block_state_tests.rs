@@ -10,8 +10,8 @@ use std::sync::Arc;
 use mlua::Lua;
 use mod_api::{
     BlockEntityPart, BlockPart, BlockPos, BlockState, IsValidBonemealTargetEvent, LevelDimension,
-    LevelHost, LevelRandomHost, LevelSide, OnBlockStateChangeEvent, PreRemoveSideEffectsEvent,
-    RemoveBlockEvent, StateConstraint,
+    LevelHost, LevelRandomHost, LevelSide, OnBlockStateChangeEvent, PistonPushReactionEvent,
+    PreRemoveSideEffectsEvent, PushReaction, RemoveBlockEvent, StateConstraint,
 };
 
 use crate::discover::{Discovered, ENTRY, Side};
@@ -53,22 +53,52 @@ fn state(name: &str, facing: Option<&str>) -> BlockState {
     BlockState::of(metadata, block, &constraints).unwrap()
 }
 
-/// Installs the test registry once per test: stone, and oak stairs with `facing` east or north. It
-/// also installs the log capture, so a test sees the warnings its hook raises.
-fn registry() {
+/// Installs the test registry once per process: stone, oak stairs with `facing` east or north, and
+/// a two-property block `minecraft:probe_slab` (`facing` east or north, `half` bottom or top, four
+/// states in that order). It also installs the log capture, so a test sees the warnings its hook
+/// raises. The global tables are a process-wide once-cell: a test that needs them uninstalled runs
+/// in its own process (nextest does this).
+pub(crate) fn registry() {
     crate::host::tests::install_capture();
     let empty = BTreeMap::new();
     let east = BTreeMap::from([("facing".to_owned(), "east".to_owned())]);
     let north = BTreeMap::from([("facing".to_owned(), "north".to_owned())]);
+    let probe = |facing: &str, half: &str| {
+        BTreeMap::from([
+            ("facing".to_owned(), facing.to_owned()),
+            ("half".to_owned(), half.to_owned()),
+        ])
+    };
+    let probe_states = [
+        probe("east", "bottom"),
+        probe("east", "top"),
+        probe("north", "bottom"),
+        probe("north", "top"),
+    ];
+    let probe_refs: Vec<_> = probe_states.iter().collect();
     mod_api::__private::part_tests::install_parts_fixture(&[]).unwrap();
-    mod_api::__private::resolve_block_keys(["minecraft:stone", "minecraft:oak_stairs"], |name| {
-        let result = if name == "minecraft:oak_stairs" {
-            horizon_mod_runtime::block_definitions::BlockDefinition::new(&[&east, &north], 0)
-        } else {
-            horizon_mod_runtime::block_definitions::BlockDefinition::new(&[&empty], 0)
-        };
-        result.map_err(|error| format!("{error:?}"))
-    })
+    mod_api::__private::resolve_block_keys(
+        [
+            "minecraft:stone",
+            "minecraft:oak_stairs",
+            "minecraft:probe_slab",
+        ],
+        |name| {
+            let result = match name {
+                "minecraft:oak_stairs" => {
+                    horizon_mod_runtime::block_definitions::BlockDefinition::new(
+                        &[&east, &north],
+                        0,
+                    )
+                }
+                "minecraft:probe_slab" => {
+                    horizon_mod_runtime::block_definitions::BlockDefinition::new(&probe_refs, 0)
+                }
+                _ => horizon_mod_runtime::block_definitions::BlockDefinition::new(&[&empty], 0),
+            };
+            result.map_err(|error| format!("{error:?}"))
+        },
+    )
     .unwrap();
 }
 
@@ -250,4 +280,46 @@ fn a_block_state_round_trips_through_remove_block_and_an_unknown_answer_is_refus
         mods[0].log_lines(),
         ["minecraft:oak_stairs east", "minecraft:oak_stairs east"]
     );
+}
+
+#[test]
+fn piston_push_reaction_gets_its_state_through_the_global_tables_and_a_bad_answer_keeps_the_last() {
+    // The hook has no host parameter, so its state comes from the installed tables as `{id, props}`
+    // in name order, and its answer is a reaction name. A refused answer leaves the reaction unset.
+    registry();
+    let root = tempfile::tempdir().unwrap();
+    let mods = load(
+        root.path(),
+        r#"horizon.block_part("first_mod:stairs", {piston_push_reaction = function(event)
+             horizon.log(event.state.id .. " " .. event.state.props.facing .. " " .. event.state.props.half)
+             if event.state.props.half == "top" then return "not_a_reaction" end
+             return "push"
+           end})"#,
+    );
+    let mut event = PistonPushReactionEvent {
+        state: BlockState::of(
+            mod_api::__private::block_definitions().unwrap(),
+            mod_api::__private::block_key("minecraft:probe_slab").unwrap(),
+            &[
+                StateConstraint::new("facing", "east"),
+                StateConstraint::new("half", "bottom"),
+            ],
+        )
+        .unwrap(),
+    };
+    let answer = part(&mods).piston_push_reaction(&mut event);
+    assert_eq!(answer, Some(PushReaction::Push));
+    assert_eq!(mods[0].log_lines(), ["minecraft:probe_slab east bottom"]);
+
+    event.state = BlockState::of(
+        mod_api::__private::block_definitions().unwrap(),
+        mod_api::__private::block_key("minecraft:probe_slab").unwrap(),
+        &[
+            StateConstraint::new("facing", "north"),
+            StateConstraint::new("half", "top"),
+        ],
+    )
+    .unwrap();
+    let refused = part(&mods).piston_push_reaction(&mut event);
+    assert_eq!(refused, None);
 }

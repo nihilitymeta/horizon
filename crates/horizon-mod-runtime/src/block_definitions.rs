@@ -96,6 +96,21 @@ impl BlockDefinition {
             .map(|(index, (_, legal))| legal[usize::from(values[index])].as_str()))
     }
 
+    /// The (name, value) pairs of one state, in the definition's property order (name order).
+    /// A block with no properties gives an empty list; an ordinal outside the definition is refused.
+    pub fn properties_of(&self, state: u16) -> Result<Vec<(&str, &str)>, StateError> {
+        let values = self
+            .states
+            .get(usize::from(state))
+            .ok_or(StateError::UnknownState)?;
+        Ok(self
+            .properties
+            .iter()
+            .zip(values.iter())
+            .map(|((name, legal), &index)| (name.as_str(), legal[usize::from(index)].as_str()))
+            .collect())
+    }
+
     /// Build a state from the default and partial property constraints.
     pub fn of(&self, properties: &[(&str, &str)]) -> Result<u16, StateError> {
         if properties.is_empty() {
@@ -159,5 +174,47 @@ impl Blocks {
             .collect::<Result<_, _>>()
             .map_err(|error| vec![error])?;
         Ok(Self { names, definitions })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_state_lists_its_properties_in_name_order_with_their_values() {
+        // Hand-written: two properties, facing (east, north) and half (bottom, top). The ordinals
+        // follow the order the states are supplied in.
+        let state = |facing: &str, half: &str| {
+            BTreeMap::from([
+                ("facing".to_owned(), facing.to_owned()),
+                ("half".to_owned(), half.to_owned()),
+            ])
+        };
+        let states = [
+            state("east", "bottom"),
+            state("east", "top"),
+            state("north", "bottom"),
+            state("north", "top"),
+        ];
+        let refs: Vec<_> = states.iter().collect();
+        let definition = BlockDefinition::new(&refs, 0).unwrap();
+        assert_eq!(
+            definition.properties_of(0),
+            Ok(vec![("facing", "east"), ("half", "bottom")])
+        );
+        assert_eq!(
+            definition.properties_of(3),
+            Ok(vec![("facing", "north"), ("half", "top")])
+        );
+        assert_eq!(definition.properties_of(4), Err(StateError::UnknownState));
+    }
+
+    #[test]
+    fn a_block_without_properties_lists_nothing_and_an_out_of_range_state_is_refused() {
+        let empty = BTreeMap::new();
+        let definition = BlockDefinition::new(&[&empty], 0).unwrap();
+        assert_eq!(definition.properties_of(0), Ok(Vec::new()));
+        assert_eq!(definition.properties_of(1), Err(StateError::UnknownState));
     }
 }

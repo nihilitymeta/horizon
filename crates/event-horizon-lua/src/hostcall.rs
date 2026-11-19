@@ -1749,12 +1749,13 @@ mod tests {
                 .iter()
                 .filter(|line| line.ends_with(" emitted"))
                 .count(),
-            26
+            27
         );
         assert!(parts.contains(&"block_part.can_survive emitted"));
+        assert!(parts.contains(&"block_part.piston_push_reaction emitted"));
         assert!(parts.contains(&"block_part.use_without_item emitted"));
         assert!(parts.contains(&"block_part.on_block_state_change emitted"));
-        assert!(parts.contains(&"block_part.friction skipped: no host path for block states"));
+        assert!(parts.contains(&"block_part.friction skipped: hot path (needs measurement)"));
         assert!(
             parts.contains(
                 &"block_part.block_render_visibility skipped: hot path (needs measurement)"

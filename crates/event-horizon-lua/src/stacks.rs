@@ -90,8 +90,9 @@ impl StateHost for dyn LevelHost + '_ {
 /// limits, both because the table is not the host:
 /// - A stack has no item maximum here, so only [`MAX_COUNT`] is checked. The game's write boundary
 ///   still refuses a count above the item's maximum.
-/// - Block states are None (see the `StateHost` impl). Before the table is installed every stack
-///   conversion is None, so the hook is not delivered.
+/// - Block states come from the same installed tables: a state's block is found by its id, and its
+///   properties come from the block's definition. Before the tables are installed every stack and
+///   state conversion is None, so the hook is not delivered.
 pub struct GlobalHost;
 
 impl StackHost for GlobalHost {
@@ -131,18 +132,35 @@ impl StackHost for GlobalHost {
     }
 }
 
-/// The global tables give no block states. A state's text needs its block's properties, and the
-/// tables do not name them: the block index a definition is found by is private to the mod API.
-/// So a state converts only through a host or a level, and a no-host hook does not get one.
+/// A state from the global tables: the block's name and its definition's properties, in name order,
+/// as the host path writes them. Read-only: nothing is installed or changed here.
 impl StateHost for GlobalHost {
     type State = BlockState;
 
-    fn state_text(&self, _state: &BlockState) -> Option<String> {
-        None
+    fn state_text(&self, state: &BlockState) -> Option<String> {
+        let tables = mod_api::__private::block_definitions()?;
+        let id = mod_api::__private::block_key_id(state.block())?;
+        let index = *tables.names.slots.get(id)? as usize;
+        let properties = tables
+            .definitions
+            .get(index)?
+            .properties_of(state.ordinal())
+            .ok()?;
+        let spec = BlockStateSpec {
+            id: id.to_owned(),
+            props: properties
+                .into_iter()
+                .map(|(name, value)| StateConstraint::new(name, value))
+                .collect(),
+        };
+        Some(state_text(&spec))
     }
 
-    fn state_parse(&self, _text: &str) -> Option<BlockState> {
-        None
+    fn state_parse(&self, text: &str) -> Option<BlockState> {
+        let spec = spec_of_text(text)?;
+        let tables = mod_api::__private::block_definitions()?;
+        let block = mod_api::__private::block_key(&spec.id)?;
+        BlockState::of(tables, block, &spec.props).ok()
     }
 }
 
@@ -297,15 +315,45 @@ pub fn state_in<H: StateHost + ?Sized>(
 }
 
 fn spec_of_state<H: StateHost + ?Sized>(host: &H, state: &H::State) -> Option<BlockStateSpec> {
-    let text = host.state_text(state)?;
+    spec_of_text(&host.state_text(state)?)
+}
+
+/// The most text a state may be written as, and the most properties it may carry: a mod-written
+/// state never reaches either bound, so a longer one is not a state (bounded work).
+const MAX_STATE_TEXT: usize = 1024;
+const MAX_STATE_PROPS: usize = 32;
+
+/// A `/setblock`-style state text as a spec: `namespace:id`, then `[name=value,...]` when it has
+/// properties. Refused: text over [`MAX_STATE_TEXT`] bytes, more than [`MAX_STATE_PROPS`]
+/// properties, an empty name or value, a repeated name, a pair with no `=`, and anything after the
+/// closing bracket. Which names and values exist is the host's to say.
+fn spec_of_text(text: &str) -> Option<BlockStateSpec> {
+    if text.len() > MAX_STATE_TEXT {
+        return None;
+    }
     let (id, props) = match text.split_once('[') {
-        None => (text.as_str(), ""),
+        None => (text, ""),
         Some((id, rest)) => (id, rest.strip_suffix(']')?),
     };
-    let mut constraints = Vec::new();
-    if !props.is_empty() {
+    if id.is_empty() {
+        return None;
+    }
+    let mut constraints: Vec<StateConstraint> = Vec::new();
+    if text.contains('[') {
+        if props.is_empty() {
+            return None;
+        }
         for pair in props.split(',') {
             let (name, value) = pair.split_once('=')?;
+            if name.is_empty() || value.is_empty() || value.contains('=') {
+                return None;
+            }
+            if constraints.iter().any(|known| known.name == name) {
+                return None;
+            }
+            if constraints.len() == MAX_STATE_PROPS {
+                return None;
+            }
             constraints.push(StateConstraint::new(name, value));
         }
     }
@@ -751,6 +799,104 @@ mod tests {
         });
         assert!(refused);
         assert!(slot.borrow().is_empty());
+    }
+
+    /// A state text of `count` properties, `a0=x`, `a1=x`, ... (names need not exist for the parser).
+    fn text_with_props(count: usize) -> String {
+        let props: Vec<String> = (0..count).map(|i| format!("a{i}=x")).collect();
+        format!("minecraft:stone[{}]", props.join(","))
+    }
+
+    #[test]
+    fn a_state_text_is_split_into_its_id_and_properties_within_the_bounds() {
+        // Hand-written expectations: the id, then each pair in the order written.
+        let spec = spec_of_text("minecraft:probe_slab[facing=east,half=top]").unwrap();
+        assert_eq!(spec.id, "minecraft:probe_slab");
+        let pairs: Vec<(&str, &str)> = spec
+            .props
+            .iter()
+            .map(|p| (p.name.as_str(), p.value.as_str()))
+            .collect();
+        assert_eq!(pairs, [("facing", "east"), ("half", "top")]);
+        assert_eq!(spec_of_text("minecraft:stone").unwrap().props.len(), 0);
+        // 32 properties are the most; 33 are refused.
+        assert_eq!(
+            spec_of_text(&text_with_props(MAX_STATE_PROPS))
+                .unwrap()
+                .props
+                .len(),
+            MAX_STATE_PROPS
+        );
+        assert!(spec_of_text(&text_with_props(MAX_STATE_PROPS + 1)).is_none());
+        // Text over 1024 bytes is refused, and so is a 2 KiB one.
+        let long = format!("minecraft:stone[a={}]", "x".repeat(MAX_STATE_TEXT));
+        assert!(spec_of_text(&long).is_none());
+        let two_kib = format!("minecraft:stone[a={}]", "x".repeat(2048));
+        assert!(spec_of_text(&two_kib).is_none());
+    }
+
+    #[test]
+    fn a_malformed_state_text_is_refused_before_any_table_is_read() {
+        for text in [
+            "",
+            "[facing=east]",
+            "minecraft:stone[]",
+            "minecraft:stone[=east]",
+            "minecraft:stone[facing=]",
+            "minecraft:stone[facing]",
+            "minecraft:stone[facing=east=north]",
+            "minecraft:stone[facing=east,facing=north]",
+            "minecraft:stone[facing=east]x",
+            "minecraft:stone[facing=east",
+        ] {
+            assert!(spec_of_text(text).is_none(), "{text}");
+        }
+    }
+
+    #[test]
+    fn global_state_text_and_parse_follow_the_installed_tables() {
+        crate::block_state_tests::registry();
+        let stone = mod_api::__private::block_key("minecraft:stone").unwrap();
+        let no_props =
+            BlockState::of(mod_api::__private::block_definitions().unwrap(), stone, &[]).unwrap();
+        // A block with no properties is its id alone.
+        assert_eq!(
+            GlobalHost.state_text(&no_props),
+            Some("minecraft:stone".to_owned())
+        );
+        assert_eq!(GlobalHost.state_parse("minecraft:stone"), Some(no_props));
+        // Two properties come out in name order, as the host path writes them.
+        let slab = mod_api::__private::block_key("minecraft:probe_slab").unwrap();
+        let top = BlockState::of(
+            mod_api::__private::block_definitions().unwrap(),
+            slab,
+            &[
+                StateConstraint::new("half", "top"),
+                StateConstraint::new("facing", "east"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            GlobalHost.state_text(&top),
+            Some("minecraft:probe_slab[facing=east,half=top]".to_owned())
+        );
+        assert_eq!(
+            GlobalHost.state_parse("minecraft:probe_slab[half=top,facing=east]"),
+            Some(top),
+            "the order a mod writes does not matter"
+        );
+        // The refusals: unknown block, unknown property, bad value, repeated key, a bad bound.
+        for text in [
+            "minecraft:no_such_block",
+            "minecraft:probe_slab[color=red]",
+            "minecraft:probe_slab[facing=up]",
+            "minecraft:probe_slab[half=top,half=top]",
+            "minecraft:probe_slab[facing=east,half=top]x",
+            "minecraft:stone[facing=east]",
+            &text_with_props(MAX_STATE_PROPS + 1),
+        ] {
+            assert_eq!(GlobalHost.state_parse(text), None, "{text}");
+        }
     }
 
     #[test]

@@ -8123,6 +8123,22 @@ impl ToLuaValue for mod_api::PushReaction {
     }
 }
 
+const PUSH_REACTION_NAMES: &[&str] = &["push_pull", "push", "popped", "immoveable", "ignore_entity"];
+
+impl FromLuaValue for mod_api::PushReaction {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "push_pull" => Ok(mod_api::PushReaction::PushPull),
+            "push" => Ok(mod_api::PushReaction::Push),
+            "popped" => Ok(mod_api::PushReaction::Popped),
+            "immoveable" => Ok(mod_api::PushReaction::Immoveable),
+            "ignore_entity" => Ok(mod_api::PushReaction::IgnoreEntity),
+            _ => Err(ConvertError::unknown_variant(&name, PUSH_REACTION_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::RaidRef {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         self.id().to_lua_value(lua)
@@ -11449,6 +11465,12 @@ mod unit_enum_tests {
     fn pose_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::POSE_NAMES, vec![mod_api::Pose::Standing, mod_api::Pose::FallFlying, mod_api::Pose::Sleeping, mod_api::Pose::Swimming, mod_api::Pose::SpinAttack, mod_api::Pose::Crouching, mod_api::Pose::LongJumping, mod_api::Pose::Dying, mod_api::Pose::Croaking, mod_api::Pose::UsingTongue, mod_api::Pose::Sitting, mod_api::Pose::Roaring, mod_api::Pose::Sniffing, mod_api::Pose::Emerging, mod_api::Pose::Digging, mod_api::Pose::Sliding, mod_api::Pose::Shooting, mod_api::Pose::Inhaling]);
+    }
+
+    #[test]
+    fn push_reaction_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::PUSH_REACTION_NAMES, vec![mod_api::PushReaction::PushPull, mod_api::PushReaction::Push, mod_api::PushReaction::Popped, mod_api::PushReaction::Immoveable, mod_api::PushReaction::IgnoreEntity]);
     }
 
     #[test]
