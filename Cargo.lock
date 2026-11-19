@@ -1435,6 +1435,7 @@ dependencies = [
  "horizon-hooks",
  "horizon-mod-api",
  "horizon-mod-package",
+ "horizon-mod-runtime",
  "horizon-world",
  "log",
  "mlua",

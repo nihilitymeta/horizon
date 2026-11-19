@@ -29,6 +29,8 @@ log = "0.4"
 tempfile = "3.27.0"
 # Scoped mod installation for tests (`mod_platform::testing`), so a test can install item tables.
 horizon-mod-api = { path = "../horizon-mod-api", features = ["testing"] }
+# Block definitions, so a test can build a block key and a block state.
+horizon-mod-runtime = { path = "../horizon-mod-runtime" }
 
 [lints]
 workspace = true
