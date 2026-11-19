@@ -18,8 +18,8 @@ use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
 use crate::declare::{
-    self, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord, ItemRecord,
-    ListenerOptions, PartKind, PartRecord,
+    self, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord, FluidRecord,
+    ItemRecord, ListenerOptions, PartKind, PartRecord,
 };
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::{self, new_event};
@@ -63,6 +63,10 @@ pub struct LuaMod {
     /// parts with `horizon.block_entity_part`.
     block_entity_types: Vec<BlockEntityTypeRecord>,
     block_entity_parts: Vec<PartRecord>,
+    /// The world fluids the mod declared with `horizon.world_fluid`, and the fluid parts with
+    /// `horizon.fluid_part`.
+    fluids: Vec<FluidRecord>,
+    fluid_parts: Vec<PartRecord>,
     /// The client commands the mod declared with `horizon.client_command`.
     client_commands: Vec<ClientCommandRecord>,
     /// The server commands the mod declared with `horizon.command`.
@@ -166,6 +170,8 @@ impl LuaMod {
             item_parts: declaration.item_parts,
             block_entity_types: declaration.block_entity_types,
             block_entity_parts: declaration.block_entity_parts,
+            fluids: declaration.fluids,
+            fluid_parts: declaration.fluid_parts,
             client_commands: declaration.client_commands,
             commands: declaration.commands,
             configs: declaration.configs,
@@ -196,6 +202,7 @@ impl LuaMod {
             PartKind::Block => &self.parts,
             PartKind::Item => &self.item_parts,
             PartKind::BlockEntity => &self.block_entity_parts,
+            PartKind::Fluid => &self.fluid_parts,
         }
     }
 
@@ -497,6 +504,11 @@ impl LuaHost {
                     m.block_entity_types
                         .iter()
                         .find_map(|ty| keys.block_entity_type(&ty.id, &ty.blocks).err())
+                })
+                .or_else(|| {
+                    m.fluids
+                        .iter()
+                        .find_map(|fluid| keys.world_fluid(&fluid.id, &fluid.fluid).err())
                 });
             if let Some(reason) = refusal {
                 log::warn!("Lua mod {} refused its declarations: {reason}", m.id);
@@ -506,6 +518,7 @@ impl LuaHost {
         self.attach_parts::<BlockTag>(|id, part| keys.block_part(id, part));
         self.attach_parts::<ItemTag>(|id, part| keys.item_part(id, part));
         self.attach_parts::<BlockEntityTag>(|id, part| keys.block_entity_part(id, part));
+        self.attach_parts::<FluidTag>(|id, part| keys.fluid_part(id, part));
     }
 
     /// Hands each part of kind `K` the mods declared to `attach`, with the id it attaches to. A part
@@ -617,6 +630,10 @@ pub(crate) trait DeclaredKeys {
     /// Attaches `part` to the block entity type `id`. An `Err` refuses the mod that declared the part;
     /// the game's refusal of a native type's part is reported as one.
     fn block_entity_part(&mut self, id: &str, part: LuaBlockEntityPart) -> Result<(), String>;
+    /// Declares the world fluid `id` with `fluid`. An `Err` refuses the mod that declared it.
+    fn world_fluid(&mut self, id: &str, fluid: &mod_api::WorldFluid) -> Result<(), String>;
+    /// Attaches `part` to the world fluid `id`: as [`DeclaredKeys::block_part`].
+    fn fluid_part(&mut self, id: &str, part: LuaFluidPart) -> Result<(), String>;
 }
 
 /// The game's Registrar as the keys' requester.
@@ -661,6 +678,18 @@ impl DeclaredKeys for RegistrarKeys<'_> {
             .block_entity_part(&key, part)
             .map_err(|error| error.to_string())
     }
+
+    fn world_fluid(&mut self, id: &str, fluid: &mod_api::WorldFluid) -> Result<(), String> {
+        // As the block keys: the game checks the declaration itself (name, namespace, the numbers)
+        // and reports a bad one through its own refusal.
+        let _key = mod_api::FluidsRegistrar::declare_world_fluid(&mut *self.0, id, *fluid);
+        Ok(())
+    }
+
+    fn fluid_part(&mut self, id: &str, part: LuaFluidPart) -> Result<(), String> {
+        self.0.fluid_part(id, part);
+        Ok(())
+    }
 }
 
 /// The most distinct sets of part handler names one process interns, per kind of part. Each set's
@@ -674,6 +703,7 @@ type Subscriptions = Vec<(Vec<String>, &'static [Option<mod_api::HookId>])>;
 static BLOCK_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static ITEM_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static BLOCK_ENTITY_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
+static FLUID_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 
 /// The subscription of a set of handler names (sorted, no repeats) in `table`: the same slice for
 /// the same set, a new one for a new set, and an error once `MAX_PART_SETS` sets are interned.
@@ -718,6 +748,9 @@ pub struct ItemTag;
 /// The marker of a BlockEntityPart.
 pub struct BlockEntityTag;
 
+/// The marker of a FluidPart.
+pub struct FluidTag;
+
 impl PartTag for BlockTag {
     const KIND: PartKind = PartKind::Block;
 }
@@ -730,6 +763,10 @@ impl PartTag for BlockEntityTag {
     const KIND: PartKind = PartKind::BlockEntity;
 }
 
+impl PartTag for FluidTag {
+    const KIND: PartKind = PartKind::Fluid;
+}
+
 /// One block part of a loaded mod: the BlockPart the game calls for a block the mod attached to.
 pub type LuaBlockPart = LuaPart<BlockTag>;
 
@@ -739,6 +776,9 @@ pub type LuaItemPart = LuaPart<ItemTag>;
 /// One block entity part of a loaded mod: the BlockEntityPart the game calls for a block entity of a
 /// type the mod declared.
 pub type LuaBlockEntityPart = LuaPart<BlockEntityTag>;
+
+/// One fluid part of a loaded mod: the FluidPart the game calls for a world fluid the mod declared.
+pub type LuaFluidPart = LuaPart<FluidTag>;
 
 /// One part of a loaded mod (a block or an item part, by `K`). It runs that mod's handlers for the
 /// hooks the part declared, and no other mod's.
@@ -831,6 +871,7 @@ fn subscriptions_of(kind: PartKind) -> &'static Mutex<Subscriptions> {
         PartKind::Block => &BLOCK_SUBSCRIPTIONS,
         PartKind::Item => &ITEM_SUBSCRIPTIONS,
         PartKind::BlockEntity => &BLOCK_ENTITY_SUBSCRIPTIONS,
+        PartKind::Fluid => &FLUID_SUBSCRIPTIONS,
     }
 }
 
@@ -1058,7 +1099,12 @@ pub(crate) mod tests {
 
     #[test]
     fn each_part_kind_interns_its_subscriptions_in_a_separate_table() {
-        let kinds = [PartKind::Block, PartKind::Item, PartKind::BlockEntity];
+        let kinds = [
+            PartKind::Block,
+            PartKind::Item,
+            PartKind::BlockEntity,
+            PartKind::Fluid,
+        ];
         for (i, a) in kinds.iter().enumerate() {
             for b in &kinds[i + 1..] {
                 assert!(!std::ptr::eq(subscriptions_of(*a), subscriptions_of(*b)));

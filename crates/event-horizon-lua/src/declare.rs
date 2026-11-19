@@ -8,6 +8,7 @@
 use std::cell::{Cell, RefCell};
 use std::time::Duration;
 
+use event_horizon_lua_convert::scalar::{ConvertError, FromLuaValue};
 use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
@@ -26,6 +27,9 @@ pub const MAX_PARTS: usize = 128;
 
 /// The most `horizon.block_entity_type` calls one mod may make.
 pub const MAX_BLOCK_ENTITY_TYPES: usize = 64;
+
+/// The most `horizon.world_fluid` calls one mod may make.
+pub const MAX_WORLD_FLUIDS: usize = 8;
 
 /// The most blocks one `horizon.block_entity_type` may name.
 pub const MAX_BLOCKS_PER_TYPE: usize = 32;
@@ -87,6 +91,10 @@ pub struct Declaration {
     pub block_entity_types: Vec<BlockEntityTypeRecord>,
     /// The block entity parts `horizon.block_entity_part` declared, in declaration order.
     pub block_entity_parts: Vec<PartRecord>,
+    /// The world fluids `horizon.world_fluid` declared, in declaration order.
+    pub fluids: Vec<FluidRecord>,
+    /// The fluid parts `horizon.fluid_part` declared, in declaration order.
+    pub fluid_parts: Vec<PartRecord>,
     /// The client commands `horizon.client_command` declared, in declaration order.
     pub client_commands: Vec<ClientCommandRecord>,
     /// The configs `horizon.config` declared, in declaration order. Each names the mod as its owner.
@@ -96,13 +104,14 @@ pub struct Declaration {
 }
 
 /// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
-/// ItemPart) or `horizon.block_entity_part` (a BlockEntityPart). Each kind has its own handler table,
-/// its own id check and its own cap.
+/// ItemPart), `horizon.block_entity_part` (a BlockEntityPart) or `horizon.fluid_part` (a FluidPart).
+/// Each kind has its own handler table, its own id check and its own cap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartKind {
     Block,
     Item,
     BlockEntity,
+    Fluid,
 }
 
 impl PartKind {
@@ -112,6 +121,7 @@ impl PartKind {
             PartKind::Block => "block_part",
             PartKind::Item => "item_part",
             PartKind::BlockEntity => "block_entity_part",
+            PartKind::Fluid => "fluid_part",
         }
     }
 
@@ -121,6 +131,7 @@ impl PartKind {
             PartKind::Block => "block",
             PartKind::Item => "item",
             PartKind::BlockEntity => "block entity",
+            PartKind::Fluid => "fluid",
         }
     }
 
@@ -130,6 +141,7 @@ impl PartKind {
             PartKind::Block => crate::generated::parts::BLOCK_PARTS,
             PartKind::Item => crate::generated::item_parts::ITEM_PARTS,
             PartKind::BlockEntity => crate::generated::block_entity_parts::BLOCK_ENTITY_PARTS,
+            PartKind::Fluid => crate::generated::fluid_parts::FLUID_PARTS,
         }
     }
 }
@@ -150,6 +162,14 @@ pub struct BlockEntityTypeRecord {
 pub struct PartRecord {
     pub id: String,
     pub hooks: Vec<String>,
+}
+
+/// A world fluid a mod declared with `horizon.world_fluid{...}`: its id in the mod's own namespace and
+/// the simulation settings the game declares it with (checked by `WorldFluid::check`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FluidRecord {
+    pub id: String,
+    pub fluid: mod_api::WorldFluid,
 }
 
 /// The key a part's handler is stored under in the mod's handler table. A space cannot be in a hook
@@ -257,6 +277,7 @@ pub fn declare_with_budget(
         .collect();
     loaded.map_err(|e| e.to_string())?;
     check_block_entities(&recorded)?;
+    check_fluid_parts(&recorded)?;
     Ok(Declaration {
         hooks,
         options: recorded.options,
@@ -266,6 +287,8 @@ pub fn declare_with_budget(
         item_parts: recorded.item_parts,
         block_entity_types: recorded.block_entity_types,
         block_entity_parts: recorded.block_entity_parts,
+        fluids: recorded.fluids,
+        fluid_parts: recorded.fluid_parts,
         client_commands: recorded.client_commands,
         configs: recorded.configs,
         commands: recorded.commands,
@@ -294,6 +317,20 @@ fn check_block_entities(recorded: &Recorded) -> Result<(), String> {
         {
             return Err(format!(
                 "horizon.block_entity_part for '{}' needs a horizon.block_entity_type of this mod with that id",
+                part.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Each fluid part attaches to a world fluid this mod declared: the game can only attach a fluid
+/// part to a fluid it knows, and a mod's fluids are its own.
+fn check_fluid_parts(recorded: &Recorded) -> Result<(), String> {
+    for part in &recorded.fluid_parts {
+        if !recorded.fluids.iter().any(|fluid| fluid.id == part.id) {
+            return Err(format!(
+                "horizon.fluid_part for '{}' needs a horizon.world_fluid of this mod with that id",
                 part.id
             ));
         }
@@ -384,6 +421,8 @@ struct Recorded {
     item_parts: Vec<PartRecord>,
     block_entity_types: Vec<BlockEntityTypeRecord>,
     block_entity_parts: Vec<PartRecord>,
+    fluids: Vec<FluidRecord>,
+    fluid_parts: Vec<PartRecord>,
     client_commands: Vec<ClientCommandRecord>,
     configs: Vec<mod_api::Config>,
     commands: Vec<CommandRecord>,
@@ -429,6 +468,8 @@ fn run(
     let item_parts = RefCell::new(Vec::<PartRecord>::new());
     let block_entity_types = RefCell::new(Vec::<BlockEntityTypeRecord>::new());
     let block_entity_parts = RefCell::new(Vec::<PartRecord>::new());
+    let fluids = RefCell::new(Vec::<FluidRecord>::new());
+    let fluid_parts = RefCell::new(Vec::<PartRecord>::new());
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
     let configs = RefCell::new(Vec::<mod_api::Config>::new());
     let commands = RefCell::new(Vec::<CommandRecord>::new());
@@ -539,6 +580,12 @@ fn run(
                     &handlers,
                 )
             })?;
+            let world_fluid = scope.create_function(|lua, value: Value| {
+                declare_world_fluid(lua, owner, value, &fluids)
+            })?;
+            let fluid_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
+                declare_part(lua, PartKind::Fluid, id, spec, &fluid_parts, &handlers)
+            })?;
             let client_command = scope.create_function(|lua, value: Value| {
                 declare_client_command(lua, value, &client_commands)
             })?;
@@ -558,6 +605,8 @@ fn run(
             horizon.raw_set("item_part", item_part)?;
             horizon.raw_set("block_entity_type", block_entity_type)?;
             horizon.raw_set("block_entity_part", block_entity_part)?;
+            horizon.raw_set("world_fluid", world_fluid)?;
+            horizon.raw_set("fluid_part", fluid_part)?;
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
@@ -586,6 +635,8 @@ fn run(
         ("item_part", LATE_DECLARE),
         ("block_entity_type", LATE_DECLARE),
         ("block_entity_part", LATE_DECLARE),
+        ("world_fluid", LATE_DECLARE),
+        ("fluid_part", LATE_DECLARE),
         ("client_command", LATE_DECLARE),
         ("config", LATE_DECLARE),
         ("command", LATE_DECLARE),
@@ -605,6 +656,8 @@ fn run(
         item_parts: item_parts.into_inner(),
         block_entity_types: block_entity_types.into_inner(),
         block_entity_parts: block_entity_parts.into_inner(),
+        fluids: fluids.into_inner(),
+        fluid_parts: fluid_parts.into_inner(),
         client_commands: client_commands.into_inner(),
         configs: configs.into_inner(),
         commands: commands.into_inner(),
@@ -823,6 +876,87 @@ fn declare_block_entity_type(
         }
     }
     records.push(BlockEntityTypeRecord { id, blocks });
+    Ok(())
+}
+
+/// Reads `horizon.world_fluid{id, tick_delay, drop_off, slope_find_distance, source_conversion,
+/// bucket}`: `id` in the mod's own namespace, the numbers checked by `WorldFluid::check` (a fluid
+/// the simulation cannot run is refused here, by name and line). The missing settings are the
+/// game's defaults. At most `MAX_WORLD_FLUIDS` per mod, none declared twice.
+fn declare_world_fluid(
+    lua: &Lua,
+    owner: &str,
+    value: Value,
+    records: &RefCell<Vec<FluidRecord>>,
+) -> mlua::Result<()> {
+    let Value::Table(table) = value else {
+        return Err(at_line(
+            lua,
+            "horizon.world_fluid needs its fields as a table".to_owned(),
+        ));
+    };
+    let mut id = None;
+    let mut fluid = mod_api::WorldFluid::default();
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let name = match &key {
+            Value::String(name) => name.to_str()?.to_string(),
+            _ => {
+                return Err(at_line(
+                    lua,
+                    "horizon.world_fluid field names are strings".to_owned(),
+                ));
+            }
+        };
+        let wrong = |reason: ConvertError| {
+            at_line(lua, format!("horizon.world_fluid field '{name}': {reason}"))
+        };
+        match name.as_str() {
+            "id" => {
+                let Value::String(text) = &value else {
+                    return Err(wrong(ConvertError::expected("a string", &value)));
+                };
+                id = Some(text.to_str()?.to_string());
+            }
+            "tick_delay" => fluid.tick_delay = i32::from_lua_value(&value).map_err(wrong)?,
+            "drop_off" => fluid.drop_off = i32::from_lua_value(&value).map_err(wrong)?,
+            "slope_find_distance" => {
+                fluid.slope_find_distance = i32::from_lua_value(&value).map_err(wrong)?;
+            }
+            "source_conversion" => {
+                fluid.source_conversion = bool::from_lua_value(&value).map_err(wrong)?;
+            }
+            "bucket" => fluid.bucket = bool::from_lua_value(&value).map_err(wrong)?,
+            other => {
+                return Err(at_line(
+                    lua,
+                    format!(
+                        "horizon.world_fluid has no field '{other}'; its fields are id, tick_delay, drop_off, slope_find_distance, source_conversion and bucket"
+                    ),
+                ));
+            }
+        }
+    }
+    let id = id.ok_or_else(|| at_line(lua, "horizon.world_fluid needs a field 'id'".to_owned()))?;
+    check_id(owner, &id)
+        .map_err(|reason| at_line(lua, format!("horizon.world_fluid field 'id': {reason}")))?;
+    fluid
+        .check()
+        .map_err(|reason| at_line(lua, format!("horizon.world_fluid '{id}': {reason}")))?;
+    let mut records = records.borrow_mut();
+    if records.len() >= MAX_WORLD_FLUIDS {
+        return Err(at_line(
+            lua,
+            format!("a mod may declare at most {MAX_WORLD_FLUIDS} world fluids"),
+        ));
+    }
+    if records.iter().any(|record| record.id == id) {
+        return Err(at_line(
+            lua,
+            format!("horizon.world_fluid: fluid '{id}' is declared twice"),
+        ));
+    }
+    records.push(FluidRecord { id, fluid });
     Ok(())
 }
 
@@ -1217,6 +1351,7 @@ fn check_part_handler(kind: PartKind, name: &str) -> Result<(), String> {
             PartKind::Block => "not a block part handler".to_owned(),
             PartKind::Item => "not an item part handler".to_owned(),
             PartKind::BlockEntity => "not a block entity part handler".to_owned(),
+            PartKind::Fluid => "not a fluid part handler".to_owned(),
         }),
         Some((_, None)) => Ok(()),
         Some((_, Some(reason))) => Err(format!("not available: {reason}")),
@@ -1244,6 +1379,7 @@ fn part_id(lua: &Lua, kind: PartKind, value: Value) -> mlua::Result<String> {
             PartKind::Block => "minecraft:stone",
             PartKind::Item => "minecraft:stick",
             PartKind::BlockEntity => "mymod:press",
+            PartKind::Fluid => "mymod:oil",
         };
         return Err(at_line(
             lua,
@@ -2595,5 +2731,127 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("unknown hook 'blocks'"), "got {err}");
+    }
+
+    /// A world fluid of `mymod` with `drop_off` set (the other settings default).
+    const OIL: &str = "horizon.world_fluid{id = \"mymod:oil\", drop_off = 3}\n";
+
+    #[test]
+    fn a_world_fluid_and_its_fluid_part_are_recorded_with_the_settings_given() {
+        let declaration = declare_in_fresh_state(&format!(
+            "{OIL}horizon.fluid_part(\"mymod:oil\", {{fluid_rules = function() end}})"
+        ))
+        .unwrap();
+        assert_eq!(declaration.fluids.len(), 1);
+        assert_eq!(declaration.fluids[0].id, "mymod:oil");
+        assert_eq!(declaration.fluids[0].fluid.drop_off, 3);
+        assert_eq!(declaration.fluids[0].fluid.tick_delay, 5);
+        assert!(declaration.fluids[0].fluid.bucket);
+        assert_eq!(
+            declaration.fluid_parts,
+            [PartRecord {
+                id: "mymod:oil".to_owned(),
+                hooks: vec!["fluid_rules".to_owned()],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_fluid_setting_outside_what_the_simulation_runs_refuses_the_mod_by_line() {
+        let drop = declare_in_fresh_state("horizon.world_fluid{id = \"mymod:oil\", drop_off = 8}")
+            .unwrap_err();
+        assert!(
+            drop.contains("line 1") && drop.contains("drop_off is 1 to 7"),
+            "got {drop}"
+        );
+        let tick =
+            declare_in_fresh_state("horizon.world_fluid{id = \"mymod:oil\", tick_delay = 0}")
+                .unwrap_err();
+        assert!(tick.contains("tick_delay is 1 or more"), "got {tick}");
+        let slope = declare_in_fresh_state(
+            "horizon.world_fluid{id = \"mymod:oil\", slope_find_distance = 5}",
+        )
+        .unwrap_err();
+        assert!(
+            slope.contains("slope_find_distance is 1 to 4"),
+            "got {slope}"
+        );
+        let wrong_type =
+            declare_in_fresh_state("horizon.world_fluid{id = \"mymod:oil\", bucket = 1}")
+                .unwrap_err();
+        assert!(wrong_type.contains("field 'bucket'"), "got {wrong_type}");
+    }
+
+    #[test]
+    fn a_world_fluid_id_is_in_the_mods_namespace_and_declared_once() {
+        let foreign =
+            declare_in_fresh_state("horizon.world_fluid{id = \"other:oil\"}").unwrap_err();
+        assert!(
+            foreign.contains("outside this mod's namespace 'mymod'"),
+            "got {foreign}"
+        );
+        let twice = declare_in_fresh_state(&format!("{OIL}{OIL}")).unwrap_err();
+        assert!(
+            twice.contains("fluid 'mymod:oil' is declared twice"),
+            "got {twice}"
+        );
+        let unknown = declare_in_fresh_state("horizon.world_fluid{id = \"mymod:oil\", depth = 2}")
+            .unwrap_err();
+        assert!(unknown.contains("has no field 'depth'"), "got {unknown}");
+    }
+
+    #[test]
+    fn at_most_eight_world_fluids_per_mod() {
+        let eight: String = (0..MAX_WORLD_FLUIDS)
+            .map(|i| format!("horizon.world_fluid{{id = \"mymod:f{i}\"}}\n"))
+            .collect();
+        assert_eq!(declare_in_fresh_state(&eight).unwrap().fluids.len(), 8);
+        let nine = format!("{eight}horizon.world_fluid{{id = \"mymod:f8\"}}");
+        let err = declare_in_fresh_state(&nine).unwrap_err();
+        assert!(err.contains("at most 8 world fluids"), "got {err}");
+    }
+
+    #[test]
+    fn a_fluid_part_needs_a_world_fluid_of_this_mod_and_a_fluid_handler() {
+        let undeclared = declare_in_fresh_state(
+            "horizon.fluid_part(\"mymod:oil\", {fluid_rules = function() end})",
+        )
+        .unwrap_err();
+        assert!(
+            undeclared.contains("needs a horizon.world_fluid of this mod"),
+            "got {undeclared}"
+        );
+        let foreign = declare_in_fresh_state(&format!(
+            "{OIL}horizon.fluid_part(\"other:oil\", {{fluid_rules = function() end}})"
+        ))
+        .unwrap_err();
+        assert!(
+            foreign.contains("needs a horizon.world_fluid of this mod"),
+            "got {foreign}"
+        );
+        let handler = declare_in_fresh_state(&format!(
+            "{OIL}horizon.fluid_part(\"mymod:oil\", {{can_survive = function() end}})"
+        ))
+        .unwrap_err();
+        assert!(
+            handler.contains("not a fluid part handler"),
+            "got {handler}"
+        );
+    }
+
+    #[test]
+    fn a_world_fluid_after_loading_is_refused() {
+        let lua = new_state().unwrap();
+        let source =
+            "horizon.on(\"tick\", function() horizon.world_fluid{id = \"mymod:late\"} end)";
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        assert!(declaration.fluids.is_empty());
+        let tick = handlers(&lua, "tick").unwrap();
+        let err = tick[0].call::<()>(()).unwrap_err().to_string();
+        assert!(
+            err.contains("declarations are only allowed while the mod loads"),
+            "got {err}"
+        );
     }
 }

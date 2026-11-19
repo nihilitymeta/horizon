@@ -1662,6 +1662,7 @@ mod tests {
                 !line.starts_with("block_part.")
                     && !line.starts_with("item_part.")
                     && !line.starts_with("block_entity_part.")
+                    && !line.starts_with("fluid_part.")
             })
             .collect();
         assert_eq!(lines.len(), 749);
@@ -1744,6 +1745,12 @@ mod tests {
                 .count(),
             9
         );
+        // The FluidPart methods: one line, the fluid_rules answer, bound.
+        let fluids: Vec<&str> = coverage
+            .lines()
+            .filter(|line| line.starts_with("fluid_part."))
+            .collect();
+        assert_eq!(fluids, ["fluid_part.fluid_rules emitted"]);
         let emitted = lines
             .iter()
             .filter(|line| line.ends_with(" emitted"))

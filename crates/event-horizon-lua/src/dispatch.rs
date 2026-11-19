@@ -87,6 +87,33 @@ pub fn accept<T: FromLuaValue>(
     })
 }
 
+/// The same as [`accept`], for an integer the output must keep in `range`: a value outside it is
+/// refused as one that does not convert (the previous value is kept, one warning is logged).
+pub fn accept_in<T>(
+    slot: &RefCell<T>,
+    id: &str,
+    hook: &str,
+    output: &str,
+    value: &Value,
+    range: std::ops::RangeInclusive<T>,
+) -> bool
+where
+    T: FromLuaValue + PartialOrd + std::fmt::Display + Copy,
+{
+    accept_by(slot, id, hook, output, value, |value| {
+        let next = T::from_lua_value(value).map_err(|err| err.to_string())?;
+        if range.contains(&next) {
+            Ok(next)
+        } else {
+            Err(format!(
+                "{next} is outside {} to {}",
+                range.start(),
+                range.end()
+            ))
+        }
+    })
+}
+
 /// The same as [`accept`], with the conversion given: a stack or a block state converts through
 /// its host, so it cannot be a `FromLuaValue` impl. The same warning and the same kept value.
 pub fn accept_by<T>(

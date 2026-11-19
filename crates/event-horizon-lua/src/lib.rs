@@ -8,6 +8,8 @@ pub mod commands;
 pub mod declare;
 pub mod discover;
 pub mod dispatch;
+#[cfg(test)]
+mod fluid_tests;
 pub mod generated;
 pub mod handles;
 pub mod host;

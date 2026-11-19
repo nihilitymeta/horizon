@@ -89,6 +89,8 @@ struct Plan {
     item_parts: emit_impl::PartsEmitted,
     /// `block_entity_parts.rs`: the BlockEntityPart methods and their handler table.
     block_entity_parts: emit_impl::PartsEmitted,
+    /// `fluid_parts.rs`: the FluidPart methods and their handler table.
+    fluid_parts: emit_impl::PartsEmitted,
     types: emit_types::TypesPlan,
     /// `hooks_coverage.txt`: every hook of the surface, emitted or with its skip reason.
     hook_coverage: String,
@@ -102,6 +104,7 @@ fn plan_pass(
     part_sigs: &[trait_sigs::HookSig],
     item_part_sigs: &[trait_sigs::HookSig],
     block_entity_part_sigs: &[trait_sigs::HookSig],
+    fluid_part_sigs: &[trait_sigs::HookSig],
     dispatch: &dispatch_sigs::DispatchSigs,
     members: &[handles::MemberIr],
     families: &[&str],
@@ -134,6 +137,7 @@ fn plan_pass(
                 .chain(part_sigs)
                 .chain(item_part_sigs)
                 .chain(block_entity_part_sigs)
+                .chain(fluid_part_sigs)
                 .filter_map(|sig| sig.ret.clone()),
         )
         .chain(handle_types.iter().cloned())
@@ -171,10 +175,19 @@ fn plan_pass(
         families,
         emit_impl::PartTrait::BlockEntity,
     );
+    let first_fluid_parts = emit_impl::emit_parts(
+        surface,
+        fluid_part_sigs,
+        dispatch,
+        &first.plain,
+        families,
+        emit_impl::PartTrait::Fluid,
+    );
     let mut decided = first_methods.decisions.clone();
     decided.extend(first_parts.decisions.iter().cloned());
     decided.extend(first_item_parts.decisions.iter().cloned());
     decided.extend(first_block_entity_parts.decisions.iter().cloned());
+    decided.extend(first_fluid_parts.decisions.iter().cloned());
     decided.extend(handle_types.iter().cloned());
     let superset = emit_types::plan_decided(
         &document.types,
@@ -190,6 +203,7 @@ fn plan_pass(
     decided.extend(first_parts.decisions.iter().cloned());
     decided.extend(first_item_parts.decisions.iter().cloned());
     decided.extend(first_block_entity_parts.decisions.iter().cloned());
+    decided.extend(first_fluid_parts.decisions.iter().cloned());
     decided.extend(bound_types);
     let types = emit_types::plan_decided(
         &document.types,
@@ -236,6 +250,17 @@ fn plan_pass(
     if block_entity_parts.emitted != first_block_entity_parts.emitted {
         return Err("the two passes emit different block entity part methods".to_owned());
     }
+    let fluid_parts = emit_impl::emit_parts(
+        surface,
+        fluid_part_sigs,
+        dispatch,
+        &types.plain,
+        families,
+        emit_impl::PartTrait::Fluid,
+    );
+    if fluid_parts.emitted != first_fluid_parts.emitted {
+        return Err("the two passes emit different fluid part methods".to_owned());
+    }
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(surface, &emitted);
     let mut hook_coverage = emit_hooks::coverage(
@@ -250,6 +275,7 @@ fn plan_pass(
         &block_entity_parts,
         emit_impl::PartTrait::BlockEntity,
     ));
+    hook_coverage.push_str(&part_coverage(&fluid_parts, emit_impl::PartTrait::Fluid));
 
     let handles =
         emit_handles::emit_listing(members, families, dropped, &types.plain, &document.hash);
@@ -267,6 +293,7 @@ fn plan_pass(
         parts,
         item_parts,
         block_entity_parts,
+        fluid_parts,
         types,
         hook_coverage,
     })
@@ -281,6 +308,7 @@ fn part_coverage(parts: &emit_impl::PartsEmitted, part: emit_impl::PartTrait) ->
         emit_impl::PartTrait::BlockEntity => {
             ("block entity parts (issue 74, P3)", "block_entity_part")
         }
+        emit_impl::PartTrait::Fluid => ("fluid parts (issue 74, P4)", "fluid_part"),
     };
     let mut out = format!("\n# {label}: the {} trait's methods\n", part.name());
     let mut lines: Vec<(String, String)> = parts
@@ -329,6 +357,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
     let block_entity_part_sigs = trait_sigs::parse_trait(&trait_text, "BlockEntityPart")
         .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
+    let fluid_part_sigs = trait_sigs::parse_trait(&trait_text, "FluidPart")
+        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
     let plan = loop {
         let refs: Vec<&str> = families.iter().map(String::as_str).collect();
         let dropped: Vec<&str> = requested
@@ -343,6 +373,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             &part_sigs,
             &item_part_sigs,
             &block_entity_part_sigs,
+            &fluid_part_sigs,
             &dispatch,
             &members,
             &refs,
@@ -372,6 +403,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         parts,
         item_parts,
         block_entity_parts,
+        fluid_parts,
         types,
         hook_coverage,
     } = plan;
@@ -384,6 +416,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
     let parts_path = args.out.join("parts.rs");
     let item_parts_path = args.out.join("item_parts.rs");
     let block_entity_parts_path = args.out.join("block_entity_parts.rs");
+    let fluid_parts_path = args.out.join("fluid_parts.rs");
     if args.check {
         let mut differ = Vec::new();
         for (path, text) in [
@@ -396,6 +429,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             (&parts_path, &parts.text),
             (&item_parts_path, &item_parts.text),
             (&block_entity_parts_path, &block_entity_parts.text),
+            (&fluid_parts_path, &fluid_parts.text),
         ] {
             let current = std::fs::read_to_string(path).ok();
             if current.as_deref() != Some(text.as_str()) {
@@ -440,6 +474,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
             block_entity_parts_path.display()
         )
     })?;
+    std::fs::write(&fluid_parts_path, &fluid_parts.text)
+        .map_err(|error| format!("cannot write {}: {error}", fluid_parts_path.display()))?;
     println!("handle families: {}", families.join(", "));
     for (family, members, bound) in &handles_out.per_family {
         println!("  {family}: {members} members, {bound} bound");

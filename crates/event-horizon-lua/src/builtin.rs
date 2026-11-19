@@ -208,6 +208,8 @@ mod tests {
         block_entity_parts: Vec<crate::host::LuaBlockEntityPart>,
         /// Refuses the block entity part of this type id (the type's own request is answered).
         refuse_part: Option<String>,
+        fluids: Vec<(String, mod_api::WorldFluid)>,
+        fluid_parts: Vec<crate::host::LuaFluidPart>,
     }
 
     impl crate::host::DeclaredKeys for RecordingKeys {
@@ -250,6 +252,18 @@ mod tests {
             if self.refuse_part.as_deref() == Some(id) {
                 return Err(format!("the game refused the part of {id}"));
             }
+            self.answer(id)
+        }
+
+        fn world_fluid(&mut self, id: &str, fluid: &mod_api::WorldFluid) -> Result<(), String> {
+            self.asked.push(format!("world fluid {id}"));
+            self.fluids.push((id.to_owned(), *fluid));
+            self.answer(id)
+        }
+
+        fn fluid_part(&mut self, id: &str, part: crate::host::LuaFluidPart) -> Result<(), String> {
+            self.asked.push(format!("fluid part {id}"));
+            self.fluid_parts.push(part);
             self.answer(id)
         }
     }
@@ -854,6 +868,22 @@ mod tests {
                 vec!["first_mod:press_block".to_owned()]
             )]
         );
+    }
+
+    #[test]
+    fn a_world_fluid_is_requested_before_its_fluid_part() {
+        let (_, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.world_fluid{id = \"first_mod:oil\"}\n\
+             horizon.fluid_part(\"first_mod:oil\", {fluid_rules = function() end})",
+        )]);
+        assert_eq!(
+            keys.asked,
+            ["world fluid first_mod:oil", "fluid part first_mod:oil"]
+        );
+        assert_eq!(keys.fluids.len(), 1);
+        assert_eq!(keys.fluid_parts.len(), 1);
     }
 
     #[test]

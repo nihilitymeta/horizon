@@ -1321,6 +1321,24 @@ fn turn_body(method: &Method<'_>) -> String {
     out
 }
 
+/// The integer outputs a mod's answer must keep in a range, as `(hook, output, range)`: the range is
+/// the Rust text of an inclusive range, the one the game holds the value to (`WorldFluid::check` for
+/// the world fluid's numbers, and the game's clamp of `fluid_rules`' answers, which the Lua side
+/// refuses instead: an answer outside it keeps the previous value and logs one warning).
+pub const OUTPUT_RANGES: &[(&str, &str, &str)] = &[
+    ("fluid_rules", "tick_delay", "1..=i32::MAX"),
+    ("fluid_rules", "drop_off", "1..=7"),
+    ("fluid_rules", "slope_find_distance", "1..=4"),
+];
+
+/// The range an output of `hook` must stay in, if [`OUTPUT_RANGES`] names one.
+fn output_range(hook: &str, key: &str) -> Option<&'static str> {
+    OUTPUT_RANGES
+        .iter()
+        .find(|(name, output, _)| *name == hook && *output == key)
+        .map(|(_, _, range)| *range)
+}
+
 /// The `commit` closure of a hook with outputs: each output the mod wrote is accepted if it
 /// converts, and the chain goes on.
 fn commit_text(method: &Method<'_>) -> String {
@@ -1355,11 +1373,17 @@ fn commit_text(method: &Method<'_>) -> String {
                 key = output.key,
                 convert = carried::converter(shape, view)
             )),
-            _ => body.push_str(&format!(
-                "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
-                accept = if optional { "accept_opt" } else { "accept" },
-                key = output.key
-            )),
+            _ => match output_range(hook, &output.key) {
+                Some(range) => body.push_str(&format!(
+                    "                crate::dispatch::accept_in(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {range});\n",
+                    key = output.key
+                )),
+                None => body.push_str(&format!(
+                    "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
+                    accept = if optional { "accept_opt" } else { "accept" },
+                    key = output.key
+                )),
+            },
         }
         if guard {
             body.push_str("                }\n");
@@ -1372,13 +1396,14 @@ fn commit_text(method: &Method<'_>) -> String {
     )
 }
 
-/// The Part traits the Lua host binds one adapter for: the BlockPart, the ItemPart and the
-/// BlockEntityPart methods.
+/// The Part traits the Lua host binds one adapter for: the BlockPart, the ItemPart, the
+/// BlockEntityPart and the FluidPart methods.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartTrait {
     Block,
     Item,
     BlockEntity,
+    Fluid,
 }
 
 impl PartTrait {
@@ -1388,6 +1413,7 @@ impl PartTrait {
             PartTrait::Block => "BlockPart",
             PartTrait::Item => "ItemPart",
             PartTrait::BlockEntity => "BlockEntityPart",
+            PartTrait::Fluid => "FluidPart",
         }
     }
 
@@ -1397,6 +1423,7 @@ impl PartTrait {
             PartTrait::Block => "LuaBlockPart",
             PartTrait::Item => "LuaItemPart",
             PartTrait::BlockEntity => "LuaBlockEntityPart",
+            PartTrait::Fluid => "LuaFluidPart",
         }
     }
 
@@ -1406,6 +1433,7 @@ impl PartTrait {
             PartTrait::Block => "block_subscribed",
             PartTrait::Item => "item_subscribed",
             PartTrait::BlockEntity => "block_entity_subscribed",
+            PartTrait::Fluid => "fluid_subscribed",
         }
     }
 
@@ -1415,6 +1443,7 @@ impl PartTrait {
             PartTrait::Block => "BLOCK_PARTS",
             PartTrait::Item => "ITEM_PARTS",
             PartTrait::BlockEntity => "BLOCK_ENTITY_PARTS",
+            PartTrait::Fluid => "FLUID_PARTS",
         }
     }
 }

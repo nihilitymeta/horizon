@@ -33,39 +33,118 @@ pub struct DispatchSigs {
     pub structs: BTreeMap<String, BTreeMap<String, String>>,
 }
 
+/// The hooks whose outputs are the `&mut` fields of their call struct (`dispatch_<hook>(host,
+/// call: calls::<Hook>Call)`) rather than `&mut` parameters. Only these read the fields as outputs:
+/// the other call-struct dispatch functions keep the outputs they had (none), so their generated
+/// methods do not change. `fluid_rules` is the FluidPart hook that needs its answers.
+pub const CALL_OUTPUT_HOOKS: &[&str] = &["fluid_rules"];
+
 /// Reads every `dispatch_<hook>` function and every struct of `source`.
 pub fn parse(source: &str) -> Result<DispatchSigs, String> {
     let file = syn::parse_file(source)
         .map_err(|error| format!("cannot parse the dispatch functions: {error}"))?;
     let mut sigs = DispatchSigs::default();
+    // The `&mut` fields of each struct, by name, in field order: a call struct's outputs.
+    let mut mut_fields: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     for item in &file.items {
-        match item {
-            Item::Fn(function) => {
-                let name = function.sig.ident.to_string();
-                let Some(hook) = name.strip_prefix("dispatch_") else {
-                    continue;
-                };
-                let outputs = outputs_of(&function.sig.inputs, &function.block);
-                sigs.hooks
-                    .entry(hook.to_owned())
-                    .and_modify(|entry| *entry = None)
-                    .or_insert(outputs);
-            }
-            Item::Struct(item) => {
-                if let Fields::Named(fields) = &item.fields {
-                    let mut types = BTreeMap::new();
-                    for field in &fields.named {
-                        if let Some(ident) = &field.ident {
-                            types.insert(ident.to_string(), squash(&field.ty));
-                        }
-                    }
-                    sigs.structs.insert(item.ident.to_string(), types);
+        if let Item::Struct(item) = item
+            && let Fields::Named(fields) = &item.fields
+        {
+            let mut types = BTreeMap::new();
+            for field in &fields.named {
+                if let Some(ident) = &field.ident {
+                    types.insert(ident.to_string(), squash(&field.ty));
                 }
             }
-            _ => {}
+            sigs.structs.insert(item.ident.to_string(), types);
+        }
+    }
+    // The call structs live in the `calls` module (`calls::FluidRulesCall`).
+    for item in &file.items {
+        let Item::Mod(module) = item else {
+            continue;
+        };
+        let Some((_, items)) = &module.content else {
+            continue;
+        };
+        if module.ident != "calls" {
+            continue;
+        }
+        for item in items {
+            let Item::Struct(item) = item else {
+                continue;
+            };
+            if let Fields::Named(fields) = &item.fields {
+                let outputs = fields
+                    .named
+                    .iter()
+                    .filter_map(|field| {
+                        let Type::Reference(reference) = &field.ty else {
+                            return None;
+                        };
+                        reference.mutability.as_ref()?;
+                        let ident = field.ident.as_ref()?;
+                        Some((ident.to_string(), squash(&reference.elem)))
+                    })
+                    .collect();
+                mut_fields.insert(item.ident.to_string(), outputs);
+            }
+        }
+    }
+    for item in &file.items {
+        if let Item::Fn(function) = item {
+            let name = function.sig.ident.to_string();
+            let Some(hook) = name.strip_prefix("dispatch_") else {
+                continue;
+            };
+            let outputs = match call_struct(&function.sig.inputs) {
+                Some(call) if CALL_OUTPUT_HOOKS.contains(&hook) => {
+                    call_outputs(mut_fields.get(&call), &function.block)
+                }
+                _ => outputs_of(&function.sig.inputs, &function.block),
+            };
+            sigs.hooks
+                .entry(hook.to_owned())
+                .and_modify(|entry| *entry = None)
+                .or_insert(outputs);
         }
     }
     Ok(sigs)
+}
+
+/// The name of a dispatch function's call struct (`call: calls::FluidRulesCall<'_>` is
+/// `FluidRulesCall`), if it has one.
+fn call_struct(inputs: &Punctuated<FnArg, Token![,]>) -> Option<String> {
+    inputs.iter().find_map(|arg| {
+        let FnArg::Typed(param) = arg else {
+            return None;
+        };
+        let Type::Path(path) = &*param.ty else {
+            return None;
+        };
+        let last = path.path.segments.last()?.ident.to_string();
+        last.ends_with("Call").then_some(last)
+    })
+}
+
+/// The outputs of a call struct: its `&mut` fields, each named as the event field it copies back.
+/// `None` when the struct is unknown.
+fn call_outputs(fields: Option<&Vec<(String, String)>>, body: &Block) -> Option<Vec<OutputSig>> {
+    let body: String = body
+        .to_token_stream()
+        .to_string()
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect();
+    let outputs = fields?
+        .iter()
+        .map(|(name, ty)| OutputSig {
+            param: name.clone(),
+            ty: ty.clone(),
+            copies_cancel: copies_cancelled(&body, name),
+        })
+        .collect();
+    Some(outputs)
 }
 
 /// The outputs of one dispatch function, or `None` when one of its `&mut` parameters cannot be
@@ -138,6 +217,12 @@ mod tests {
         pub fn dispatch_twice(a: &mut i32) {}
         pub fn dispatch_odd((a, b): &mut (u32, u32)) {}
         fn not_a_dispatch(c: &mut u32) {}
+        pub mod calls {
+            pub struct FluidRulesCall<'a> { pub dimension: u8, pub fluid: &'a str, pub tick_delay: &'a mut i32, pub converts_to_source: &'a mut bool }
+            pub struct SignChangedCall<'a> { pub slot: &'a mut u8 }
+        }
+        pub fn dispatch_fluid_rules(level: &dyn LevelHost, call: calls::FluidRulesCall<'_>) { let calls::FluidRulesCall { tick_delay, .. } = call; *tick_delay = event.tick_delay; }
+        pub fn dispatch_sign_changed(host: &mut dyn ServerHost, call: calls::SignChangedCall<'_>) {}
     ";
 
     fn outputs(sigs: &DispatchSigs, hook: &str) -> Vec<(String, String)> {
@@ -200,6 +285,25 @@ mod tests {
         assert_eq!(fields["pos"], "[i32;3]");
         assert_eq!(fields["cancelled"], "bool");
         assert_eq!(sigs.structs["ComputeFovEvent"]["degrees"], "f32");
+    }
+
+    #[test]
+    fn a_listed_call_struct_gives_its_mut_fields_as_outputs() {
+        let sigs = parse(SOURCE).expect("the source parses");
+        assert_eq!(
+            outputs(&sigs, "fluid_rules"),
+            [
+                ("tick_delay".to_owned(), "i32".to_owned()),
+                ("converts_to_source".to_owned(), "bool".to_owned()),
+            ]
+        );
+        assert!(!sigs.hooks["fluid_rules"].as_ref().expect("decided")[0].copies_cancel);
+    }
+
+    #[test]
+    fn an_unlisted_call_struct_gives_no_outputs() {
+        let sigs = parse(SOURCE).expect("the source parses");
+        assert!(outputs(&sigs, "sign_changed").is_empty());
     }
 
     #[test]
