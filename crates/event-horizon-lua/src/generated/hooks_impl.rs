@@ -7385,6 +7385,7 @@ impl mod_api::Hooks for LuaHost {
                 let data = lua.create_table()?;
                 data.raw_set("source", crate::commands::source_lua(lua, turn.read_or_unavailable(), event.source)?)?;
                 data.raw_set("command", crate::commands::invocation_lua(lua, turn.read_or_unavailable(), event.command)?)?;
+                data.raw_set("feedback", crate::commands::feedback_lua(lua)?)?;
                 data.raw_set("ran", out_ran.borrow().to_lua_value(lua)?)?;
                 crate::dispatch::new_event(lua, data, &["ran"])
             },
@@ -8592,6 +8593,11 @@ impl mod_api::Hooks for LuaHost {
     fn register_client_commands(&self, host: &mut dyn ClientHost, event: &mut mod_api::RegisterClientCommandsEvent<'_>) {
         let _ = host;
         self.declared_client_commands(event.commands);
+    }
+
+    fn register_commands(&self, host: &mut dyn ServerHost, event: &mut mod_api::RegisterCommandsEvent<'_>) {
+        let _ = host;
+        self.declared_commands(event.commands);
     }
 
     fn register_configs(&self, host: HostSide, event: &mut mod_api::RegisterConfigsEvent<'_>) {

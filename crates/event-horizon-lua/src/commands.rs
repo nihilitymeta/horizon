@@ -6,11 +6,16 @@
 //! A value that has no faithful Lua form is an `Err`: the generated build closure then refuses the
 //! delivery for that mod and logs one line. A partial table is never given.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use event_horizon_lua_convert::scalar::ToLuaValue;
-use mlua::{Error, Lua, Table, Value};
-use mod_api::{CommandArgumentValue, CommandInvocation, CommandSource, DimensionKey, Host, Tag};
+use mlua::{AnyUserData, Error, Lua, MultiValue, Table, UserData, Value};
+use mod_api::{
+    CommandArgumentValue, CommandInvocation, CommandSource, DimensionKey, Host, Tag, Text,
+};
 
 use crate::handles::{Family, family_list_out, family_out};
+use crate::hostcall::{NOT_HERE, TurnHost};
 use crate::stacks;
 
 /// The most handles a list argument (`entities`, `players`) carries to Lua. A longer list refuses
@@ -190,23 +195,128 @@ pub fn invocation_lua(
     )
 }
 
+/// The operation `event.feedback` runs through the turn's host. It is a write, so it costs what a
+/// write costs.
+pub(crate) const FEEDBACK_OP: &str = "feedback";
+/// What one `event.feedback` call spends of the turn's budget: a write.
+pub(crate) const FEEDBACK_COST: u32 = 10;
+/// The most `event.feedback` lines one `run_mod_command` turn may give. A call past it raises.
+pub const MAX_FEEDBACK: u32 = 32;
+/// The longest `event.feedback` line, in bytes. A longer one raises.
+pub const MAX_FEEDBACK_BYTES: usize = 4096;
+
+/// The userdata `event.feedback` passes to the turn's host, one per mod turn: it counts the lines
+/// the turn has given so far.
+pub(crate) struct FeedbackSink {
+    given: AtomicU32,
+}
+
+impl UserData for FeedbackSink {}
+
+/// The `feedback` function of a `run_mod_command` event. Each call is a host call of the turn, so it
+/// is answered only while the turn is open and its host is a server's; elsewhere it raises.
+pub fn feedback_lua(lua: &Lua) -> mlua::Result<Value> {
+    let sink = lua.create_userdata(FeedbackSink {
+        given: AtomicU32::new(0),
+    })?;
+    let feedback = lua.create_function(move |lua, text: Value| {
+        crate::hostcall::host_call(
+            lua,
+            FEEDBACK_OP,
+            sink.clone(),
+            MultiValue::from_vec(vec![text]),
+        )
+    })?;
+    Ok(Value::Function(feedback))
+}
+
+/// Runs `event.feedback(text)` for the turn: a plain string of at most `MAX_FEEDBACK_BYTES`, sent
+/// to the command's sender as a literal text. Refused past `MAX_FEEDBACK` lines, and when the game
+/// refuses the text.
+pub(crate) fn feedback_op(
+    host: &mut TurnHost<'_>,
+    this: &AnyUserData,
+    args: MultiValue,
+) -> mlua::Result<Value> {
+    let Some(server) = host.server() else {
+        return Err(Error::runtime(NOT_HERE));
+    };
+    let sink = this.borrow::<FeedbackSink>()?;
+    let text = match args.into_iter().next() {
+        Some(Value::String(text)) => text,
+        _ => return Err(Error::runtime("feedback needs a string")),
+    };
+    if text.as_bytes().len() > MAX_FEEDBACK_BYTES {
+        return Err(Error::runtime(format!(
+            "feedback is longer than {MAX_FEEDBACK_BYTES} bytes"
+        )));
+    }
+    let given = sink.given.load(Ordering::Relaxed);
+    if given >= MAX_FEEDBACK {
+        return Err(Error::runtime(format!(
+            "a turn may give at most {MAX_FEEDBACK} feedback lines"
+        )));
+    }
+    sink.given.store(given + 1, Ordering::Relaxed);
+    let line = Text::literal(text.to_str()?.to_owned());
+    server
+        .commands()
+        .feedback(line)
+        .map_err(|err| Error::runtime(format!("feedback refused: {err}")))?;
+    Ok(Value::Nil)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use mod_api::__private::game::BackendRefOf;
     use mod_api::ServerHost;
-    use mod_api::prelude::LevelsBackend;
+    use mod_api::prelude::{LevelsBackend, ServicesServerHost};
     use mod_api::{
-        Backend, BackendRef, CommandArgument, EntityRef, Identifier, LevelRef, PermissionLevel,
-        Tag, WorldEpoch,
+        Backend, BackendRef, CommandArgument, Commands, EntityRef, Identifier, LevelRef, Messages,
+        PermissionLevel, Players, Tag, TextFormError, WorldEpoch,
     };
 
-    /// A host whose only answers are the dimension names: the overworld and the nether. The end is
-    /// a key the game never named here, so it has no name.
-    pub(crate) struct Dims;
+    /// The commands service of a test host: the feedback it is given, in order. `refuse` makes
+    /// every line refused by the game.
+    #[derive(Debug, Default)]
+    pub(crate) struct Recorder {
+        pub(crate) feedback: Vec<Text>,
+        pub(crate) refuse: bool,
+    }
+
+    impl Commands for Recorder {
+        fn feedback(&mut self, line: Text) -> Result<(), TextFormError> {
+            if self.refuse {
+                return Err(TextFormError::Malformed);
+            }
+            self.feedback.push(line);
+            Ok(())
+        }
+    }
+    impl Messages for Recorder {}
+    impl Players for Recorder {}
+
+    /// A host whose answers are the dimension names, the overworld and the nether (the end is a key
+    /// the game never named here, so it has no name), and whose commands service is a [`Recorder`].
+    #[derive(Default)]
+    pub(crate) struct Dims {
+        pub(crate) commands: Recorder,
+    }
 
     impl ServerHost for Dims {}
-    mod_api::impl_server_host_areas!(Dims);
+    mod_api::impl_server_host_areas!(Dims, except(services));
+    impl ServicesServerHost for Dims {
+        fn commands(&mut self) -> &mut dyn Commands {
+            &mut self.commands
+        }
+        fn messages(&self) -> &dyn Messages {
+            &self.commands
+        }
+        fn players(&self) -> &dyn Players {
+            &self.commands
+        }
+    }
 
     impl Host for Dims {
         fn backend(&self) -> Option<BackendRef<'_>> {
@@ -271,7 +381,7 @@ pub(crate) mod tests {
         let console = table_of(
             source_lua(
                 &lua,
-                &Dims,
+                &Dims::default(),
                 &CommandSource::Console {
                     permission: PermissionLevel::Admins,
                 },
@@ -284,7 +394,7 @@ pub(crate) mod tests {
         let block = table_of(
             source_lua(
                 &lua,
-                &Dims,
+                &Dims::default(),
                 &CommandSource::CommandBlock {
                     position: [1, -2, 3],
                     level: DimensionKey::OVERWORLD,
@@ -304,7 +414,7 @@ pub(crate) mod tests {
         let function = table_of(
             source_lua(
                 &lua,
-                &Dims,
+                &Dims::default(),
                 &CommandSource::Function {
                     id: Identifier::parse("demo:run").expect("a valid id"),
                     permission: PermissionLevel::All,
@@ -319,7 +429,7 @@ pub(crate) mod tests {
         let minecart = table_of(
             source_lua(
                 &lua,
-                &Dims,
+                &Dims::default(),
                 &CommandSource::CommandBlockMinecart {
                     entity: EntityRef::new(WorldEpoch::new(1), 9),
                     permission: PermissionLevel::Owners,
@@ -376,7 +486,8 @@ pub(crate) mod tests {
             arg("dup", CommandArgumentValue::String("first".to_owned())),
             arg("dup", CommandArgumentValue::String("second".to_owned())),
         ]);
-        let table = table_of(invocation_lua(&lua, &Dims, &invocation).expect("it converts"));
+        let table =
+            table_of(invocation_lua(&lua, &Dims::default(), &invocation).expect("it converts"));
 
         let literals = table_of(field(&table, "literals"));
         assert_eq!(
@@ -422,9 +533,9 @@ pub(crate) mod tests {
         let at_cap = vec![EntityRef::new(WorldEpoch::new(1), 1); MAX_LIST];
         let over_cap = vec![EntityRef::new(WorldEpoch::new(1), 1); MAX_LIST + 1];
         let ok = empty_invocation(vec![arg("l", CommandArgumentValue::Entities(at_cap))]);
-        assert!(invocation_lua(&lua, &Dims, &ok).is_ok());
+        assert!(invocation_lua(&lua, &Dims::default(), &ok).is_ok());
         let too_long = empty_invocation(vec![arg("l", CommandArgumentValue::Entities(over_cap))]);
-        assert!(invocation_lua(&lua, &Dims, &too_long).is_err());
+        assert!(invocation_lua(&lua, &Dims::default(), &too_long).is_err());
 
         let unnamed = CommandInvocation::new(
             vec!["demo".to_owned()],
@@ -432,22 +543,24 @@ pub(crate) mod tests {
             DimensionKey::END,
             [0.0; 3],
         );
-        assert!(invocation_lua(&lua, &Dims, &unnamed).is_err());
+        assert!(invocation_lua(&lua, &Dims::default(), &unnamed).is_err());
         let block = CommandSource::CommandBlock {
             position: [0, 0, 0],
             level: DimensionKey::END,
             permission: PermissionLevel::All,
         };
-        assert!(source_lua(&lua, &Dims, &block).is_err());
+        assert!(source_lua(&lua, &Dims::default(), &block).is_err());
     }
 }
 
 #[cfg(test)]
 mod dispatch_tests {
+    use super::MAX_FEEDBACK;
     use super::tests::Dims;
     use crate::discover::{Discovered, ENTRY, Side};
     use crate::host::tests::{captured_with_prefix, install_capture};
     use crate::host::{LuaHost, LuaMod};
+    use mod_api::Text;
     use mod_api::{
         CommandArgument, CommandArgumentValue, CommandInvocation, CommandSource, DimensionKey,
         EntityRef, Flow, Hooks, PermissionLevel, RunModCommandEvent, WorldEpoch,
@@ -493,7 +606,7 @@ mod dispatch_tests {
             command,
             cancelled: false,
         };
-        Hooks::run_mod_command(host, &mut Dims, &mut event)
+        Hooks::run_mod_command(host, &mut Dims::default(), &mut event)
     }
 
     const RUN: &str = "horizon.on(\"run_mod_command\", function(event) ";
@@ -628,5 +741,101 @@ mod dispatch_tests {
         let lines = captured_with_prefix(&format!("{id}: run_mod_command"));
         assert_eq!(lines.len(), 1, "got {lines:?}");
         assert!(lines[0].contains("over the cap"));
+    }
+
+    /// Fires `run_mod_command` at `host` with `dims` open, so the test can read what the game was given.
+    fn run_with(host: &LuaHost, dims: &mut Dims) -> Flow {
+        let source = console();
+        let command = invocation();
+        let mut event = RunModCommandEvent {
+            source: &source,
+            command: &command,
+            cancelled: false,
+        };
+        Hooks::run_mod_command(host, dims, &mut event)
+    }
+
+    /// A host whose `run_mod_command` handler runs `body` (with `event` in scope) and then ends.
+    fn feedback_host(root: &Path, id: &str, body: &str) -> LuaHost {
+        LuaHost::new(vec![load(root, id, &format!("{RUN}{body} end)"))])
+    }
+
+    #[test]
+    fn feedback_reaches_the_commands_service_once_per_call() {
+        let root = tempfile::tempdir().unwrap();
+        let host = feedback_host(
+            root.path(),
+            "fb_once",
+            "event.feedback(\"got 3\") event.ran = true",
+        );
+        let mut dims = Dims::default();
+        assert!(matches!(run_with(&host, &mut dims), Flow::Cancel));
+        assert_eq!(dims.commands.feedback, vec![Text::literal("got 3")]);
+    }
+
+    #[test]
+    fn the_33rd_feedback_line_of_a_turn_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let host = feedback_host(
+            root.path(),
+            "fb_flood",
+            "for i = 1, 40 do event.feedback(\"line \" .. i) end",
+        );
+        let mut dims = Dims::default();
+        assert!(matches!(run_with(&host, &mut dims), Flow::Continue));
+        let lines: Vec<Text> = (1..=MAX_FEEDBACK)
+            .map(|i| Text::literal(format!("line {i}")))
+            .collect();
+        assert_eq!(dims.commands.feedback, lines);
+    }
+
+    #[test]
+    fn feedback_is_capped_in_bytes_and_must_be_a_string() {
+        let root = tempfile::tempdir().unwrap();
+        let mut dims = Dims::default();
+        let long = feedback_host(
+            root.path(),
+            "fb_long",
+            "event.feedback(string.rep(\"a\", 4097))",
+        );
+        assert!(matches!(run_with(&long, &mut dims), Flow::Continue));
+        assert!(dims.commands.feedback.is_empty());
+
+        let at_cap = feedback_host(
+            root.path(),
+            "fb_cap",
+            "event.feedback(string.rep(\"a\", 4096)) event.ran = true",
+        );
+        assert!(matches!(run_with(&at_cap, &mut dims), Flow::Cancel));
+        assert_eq!(dims.commands.feedback.len(), 1);
+
+        let number = feedback_host(root.path(), "fb_number", "event.feedback(3)");
+        assert!(matches!(run_with(&number, &mut dims), Flow::Continue));
+        assert_eq!(dims.commands.feedback.len(), 1);
+    }
+
+    #[test]
+    fn a_line_the_game_refuses_fails_the_call_and_voids_the_turn() {
+        let root = tempfile::tempdir().unwrap();
+        let host = feedback_host(
+            root.path(),
+            "fb_refused",
+            "event.feedback(\"x\") event.ran = true",
+        );
+        let mut dims = Dims::default();
+        dims.commands.refuse = true;
+        assert!(matches!(run_with(&host, &mut dims), Flow::Continue));
+        assert!(dims.commands.feedback.is_empty());
+    }
+
+    #[test]
+    fn feedback_called_with_no_turn_open_raises_outside_a_hook() {
+        let lua = mlua::Lua::new();
+        let feedback: mlua::Function = match crate::commands::feedback_lua(&lua).unwrap() {
+            mlua::Value::Function(function) => function,
+            other => panic!("expected a function, got {}", other.type_name()),
+        };
+        let err = feedback.call::<()>("late").unwrap_err().to_string();
+        assert!(err.contains("no host call outside a hook"), "got {err}");
     }
 }

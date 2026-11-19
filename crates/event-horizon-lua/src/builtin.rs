@@ -511,6 +511,80 @@ mod tests {
     }
 
     #[test]
+    fn declared_commands_are_answered_for_every_server_mod_in_order() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(
+            root.path(),
+            "a_first",
+            "first_mod",
+            "horizon.command{usage = \"ban <who:word>\", level = 2}\n\
+             horizon.command{usage = \"hush\"}\n",
+        );
+        mod_folder_on(
+            root.path(),
+            "b_client",
+            "client_mod",
+            "client",
+            "horizon.command{usage = \"unseen\"}\n",
+        );
+        mod_folder_on(
+            root.path(),
+            "c_server",
+            "server_mod",
+            "server",
+            "horizon.command{usage = \"srv <n:integer>\", level = 4}\n",
+        );
+        let (mods, refused) = load_mods(root.path());
+        assert!(refused.is_empty(), "got {refused:?}");
+        let host = LuaHost::new(mods);
+        let mut commands = Vec::new();
+        host.declared_commands(&mut commands);
+        let got: Vec<(&str, u8)> = commands
+            .iter()
+            .map(|c| (c.usage.as_str(), c.level))
+            .collect();
+        assert_eq!(
+            got,
+            [("ban <who:word>", 2), ("hush", 0), ("srv <n:integer>", 4)]
+        );
+        assert!(subscribes_to(&host, "register_commands"));
+    }
+
+    #[test]
+    fn a_client_only_mod_with_commands_does_not_subscribe_to_the_server_hook() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder_on(
+            root.path(),
+            "a_client",
+            "client_mod",
+            "client",
+            "horizon.command{usage = \"unseen\"}\n",
+        );
+        let (mods, _) = load_mods(root.path());
+        let host = LuaHost::new(mods);
+        let mut commands = Vec::new();
+        host.declared_commands(&mut commands);
+        assert!(commands.is_empty());
+        assert!(!subscribes_to(&host, "register_commands"));
+    }
+
+    #[test]
+    fn a_command_without_a_run_mod_command_handler_is_warned_once_at_load() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder(
+            root.path(),
+            "a_nohandler",
+            "nohandler_mod",
+            "horizon.command{usage = \"lonely\"}\n",
+        );
+        crate::host::tests::install_capture();
+        let (mods, _) = load_mods(root.path());
+        let _host = LuaHost::new(mods);
+        let lines = crate::host::tests::captured_with_prefix("nohandler_mod: declares commands");
+        assert_eq!(lines.len(), 1, "got {lines:?}");
+    }
+
+    #[test]
     fn a_mod_that_declares_nothing_contributes_nothing_and_no_subscription() {
         let root = tempfile::tempdir().unwrap();
         mod_folder(

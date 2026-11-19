@@ -39,6 +39,9 @@ pub const MAX_USAGE: usize = 256;
 /// The longest first word (the command's name) of a client command's usage, in characters.
 pub const MAX_COMMAND_NAME: usize = 32;
 
+/// The most `horizon.command` calls one mod may make.
+pub const MAX_COMMANDS: usize = 64;
+
 /// The most `horizon.config` calls one mod may make.
 pub const MAX_CONFIGS: usize = 8;
 
@@ -88,6 +91,8 @@ pub struct Declaration {
     pub client_commands: Vec<ClientCommandRecord>,
     /// The configs `horizon.config` declared, in declaration order. Each names the mod as its owner.
     pub configs: Vec<mod_api::Config>,
+    /// The server commands `horizon.command` declared, in declaration order.
+    pub commands: Vec<CommandRecord>,
 }
 
 /// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
@@ -183,6 +188,21 @@ impl ClientCommandRecord {
     }
 }
 
+/// A server command a mod declared with `horizon.command{usage, level}`: the usage as the mod wrote
+/// it, and the operator level a player needs (0 to 4, 0 when the mod gives none). The host parses it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommandRecord {
+    pub usage: String,
+    pub level: u8,
+}
+
+impl CommandRecord {
+    /// The game's declaration of this command: the usage at the declared level.
+    pub fn to_command(&self) -> mod_api::Command {
+        mod_api::Command::op(&self.usage, self.level)
+    }
+}
+
 impl BlockRecord {
     /// The game's declaration of this block: the template and the id, every other field default.
     pub fn to_block(&self) -> mod_api::Block {
@@ -248,6 +268,7 @@ pub fn declare_with_budget(
         block_entity_parts: recorded.block_entity_parts,
         client_commands: recorded.client_commands,
         configs: recorded.configs,
+        commands: recorded.commands,
     })
 }
 
@@ -365,6 +386,7 @@ struct Recorded {
     block_entity_parts: Vec<PartRecord>,
     client_commands: Vec<ClientCommandRecord>,
     configs: Vec<mod_api::Config>,
+    commands: Vec<CommandRecord>,
 }
 
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
@@ -409,6 +431,7 @@ fn run(
     let block_entity_parts = RefCell::new(Vec::<PartRecord>::new());
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
     let configs = RefCell::new(Vec::<mod_api::Config>::new());
+    let commands = RefCell::new(Vec::<CommandRecord>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
@@ -522,9 +545,13 @@ fn run(
             let config = scope.create_function(|lua, value: Value| {
                 declare_config(lua, owner, value, &configs)
             })?;
+            let command = scope.create_function(|lua, value: Value| {
+                declare_command(lua, value, &commands)
+            })?;
             horizon.raw_set("on", on)?;
             horizon.raw_set("client_command", client_command)?;
             horizon.raw_set("config", config)?;
+            horizon.raw_set("command", command)?;
             horizon.raw_set("block", block)?;
             horizon.raw_set("item", item)?;
             horizon.raw_set("block_part", block_part)?;
@@ -561,6 +588,7 @@ fn run(
         ("block_entity_part", LATE_DECLARE),
         ("client_command", LATE_DECLARE),
         ("config", LATE_DECLARE),
+        ("command", LATE_DECLARE),
     ] {
         let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
             Err(Error::runtime(message))
@@ -579,6 +607,7 @@ fn run(
         block_entity_parts: block_entity_parts.into_inner(),
         client_commands: client_commands.into_inner(),
         configs: configs.into_inner(),
+        commands: commands.into_inner(),
     };
     Ok((recorded, loaded))
 }
@@ -836,6 +865,71 @@ pub fn check_usage(usage: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Reads the fields of a command declaration: `usage` (a string that passes `check_usage`) and, when
+/// `levels` is set, `level` (an integer from 0 to 4, 0 when absent). `name` is the function's name in
+/// the messages. Returns the usage and the level.
+fn command_fields(lua: &Lua, value: Value, name: &str, levels: bool) -> mlua::Result<(String, u8)> {
+    let table = match value {
+        Value::Table(table) => table,
+        other => {
+            return Err(at_line(
+                lua,
+                format!(
+                    "{name} needs its fields as a table, not {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    };
+    let mut usage = None;
+    let mut level = None;
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let field = match &key {
+            Value::String(field) => field.to_str()?.to_string(),
+            _ => {
+                return Err(at_line(lua, format!("{name} field names are strings")));
+            }
+        };
+        match (field.as_str(), value) {
+            ("usage", Value::String(text)) => usage = Some(text.to_str()?.to_string()),
+            ("usage", _) => {
+                return Err(at_line(lua, format!("{name} field 'usage' needs a string")));
+            }
+            ("level", value) if levels => level = Some(level_value(lua, name, &value)?),
+            (other, _) => {
+                let fields = if levels { "usage and level" } else { "usage" };
+                return Err(at_line(
+                    lua,
+                    format!("{name} has no field '{other}'; its fields are {fields}"),
+                ));
+            }
+        }
+    }
+    let usage = usage.ok_or_else(|| at_line(lua, format!("{name} needs a field 'usage'")))?;
+    check_usage(&usage)
+        .map_err(|reason| at_line(lua, format!("{name} field 'usage': {reason}")))?;
+    Ok((usage, level.unwrap_or(0)))
+}
+
+/// The operator level a `horizon.command` names: an integer from 0 to 4. Anything else is refused,
+/// not clamped, so a level is never widened by accident.
+fn level_value(lua: &Lua, name: &str, value: &Value) -> mlua::Result<u8> {
+    let number = match value {
+        Value::Integer(number) => *number as f64,
+        Value::Number(number) if number.fract() == 0.0 => *number,
+        _ => f64::NAN,
+    };
+    if (0.0..=4.0).contains(&number) {
+        Ok(number as u8)
+    } else {
+        Err(at_line(
+            lua,
+            format!("{name} field 'level' needs an integer from 0 to 4"),
+        ))
+    }
+}
+
 /// Reads `horizon.client_command{usage = "..."}`: the one field `usage`, a string that passes
 /// `check_usage`. The record is kept in `records`, at most `MAX_CLIENT_COMMANDS` and no usage twice.
 fn declare_client_command(
@@ -843,60 +937,7 @@ fn declare_client_command(
     value: Value,
     records: &RefCell<Vec<ClientCommandRecord>>,
 ) -> mlua::Result<()> {
-    let table = match value {
-        Value::Table(table) => table,
-        other => {
-            return Err(at_line(
-                lua,
-                format!(
-                    "horizon.client_command needs its fields as a table, not {}",
-                    other.type_name()
-                ),
-            ));
-        }
-    };
-    let mut usage = None;
-    for pair in table.pairs::<Value, Value>() {
-        let (key, value) = pair?;
-        let name = match &key {
-            Value::String(name) => name.to_str()?.to_string(),
-            _ => {
-                return Err(at_line(
-                    lua,
-                    "horizon.client_command field names are strings".to_owned(),
-                ));
-            }
-        };
-        match (name.as_str(), value) {
-            ("usage", Value::String(text)) => usage = Some(text.to_str()?.to_string()),
-            ("usage", _) => {
-                return Err(at_line(
-                    lua,
-                    "horizon.client_command field 'usage' needs a string".to_owned(),
-                ));
-            }
-            (other, _) => {
-                return Err(at_line(
-                    lua,
-                    format!(
-                        "horizon.client_command has no field '{other}'; its only field is usage"
-                    ),
-                ));
-            }
-        }
-    }
-    let usage = usage.ok_or_else(|| {
-        at_line(
-            lua,
-            "horizon.client_command needs a field 'usage'".to_owned(),
-        )
-    })?;
-    check_usage(&usage).map_err(|reason| {
-        at_line(
-            lua,
-            format!("horizon.client_command field 'usage': {reason}"),
-        )
-    })?;
+    let (usage, _) = command_fields(lua, value, "horizon.client_command", false)?;
     let mut records = records.borrow_mut();
     if records.len() >= MAX_CLIENT_COMMANDS {
         return Err(at_line(
@@ -911,6 +952,31 @@ fn declare_client_command(
         ));
     }
     records.push(ClientCommandRecord { usage });
+    Ok(())
+}
+
+/// Reads `horizon.command{usage = "...", level = n}`: `usage` as for a client command, and `level`
+/// (0 to 4, 0 when absent). The record is kept in `records`, at most `MAX_COMMANDS`, no usage twice.
+fn declare_command(
+    lua: &Lua,
+    value: Value,
+    records: &RefCell<Vec<CommandRecord>>,
+) -> mlua::Result<()> {
+    let (usage, level) = command_fields(lua, value, "horizon.command", true)?;
+    let mut records = records.borrow_mut();
+    if records.len() >= MAX_COMMANDS {
+        return Err(at_line(
+            lua,
+            format!("a mod may declare at most {MAX_COMMANDS} commands"),
+        ));
+    }
+    if records.iter().any(|record| record.usage == usage) {
+        return Err(at_line(
+            lua,
+            format!("horizon.command: usage '{usage}' is declared twice"),
+        ));
+    }
+    records.push(CommandRecord { usage, level });
     Ok(())
 }
 
@@ -1550,6 +1616,121 @@ mod tests {
         let declaration = declare_in_fresh_state("horizon.on(\"tick\", function() end)").unwrap();
         assert!(declaration.blocks.is_empty());
         assert!(declaration.items.is_empty());
+    }
+
+    fn command_error(source: &str) -> String {
+        declare_in_fresh_state(source).unwrap_err()
+    }
+
+    #[test]
+    fn server_commands_are_recorded_with_their_levels_and_level_zero_by_default() {
+        let source = "horizon.command{usage = \"ban <who:word>\", level = 2}\n\
+                      horizon.command{usage = \"hush\"}\n";
+        let declaration = declare_in_fresh_state(source).unwrap();
+        let got: Vec<(&str, u8)> = declaration
+            .commands
+            .iter()
+            .map(|c| (c.usage.as_str(), c.level))
+            .collect();
+        assert_eq!(got, [("ban <who:word>", 2), ("hush", 0)]);
+        assert!(declaration.client_commands.is_empty());
+        assert!(declaration.hooks.is_empty());
+    }
+
+    #[test]
+    fn a_command_level_is_an_integer_from_0_to_4_and_nothing_else() {
+        for level in ["5", "-1", "1.5", "\"2\"", "true"] {
+            let err = command_error(&format!(
+                "horizon.command{{usage = \"x\", level = {level}}}"
+            ));
+            assert!(
+                err.contains("needs an integer from 0 to 4"),
+                "{level}: got {err}"
+            );
+        }
+        for level in ["0", "4", "4.0"] {
+            let source = format!("horizon.command{{usage = \"x\", level = {level}}}");
+            assert!(
+                declare_in_fresh_state(&source).is_ok(),
+                "{level} should pass"
+            );
+        }
+    }
+
+    #[test]
+    fn a_command_usage_follows_the_client_rules_and_its_fields_are_usage_and_level() {
+        let err = command_error("horizon.command{usage = \"<x:word>\"}");
+        assert!(err.contains("first word is an argument"), "got {err}");
+        let err = command_error("horizon.command{usage = \"Bad\"}");
+        assert!(err.contains("must use only a-z"), "got {err}");
+        let err = command_error("horizon.command{}");
+        assert!(err.contains("needs a field 'usage'"), "got {err}");
+        let err = command_error("horizon.command{usage = \"x\", op = 1}");
+        assert!(
+            err.contains("has no field 'op'; its fields are usage and level"),
+            "got {err}"
+        );
+        let err = command_error("horizon.command \"x\"");
+        assert!(err.contains("needs its fields as a table"), "got {err}");
+    }
+
+    #[test]
+    fn a_duplicate_command_usage_is_refused_and_at_most_64_commands() {
+        let err = command_error(
+            "horizon.command{usage = \"x <a:word>\"}\nhorizon.command{usage = \"x <a:word>\"}",
+        );
+        assert!(err.contains("declared twice"), "got {err}");
+        let mut source = String::new();
+        for at in 0..=MAX_COMMANDS {
+            source.push_str(&format!("horizon.command{{usage = \"c{at}\"}}\n"));
+        }
+        let err = command_error(&source);
+        assert!(err.contains("at most 64 commands"), "got {err}");
+        let at_cap = &source[..source.rfind("horizon.command").unwrap()];
+        assert_eq!(
+            declare_in_fresh_state(at_cap).unwrap().commands.len(),
+            MAX_COMMANDS
+        );
+    }
+
+    #[test]
+    fn a_command_after_loading_is_refused() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"tick\", function() horizon.command{usage = \"late\"} end)";
+        let declaration =
+            declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &is_known).unwrap();
+        assert!(declaration.commands.is_empty());
+        let tick = handlers(&lua, "tick").unwrap();
+        let err = tick[0].call::<()>(()).unwrap_err().to_string();
+        assert!(
+            err.contains("declarations are only allowed while the mod loads"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn the_register_commands_hook_cannot_be_subscribed_to() {
+        let lua = new_state().unwrap();
+        let source = "horizon.on(\"register_commands\", function() end)";
+        let err = declare(&lua, "mymod", source, "@lua-mods/test/main.luau", &|name| {
+            crate::generated::hooks::is_emitted(name)
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("unknown hook 'register_commands'"),
+            "got {err}"
+        );
+    }
+
+    #[test]
+    fn a_command_becomes_a_game_command_at_its_level() {
+        let record = CommandRecord {
+            usage: "ban <who:word>".to_owned(),
+            level: 2,
+        };
+        let command = record.to_command();
+        assert_eq!(command.usage, "ban <who:word>");
+        assert_eq!(command.level, 2);
     }
 
     fn client_command_error(source: &str) -> String {

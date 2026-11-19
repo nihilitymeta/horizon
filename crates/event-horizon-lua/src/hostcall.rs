@@ -289,6 +289,9 @@ fn unknown(op: &str) -> Error {
 /// What an operation costs, from the generated table of the handle families.
 #[cfg(not(test))]
 fn op_cost(op: &str) -> mlua::Result<u32> {
+    if op == crate::commands::FEEDBACK_OP {
+        return Ok(crate::commands::FEEDBACK_COST);
+    }
     crate::generated::handles::cost(op).ok_or_else(|| unknown(op))
 }
 
@@ -301,12 +304,18 @@ fn run_op(
     this: AnyUserData,
     args: MultiValue,
 ) -> mlua::Result<Value> {
+    if op == crate::commands::FEEDBACK_OP {
+        return crate::commands::feedback_op(host, &this, args);
+    }
     crate::generated::handles::run(lua, host, op, &this, args).unwrap_or_else(|| Err(unknown(op)))
 }
 
 /// The H0 stub's table first, then the generated one: the stub's names are not generated names.
 #[cfg(test)]
 fn op_cost(op: &str) -> mlua::Result<u32> {
+    if op == crate::commands::FEEDBACK_OP {
+        return Ok(crate::commands::FEEDBACK_COST);
+    }
     match stub::cost(op) {
         Some(cost) => Ok(cost),
         None => crate::generated::handles::cost(op).ok_or_else(|| unknown(op)),
@@ -321,6 +330,9 @@ fn run_op(
     this: AnyUserData,
     args: MultiValue,
 ) -> mlua::Result<Value> {
+    if op == crate::commands::FEEDBACK_OP {
+        return crate::commands::feedback_op(host, &this, args);
+    }
     match stub::run(lua, host, op, &this, args.clone()) {
         Some(out) => out,
         None => crate::generated::handles::run(lua, host, op, &this, args)
@@ -1735,12 +1747,13 @@ mod tests {
             .filter(|line| line.ends_with(" emitted"))
             .count();
         assert_eq!(emitted, crate::generated::hooks::EMITTED.len());
-        assert!(coverage.contains("# hooks: 749, emitted: 401, skipped: 348\n"));
+        assert!(coverage.contains("# hooks: 749, emitted: 402, skipped: 347\n"));
         assert!(lines.contains(&"right_click_block emitted"));
         // The declaration hooks are answered from the records, and no mod can subscribe to them.
         assert!(lines.contains(&"blocks emitted (host records)"));
         assert!(lines.contains(&"items emitted (host records)"));
         assert!(lines.contains(&"register_client_commands emitted (host records)"));
+        assert!(lines.contains(&"register_commands emitted (host records)"));
         assert!(lines.contains(&"register_configs emitted (host records)"));
         assert!(!crate::generated::hooks::EMITTED.contains(&"register_configs"));
         assert!(!crate::generated::hooks::EMITTED.contains(&"blocks"));

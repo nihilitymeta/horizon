@@ -68,7 +68,22 @@ pub const HOST_RECORDED: &[(&str, &str, &str, &str)] = &[
         "configs",
         "declared_configs",
     ),
+    (
+        "register_commands",
+        "RegisterCommandsEvent",
+        "commands",
+        "declared_commands",
+    ),
 ];
+
+/// Fields a hook's event carries that no argument of the hook supplies: `(hook, field, expr)`. The
+/// expression is Rust, built in the hook's `build` closure, where `lua` is in scope. `feedback` is
+/// the function a `run_mod_command` handler calls to answer its sender (`crate::commands`).
+pub const EXTRA_EVENT_FIELDS: &[(&str, &str, &str)] = &[(
+    "run_mod_command",
+    "feedback",
+    "crate::commands::feedback_lua(lua)?",
+)];
 
 /// The hooks whose event carries one mod's own file: `(hook, event field)`, the field a `ConfigFile`.
 /// Their handlers run only in the mod named by that file's `mod_id`, so no mod reads another's config.
@@ -732,6 +747,11 @@ fn plan<'a>(
         }
     }
 
+    for (hook_name, field, expr) in EXTRA_EVENT_FIELDS {
+        if *hook_name == hook.name {
+            fields.push(((*field).to_owned(), (*expr).to_owned()));
+        }
+    }
     Ok(Method {
         hook,
         sig,

@@ -18,8 +18,8 @@ use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
 use crate::declare::{
-    self, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, ItemRecord, ListenerOptions,
-    PartKind, PartRecord,
+    self, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord, ItemRecord,
+    ListenerOptions, PartKind, PartRecord,
 };
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::{self, new_event};
@@ -65,6 +65,8 @@ pub struct LuaMod {
     block_entity_parts: Vec<PartRecord>,
     /// The client commands the mod declared with `horizon.client_command`.
     client_commands: Vec<ClientCommandRecord>,
+    /// The server commands the mod declared with `horizon.command`.
+    commands: Vec<CommandRecord>,
     /// The configs the mod declared with `horizon.config`, each owned by this mod's id.
     configs: Vec<mod_api::Config>,
     lua: Lua,
@@ -165,6 +167,7 @@ impl LuaMod {
             block_entity_types: declaration.block_entity_types,
             block_entity_parts: declaration.block_entity_parts,
             client_commands: declaration.client_commands,
+            commands: declaration.commands,
             configs: declaration.configs,
             lua,
             log,
@@ -331,6 +334,18 @@ impl LuaHost {
             }
             order.push((name, run));
         }
+        // A command with no `run_mod_command` handler is declared but never runs: the game fails it
+        // (the host does not answer `ran`). The declaration stays, and the load log says so once.
+        for m in mods
+            .iter()
+            .filter(|m| !m.commands.is_empty() && !m.hooks.iter().any(|h| h == "run_mod_command"))
+        {
+            log::warn!(
+                target: LOG_TARGET,
+                "{}: declares commands but has no run_mod_command handler; they will fail when run",
+                m.id
+            );
+        }
         // The declaration hooks have no Lua handlers: the host answers them from the records. The
         // game asks only the hooks a host subscribes to, so each one is subscribed when a mod
         // declared something for it.
@@ -346,6 +361,11 @@ impl LuaHost {
                 "register_configs",
                 mods.iter()
                     .any(|m| m.configs.iter().any(|c| m.contributes_config(c))),
+            ),
+            (
+                "register_commands",
+                mods.iter()
+                    .any(|m| m.runs_on_server() && !m.commands.is_empty()),
             ),
         ] {
             if let (true, Some(id)) = (declared, hook_id(name)) {
@@ -547,6 +567,19 @@ impl LuaHost {
                     .iter()
                     .map(ClientCommandRecord::to_command),
             );
+        }
+    }
+
+    /// The server commands of every loaded mod that runs on a server and was not refused, in load and
+    /// declaration order: the answer to the game's `register_commands` hook. A client-only mod's
+    /// commands are left out, since no server runs that mod.
+    pub(crate) fn declared_commands(&self, out: &mut Vec<mod_api::Command>) {
+        for m in self
+            .mods
+            .iter()
+            .filter(|m| m.runs_on_server() && !self.is_refused(m))
+        {
+            out.extend(m.commands.iter().map(CommandRecord::to_command));
         }
     }
 
