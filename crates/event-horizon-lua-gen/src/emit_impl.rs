@@ -1464,19 +1464,17 @@ pub const PART_EXCLUDED: &[(&str, &str, &str)] = &[
 const NBT_REASON: &str = "NBT output (Compound is denied)";
 const ATTACHMENT_REASON: &str = "attachment state: not a Part state in v1";
 const HOT_REASON: &str = "hot path (needs measurement)";
-/// The hooks, on either a Hooks or a Part trait, that fire per tick, per movement step, per block
-/// write or per hit. They stay unbound until they are measured, with [`HOT_REASON`]; the list is
-/// the lead's judgement (issue 74), not a measurement.
+/// The hooks, on either a Hooks or a Part trait, that stay unbound with [`HOT_REASON`]: the ones
+/// whose call sites run per shape update, per neighbour notify or per hit. Issue 74 removed the
+/// rest of the old list after measuring it: a subscribed delivery costs about 4-5 us (measured on
+/// `can_survive` by `hot_path_bench` in `event-horizon-lua`'s `builtin.rs`, release, 8 cores), and
+/// an unsubscribed hook about 50 ns, since the listen gate runs before any conversion. The five
+/// kept here are kept by decision, not by a conversion: `update_shape` and `neighbor_changed` take
+/// a block state with no host path, `living_incoming_damage` a mutable `DamageContainer`, and
+/// `living_knockback` and `ingredient_test` would convert but have no measurement yet.
 pub const HOT_HOOKS: &[&str] = &[
-    "friction",
-    "block_jump_factor",
-    "block_speed_factor",
-    "is_ladder",
-    "makes_open_trapdoor_above_climbable",
     "update_shape",
     "neighbor_changed",
-    "on_block_state_change",
-    "block_step_on",
     "living_incoming_damage",
     "living_knockback",
     "ingredient_test",
@@ -2853,13 +2851,13 @@ impl mod_api::Hooks for LuaHost {
         let out = emit_plain(
             &step_ir(),
             &[step_sig()],
-            &["block_step_on"],
+            &["update_shape"],
             &Plain::default(),
         );
         assert!(out.emitted.is_empty());
         assert_eq!(
             out.skipped,
-            [("block_step_on".to_owned(), HOT_REASON.to_owned())]
+            [("update_shape".to_owned(), HOT_REASON.to_owned())]
         );
     }
 }
