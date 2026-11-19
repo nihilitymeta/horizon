@@ -839,3 +839,169 @@ mod dispatch_tests {
         assert!(err.contains("no host call outside a hook"), "got {err}");
     }
 }
+
+#[cfg(test)]
+mod player_command_tests {
+    use super::tests::Dims;
+    use crate::discover::{Discovered, ENTRY, Side};
+    use crate::host::LuaHost;
+    use crate::host::LuaMod;
+    use crate::host::tests::{captured_with_prefix, install_capture};
+    use mod_api::{Flow, Hooks, PlayerCommandEvent, Text};
+    use std::path::Path;
+
+    fn load(root: &Path, id: &str, source: &str) -> LuaMod {
+        let dir = root.join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(ENTRY), source).unwrap();
+        LuaMod::load(&Discovered {
+            dir,
+            id: id.to_string(),
+            version: "1".to_string(),
+            side: Side::Both,
+        })
+        .unwrap()
+    }
+
+    /// Fires `player_command` for `command` from a player, as the game does: the flag and the lines
+    /// it leaves.
+    fn fire(host: &LuaHost, command: &str) -> (Flow, Vec<Text>, bool) {
+        let mut replies = Vec::new();
+        let mut event = PlayerCommandEvent {
+            player: 7,
+            name: "Steve",
+            command,
+            replies: &mut replies,
+            cancelled: false,
+        };
+        let flow = Hooks::player_command(host, &mut Dims::default(), &mut event);
+        let cancelled = event.cancelled;
+        (flow, replies, cancelled)
+    }
+
+    const CMD: &str = "horizon.on(\"player_command\", function(event) ";
+
+    fn literal(line: &str) -> Text {
+        Text::literal(line.to_owned())
+    }
+
+    #[test]
+    fn a_handler_that_pushes_two_lines_and_cancels_answers_and_stops_the_command() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "ping",
+            &format!(
+                "{CMD}if event.command == \"ehping\" then event.cancelled = true event.replies = {{\"pong\", \"again\"}} end end)"
+            ),
+        )]);
+        let (flow, replies, cancelled) = fire(&host, "ehping");
+        assert!(matches!(flow, Flow::Cancel));
+        assert!(cancelled);
+        assert_eq!(replies, [literal("pong"), literal("again")]);
+    }
+
+    #[test]
+    fn replies_are_sent_when_the_command_is_not_cancelled_as_the_game_sends_them() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "note",
+            &format!("{CMD}event.replies = {{\"noted\"}} end)"),
+        )]);
+        let (flow, replies, cancelled) = fire(&host, "list");
+        assert!(matches!(flow, Flow::Continue));
+        assert!(!cancelled);
+        assert_eq!(replies, [literal("noted")]);
+    }
+
+    #[test]
+    fn a_handler_that_writes_no_lines_leaves_the_list_and_the_flag_as_they_were() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(root.path(), "quiet", &format!("{CMD}end)"))]);
+        let (flow, replies, cancelled) = fire(&host, "list");
+        assert!(matches!(flow, Flow::Continue));
+        assert!(!cancelled);
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn a_refused_list_refuses_the_whole_answer_and_logs_once() {
+        let root = tempfile::tempdir().unwrap();
+        let too_many = "local t = {} for i = 1, 17 do t[i] = \"x\" end event.replies = t event.cancelled = true";
+        let long = "event.replies = {string.rep(\"x\", 4097)} event.cancelled = true";
+        let not_text = "event.replies = {\"ok\", 3} event.cancelled = true";
+        let not_array = "event.replies = {[1] = \"a\", [3] = \"b\"} event.cancelled = true";
+        let not_table = "event.replies = \"hello\" event.cancelled = true";
+        for (index, body) in [too_many, long, not_text, not_array, not_table]
+            .into_iter()
+            .enumerate()
+        {
+            let id = format!("refused_{index}");
+            install_capture();
+            let host = LuaHost::new(vec![load(root.path(), &id, &format!("{CMD}{body} end)"))]);
+            let (flow, replies, cancelled) = fire(&host, "ehping");
+            assert!(matches!(flow, Flow::Continue), "{body}");
+            assert!(!cancelled, "{body}");
+            assert!(replies.is_empty(), "{body}");
+            let lines = captured_with_prefix(&format!("{id}: player_command"));
+            assert_eq!(lines.len(), 1, "{body}: {lines:?}");
+        }
+    }
+
+    #[test]
+    fn sixteen_lines_of_the_longest_allowed_length_are_taken() {
+        let root = tempfile::tempdir().unwrap();
+        let body =
+            "local t = {} for i = 1, 16 do t[i] = string.rep(\"x\", 4096) end event.replies = t";
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "full",
+            &format!("{CMD}{body} end)"),
+        )]);
+        let (_, replies, _) = fire(&host, "list");
+        assert_eq!(replies.len(), 16);
+    }
+
+    #[test]
+    fn two_mods_lines_concatenate_in_order_and_a_mod_sees_no_other_mods_lines() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            load(
+                root.path(),
+                "first",
+                &format!("{CMD}event.replies = {{\"a\"}} end)"),
+            ),
+            load(
+                root.path(),
+                "second",
+                &format!("{CMD}event.replies = {{\"seen:\" .. #event.replies, \"b\"}} end)"),
+            ),
+        ]);
+        let (_, replies, _) = fire(&host, "list");
+        assert_eq!(replies, [literal("a"), literal("seen:0"), literal("b")]);
+    }
+
+    #[test]
+    fn a_failing_handler_voids_only_its_own_lines_and_flag() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            load(
+                root.path(),
+                "broken",
+                &format!(
+                    "{CMD}event.replies = {{\"lost\"}} event.cancelled = true error(\"boom\") end)"
+                ),
+            ),
+            load(
+                root.path(),
+                "kept",
+                &format!("{CMD}event.replies = {{\"kept\"}} end)"),
+            ),
+        ]);
+        let (flow, replies, cancelled) = fire(&host, "list");
+        assert!(matches!(flow, Flow::Continue));
+        assert!(!cancelled);
+        assert_eq!(replies, [literal("kept")]);
+    }
+}

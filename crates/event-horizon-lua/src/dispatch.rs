@@ -17,6 +17,7 @@ use std::sync::Mutex;
 
 use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
+use mod_api::Text;
 
 use crate::declare;
 use crate::discover::Side;
@@ -185,6 +186,63 @@ fn warn_build_failure(id: &str, hook: &str, err: &mlua::Error) {
 fn refuse(id: &str, hook: &str, output: &str, why: &str) -> bool {
     log::warn!(target: LOG_TARGET, "{id}: {hook}: output `{output}` refused, {why}");
     true
+}
+
+/// The most lines one mod's turn may append to a hook's `Vec<Text>` output (`replies`), and the
+/// longest such line in bytes.
+pub const MAX_LINES: usize = 16;
+pub const MAX_LINE_BYTES: usize = 4096;
+
+/// Takes the lines a mod wrote to an appended `Vec<Text>` output, and appends them to `lines`. `nil`
+/// is no answer. Otherwise the value must be an array of at most [`MAX_LINES`] plain strings, each at
+/// most [`MAX_LINE_BYTES`] bytes: a refusal appends nothing, logs one warning, and returns whether
+/// the value was refused (the caller then refuses the rest of the turn).
+pub fn accept_lines(
+    lines: &RefCell<Vec<Text>>,
+    id: &str,
+    hook: &str,
+    output: &str,
+    value: &Value,
+) -> bool {
+    if matches!(value, Value::Nil) {
+        return false;
+    }
+    match read_lines(value) {
+        Ok(next) => {
+            lines.borrow_mut().extend(next);
+            false
+        }
+        Err(err) => refuse(id, hook, output, &format!("the lines are not added: {err}")),
+    }
+}
+
+/// The lines of an array of plain strings, or why the value is not one.
+fn read_lines(value: &Value) -> Result<Vec<Text>, String> {
+    if is_none(value) {
+        return Err("this output cannot be none".to_owned());
+    }
+    let Value::Table(table) = value else {
+        return Err("it is not an array of strings".to_owned());
+    };
+    let count = table.raw_len();
+    if count > MAX_LINES {
+        return Err(format!("it has more than {MAX_LINES} lines"));
+    }
+    if table.pairs::<Value, Value>().count() != count {
+        return Err("it is not an array".to_owned());
+    }
+    (1..=count)
+        .map(|index| match table.raw_get::<Value>(index) {
+            Ok(Value::String(line)) if line.as_bytes().len() > MAX_LINE_BYTES => {
+                Err(format!("a line is longer than {MAX_LINE_BYTES} bytes"))
+            }
+            Ok(Value::String(line)) => line
+                .to_str()
+                .map(|line| Text::literal(line.to_owned()))
+                .map_err(|_| "a line is not UTF-8".to_owned()),
+            _ => Err("a line is not a string".to_owned()),
+        })
+        .collect()
 }
 
 /// Converts a replace hook's answer, a mod's return value, to `T`. A value that does not convert is

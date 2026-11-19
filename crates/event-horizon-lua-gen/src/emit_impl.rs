@@ -421,6 +421,18 @@ pub fn cancel_key(hook: &str) -> &'static str {
     }
 }
 
+/// The `Vec<Text>` outputs a cancel hook appends to rather than replaces: `(hook, key, type)`. Each
+/// mod's turn starts with an empty list and answers the lines it adds; the game appends them to the
+/// hook's list in dispatch order (`accept_lines` in `dispatch`), so a mod never sees another's lines.
+pub const APPENDED_OUTPUTS: &[(&str, &str, &str)] = &[("player_command", "replies", "Vec<Text>")];
+
+/// Whether the output `key` of `hook`, of type `ty` (without spaces), is one of [`APPENDED_OUTPUTS`].
+fn is_appended(hook: &str, key: &str, ty: &str) -> bool {
+    APPENDED_OUTPUTS
+        .iter()
+        .any(|(h, k, t)| *h == hook && *k == key && *t == ty)
+}
+
 /// Whether a dispatch parameter is a cancel hook's flag: the bool its body copies the event's
 /// `cancelled` into. A cancel hook's other bools (`is_drowning`) are ordinary outputs.
 fn is_cancel_flag(param: &OutputSig) -> bool {
@@ -465,7 +477,9 @@ fn outputs_of(
                 return Err(carried::refusal(shape));
             }
             Some(_) => {}
-            None if !output_supported(&shown(&param.ty), plain) => {
+            None if !output_supported(&shown(&param.ty), plain)
+                && !is_appended(&hook.name, &param.param, &shown(&param.ty)) =>
+            {
                 return Err(format!("output: {}", shown(&param.ty)));
             }
             None => {}
@@ -1112,6 +1126,9 @@ fn build_text(method: &Method<'_>, outputs: bool) -> String {
     if outputs {
         for output in &method.outputs {
             let value = match output.shape.and_then(|shape| method.view_for(shape, true)) {
+                _ if is_appended(&method.hook.name, &output.key, &output.ty) => {
+                    "lua.create_table()?".to_owned()
+                }
                 Some((shape, view)) => carried::output_lua(shape, &output.key, view),
                 None => format!("out_{}.borrow().to_lua_value(lua)?", output.key),
             };
@@ -1161,6 +1178,25 @@ fn plain_body(method: &Method<'_>) -> String {
 /// current values; they are read from their cells, so it runs after the cells are made.
 fn checks_text(method: &Method<'_>, outputs: bool) -> String {
     let mut calls = method.checks.clone();
+    let appended = method
+        .outputs
+        .iter()
+        .any(|output| is_appended(&method.hook.name, &output.key, &output.ty));
+    if outputs && appended && calls.is_empty() {
+        // Nothing to convert, but a cancellable hook with no handler should cost no turn.
+        let ret = if method.cancel {
+            format!(
+                " if {}.cancelled {{ Flow::Cancel }} else {{ Flow::Continue }}",
+                method.sig.event_name
+            )
+        } else {
+            String::new()
+        };
+        return format!(
+            "        if !self.has_handlers({:?}) {{\n            return{ret};\n        }}\n",
+            method.hook.name
+        );
+    }
     if outputs {
         for output in &method.outputs {
             if let Some((shape, view)) =
@@ -1290,7 +1326,26 @@ fn turn_body(method: &Method<'_>) -> String {
 fn commit_text(method: &Method<'_>) -> String {
     let hook = &method.hook.name;
     let mut body = String::new();
+    // A refused line list refuses the whole answer: the cancel flag is then not taken either.
+    let appended = method
+        .outputs
+        .iter()
+        .any(|output| is_appended(hook, &output.key, &output.ty));
+    if appended {
+        body.push_str("                let mut refused = false;\n");
+    }
     for output in &method.outputs {
+        if is_appended(hook, &output.key, &output.ty) {
+            body.push_str(&format!(
+                "                refused |= crate::dispatch::accept_lines(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}));\n",
+                key = output.key
+            ));
+            continue;
+        }
+        let guard = appended && output.field == "cancelled";
+        if guard {
+            body.push_str("                if !refused {\n    ");
+        }
         // An `Option` output takes `horizon.none` as None; any other output refuses it.
         let optional = output.ty.starts_with("Option<");
         match output.shape.and_then(|shape| method.view_for(shape, true)) {
@@ -1305,6 +1360,9 @@ fn commit_text(method: &Method<'_>) -> String {
                 accept = if optional { "accept_opt" } else { "accept" },
                 key = output.key
             )),
+        }
+        if guard {
+            body.push_str("                }\n");
         }
     }
     body.push_str("                true\n");

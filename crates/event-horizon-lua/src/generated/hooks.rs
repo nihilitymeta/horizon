@@ -5480,6 +5480,7 @@ pub const EMITTED: &[&str] = &[
     "player_changed_dimension",
     "player_client_loaded_world",
     "player_clone",
+    "player_command",
     "player_commands_sent",
     "player_container_close",
     "player_container_open",

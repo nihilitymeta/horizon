@@ -1,5 +1,5 @@
 # Hook coverage (issue 74, H3) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
-# hooks: 749, emitted: 402, skipped: 347
+# hooks: 749, emitted: 403, skipped: 346
 # skipped, answer: ArmPose: 1
 # skipped, answer: Minimap: 1
 # skipped, answer: Vec<GuiDraw>: 1
@@ -48,7 +48,6 @@
 # skipped, output: Vec<BlockRim>: 1
 # skipped, output: Vec<RecipeBookCategory>: 1
 # skipped, output: Vec<SpawnEntry>: 1
-# skipped, output: Vec<Text>: 1
 # skipped, output: Vec<TooltipElement>: 1
 # skipped, output: [Option<ItemStack>;5]: 2
 # skipped, output: [[f32;4];8]: 1
@@ -521,7 +520,7 @@ player_change_beacon_effect skipped: argument `primary` has type `Option<EffectK
 player_changed_dimension emitted
 player_client_loaded_world emitted
 player_clone emitted
-player_command skipped: output: Vec<Text>
+player_command emitted
 player_commands_sent emitted
 player_container_close emitted
 player_container_open emitted
