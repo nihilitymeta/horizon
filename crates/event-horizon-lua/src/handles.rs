@@ -337,6 +337,35 @@ mod tests {
     }
 
     #[test]
+    fn the_bound_writes_are_the_reviewed_snapshot() {
+        let coverage = include_str!("generated/handles_coverage.txt");
+        let reviewed_text = include_str!("reviewed_writes.txt");
+        let generated: std::collections::BTreeSet<&str> = coverage
+            .lines()
+            .filter_map(|line| {
+                line.trim_start()
+                    .strip_prefix("handle:")?
+                    .strip_suffix(" bound, cost 10")
+            })
+            .collect();
+        let reviewed: std::collections::BTreeSet<&str> = reviewed_text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect();
+        assert!(
+            !generated.is_empty(),
+            "no bound writes found in the coverage"
+        );
+        let new: Vec<&str> = generated.difference(&reviewed).copied().collect();
+        let removed: Vec<&str> = reviewed.difference(&generated).copied().collect();
+        assert!(
+            new.is_empty() && removed.is_empty(),
+            "the bound writes differ from reviewed_writes.txt\n  new (bound, not reviewed): {new:?}\n  removed (reviewed, no longer bound): {removed:?}\nreview each new write against the powerful-name rules, then update the snapshot (crates/event-horizon-lua/src/reviewed_writes.txt)"
+        );
+    }
+
+    #[test]
     fn an_ordinary_write_is_bound_with_its_cost() {
         assert_eq!(
             crate::generated::handles::cost("EntityRef::set_glowing"),
