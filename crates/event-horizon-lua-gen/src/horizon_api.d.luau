@@ -134,9 +134,15 @@ export type ConfigRecord = {
 -- The `horizon` global. Its functions split by time: the declaring functions (block, item,
 -- block_entity_type, world_fluid, block_part, item_part, block_entity_part, fluid_part,
 -- client_command, config, command, data_map_type, data_pack_file) and `on` work only while the mod
--- loads; `log`, `none` and `data_map` work only inside a handler. `data_map(registry, entry, map)`
--- reads the value an entry has in a data map, as NBT in Lua (nil where it has none); a read costs 1
--- unit of the turn's budget. `horizon.log` takes a string. Control characters are written as `\u{..}`
+-- loads; `log`, `none`, `data_map` and the attachment functions work only inside a handler.
+-- `data_map(registry, entry, map)` reads the value an entry has in a data map, as NBT in Lua (nil
+-- where it has none); a read costs 1 unit of the turn's budget. The attachment functions keep a
+-- value on an entity or a player under a name `<mod>:<path>` in the mod's own namespace: `get` reads
+-- it (nil where none), `set` stores a table (true), `remove` drops it (true if it was there). A
+-- holder must be resident in the server's level, and a client turn raises. Limits, each refused
+-- with its reason and nothing changed: the name at most 256 bytes; the value at most 65536 bytes as
+-- NBT, with the converter's depth, entry and string limits; 16 names per holder per mod; 262144
+-- bytes of values per holder per mod. Get costs 1 unit, set and remove 10. `horizon.log` takes a string. Control characters are written as `\u{..}`
 -- escapes, and a line is cut at 1000 characters after escaping (host.rs MAX_LOG_LINE; an escape is
 -- never split). A mod may write 20 lines at once, then 20 a second (host.rs LOG_BURST, LOG_PER_SECOND);
 -- a line over that rate is dropped without an error. The mod keeps its last 100 lines
@@ -161,6 +167,9 @@ export type HorizonApi = {
 	data_map_type: (record: DataMapTypeRecord) -> (),
 	data_pack_file: (record: DataPackFileRecord) -> (),
 	data_map: (registry: string, entry: string, map: string) -> any,
+	attachment_get: (holder: EntityRef | PlayerRef, name: string) -> any,
+	attachment_set: (holder: EntityRef | PlayerRef, name: string, value: any) -> boolean,
+	attachment_remove: (holder: EntityRef | PlayerRef, name: string) -> boolean,
 	log: (message: string) -> (),
 	none: NoneMarker,
 }

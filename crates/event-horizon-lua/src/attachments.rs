@@ -1,0 +1,413 @@
+//! Attachments a Lua mod keeps on entities and players (issue 74, C1): `horizon.attachment_get`,
+//! `horizon.attachment_set` and `horizon.attachment_remove`. The values are saved world data that
+//! untrusted Lua output writes, so every limit refuses the one call that breaks it, with the reason,
+//! and nothing is cut short or saved in part. A refused call changes nothing.
+//!
+//! A value is kept through the host's attachment store (`ModStateHost::attachments`), the one native
+//! and wasm mods reach, under the mod's own namespace: a name `<mod>:<path>` is the store's key
+//! `(namespace = <mod>, name = <path>)`. The store cannot list a holder's keys, so the mod's keys and
+//! their encoded sizes are kept in one more attachment of the same namespace, `#index`. `#` is outside
+//! the game's id charset, so no Lua name can reach it. Every write of a value and of the index goes
+//! through the same two calls, so the index and the stored values agree.
+//!
+//! Costs: get 1 unit of the turn's budget, set and remove 10. Get, set and remove need the server host
+//! of a server turn: a client turn or a turn with no host raises `not available in this hook`. A
+//! holder must be resident in the level the server host is in; a stale handle raises.
+//!
+//! What a write does when the turn later fails: a host call is not part of the turn's outcome. A
+//! handler that errors after a set keeps the value, as the host keeps any write it made.
+
+use std::sync::Arc;
+
+use event_horizon_lua_convert::scalar::{FromLuaValue, ToLuaValue};
+use mlua::{AnyUserData, Error, Lua, MultiValue, Table, UserData, Value};
+use mod_api::{
+    AttachmentError, AttachmentForm, AttachmentPolicy, AttachmentStore, AttachmentValue,
+    AttachmentWrite, Compound, EntityRef, EntityResidency, Holder, Host, PlayerRef, Tag,
+};
+
+use crate::declare::check_path;
+use crate::handles::{Args, refusal_text, server_of};
+use crate::host::warn_once;
+use crate::hostcall::{TurnHost, host_call};
+
+/// The longest name, `<mod>:<path>`, in bytes.
+pub const MAX_NAME_BYTES: usize = 256;
+/// The largest encoded value, in bytes, the NBT of its entries without the root tag's header.
+pub const MAX_VALUE_BYTES: usize = 64 * 1024;
+/// The keys one mod may keep on one holder.
+pub const MAX_KEYS: usize = 16;
+/// The encoded bytes of all of one mod's values on one holder.
+pub const MAX_HOLDER_BYTES: usize = 256 * 1024;
+/// The store key of the mod's own index: the keys it holds on a holder and their sizes. Outside the
+/// game's id charset, so no name a Lua mod gives reaches it.
+const INDEX: &str = "#index";
+pub(crate) const GET_OP: &str = "attachment_get";
+pub(crate) const SET_OP: &str = "attachment_set";
+pub(crate) const REMOVE_OP: &str = "attachment_remove";
+const GET_COST: u32 = 1;
+const WRITE_COST: u32 = 10;
+
+/// The userdata a `horizon.attachment_*` function passes to the turn's host: the mod's id, the
+/// namespace every name must have.
+pub(crate) struct Owner(String);
+
+impl UserData for Owner {}
+
+/// Installs `horizon.attachment_get`, `horizon.attachment_set` and `horizon.attachment_remove` for
+/// the mod `owner`. Each is a host call of the turn, so it is answered only while a turn is open.
+pub(crate) fn install(lua: &Lua, horizon: &Table, owner: &str) -> mlua::Result<()> {
+    let this = lua.create_userdata(Owner(owner.to_owned()))?;
+    for (name, op) in [
+        ("attachment_get", GET_OP),
+        ("attachment_set", SET_OP),
+        ("attachment_remove", REMOVE_OP),
+    ] {
+        let this = this.clone();
+        let function = lua
+            .create_function(move |lua, args: MultiValue| host_call(lua, op, this.clone(), args))?;
+        horizon.raw_set(name, function)?;
+    }
+    Ok(())
+}
+
+/// What an attachment operation costs, or `None` when it is not one.
+pub(crate) fn cost(op: &str) -> Option<u32> {
+    match op {
+        GET_OP => Some(GET_COST),
+        SET_OP | REMOVE_OP => Some(WRITE_COST),
+        _ => None,
+    }
+}
+
+/// Runs an attachment operation, of a `cost` that is `Some`, against the turn's host.
+pub(crate) fn run(
+    lua: &Lua,
+    host: &mut TurnHost<'_>,
+    op: &str,
+    this: &AnyUserData,
+    args: MultiValue,
+) -> mlua::Result<Value> {
+    let owner = this.borrow::<Owner>()?.0.clone();
+    let (method, count) = match op {
+        GET_OP => ("horizon.attachment_get", 2),
+        SET_OP => ("horizon.attachment_set", 3),
+        REMOVE_OP => ("horizon.attachment_remove", 2),
+        _ => return Err(Error::runtime(format!("unknown host call {op}"))),
+    };
+    let args = Args::new(method, args, count)?;
+    let target = target_arg(&args, method)?;
+    let name: String = args.get(1)?;
+    let key = key_of(&owner, &name).map_err(|why| refuse(&owner, method, &why))?;
+    let value = match op {
+        SET_OP => {
+            let compound =
+                compound_of(&args.value(2)).map_err(|why| refuse(&owner, method, &why))?;
+            let len = payload_len(&compound).map_err(|why| refuse(&owner, method, &why))?;
+            if len > MAX_VALUE_BYTES {
+                let why = format!("the value is {len} bytes, more than {MAX_VALUE_BYTES}");
+                return Err(refuse(&owner, method, &why));
+            }
+            Some((compound, len))
+        }
+        _ => None,
+    };
+    let server = server_of(host)?;
+    let holder = holder_of(&*server, target).map_err(|why| refuse(&owner, method, &why))?;
+    let store = server.attachments();
+    let fail = |why: String| refuse(&owner, method, &why);
+    match (op, value) {
+        (GET_OP, _) => match read(store, holder, &owner, key).map_err(fail)? {
+            Some(found) => found.to_lua_value(lua),
+            None => Ok(Value::Nil),
+        },
+        (SET_OP, Some((compound, len))) => {
+            set(store, holder, &owner, key, &compound, len).map_err(fail)?;
+            Ok(Value::Boolean(true))
+        }
+        (REMOVE_OP, _) => Ok(Value::Boolean(
+            remove(store, holder, &owner, key).map_err(fail)?,
+        )),
+        _ => Err(Error::runtime(format!("{method}: no value to set"))),
+    }
+}
+
+/// Logs a refused call through `warn_once` (a mod that loops on refusals cannot flood the log) and
+/// returns the Lua error the mod sees: the method and the reason, clipped like other refusals.
+fn refuse(owner: &str, method: &str, why: &str) -> Error {
+    let reason = refusal_text(why);
+    warn_once(owner, &format!("{owner}: {method} refused: {reason}"));
+    Error::runtime(format!("{method}: {reason}"))
+}
+
+/// The holder a call names: an entity or a player handle.
+#[derive(Clone, Copy)]
+enum Target {
+    Entity(EntityRef),
+    Player(PlayerRef),
+}
+
+fn target_arg(args: &Args, method: &str) -> mlua::Result<Target> {
+    if let Ok(player) = args.handle::<PlayerRef>(0) {
+        return Ok(Target::Player(player));
+    }
+    args.handle::<EntityRef>(0)
+        .map(Target::Entity)
+        .map_err(|_| {
+            Error::runtime(format!(
+                "{method}: argument 1 must be an EntityRef or PlayerRef"
+            ))
+        })
+}
+
+/// The store's holder for a handle, when the handle names a resident holder of the server's level.
+/// A player's attachments are kept under its UUID, on its entity's residency.
+fn holder_of(host: &dyn Host, target: Target) -> Result<Holder, String> {
+    let (entity, holder) = match target {
+        Target::Entity(entity) => (entity, Holder::Entity(entity.id())),
+        Target::Player(player) => (player.entity(), Holder::Player(player.uuid())),
+    };
+    match host.entity_residency(entity) {
+        EntityResidency::InPlace => Ok(holder),
+        EntityResidency::Busy => Err("the holder is busy in this tick".to_owned()),
+        EntityResidency::OtherLevel => Err("the holder is in another level".to_owned()),
+        EntityResidency::Gone => Err("the holder is gone, or its handle is stale".to_owned()),
+        _ => Err("the holder is not resident".to_owned()),
+    }
+}
+
+/// The store key a name maps to: its path, when the name is `<owner>:<path>` in the game's charset
+/// and at most [`MAX_NAME_BYTES`] bytes. Any other namespace, `minecraft:` included, is refused.
+fn key_of<'a>(owner: &str, name: &'a str) -> Result<&'a str, String> {
+    if name.len() > MAX_NAME_BYTES {
+        return Err(format!(
+            "the name is {} bytes, more than {MAX_NAME_BYTES}",
+            name.len()
+        ));
+    }
+    let Some((namespace, path)) = name.split_once(':') else {
+        return Err(format!("needs a namespaced name such as {owner}:name"));
+    };
+    if namespace != owner {
+        return Err(format!("is outside this mod's namespace '{owner}'"));
+    }
+    check_path(name, path)?;
+    Ok(path)
+}
+
+/// The value a set stores: a table the converter reads (its depth, entries and strings bounded).
+fn compound_of(value: &Value) -> Result<Compound, String> {
+    if !matches!(value, Value::Table(_)) {
+        return Err(format!(
+            "the value must be a table (a compound), not {}",
+            value.type_name()
+        ));
+    }
+    Compound::from_lua_value(value).map_err(|err| format!("the value is refused: {err}"))
+}
+
+/// The bytes of a compound's entries, as the save writes them: each entry's tag, name and payload,
+/// and the end tag. The root tag's own header is not counted, so the number is the value's size.
+/// Errors on a string over the NBT limit of 65535 bytes, or a list of mixed kinds, which the save
+/// could not write.
+fn payload_len(map: &Compound) -> Result<usize, String> {
+    let mut total = 1;
+    for (name, tag) in map {
+        total += 3 + text_len(&name.0)? + tag_len(tag)?;
+    }
+    Ok(total)
+}
+
+/// The bytes of one tag's payload.
+fn tag_len(tag: &Tag) -> Result<usize, String> {
+    Ok(match tag {
+        Tag::End => 0,
+        Tag::Byte(_) => 1,
+        Tag::Short(_) => 2,
+        Tag::Int(_) | Tag::Float(_) => 4,
+        Tag::Long(_) | Tag::Double(_) => 8,
+        Tag::ByteArray(values) => 4 + values.len(),
+        Tag::String(text) => 2 + text_len(&text.0)?,
+        Tag::List(items) => {
+            let kind = items.first().map_or(0, |first| first.id());
+            if items.iter().any(|item| item.id() != kind) {
+                return Err("a list mixes its element kinds".to_owned());
+            }
+            let mut total = 5;
+            for item in items {
+                total += tag_len(item)?;
+            }
+            total
+        }
+        Tag::Compound(map) => payload_len(map)?,
+        Tag::IntArray(values) => 4 + 4 * values.len(),
+        Tag::LongArray(values) => 4 + 8 * values.len(),
+    })
+}
+
+/// The bytes of a string in NBT's modified UTF-8, which Java writes: NUL takes two bytes, the other
+/// units under U+0080 one, under U+0800 two, and the rest three (surrogates each three).
+fn text_len(units: &[u16]) -> Result<usize, String> {
+    let len: usize = units
+        .iter()
+        .map(|unit| match unit {
+            0 => 2,
+            1..=0x7F => 1,
+            0x80..=0x7FF => 2,
+            _ => 3,
+        })
+        .sum();
+    if len > usize::from(u16::MAX) {
+        return Err("a string is longer than 65535 bytes, the NBT limit".to_owned());
+    }
+    Ok(len)
+}
+
+/// The value under `key` on `holder`, saved or decoded, or none.
+fn read(
+    store: &mut dyn AttachmentStore,
+    holder: Holder,
+    owner: &str,
+    key: &str,
+) -> Result<Option<Compound>, String> {
+    if let Some(value) = store.decoded(holder, owner, key).map_err(store_error)? {
+        return match (*value).downcast_ref::<Compound>() {
+            Some(compound) => Ok(Some(compound.clone())),
+            None => Err(store_error(AttachmentError::TypeMismatch)),
+        };
+    }
+    store.saved(holder, owner, key).map_err(store_error)
+}
+
+/// Keeps `value` under `key` on `holder`, as a value a mod set: the saved form it has is the
+/// compound itself, under the store's usual envelope.
+fn keep(
+    store: &mut dyn AttachmentStore,
+    holder: Holder,
+    owner: &str,
+    key: &str,
+    value: &Compound,
+) -> Result<(), String> {
+    let shared: AttachmentValue = Arc::new(value.clone());
+    let form = AttachmentForm {
+        encoded: Some(value.clone()),
+        policy: AttachmentPolicy {
+            copy_on_death: false,
+            sync: false,
+        },
+        write: AttachmentWrite::Set,
+    };
+    store
+        .store(holder, owner, key, shared, form)
+        .map_err(store_error)
+}
+
+/// The mod's index on `holder`: each key it holds, and the key's encoded size as an int.
+fn index_of(
+    store: &mut dyn AttachmentStore,
+    holder: Holder,
+    owner: &str,
+) -> Result<Compound, String> {
+    Ok(read(store, holder, owner, INDEX)?.unwrap_or_default())
+}
+
+/// Writes the index, or drops it when the mod holds no key on the holder.
+fn write_index(
+    store: &mut dyn AttachmentStore,
+    holder: Holder,
+    owner: &str,
+    index: &Compound,
+) -> Result<(), String> {
+    if index.is_empty() {
+        return store
+            .discard(holder, owner, INDEX, false)
+            .map_err(store_error);
+    }
+    keep(store, holder, owner, INDEX, index)
+}
+
+/// Whether a compound key is `key`: the same UTF-16 units, so no lossy comparison.
+fn is_key(stored: &[u16], key: &str) -> bool {
+    stored.iter().copied().eq(key.encode_utf16())
+}
+
+/// The encoded bytes the index counts for all of a mod's keys on one holder.
+fn total_of(index: &Compound) -> usize {
+    index
+        .values()
+        .map(|tag| match tag {
+            Tag::Int(size) => usize::try_from(*size).unwrap_or(0),
+            _ => 0,
+        })
+        .sum()
+}
+
+/// Stores `value` under `key`, after checking the key count and the holder's total. Nothing is
+/// written when a limit refuses. A value written before an index write that fails is put back as it
+/// was, so the index and the stored values keep agreeing.
+fn set(
+    store: &mut dyn AttachmentStore,
+    holder: Holder,
+    owner: &str,
+    key: &str,
+    value: &Compound,
+    len: usize,
+) -> Result<(), String> {
+    let mut index = index_of(store, holder, owner)?;
+    let before = match index.iter().find(|(stored, _)| is_key(&stored.0, key)) {
+        Some((_, Tag::Int(size))) => usize::try_from(*size).unwrap_or(0),
+        _ => 0,
+    };
+    let exists = index.iter().any(|(stored, _)| is_key(&stored.0, key));
+    if !exists && index.len() >= MAX_KEYS {
+        return Err(format!(
+            "a holder keeps at most {MAX_KEYS} attachments of one mod, and this holder has {MAX_KEYS}"
+        ));
+    }
+    let total = total_of(&index).saturating_sub(before) + len;
+    if total > MAX_HOLDER_BYTES {
+        return Err(format!(
+            "the holder's values would be {total} bytes, more than {MAX_HOLDER_BYTES}"
+        ));
+    }
+    let previous = read(store, holder, owner, key)?;
+    keep(store, holder, owner, key, value)?;
+    index.retain(|stored, _| !is_key(&stored.0, key));
+    index.insert(key.into(), Tag::Int(i32::try_from(len).unwrap_or(i32::MAX)));
+    if let Err(why) = write_index(store, holder, owner, &index) {
+        // The holder refused the index: put the value back as it was. The rollback is the same
+        // store on the same holder, so if it refuses too the holder has gone and the value with it.
+        let _ = match previous {
+            Some(earlier) => keep(store, holder, owner, key, &earlier),
+            None => store
+                .discard(holder, owner, key, false)
+                .map_err(store_error),
+        };
+        return Err(why);
+    }
+    Ok(())
+}
+
+/// Removes `key` from `holder`: true when a value was there, false when not. The index drops the key.
+fn remove(
+    store: &mut dyn AttachmentStore,
+    holder: Holder,
+    owner: &str,
+    key: &str,
+) -> Result<bool, String> {
+    if !store.holds(holder, owner, key).map_err(store_error)? {
+        return Ok(false);
+    }
+    store
+        .discard(holder, owner, key, false)
+        .map_err(store_error)?;
+    let mut index = index_of(store, holder, owner)?;
+    index.retain(|stored, _| !is_key(&stored.0, key));
+    write_index(store, holder, owner, &index)?;
+    Ok(true)
+}
+
+/// The store's refusal as the text a mod sees, clipped like the other handle refusals.
+fn store_error(err: AttachmentError) -> String {
+    format!("the attachment store refused it: {err:?}")
+}

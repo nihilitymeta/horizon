@@ -280,6 +280,9 @@ fn op_cost(op: &str) -> mlua::Result<u32> {
     if op == crate::data_maps::DATA_MAP_OP {
         return Ok(crate::data_maps::DATA_MAP_COST);
     }
+    if let Some(cost) = crate::attachments::cost(op) {
+        return Ok(cost);
+    }
     crate::generated::handles::cost(op).ok_or_else(|| unknown(op))
 }
 
@@ -298,6 +301,9 @@ fn run_op(
     if op == crate::data_maps::DATA_MAP_OP {
         return crate::data_maps::data_map_op(lua, host, args);
     }
+    if crate::attachments::cost(op).is_some() {
+        return crate::attachments::run(lua, host, op, &this, args);
+    }
     crate::generated::handles::run(lua, host, op, &this, args).unwrap_or_else(|| Err(unknown(op)))
 }
 
@@ -309,6 +315,9 @@ fn op_cost(op: &str) -> mlua::Result<u32> {
     }
     if op == crate::data_maps::DATA_MAP_OP {
         return Ok(crate::data_maps::DATA_MAP_COST);
+    }
+    if let Some(cost) = crate::attachments::cost(op) {
+        return Ok(cost);
     }
     match stub::cost(op) {
         Some(cost) => Ok(cost),
@@ -329,6 +338,9 @@ fn run_op(
     }
     if op == crate::data_maps::DATA_MAP_OP {
         return crate::data_maps::data_map_op(lua, host, args);
+    }
+    if crate::attachments::cost(op).is_some() {
+        return crate::attachments::run(lua, host, op, &this, args);
     }
     match stub::run(lua, host, op, &this, args.clone()) {
         Some(out) => out,

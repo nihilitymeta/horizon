@@ -111,7 +111,8 @@ impl Args {
         Ok(Args { method, values })
     }
 
-    fn value(&self, index: usize) -> Value {
+    /// The argument at `index` as the Lua value it is, nil when missing.
+    pub(crate) fn value(&self, index: usize) -> Value {
         self.values.get(index).cloned().unwrap_or(Value::Nil)
     }
 

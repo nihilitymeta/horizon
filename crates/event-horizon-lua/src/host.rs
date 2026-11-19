@@ -998,6 +998,7 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
         })?,
     )?;
     horizon.raw_set("data_map", crate::data_maps::data_map_function(lua)?)?;
+    crate::attachments::install(lua, &horizon, id)?;
     let id = id.to_string();
     let limit = Mutex::new(RateLimit::new(LOG_BURST, LOG_PER_SECOND));
     horizon.raw_set(
