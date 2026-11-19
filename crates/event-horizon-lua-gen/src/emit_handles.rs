@@ -60,7 +60,8 @@ const WRITE: u32 = 10;
 /// * its name contains one of [`POWERFUL_NAME_PARTS`] (commands, teleports, NBT, spawns,
 ///   explosions, lightning, game rules, world borders, passages, map data, capabilities,
 ///   datapacks, registration, removal, kills, saves, tickets, tick clocks, weather, respawns,
-///   random sources, item grants through `give`, `pop_resource` and `award_experience`);
+///   random sources, player nicknames, item grants through `give`, `pop_resource` and
+///   `award_experience`);
 /// * its owner is one of [`POWERFUL_OWNERS`] (every `Registrar`, whatever its name);
 /// * its owner and name part match one of [`POWERFUL_OWNER_NAMES`] (a merchant's offers, which
 ///   carry items);
@@ -88,6 +89,7 @@ const POWERFUL_NAME_PARTS: &[&str] = &[
     "discard",
     "kill",
     "command",
+    "nickname",
     "ticket",
     "save",
     "relight",
@@ -1338,6 +1340,7 @@ mod tests {
             "fn invalidate_capabilities(self, _: &mut dyn ServerHost) -> bool",
             "fn award_stat(self, _: &mut dyn ServerHost) -> bool",
             "fn reset_stat(self, _: &mut dyn ServerHost) -> bool",
+            "fn set_nickname(self, _: &mut dyn ServerHost, _: &str) -> bool",
         ];
         for signature in cases {
             let reason = powerful_reason(signature);

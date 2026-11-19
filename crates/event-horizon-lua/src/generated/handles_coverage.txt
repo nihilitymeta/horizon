@@ -688,7 +688,7 @@ PlayerRef: 112 members
   handle:PlayerRef::set_inventory_slot skipped: powerful (needs manifest power): argument `Option<item::item_stack::ItemStack>`
   handle:PlayerRef::set_item_cooldown bound, cost 10
   handle:PlayerRef::set_last_death_location skipped: unconvertible arg: Option<GlobalPos>
-  handle:PlayerRef::set_nickname bound, cost 10
+  handle:PlayerRef::set_nickname skipped: powerful (needs manifest power): name contains `nickname`
   handle:PlayerRef::set_persistent_data skipped: powerful (needs manifest power): argument `Compound`
   handle:PlayerRef::set_recipe_book_settings skipped: unconvertible arg: &RecipeBookTypeKey
   handle:PlayerRef::set_respawn_config skipped: powerful (needs manifest power): name contains `spawn`
@@ -768,11 +768,11 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 525 of 724; heavy 28
+summary: bound 524 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 85
+  skipped, powerful (needs manifest power): 86
   skipped, unconvertible arg: 52
   skipped, unconvertible return: 39
 heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

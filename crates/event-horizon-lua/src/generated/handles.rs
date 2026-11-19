@@ -1561,9 +1561,6 @@ impl crate::handles::Family for mod_api::PlayerRef {
         methods.add_function("set_item_cooldown", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::set_item_cooldown", this, args)
         });
-        methods.add_function("set_nickname", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
-            crate::hostcall::host_call(lua, "PlayerRef::set_nickname", this, args)
-        });
         methods.add_function("set_saturation", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::set_saturation", this, args)
         });
@@ -5769,15 +5766,6 @@ fn player_ref_set_item_cooldown(lua: &mlua::Lua, host: &mut crate::hostcall::Tur
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
-fn player_ref_set_nickname(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
-    let server = crate::handles::server_of(host)?;
-    let args = crate::handles::Args::new("PlayerRef::set_nickname", args, 1)?;
-    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::set_nickname")?;
-    let a0: Option<String> = args.get(0)?;
-    let out = this.set_nickname(server, a0.as_deref());
-    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
-}
-
 fn player_ref_set_saturation(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let server = crate::handles::server_of(host)?;
     let args = crate::handles::Args::new("PlayerRef::set_saturation", args, 1)?;
@@ -6695,7 +6683,6 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::set_experience_points" => 10,
         "PlayerRef::set_food_level" => 10,
         "PlayerRef::set_item_cooldown" => 10,
-        "PlayerRef::set_nickname" => 10,
         "PlayerRef::set_saturation" => 10,
         "PlayerRef::set_selected_slot" => 10,
         "PlayerRef::set_sleep_ignored" => 10,
@@ -7234,7 +7221,6 @@ pub fn run(
         "PlayerRef::set_experience_points" => player_ref_set_experience_points(lua, host, this, args),
         "PlayerRef::set_food_level" => player_ref_set_food_level(lua, host, this, args),
         "PlayerRef::set_item_cooldown" => player_ref_set_item_cooldown(lua, host, this, args),
-        "PlayerRef::set_nickname" => player_ref_set_nickname(lua, host, this, args),
         "PlayerRef::set_saturation" => player_ref_set_saturation(lua, host, this, args),
         "PlayerRef::set_selected_slot" => player_ref_set_selected_slot(lua, host, this, args),
         "PlayerRef::set_sleep_ignored" => player_ref_set_sleep_ignored(lua, host, this, args),
