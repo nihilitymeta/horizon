@@ -1176,4 +1176,87 @@ mod tests {
         );
         assert_eq!(drops, [("minecraft:stick".to_owned(), 1)]);
     }
+
+    /// Runs `can_survive` on a part with event data `x`, `y`, `z`, and reads its answer.
+    fn survives_with_fields(part: &crate::host::LuaBlockPart) -> Option<bool> {
+        let mut found = None;
+        let build = |lua: &mlua::Lua, _: &crate::hostcall::TurnHost<'_>| {
+            let data = lua.create_table()?;
+            data.raw_set("x", 1)?;
+            data.raw_set("y", 2)?;
+            data.raw_set("z", 3)?;
+            crate::dispatch::new_event(lua, data, &[])
+        };
+        let mut answer = |id: &str, value: mlua::Value, _: &crate::hostcall::TurnHost<'_>| {
+            found = crate::dispatch::answer_of::<bool>(id, "can_survive", &value);
+            true
+        };
+        part.dispatch_replace(
+            "can_survive",
+            crate::hostcall::TurnHost::None,
+            &build,
+            &mut answer,
+        )
+        .unwrap();
+        found
+    }
+
+    /// Mean nanoseconds per call of `f` over `n` calls; `f` must answer true every time.
+    fn ns_per_call(n: u32, mut f: impl FnMut() -> bool) -> f64 {
+        let start = std::time::Instant::now();
+        for _ in 0..n {
+            assert!(
+                std::hint::black_box(f()),
+                "the handler's answer did not arrive"
+            );
+        }
+        start.elapsed().as_nanos() as f64 / f64::from(n)
+    }
+
+    /// Cost of one block part delivery (#74, report 74-parts-explore2 section B). Prints a table of
+    /// ns per call; it asserts only that the answers arrive, never a time.
+    /// Run: `heavy cargo nextest run -p event-horizon-lua --run-ignored only hot_path_bench --nocapture`
+    #[test]
+    #[ignore]
+    fn hot_path_bench() {
+        const N: u32 = 200_000;
+        let (_host, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.block_part(\"first_mod:lamp\", {can_survive = function() return true end})",
+        )]);
+        let (_fields_host, fields_keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.block_part(\"first_mod:lamp\", {can_survive = function(event) return event.x + event.y + event.z == 6 end})",
+        )]);
+        let idle = LuaHost::new(Vec::new());
+
+        let subscribed = ns_per_call(N, || survives(&keys.parts[0]) == Some(true));
+        let unsubscribed = ns_per_call(N, || !idle.has_handlers("can_survive"));
+        let three_fields = ns_per_call(N, || {
+            survives_with_fields(&fields_keys.parts[0]) == Some(true)
+        });
+
+        let profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
+        let cpus = std::thread::available_parallelism().map_or(0, |n| n.get());
+        eprintln!("\nhot path bench (#74): profile {profile}, N = {N}, nproc = {cpus}");
+        eprintln!("{:<58} {:>12}", "case", "ns/call");
+        eprintln!(
+            "{:<58} {:>12.1}",
+            "1. one mod subscribed, can_survive returns true", subscribed
+        );
+        eprintln!(
+            "{:<58} {:>12.1}",
+            "2. no subscribed mod (has_handlers gate only)", unsubscribed
+        );
+        eprintln!(
+            "{:<58} {:>12.1}",
+            "3. one mod subscribed, handler reads three fields", three_fields
+        );
+    }
 }
