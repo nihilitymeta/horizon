@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use event_horizon_lua_gen::{
-    dispatch_sigs, emit_handles, emit_hooks, emit_impl, emit_types, handles, ir, trait_sigs,
+    dispatch_sigs, emit_handles, emit_hooks, emit_impl, emit_luau, emit_types, handles, ir,
+    trait_sigs,
 };
 use mod_surface::Surface;
 
@@ -24,11 +25,13 @@ struct Args {
     hooks_trait: PathBuf,
     out: PathBuf,
     types: PathBuf,
+    /// The directory of `horizon.d.luau` and `.luaurc.example`; by default `OUT/../../lua-types`.
+    lua_types: Option<PathBuf>,
     families: Option<Vec<String>>,
     check: bool,
 }
 
-const USAGE: &str = "usage: event-horizon-lua-gen --surface PATH --hooks-trait PATH --out DIR --types PATH [--families A,B] [--check]";
+const USAGE: &str = "usage: event-horizon-lua-gen --surface PATH --hooks-trait PATH --out DIR --types PATH [--lua-types DIR] [--families A,B] [--check]";
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut surface = None;
@@ -36,6 +39,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut out = None;
     let mut types = None;
     let mut families = None;
+    let mut lua_types = None;
     let mut check = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -45,6 +49,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
             }
             "--out" => out = Some(PathBuf::from(value(&mut args, "--out")?)),
             "--types" => types = Some(PathBuf::from(value(&mut args, "--types")?)),
+            "--lua-types" => lua_types = Some(PathBuf::from(value(&mut args, "--lua-types")?)),
             "--families" => {
                 families = Some(
                     value(&mut args, "--families")?
@@ -62,6 +67,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
         hooks_trait: hooks_trait.ok_or("--hooks-trait is required")?,
         out: out.ok_or("--out is required")?,
         types: types.ok_or("--types is required")?,
+        lua_types,
         families,
         check,
     })
@@ -408,6 +414,62 @@ fn run(args: Args) -> Result<ExitCode, String> {
         hook_coverage,
     } = plan;
 
+    // The Luau type definitions, from the same plan: the emitted hooks and Part methods with their
+    // shapes, and the bound handle members of the families.
+    let family_refs: Vec<&str> = families.iter().map(String::as_str).collect();
+    let emitted_hooks: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
+    let hook_shapes = emit_impl::shapes(
+        &surface,
+        &sigs,
+        &dispatch,
+        &emitted_hooks,
+        &types.plain,
+        &family_refs,
+        false,
+    );
+    let part_shapes = |sigs: &[trait_sigs::HookSig], emitted: &[String]| {
+        let names: Vec<&str> = emitted.iter().map(String::as_str).collect();
+        emit_impl::shapes(
+            &surface,
+            sigs,
+            &dispatch,
+            &names,
+            &types.plain,
+            &family_refs,
+            true,
+        )
+    };
+    let part_lists = [
+        part_shapes(&part_sigs, &parts.emitted),
+        part_shapes(&item_part_sigs, &item_parts.emitted),
+        part_shapes(&block_entity_part_sigs, &block_entity_parts.emitted),
+        part_shapes(&fluid_part_sigs, &fluid_parts.emitted),
+    ];
+    let bound_members: Vec<&handles::MemberIr> = members
+        .iter()
+        .filter(|member| handles_out.bound.contains(&member.id))
+        .collect();
+    let luau = emit_luau::emit(&emit_luau::Input {
+        hash: &surface.document_hash,
+        hooks: &hook_shapes,
+        parts: [
+            part_lists[0].as_slice(),
+            part_lists[1].as_slice(),
+            part_lists[2].as_slice(),
+            part_lists[3].as_slice(),
+        ],
+        families: &families,
+        members: &bound_members,
+    })
+    .map_err(|error| format!("horizon.d.luau: {error}"))?;
+    let lua_types_dir = args
+        .lua_types
+        .clone()
+        .unwrap_or_else(|| args.out.join("../../lua-types"));
+    let luau_path = lua_types_dir.join("horizon.d.luau");
+    let luaurc_path = lua_types_dir.join(".luaurc.example");
+    let luaurc = emit_luau::LUAURC_EXAMPLE.to_owned();
+
     let table_path = args.out.join("hooks.rs");
     let methods_path = args.out.join("hooks_impl.rs");
     let handles_path = args.out.join("handles.rs");
@@ -430,6 +492,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
             (&item_parts_path, &item_parts.text),
             (&block_entity_parts_path, &block_entity_parts.text),
             (&fluid_parts_path, &fluid_parts.text),
+            (&luau_path, &luau.text),
+            (&luaurc_path, &luaurc),
         ] {
             let current = std::fs::read_to_string(path).ok();
             if current.as_deref() != Some(text.as_str()) {
@@ -448,6 +512,12 @@ fn run(args: Args) -> Result<ExitCode, String> {
 
     std::fs::create_dir_all(&args.out)
         .map_err(|error| format!("cannot create {}: {error}", args.out.display()))?;
+    std::fs::create_dir_all(&lua_types_dir)
+        .map_err(|error| format!("cannot create {}: {error}", lua_types_dir.display()))?;
+    std::fs::write(&luau_path, &luau.text)
+        .map_err(|error| format!("cannot write {}: {error}", luau_path.display()))?;
+    std::fs::write(&luaurc_path, &luaurc)
+        .map_err(|error| format!("cannot write {}: {error}", luaurc_path.display()))?;
     std::fs::write(&table_path, &table)
         .map_err(|error| format!("cannot write {}: {error}", table_path.display()))?;
     std::fs::write(&methods_path, &methods.text)
@@ -513,6 +583,18 @@ fn run(args: Args) -> Result<ExitCode, String> {
     }
     println!("output types of the emitted hooks:");
     for (ty, count) in &methods.output_types {
+        println!("{count:5}  {ty}");
+    }
+    println!(
+        "horizon.d.luau: {} hook events, {} part methods, {} handle members typed",
+        luau.hooks, luau.parts, luau.members
+    );
+    let mut any_by_type = BTreeMap::<&str, usize>::new();
+    for ty in &luau.any {
+        *any_by_type.entry(ty.as_str()).or_default() += 1;
+    }
+    println!("horizon.d.luau: {} types written any:", luau.any.len());
+    for (ty, count) in &any_by_type {
         println!("{count:5}  {ty}");
     }
     println!("plain types emitted: {}", types.emitted.len());

@@ -6,6 +6,7 @@ pub mod dispatch_sigs;
 pub mod emit_handles;
 pub mod emit_hooks;
 pub mod emit_impl;
+pub mod emit_luau;
 pub mod emit_types;
 pub mod handles;
 pub mod ir;

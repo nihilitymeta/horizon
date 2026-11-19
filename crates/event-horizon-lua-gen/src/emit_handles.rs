@@ -580,7 +580,7 @@ fn classify(
 }
 
 /// The success type's text of a `Result<T, E>` return, or `None` for any other return.
-fn ok_type(text: &str) -> Option<&str> {
+pub(crate) fn ok_type(text: &str) -> Option<&str> {
     let inner = text.strip_prefix("Result<")?.strip_suffix('>')?;
     let mut depth = 0i32;
     for (index, c) in inner.char_indices() {

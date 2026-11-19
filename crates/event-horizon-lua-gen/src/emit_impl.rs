@@ -338,6 +338,75 @@ pub fn emit_with_handles(
     }
 }
 
+/// What a Lua script sees of one emitted hook or Part method: the event's fields (read-only) and its
+/// outputs (writable keys, the answers), each with its Rust type, and a replace hook's answer type.
+/// The Luau type definitions are written from these ([`crate::emit_luau`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventShape {
+    pub hook: String,
+    /// `(key, Rust type)` of each event field, in the order the method writes them.
+    pub fields: Vec<(String, String)>,
+    /// `(key, Rust type)` of each writable output. A cancel hook's flag is keyed `cancelled`.
+    pub outputs: Vec<(String, String)>,
+    /// The answer type `X` of a replace hook (its method returns `Option<X>`).
+    pub answer: Option<String>,
+}
+
+/// The event shapes of the hooks in `names` that the same plan emits, in name order: the Hooks
+/// trait's methods when `part` is false, a Part trait's methods when it is true (`sigs` is that
+/// trait's). A name the plan refuses is left out; [`emit_with_handles`] and [`emit_parts`] say why.
+pub fn shapes(
+    ir: &Ir,
+    sigs: &[HookSig],
+    dispatch: &DispatchSigs,
+    names: &[&str],
+    plain: &Plain,
+    handles: &[&str],
+    part: bool,
+) -> Vec<EventShape> {
+    let mut names = names.to_vec();
+    names.sort_unstable();
+    names.dedup();
+    let mut shapes = Vec::new();
+    for name in names {
+        let Ok(method) = plan(ir, sigs, dispatch, name, plain, handles, part) else {
+            continue;
+        };
+        let rust_type = |key: &str| -> String {
+            if key == "feedback" {
+                return "@feedback".to_owned();
+            }
+            method
+                .hook
+                .arguments
+                .iter()
+                .find(|arg| arg.name == key)
+                .map(|arg| arg.rust_type.clone())
+                .unwrap_or_default()
+        };
+        let fields = method
+            .fields
+            .iter()
+            .map(|(key, _)| (key.clone(), rust_type(key)))
+            .collect();
+        let outputs = method
+            .outputs
+            .iter()
+            .map(|output| (output.key.clone(), output.ty.clone()))
+            .collect();
+        shapes.push(EventShape {
+            hook: name.to_owned(),
+            fields,
+            outputs,
+            answer: method
+                .answer
+                .as_deref()
+                .map(|answer| answer.replace("mod_api::", "")),
+        });
+    }
+    shapes
+}
+
 /// Whether a dispatch output of type `ty` (without spaces) has a Lua conversion in this slice: the
 /// cancel flag, numbers, strings, `Text`, a unit enum the file decides, a vector or a list of
 /// scalars (`[f64; 3]`, `[f32; 3]`, `[i32; 3]`, `Vec<String>`, `Vec<[i32; 3]>`), and an `Option` of
@@ -791,7 +860,7 @@ fn plan<'a>(
 
 /// The kind of a command argument (`source` or `invocation`), when its type is one of the command
 /// types `crate::commands` converts: `&'a command::CommandSource`, `&'a CommandInvocation`.
-fn command_input(ty: &str) -> Option<&'static str> {
+pub(crate) fn command_input(ty: &str) -> Option<&'static str> {
     match compact(ty).trim_start_matches('&') {
         "command::CommandSource" | "CommandSource" => Some("source"),
         "command::CommandInvocation" | "CommandInvocation" => Some("invocation"),
@@ -800,7 +869,7 @@ fn command_input(ty: &str) -> Option<&'static str> {
 }
 
 /// Whether an argument type (`&'a BlockClick<'a>`) is the right click view, read by value.
-fn is_block_click(ty: &str) -> bool {
+pub(crate) fn is_block_click(ty: &str) -> bool {
     let text: String = ty.chars().filter(|ch| !ch.is_whitespace()).collect();
     let text = text.replace("'a", "");
     !text.contains("mut") && text.trim_start_matches('&').starts_with("BlockClick<")
