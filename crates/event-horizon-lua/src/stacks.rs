@@ -346,9 +346,12 @@ pub fn state_value<H: StateHost + ?Sized>(host: &H, value: &Value) -> Result<H::
 /// Logs that a hook is not delivered to Lua because a stack or state in it has no id. Logged once
 /// per process for each hook, however often it fires; the caller gives no answer.
 pub fn undelivered(hook: &str) {
-    warn_once(&format!(
-        "{hook}: not delivered to Lua: a stack or block state in it has no id in this game"
-    ));
+    warn_once(
+        "host",
+        &format!(
+            "{hook}: not delivered to Lua: a stack or block state in it has no id in this game"
+        ),
+    );
 }
 
 fn read_stack(value: &Value) -> Result<ItemStackSpec, String> {

@@ -204,15 +204,15 @@ fn keep<T>(
 
 /// Logs that a mod's event could not be built for `hook`, once per process for each reason.
 fn warn_build_failure(id: &str, hook: &str, err: &mlua::Error) {
-    warn_once(&format!("{id}: {hook}: {}", Escaped(err)));
+    warn_once(id, &format!("{id}: {hook}: {}", Escaped(err)));
 }
 
 /// Logs the one warning for a refused output and returns `true`.
 fn refuse(id: &str, hook: &str, output: &str, why: &str) -> bool {
-    warn_once(&format!(
-        "{id}: {hook}: output `{output}` refused, {}",
-        Escaped(why)
-    ));
+    warn_once(
+        id,
+        &format!("{id}: {hook}: output `{output}` refused, {}", Escaped(why)),
+    );
     true
 }
 
@@ -297,10 +297,13 @@ pub fn answer_by<T>(
     match converted {
         Ok(answer) => Some(answer),
         Err(err) => {
-            warn_once(&format!(
-                "{id}: {hook}: answer refused, the mod gives no answer: {}",
-                Escaped(err)
-            ));
+            warn_once(
+                id,
+                &format!(
+                    "{id}: {hook}: answer refused, the mod gives no answer: {}",
+                    Escaped(err)
+                ),
+            );
             None
         }
     }
@@ -425,7 +428,7 @@ impl LuaHost {
             let handlers = match declare::handlers(m.lua(), hook) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -441,7 +444,7 @@ impl LuaHost {
             };
             for handler in &handlers {
                 if let Err(err) = call_handler(m.lua(), handler, event.table()) {
-                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                 }
                 if !answers(m.id(), &event) {
                     return;
@@ -585,7 +588,7 @@ pub(crate) fn turns_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -600,10 +603,13 @@ pub(crate) fn turns_in(
                 }
             };
             if run_hosted(m, hook, &mut host, &handlers, event.table()) {
-                warn_once(&format!(
-                    "{}: {hook}: a handler failed, so this mod's changes to the event are dropped",
-                    m.id()
-                ));
+                warn_once(
+                    m.id(),
+                    &format!(
+                        "{}: {hook}: a handler failed, so this mod's changes to the event are dropped",
+                        m.id()
+                    ),
+                );
                 continue;
             }
             if !commit(m.id(), &event, &host) {
@@ -669,7 +675,7 @@ pub(crate) fn replace_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -694,7 +700,7 @@ pub(crate) fn replace_in(
                             }
                         }
                         Err(err) => {
-                            warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                            warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                             failed = true;
                         }
                     }
@@ -703,15 +709,18 @@ pub(crate) fn replace_in(
             }) {
                 Ok(((found, failed), spent)) => (found, failed || spent),
                 Err(err) => {
-                    warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     (None, true)
                 }
             };
             if failed {
-                warn_once(&format!(
-                    "{}: {hook}: a handler failed, so this mod gives no answer",
-                    m.id()
-                ));
+                warn_once(
+                    m.id(),
+                    &format!(
+                        "{}: {hook}: a handler failed, so this mod gives no answer",
+                        m.id()
+                    ),
+                );
                 continue;
             }
             let answered = match found {

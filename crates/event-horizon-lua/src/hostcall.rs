@@ -173,15 +173,16 @@ pub(crate) fn open_call(hook: &str) -> Result<OpenCall, String> {
 /// on the result of their dispatch.
 pub fn refused(result: Result<(), String>) {
     if let Err(err) = result {
-        warn_once(&Escaped(err).to_string());
+        warn_once("host", &Escaped(err).to_string());
     }
 }
 
 /// Logs that a mod was skipped because its turn is open: once per process for each mod and hook.
 pub(crate) fn note_skipped(id: &str, hook: &str) {
-    warn_once(&format!(
-        "{id}: {hook}: skipped, this mod's turn is already open"
-    ));
+    warn_once(
+        id,
+        &format!("{id}: {hook}: skipped, this mod's turn is already open"),
+    );
 }
 
 /// Runs `body` for one mod's turn with `host` open to its handles. A scope holds the scoped
@@ -235,7 +236,7 @@ pub(crate) fn run_hosted(
         let mut failed = false;
         for handler in handlers {
             if let Err(err) = crate::host::call_handler(lua, handler, event) {
-                warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                 failed = true;
             }
         }
@@ -244,7 +245,7 @@ pub(crate) fn run_hosted(
     match outcome {
         Ok((failed, spent)) => failed || spent,
         Err(err) => {
-            warn_once(&format!("{}: {hook}: {}", m.id(), Escaped(err)));
+            warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
             true
         }
     }

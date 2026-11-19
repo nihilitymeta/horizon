@@ -1090,48 +1090,66 @@ impl<T: std::fmt::Display> std::fmt::Display for Escaped<T> {
     }
 }
 
-/// The most distinct warnings one process logs through [`warn_once`]. Past it they are counted and
-/// dropped, and one line says so.
-const MAX_WARNINGS: usize = 256;
+/// The most distinct sources (mods, and "host" for lines with no mod) that [`warn_once`] tracks in
+/// one process. A new source past it is counted and dropped, and one line says so.
+const MAX_SOURCES: usize = 256;
 
-/// The warnings [`warn_once`] has logged, and how many it has dropped past [`MAX_WARNINGS`].
+/// The most distinct lines one source may log through [`warn_once`]. Past it that source's further
+/// lines are counted and dropped, and one line says so; other sources are not affected.
+const MAX_LINES_PER_SOURCE: usize = 16;
+
+/// The lines [`warn_once`] has logged for one source, and how many it has dropped past
+/// [`MAX_LINES_PER_SOURCE`].
+#[derive(Default)]
+struct SourceWarnings {
+    seen: std::collections::BTreeSet<String>,
+    suppressed: u64,
+}
+
+/// The warnings [`warn_once`] has logged, per source, and how many it has dropped past the caps.
 #[derive(Default)]
 pub(crate) struct Warned {
-    seen: std::collections::BTreeSet<String>,
-    dropped: u64,
+    sources: std::collections::BTreeMap<String, SourceWarnings>,
+    dropped_sources: u64,
 }
 
 impl Warned {
-    /// The text to log for `line`: `line` itself the first time, nothing again, and once past the
-    /// cap one "further warnings suppressed" line. Past the cap the new line is counted and dropped.
-    pub(crate) fn once(&mut self, line: &str) -> Option<String> {
-        if self.seen.contains(line) {
+    /// The text to log for `line` from `source`: `line` itself the first time, nothing again. Past
+    /// the source's cap, one "{source}: further warnings suppressed" line; a new source past
+    /// [`MAX_SOURCES`] is counted and dropped, with one global line.
+    pub(crate) fn once(&mut self, source: &str, line: &str) -> Option<String> {
+        if !self.sources.contains_key(source) && self.sources.len() >= MAX_SOURCES {
+            self.dropped_sources += 1;
+            return (self.dropped_sources == 1).then(|| {
+                format!("further warnings suppressed: more than {MAX_SOURCES} sources this process")
+            });
+        }
+        let entry = self.sources.entry(source.to_owned()).or_default();
+        if entry.seen.contains(line) {
             return None;
         }
-        if self.seen.len() < MAX_WARNINGS {
-            self.seen.insert(line.to_owned());
+        if entry.seen.len() < MAX_LINES_PER_SOURCE {
+            entry.seen.insert(line.to_owned());
             return Some(line.to_owned());
         }
-        self.dropped += 1;
-        (self.dropped == 1).then(|| {
-            format!("further warnings suppressed: more than {MAX_WARNINGS} distinct warnings this process")
-        })
+        entry.suppressed += 1;
+        (entry.suppressed == 1).then(|| format!("{source}: further warnings suppressed"))
     }
 }
 
 static WARNED: Mutex<Warned> = Mutex::new(Warned {
-    seen: std::collections::BTreeSet::new(),
-    dropped: 0,
+    sources: std::collections::BTreeMap::new(),
+    dropped_sources: 0,
 });
 
-/// Logs `line` as a warning, once per process for each distinct line: a refusal or a failure a mod
-/// repeats on every call is logged at its first occurrence only. The line names the mod and the
-/// hook, so each (mod, hook, text) is one entry.
-pub(crate) fn warn_once(line: &str) {
+/// Logs `line` as a warning from `source` (a mod's id, or "host"), once per process for each
+/// distinct line: a refusal or a failure a mod repeats on every call is logged at its first
+/// occurrence only. Each source has its own cap, so one mod's errors cannot silence another's.
+pub(crate) fn warn_once(source: &str, line: &str) {
     let text = WARNED
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .once(line);
+        .once(source, line);
     if let Some(text) = text {
         log::warn!(target: LOG_TARGET, "{text}");
     }
@@ -2231,32 +2249,63 @@ mod warn_once_tests {
     fn a_repeated_line_is_logged_once() {
         let mut warned = Warned::default();
         let line = "mod_a: compute_fov: output `fov` refused, the previous value is kept: bad";
-        let logged: Vec<String> = (0..50).filter_map(|_| warned.once(line)).collect();
+        let logged: Vec<String> = (0..50).filter_map(|_| warned.once("mod_a", line)).collect();
         assert_eq!(logged, [line]);
     }
 
     #[test]
     fn two_mods_or_two_reasons_are_two_lines() {
         let mut warned = Warned::default();
-        assert!(warned.once("mod_a: hook: refused, x").is_some());
-        assert!(warned.once("mod_b: hook: refused, x").is_some());
-        assert!(warned.once("mod_a: hook: refused, y").is_some());
-        assert!(warned.once("mod_a: hook: refused, x").is_none());
+        assert!(warned.once("mod_a", "mod_a: hook: refused, x").is_some());
+        assert!(warned.once("mod_b", "mod_b: hook: refused, x").is_some());
+        assert!(warned.once("mod_a", "mod_a: hook: refused, y").is_some());
+        assert!(warned.once("mod_a", "mod_a: hook: refused, x").is_none());
     }
 
     #[test]
-    fn the_cap_holds_and_one_suppression_line_is_logged() {
+    fn a_mod_with_100_distinct_errors_logs_16_and_one_suppression_line() {
+        let mut warned = Warned::default();
+        let logged: Vec<String> = (0..100)
+            .filter_map(|i| warned.once("mod_a", &format!("mod_a: hook: error {i}")))
+            .collect();
+        assert_eq!(logged.len(), MAX_LINES_PER_SOURCE + 1);
+        assert_eq!(logged[0], "mod_a: hook: error 0");
+        assert_eq!(
+            logged[MAX_LINES_PER_SOURCE],
+            "mod_a: further warnings suppressed"
+        );
+        assert_eq!(
+            warned.sources["mod_a"].suppressed,
+            100 - MAX_LINES_PER_SOURCE as u64
+        );
+    }
+
+    #[test]
+    fn a_second_mod_still_logs_after_the_first_is_exhausted() {
+        let mut warned = Warned::default();
+        for i in 0..100 {
+            warned.once("mod_a", &format!("mod_a: hook: error {i}"));
+        }
+        assert!(warned.once("mod_a", "mod_a: hook: error 500").is_none());
+        assert_eq!(
+            warned.once("mod_b", "mod_b: hook: first"),
+            Some("mod_b: hook: first".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_global_cap_of_sources_holds_and_one_global_line_is_logged() {
         let mut warned = Warned::default();
         let logged: Vec<String> = (0..300)
-            .filter_map(|i| warned.once(&format!("mod_{i}: hook: reason")))
+            .filter_map(|i| warned.once(&format!("mod_{i}"), &format!("mod_{i}: hook: reason")))
             .collect();
-        assert_eq!(logged.len(), MAX_WARNINGS + 1);
+        assert_eq!(logged.len(), MAX_SOURCES + 1);
         assert_eq!(
-            logged[MAX_WARNINGS],
-            "further warnings suppressed: more than 256 distinct warnings this process"
+            logged[MAX_SOURCES],
+            "further warnings suppressed: more than 256 sources this process"
         );
-        assert_eq!(warned.seen.len(), MAX_WARNINGS);
-        assert_eq!(warned.dropped, 300 - MAX_WARNINGS as u64);
-        assert!(warned.once("mod_0: hook: reason").is_none());
+        assert_eq!(warned.sources.len(), MAX_SOURCES);
+        assert_eq!(warned.dropped_sources, 300 - MAX_SOURCES as u64);
+        assert!(warned.once("mod_0", "mod_0: hook: reason").is_none());
     }
 }
