@@ -12,6 +12,7 @@ use event_horizon_lua_convert::scalar::{ConvertError, FromLuaValue};
 use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
+use crate::data_maps;
 
 /// The most `horizon.on` calls one mod may make.
 pub const MAX_HANDLERS: usize = 256;
@@ -101,6 +102,10 @@ pub struct Declaration {
     pub configs: Vec<mod_api::Config>,
     /// The server commands `horizon.command` declared, in declaration order.
     pub commands: Vec<CommandRecord>,
+    /// The data map types `horizon.data_map_type` declared, in declaration order.
+    pub data_map_types: Vec<mod_api::DataMapType>,
+    /// The data pack files `horizon.data_pack_file` declared, as (key, JSON text), in order.
+    pub data_pack_files: Vec<(String, String)>,
 }
 
 /// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
@@ -297,6 +302,8 @@ pub fn declare_with_budget(
         client_commands: recorded.client_commands,
         configs: recorded.configs,
         commands: recorded.commands,
+        data_map_types: recorded.data_map_types,
+        data_pack_files: recorded.data_pack_files,
     })
 }
 
@@ -431,6 +438,8 @@ struct Recorded {
     client_commands: Vec<ClientCommandRecord>,
     configs: Vec<mod_api::Config>,
     commands: Vec<CommandRecord>,
+    data_map_types: Vec<mod_api::DataMapType>,
+    data_pack_files: Vec<(String, String)>,
 }
 
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
@@ -478,6 +487,8 @@ fn run(
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
     let configs = RefCell::new(Vec::<mod_api::Config>::new());
     let commands = RefCell::new(Vec::<CommandRecord>::new());
+    let data_map_types = RefCell::new(Vec::<mod_api::DataMapType>::new());
+    let data_pack_files = RefCell::new(Vec::<(String, String)>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
 
@@ -600,10 +611,18 @@ fn run(
             let command = scope.create_function(|lua, value: Value| {
                 declare_command(lua, value, &commands)
             })?;
+            let data_map_type = scope.create_function(|_, value: Value| {
+                data_maps::declare_type(owner, value, &data_map_types)
+            })?;
+            let data_pack_file = scope.create_function(|_, value: Value| {
+                data_maps::declare_file(owner, value, &data_pack_files)
+            })?;
             horizon.raw_set("on", on)?;
             horizon.raw_set("client_command", client_command)?;
             horizon.raw_set("config", config)?;
             horizon.raw_set("command", command)?;
+            horizon.raw_set("data_map_type", data_map_type)?;
+            horizon.raw_set("data_pack_file", data_pack_file)?;
             horizon.raw_set("block", block)?;
             horizon.raw_set("item", item)?;
             horizon.raw_set("block_part", block_part)?;
@@ -645,6 +664,8 @@ fn run(
         ("client_command", LATE_DECLARE),
         ("config", LATE_DECLARE),
         ("command", LATE_DECLARE),
+        ("data_map_type", LATE_DECLARE),
+        ("data_pack_file", LATE_DECLARE),
     ] {
         let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
             Err(Error::runtime(message))
@@ -666,6 +687,8 @@ fn run(
         client_commands: client_commands.into_inner(),
         configs: configs.into_inner(),
         commands: commands.into_inner(),
+        data_map_types: data_map_types.into_inner(),
+        data_pack_files: data_pack_files.into_inner(),
     };
     Ok((recorded, loaded))
 }
@@ -1427,7 +1450,7 @@ fn check_template(template: &str) -> Result<(), String> {
 }
 
 /// A path of lowercase letters, digits, `_`, `-`, `.` and `/`, not empty.
-fn check_path(whole: &str, path: &str) -> Result<(), String> {
+pub(crate) fn check_path(whole: &str, path: &str) -> Result<(), String> {
     let valid = !path.is_empty()
         && path.chars().all(|c| {
             c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-' | '.' | '/')

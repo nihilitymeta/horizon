@@ -5,6 +5,9 @@ mod block_state_tests;
 pub mod budget;
 pub mod builtin;
 pub mod commands;
+mod data_maps;
+#[cfg(test)]
+mod data_maps_tests;
 pub mod declare;
 pub mod discover;
 pub mod dispatch;

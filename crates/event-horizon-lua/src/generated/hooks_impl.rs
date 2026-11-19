@@ -8663,6 +8663,16 @@ impl mod_api::Hooks for LuaHost {
         self.declared_blocks(event.blocks);
     }
 
+    fn data_map_types(&self, host: &mut dyn ServerHost, event: &mut mod_api::DataMapTypesEvent<'_>) {
+        let _ = host;
+        self.declared_data_map_types(event.types);
+    }
+
+    fn data_pack_files(&self, host: &mut dyn ServerHost, event: &mut mod_api::DataPackFilesEvent<'_>) {
+        let _ = host;
+        self.declared_data_pack_files(event.files);
+    }
+
     fn items(&self, context: &RegistrationContext, event: &mut mod_api::ItemsEvent<'_>) {
         let _ = context;
         self.declared_items(event.items);

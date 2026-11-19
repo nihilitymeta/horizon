@@ -117,6 +117,15 @@ export type ClientCommandRecord = { usage: string }
 -- mod, and each usage is declared once.
 export type CommandRecord = { usage: string, level: number? }
 
+-- A data map type: `id` is `<mod>:<path>` in the mod's own namespace (at most 64 characters);
+-- `registry` is the registry it is for, any the game names (`minecraft:item`). At most 16 per mod.
+export type DataMapTypeRecord = { id: string, registry: string }
+
+-- A data pack file of a data map: `key` is `data_maps/<mod>:<registry folder>/<path>` in the mod's
+-- own namespace; `json` is its text, at most 262144 bytes, nested at most 32 deep, with at most 4096
+-- entries (object members and array elements). At most 64 files per mod.
+export type DataPackFileRecord = { key: string, json: string }
+
 -- A config file: `kind` is "client", "common" or "server"; `file` names it (at most 128 bytes,
 -- optional); `default` is its default text (at most 65536 bytes). At most 8 configs per mod.
 export type ConfigRecord = {
@@ -127,8 +136,10 @@ export type ConfigRecord = {
 
 -- The `horizon` global. Its functions split by time: the declaring functions (block, item,
 -- block_entity_type, world_fluid, block_part, item_part, block_entity_part, fluid_part,
--- client_command, config, command) and `on` work only while the mod loads; `log` and `none` work
--- only inside a handler. `horizon.log` takes a string. Control characters are written as `\u{..}`
+-- client_command, config, command, data_map_type, data_pack_file) and `on` work only while the mod
+-- loads; `log`, `none` and `data_map` work only inside a handler. `data_map(registry, entry, map)`
+-- reads the value an entry has in a data map, as NBT in Lua (nil where it has none); a read costs 1
+-- unit of the turn's budget. `horizon.log` takes a string. Control characters are written as `\u{..}`
 -- escapes, and a line is cut at 1000 characters after escaping (host.rs MAX_LOG_LINE; an escape is
 -- never split). A mod may write 20 lines at once, then 20 a second (host.rs LOG_BURST, LOG_PER_SECOND);
 -- a line over that rate is dropped without an error. The mod keeps its last 100 lines
@@ -150,6 +161,9 @@ export type HorizonApi = {
 	client_command: (record: ClientCommandRecord) -> (),
 	config: (record: ConfigRecord) -> (),
 	command: (record: CommandRecord) -> (),
+	data_map_type: (record: DataMapTypeRecord) -> (),
+	data_pack_file: (record: DataPackFileRecord) -> (),
+	data_map: (registry: string, entry: string, map: string) -> any,
 	log: (message: string) -> (),
 	none: NoneMarker,
 }

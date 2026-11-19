@@ -277,6 +277,9 @@ fn op_cost(op: &str) -> mlua::Result<u32> {
     if op == crate::commands::FEEDBACK_OP {
         return Ok(crate::commands::FEEDBACK_COST);
     }
+    if op == crate::data_maps::DATA_MAP_OP {
+        return Ok(crate::data_maps::DATA_MAP_COST);
+    }
     crate::generated::handles::cost(op).ok_or_else(|| unknown(op))
 }
 
@@ -292,6 +295,9 @@ fn run_op(
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);
     }
+    if op == crate::data_maps::DATA_MAP_OP {
+        return crate::data_maps::data_map_op(lua, host, args);
+    }
     crate::generated::handles::run(lua, host, op, &this, args).unwrap_or_else(|| Err(unknown(op)))
 }
 
@@ -300,6 +306,9 @@ fn run_op(
 fn op_cost(op: &str) -> mlua::Result<u32> {
     if op == crate::commands::FEEDBACK_OP {
         return Ok(crate::commands::FEEDBACK_COST);
+    }
+    if op == crate::data_maps::DATA_MAP_OP {
+        return Ok(crate::data_maps::DATA_MAP_COST);
     }
     match stub::cost(op) {
         Some(cost) => Ok(cost),
@@ -317,6 +326,9 @@ fn run_op(
 ) -> mlua::Result<Value> {
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);
+    }
+    if op == crate::data_maps::DATA_MAP_OP {
+        return crate::data_maps::data_map_op(lua, host, args);
     }
     match stub::run(lua, host, op, &this, args.clone()) {
         Some(out) => out,
@@ -1829,13 +1841,15 @@ mod tests {
             .filter(|line| line.ends_with(" emitted"))
             .count();
         assert_eq!(emitted, crate::generated::hooks::EMITTED.len());
-        assert!(coverage.contains("# hooks: 749, emitted: 404, skipped: 345\n"));
+        assert!(coverage.contains("# hooks: 749, emitted: 406, skipped: 343\n"));
         assert!(lines.contains(&"player_command emitted"));
         assert!(lines.contains(&"right_click_block emitted"));
         // The declaration hooks are answered from the records, and no mod can subscribe to them.
         assert!(lines.contains(&"blocks emitted (host records)"));
         assert!(lines.contains(&"items emitted (host records)"));
         assert!(lines.contains(&"register_client_commands emitted (host records)"));
+        assert!(lines.contains(&"data_map_types emitted (host records)"));
+        assert!(lines.contains(&"data_pack_files emitted (host records)"));
         assert!(lines.contains(&"register_commands emitted (host records)"));
         assert!(lines.contains(&"register_configs emitted (host records)"));
         assert!(!crate::generated::hooks::EMITTED.contains(&"register_configs"));

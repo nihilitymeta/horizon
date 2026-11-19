@@ -73,6 +73,10 @@ pub struct LuaMod {
     commands: Vec<CommandRecord>,
     /// The configs the mod declared with `horizon.config`, each owned by this mod's id.
     configs: Vec<mod_api::Config>,
+    /// The data map types the mod declared with `horizon.data_map_type`, and the data pack files
+    /// with `horizon.data_pack_file` (key and JSON text).
+    data_map_types: Vec<mod_api::DataMapType>,
+    data_pack_files: Vec<(String, String)>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -175,6 +179,8 @@ impl LuaMod {
             client_commands: declaration.client_commands,
             commands: declaration.commands,
             configs: declaration.configs,
+            data_map_types: declaration.data_map_types,
+            data_pack_files: declaration.data_pack_files,
             lua,
             log,
             turn: Turn::default(),
@@ -384,6 +390,16 @@ impl LuaHost {
                 "register_commands",
                 mods.iter()
                     .any(|m| m.runs_on_server() && !m.commands.is_empty()),
+            ),
+            (
+                "data_map_types",
+                mods.iter()
+                    .any(|m| m.runs_on_server() && !m.data_map_types.is_empty()),
+            ),
+            (
+                "data_pack_files",
+                mods.iter()
+                    .any(|m| m.runs_on_server() && !m.data_pack_files.is_empty()),
             ),
         ] {
             if let (true, Some(id)) = (declared, hook_id(name)) {
@@ -609,6 +625,34 @@ impl LuaHost {
             .filter(|m| m.runs_on_server() && !self.is_refused(m))
         {
             out.extend(m.commands.iter().map(CommandRecord::to_command));
+        }
+    }
+
+    /// The data map types of every loaded mod that runs on a server and was not refused, in load and
+    /// declaration order: the answer to the game's `data_map_types` hook.
+    pub(crate) fn declared_data_map_types(&self, out: &mut Vec<mod_api::DataMapType>) {
+        for m in self
+            .mods
+            .iter()
+            .filter(|m| m.runs_on_server() && !self.is_refused(m))
+        {
+            out.extend(m.data_map_types.iter().cloned());
+        }
+    }
+
+    /// The data pack files of every loaded mod that runs on a server and was not refused, in load and
+    /// declaration order, each text as its bytes: the answer to the game's `data_pack_files` hook.
+    pub(crate) fn declared_data_pack_files(&self, out: &mut Vec<(String, Vec<u8>)>) {
+        for m in self
+            .mods
+            .iter()
+            .filter(|m| m.runs_on_server() && !self.is_refused(m))
+        {
+            out.extend(
+                m.data_pack_files
+                    .iter()
+                    .map(|(key, text)| (key.clone(), text.clone().into_bytes())),
+            );
         }
     }
 
@@ -953,6 +997,7 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
             Err(Error::runtime(LATE_ON))
         })?,
     )?;
+    horizon.raw_set("data_map", crate::data_maps::data_map_function(lua)?)?;
     let id = id.to_string();
     let limit = Mutex::new(RateLimit::new(LOG_BURST, LOG_PER_SECOND));
     horizon.raw_set(

@@ -74,6 +74,18 @@ pub const HOST_RECORDED: &[(&str, &str, &str, &str)] = &[
         "commands",
         "declared_commands",
     ),
+    (
+        "data_map_types",
+        "DataMapTypesEvent",
+        "types",
+        "declared_data_map_types",
+    ),
+    (
+        "data_pack_files",
+        "DataPackFilesEvent",
+        "files",
+        "declared_data_pack_files",
+    ),
 ];
 
 /// Fields a hook's event carries that no argument of the hook supplies: `(hook, field, expr)`. The

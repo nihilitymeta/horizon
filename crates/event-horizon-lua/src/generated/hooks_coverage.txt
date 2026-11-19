@@ -1,5 +1,5 @@
 # Hook coverage (issue 74, H3) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
-# hooks: 749, emitted: 404, skipped: 345
+# hooks: 749, emitted: 406, skipped: 343
 # skipped, answer: ArmPose: 1
 # skipped, answer: Minimap: 1
 # skipped, answer: Vec<GuiDraw>: 1
@@ -18,7 +18,7 @@
 # skipped, argument <..>: a mutable argument writes back, not in this slice: 1
 # skipped, handle input: host <..> is not carried by a turn: 2
 # skipped, handle output: 4
-# skipped, has an output: its listeners write back, not in this slice: 48
+# skipped, has an output: its listeners write back, not in this slice: 46
 # skipped, hot path (needs measurement): 10
 # skipped, listen hook returns <..>: its listeners answer nothing: 1
 # skipped, not a method of the Hooks trait: 144
@@ -225,9 +225,9 @@ custom_spawner_tick emitted
 customize_boss_event_progress emitted
 customize_chat_overlay emitted
 damage_item skipped: not a method of the Hooks trait
-data_map_types skipped: has an output: its listeners write back, not in this slice
+data_map_types emitted (host records)
 data_maps_updated emitted
-data_pack_files skipped: has an output: its listeners write back, not in this slice
+data_pack_files emitted (host records)
 datapack_sync emitted
 debug_entry_lines emitted
 debug_renderer_draw skipped: argument `draw` has type `&'a mut dyn WorldDrawContext` (kind DynHost): a mutable argument writes back, not in this slice
