@@ -24,7 +24,9 @@ use crate::declare::{
     self, BehaviorRecord, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord,
     FluidRecord, GoalRecord, ItemRecord, ListenerOptions, PartKind, PartRecord,
 };
-use crate::discover::{Discovered, ENTRY, Side};
+#[cfg(test)]
+use crate::discover::ENTRY;
+use crate::discover::{Discovered, Side};
 use crate::dispatch::{self, new_event};
 use crate::generated::hooks::{hook_id, is_emitted};
 use crate::hlua::Package;
@@ -161,18 +163,12 @@ impl Drop for TurnGuard<'_> {
 }
 
 impl LuaMod {
-    /// Loads the mod `found` from its package: its first listed script (`main.luau` when the
-    /// manifest lists none) is read through the package reader, then the mod is declared. This is
-    /// the loader's path. Only the first listed script runs; the others are not read.
+    /// Loads the mod `found` from its package: every script its manifest lists is read through the
+    /// package reader, in manifest order, and the mod is declared from all of them as one mod (one
+    /// environment, one time budget). This is the loader's path.
     pub fn load_package(found: &Discovered, package: &Package) -> Result<LuaMod, String> {
-        let name = package
-            .manifest()
-            .entries
-            .first()
-            .cloned()
-            .unwrap_or_else(|| ENTRY.to_string());
-        let source = package.entry_source(&name).map_err(|r| r.reason())?;
-        Self::from_source(found, &name, &source)
+        let scripts = package.entry_sources().map_err(|r| r.reason())?;
+        Self::from_sources(found, &scripts)
     }
 
     /// Loads a folder's `main.luau` without its manifest. Tests only: the loader reads every mod
@@ -180,16 +176,29 @@ impl LuaMod {
     #[cfg(test)]
     pub fn load(found: &Discovered) -> Result<LuaMod, String> {
         let source = read_source(&found.dir)?;
-        Self::from_source(found, ENTRY, &source)
+        Self::from_sources(found, &[(ENTRY.to_string(), source)])
     }
 
-    /// Declares the mod from its script `source`, named `entry` in its package, and installs the
-    /// runtime `horizon` table in place of the declaring one. Any failure is an error.
-    fn from_source(found: &Discovered, entry: &str, source: &str) -> Result<LuaMod, String> {
+    /// Declares the mod from its scripts, each as (name in its package, source) in manifest order,
+    /// and installs the runtime `horizon` table in place of the declaring one. Any failure is an
+    /// error. A script's chunk is named by its path under the mod's folder, so an error names it.
+    fn from_sources(found: &Discovered, scripts: &[(String, String)]) -> Result<LuaMod, String> {
         let lua = state::new_state().map_err(|e| e.to_string())?;
-        let chunk_name = format!("@{}", found.dir.join(entry).display());
+        let chunks: Vec<(String, &str)> = scripts
+            .iter()
+            .map(|(entry, source)| {
+                (
+                    format!("@{}", found.dir.join(entry).display()),
+                    source.as_str(),
+                )
+            })
+            .collect();
+        let refs: Vec<(&str, &str)> = chunks
+            .iter()
+            .map(|(name, source)| (name.as_str(), *source))
+            .collect();
         let (declaration, notices) = collect_load_notices(|| {
-            declare::declare(&lua, &found.id, source, &chunk_name, &|n| is_emitted(n))
+            declare::declare_scripts(&lua, &found.id, &refs, &|n| is_emitted(n))
         });
         let declaration = declaration?;
 

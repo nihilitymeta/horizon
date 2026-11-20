@@ -9,8 +9,8 @@ use zip::CompressionMethod;
 use zip::write::{SimpleFileOptions, ZipWriter};
 
 use crate::hlua::{
-    MAX_ARCHIVE, MAX_COMMENT, MAX_ENTRIES, MAX_ENTRY, MAX_SCRIPT, MAX_TOTAL, NameFault, Package,
-    Refusal, check_name, read_counted, same_file,
+    MAX_ARCHIVE, MAX_COMMENT, MAX_ENTRIES, MAX_ENTRY, MAX_SCRIPT, MAX_TOTAL, MAX_TOTAL_SOURCE,
+    NameFault, Package, Refusal, check_name, read_counted, same_file,
 };
 
 /// Writes `root/rel` with `bytes`, creating its folders.
@@ -1076,4 +1076,127 @@ fn a_mutated_archive_never_panics_and_is_loaded_or_refused() {
     }
     assert_eq!(loaded + refused, 3000);
     assert!(refused > 0, "the mutations never reached a refusal");
+}
+
+/// The manifest that lists `names` as its scripts, in that order, on top of the archive manifest.
+fn listing(names: &[&str]) -> String {
+    let list: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+    format!("{ARCHIVE_MANIFEST}entries = [{}]\n", list.join(", "))
+}
+
+#[test]
+fn listed_scripts_are_read_in_manifest_order_not_file_order() {
+    let files = with(
+        with(
+            with(
+                good(),
+                "lua-mod.toml",
+                listing(&["second.luau", "main.luau", "src/third.luau"]).as_bytes(),
+            ),
+            "second.luau",
+            b"return 2\n",
+        ),
+        "src/third.luau",
+        b"return 3\n",
+    );
+    let root = tempfile::tempdir().unwrap();
+    for (name, body) in &files {
+        if name.ends_with('/') {
+            std::fs::create_dir_all(root.path().join(name)).unwrap();
+        } else {
+            put(root.path(), name, body);
+        }
+    }
+    let scripts = open(root.path()).unwrap().entry_sources().unwrap();
+    let names: Vec<&str> = scripts.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["second.luau", "main.luau", "src/third.luau"]);
+    assert_eq!(scripts[0].1, "return 2\n");
+    assert_eq!(scripts[2].1, "return 3\n");
+}
+
+#[test]
+fn sixteen_listed_scripts_are_all_read() {
+    let names: Vec<String> = (0..16).map(|i| format!("s{i}.luau")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut files = with(good(), "lua-mod.toml", listing(&refs).as_bytes());
+    for name in &names {
+        files.push((name.clone(), format!("return \"{name}\"\n").into_bytes()));
+    }
+    let scripts = open_bytes(&zip(&files, false))
+        .unwrap()
+        .entry_sources()
+        .unwrap();
+    assert_eq!(scripts.len(), 16);
+    for (i, (name, text)) in scripts.iter().enumerate() {
+        assert_eq!(name, &names[i]);
+        assert_eq!(text, &format!("return \"{name}\"\n"));
+    }
+}
+
+#[test]
+fn the_scripts_of_a_mod_together_are_capped_at_four_mebibytes() {
+    // Four scripts of exactly one mebibyte are the cap; one byte more over the cap is refused.
+    let mebi = vec![b'-'; MAX_SCRIPT as usize];
+    let mut names: Vec<String> = (0..4).map(|i| format!("s{i}.luau")).collect();
+    let root = tempfile::tempdir().unwrap();
+    put(
+        root.path(),
+        "lua-mod.toml",
+        listing(&names.iter().map(String::as_str).collect::<Vec<_>>()).as_bytes(),
+    );
+    for name in &names {
+        put(root.path(), name, &mebi);
+    }
+    let four = open(root.path()).unwrap();
+    assert_eq!(four.entry_sources().unwrap().len(), 4);
+
+    names.push("extra.luau".into());
+    put(
+        root.path(),
+        "lua-mod.toml",
+        listing(&names.iter().map(String::as_str).collect::<Vec<_>>()).as_bytes(),
+    );
+    put(root.path(), "extra.luau", b"x");
+    let five = open(root.path()).unwrap();
+    let refused = five.entry_sources().unwrap_err();
+    assert_eq!(
+        refused,
+        Refusal::TotalSourceTooLarge {
+            max: MAX_TOTAL_SOURCE
+        }
+    );
+    assert_eq!(refused.key(), "lua_mod.refused.total_source_too_large");
+    assert!(
+        refused
+            .args()
+            .contains(&("max", MAX_TOTAL_SOURCE.to_string()))
+    );
+}
+
+#[test]
+fn an_archive_with_two_scripts_reads_the_same_scripts_as_its_folder() {
+    let files = with(
+        with(
+            good(),
+            "lua-mod.toml",
+            listing(&["main.luau", "second.luau"]).as_bytes(),
+        ),
+        "second.luau",
+        b"horizon.on(\"tick\", function() end)\n",
+    );
+    let archive = open_bytes(&zip(&files, false)).unwrap();
+
+    let root = tempfile::tempdir().unwrap();
+    for (name, body) in &files {
+        if name.ends_with('/') {
+            std::fs::create_dir_all(root.path().join(name)).unwrap();
+        } else {
+            put(root.path(), name, body);
+        }
+    }
+    let folder = open(root.path()).unwrap();
+
+    let scripts = archive.entry_sources().unwrap();
+    assert_eq!(scripts.len(), 2);
+    assert_eq!(scripts, folder.entry_sources().unwrap());
 }

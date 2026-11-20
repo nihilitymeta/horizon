@@ -1376,6 +1376,7 @@
   "lua_mod.refused.too_many_mods": "More than %1$s mods are scanned.",
   "lua_mod.refused.total_ratio": "The package compresses more than 100 to 1.",
   "lua_mod.refused.total_too_large": "The entries together are over %1$s bytes.",
+  "lua_mod.refused.total_source_too_large": "The scripts the manifest lists are together over %1$s bytes.",
   "lua_mod.refused.trailing_data": "There are bytes before or after the archive.",
   "lua_mod.refused.unknown_key": "lua-mod.toml has an unknown key %1$s.",
   "lua_mod.refused.unknown_power": "The power %1$s is not known.",

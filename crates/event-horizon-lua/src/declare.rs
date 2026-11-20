@@ -351,7 +351,7 @@ pub fn declare(
     chunk_name: &str,
     is_hook: &dyn Fn(&str) -> bool,
 ) -> Result<Declaration, String> {
-    declare_with_budget(lua, owner, source, chunk_name, is_hook, DECLARE_BUDGET)
+    declare_scripts(lua, owner, &[(chunk_name, source)], is_hook)
 }
 
 /// The same as `declare` with an explicit time budget.
@@ -363,8 +363,33 @@ pub fn declare_with_budget(
     is_hook: &dyn Fn(&str) -> bool,
     budget: Duration,
 ) -> Result<Declaration, String> {
+    declare_scripts_with_budget(lua, owner, &[(chunk_name, source)], is_hook, budget)
+}
+
+/// Runs the mod's scripts in manifest order, each as (chunk name, source), in one declaring
+/// environment, with the default time budget. The scripts are one mod: they share the environment
+/// (a global set by one is seen by the next), the time budget (the whole sequence gets
+/// `DECLARE_BUDGET`, not each script), and the caps and records of the `Declaration`. A runtime
+/// error in any script refuses the mod, and the scripts after it do not run.
+pub fn declare_scripts(
+    lua: &Lua,
+    owner: &str,
+    scripts: &[(&str, &str)],
+    is_hook: &dyn Fn(&str) -> bool,
+) -> Result<Declaration, String> {
+    declare_scripts_with_budget(lua, owner, scripts, is_hook, DECLARE_BUDGET)
+}
+
+/// The same as `declare_scripts` with an explicit time budget for the whole sequence.
+pub fn declare_scripts_with_budget(
+    lua: &Lua,
+    owner: &str,
+    scripts: &[(&str, &str)],
+    is_hook: &dyn Fn(&str) -> bool,
+    budget: Duration,
+) -> Result<Declaration, String> {
     let (recorded, loaded) =
-        run(lua, owner, source, chunk_name, is_hook, budget).map_err(|e| e.to_string())?;
+        run(lua, owner, scripts, is_hook, budget).map_err(|e| e.to_string())?;
     let hooks = recorded
         .options
         .iter()
@@ -542,8 +567,7 @@ struct Recorded {
 fn run(
     lua: &Lua,
     owner: &str,
-    source: &str,
-    chunk_name: &str,
+    scripts: &[(&str, &str)],
     is_hook: &dyn Fn(&str) -> bool,
     budget_limit: Duration,
 ) -> mlua::Result<(Recorded, mlua::Result<()>)> {
@@ -752,15 +776,18 @@ fn run(
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
+            // One budget frame for the whole sequence: the scripts share the time, not each its own.
             let result = budget::within_with(
                 lua,
                 budget_limit,
                 "the mod ran over its loading time budget",
                 || {
-                    lua.load(source)
-                        .set_name(chunk_name)
-                        .set_environment(env.clone())
-                        .exec()
+                    scripts.iter().try_for_each(|(chunk_name, source)| {
+                        lua.load(*source)
+                            .set_name(*chunk_name)
+                            .set_environment(env.clone())
+                            .exec()
+                    })
                 },
             );
             finished.set(true);
@@ -3687,5 +3714,141 @@ mod tests {
         ))
         .unwrap_err();
         assert!(err.contains("at most 16 entity parts"), "got {err}");
+    }
+
+    /// Declares a mod made of `scripts` (chunk name, source) in a fresh state.
+    fn declare_scripts_in_fresh_state(scripts: &[(&str, &str)]) -> Result<Declaration, String> {
+        let lua = new_state().unwrap();
+        declare_scripts(&lua, "mymod", scripts, &is_known)
+    }
+
+    /// A global `burn(ms)` that keeps the state busy for `ms` milliseconds, for the budget tests.
+    fn with_burn(lua: &Lua) {
+        let burn = lua
+            .create_function(|_, ms: u64| {
+                let until = Instant::now() + Duration::from_millis(ms);
+                while Instant::now() < until {}
+                Ok(())
+            })
+            .unwrap();
+        lua.globals().set("burn", burn).unwrap();
+    }
+
+    #[test]
+    fn scripts_are_one_mod_recorded_in_manifest_order() {
+        let declaration = declare_scripts_in_fresh_state(&[
+            (
+                "@lua-mods/test/main.luau",
+                "horizon.block{id = \"mymod:lamp\", template = \"minecraft:stone\"}\n",
+            ),
+            (
+                "@lua-mods/test/second.luau",
+                "horizon.on(\"tick\", function() end)\n",
+            ),
+        ])
+        .unwrap();
+        assert_eq!(declaration.hooks, ["tick"]);
+        let blocks: Vec<&str> = declaration.blocks.iter().map(|b| b.id.as_str()).collect();
+        assert_eq!(blocks, ["mymod:lamp"]);
+    }
+
+    #[test]
+    fn a_later_script_sees_the_globals_of_an_earlier_one() {
+        // One environment: the first script's global is there for the second.
+        let declaration = declare_scripts_in_fresh_state(&[
+            ("@lua-mods/test/main.luau", "shared = \"yes\"\n"),
+            (
+                "@lua-mods/test/second.luau",
+                "if shared ~= \"yes\" then error(\"not shared\") end\nhorizon.on(\"tick\", function() end)\n",
+            ),
+        ])
+        .unwrap();
+        assert_eq!(declaration.hooks, ["tick"]);
+    }
+
+    #[test]
+    fn an_error_in_a_later_script_refuses_the_mod_and_names_the_script_and_line() {
+        let err = declare_scripts_in_fresh_state(&[
+            (
+                "@lua-mods/test/main.luau",
+                "horizon.on(\"tick\", function() end)\n",
+            ),
+            (
+                "@lua-mods/test/second.luau",
+                "horizon.on(\"tick\", function() end)\nerror(\"boom\")\n",
+            ),
+        ])
+        .unwrap_err();
+        assert!(err.contains("second.luau:2"), "got {err}");
+    }
+
+    #[test]
+    fn sixteen_scripts_declare_one_mod() {
+        let names: Vec<String> = (1..=16)
+            .map(|i| format!("@lua-mods/test/s{i}.luau"))
+            .collect();
+        let sources: Vec<String> = (1..=16)
+            .map(|i| format!("horizon.on(\"tick\", function() end)\nlocal _ = {i}\n"))
+            .collect();
+        let scripts: Vec<(&str, &str)> = names
+            .iter()
+            .zip(&sources)
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect();
+        let declaration = declare_scripts_in_fresh_state(&scripts).unwrap();
+        assert_eq!(declaration.hooks, ["tick"]);
+        assert_eq!(declaration.options.len(), 1);
+    }
+
+    #[test]
+    fn the_time_budget_is_shared_by_all_scripts_of_a_mod() {
+        // Script 1 burns 120 ms of a 200 ms budget and fits alone. Script 2 burns 120 ms more and then
+        // reaches a loop back-edge (where Luau checks the interrupt) after 240 ms. A budget per script
+        // would let it pass; the one budget of the mod refuses it.
+        let lua = new_state().unwrap();
+        with_burn(&lua);
+        let first = "burn(120)\n";
+        let second = "burn(120)\nfor i = 1, 2 do local _ = i end\n";
+        let budget = Duration::from_millis(200);
+        declare_scripts_with_budget(&lua, "mymod", &[("=a", first)], &is_known, budget).unwrap();
+        let err = declare_scripts_with_budget(
+            &lua,
+            "mymod",
+            &[("=a", first), ("=b", second)],
+            &is_known,
+            budget,
+        )
+        .unwrap_err();
+        assert!(err.contains("time budget"), "got {err}");
+    }
+
+    #[test]
+    fn the_caps_count_across_scripts() {
+        // 200 handlers in one script and 100 in the next: 300 is over the 256 a mod may register.
+        let many = |n: usize| "horizon.on(\"tick\", function() end)\n".repeat(n);
+        let first = many(200);
+        let second = many(100);
+        let err = declare_scripts_in_fresh_state(&[("=a", &first), ("=b", &second)]).unwrap_err();
+        assert!(err.contains("at most 256 handlers"), "got {err}");
+        let blocks = |from: usize, n: usize| -> String {
+            (from..from + n)
+                .map(|i| {
+                    format!(
+                        "horizon.block{{id = \"mymod:b{i}\", template = \"minecraft:stone\"}}\n"
+                    )
+                })
+                .collect()
+        };
+        let one = blocks(0, 200);
+        let two = blocks(200, 100);
+        let err = declare_scripts_in_fresh_state(&[("=a", &one), ("=b", &two)]).unwrap_err();
+        assert!(err.contains("at most 256 blocks"), "got {err}");
+    }
+
+    #[test]
+    fn a_block_id_declared_in_two_scripts_is_refused() {
+        let lamp = "horizon.block{id = \"mymod:lamp\", template = \"minecraft:stone\"}\n";
+        let err = declare_scripts_in_fresh_state(&[("=a", lamp), ("=b", lamp)]).unwrap_err();
+        assert!(err.contains("declared twice"), "got {err}");
     }
 }

@@ -45,6 +45,8 @@ pub const MAX_TOTAL: u64 = 64 * 1024 * 1024;
 pub const MAX_RATIO: u64 = 100;
 /// Largest script (`entry_source`), in bytes.
 pub const MAX_SCRIPT: u64 = 1024 * 1024;
+/// Largest total of the scripts a mod lists in `entries`, in bytes: all of them run as one mod.
+pub const MAX_TOTAL_SOURCE: u64 = 4 * 1024 * 1024;
 /// The folders a package may hold, each with any files under it.
 const FOLDERS: [&str; 3] = ["assets", "data", "lang"];
 /// The end-of-central-directory record, its zip64 locator and the zip64 record, by signature and
@@ -133,6 +135,7 @@ pub enum Refusal {
     Method { name: String },
     EntryTooLarge { name: String, max: u64 },
     TotalTooLarge { max: u64 },
+    TotalSourceTooLarge { max: u64 },
     Ratio { name: String },
     TotalRatio,
     SizeMismatch { name: String },
@@ -191,6 +194,7 @@ impl Refusal {
             Refusal::Method { .. } => "lua_mod.refused.entry_method",
             Refusal::EntryTooLarge { .. } => "lua_mod.refused.entry_too_large",
             Refusal::TotalTooLarge { .. } => "lua_mod.refused.total_too_large",
+            Refusal::TotalSourceTooLarge { .. } => "lua_mod.refused.total_source_too_large",
             Refusal::Ratio { .. } => "lua_mod.refused.entry_ratio",
             Refusal::TotalRatio => "lua_mod.refused.total_ratio",
             Refusal::SizeMismatch { .. } => "lua_mod.refused.size_mismatch",
@@ -251,7 +255,9 @@ impl Refusal {
             Refusal::EntryTooLarge { name, max } => {
                 vec![("name", name.clone()), ("max", max.to_string())]
             }
-            Refusal::TotalTooLarge { max } => vec![("max", max.to_string())],
+            Refusal::TotalTooLarge { max } | Refusal::TotalSourceTooLarge { max } => {
+                vec![("max", max.to_string())]
+            }
             Refusal::TooMany { field, max } | Refusal::TextTooLong { field, max } => {
                 vec![("field", field.clone()), ("max", max.to_string())]
             }
@@ -297,6 +303,9 @@ impl Refusal {
             }
             Refusal::EntryTooLarge { name, max } => format!("{name:?} is over {max} bytes"),
             Refusal::TotalTooLarge { max } => format!("the entries together are over {max} bytes"),
+            Refusal::TotalSourceTooLarge { max } => {
+                format!("the scripts the manifest lists are together over {max} bytes")
+            }
             Refusal::Ratio { name } => format!("{name:?} compresses more than 100 to 1"),
             Refusal::TotalRatio => "the package compresses more than 100 to 1".into(),
             Refusal::SizeMismatch { name } => format!("{name:?} is not the size its header says"),
@@ -430,6 +439,27 @@ impl Package {
         }
         let bytes = self.read_file(name, MAX_SCRIPT)?;
         String::from_utf8(bytes).map_err(|_| Refusal::ScriptNotUtf8 { name: name.into() })
+    }
+
+    /// The name and text of every script the manifest lists, in manifest order. Their sizes are
+    /// added up before any is read: together they must be at most `MAX_TOTAL_SOURCE`.
+    pub fn entry_sources(&self) -> Result<Vec<(String, String)>, Refusal> {
+        let total = self
+            .manifest
+            .entries
+            .iter()
+            .filter_map(|name| self.by_name.get(name))
+            .fold(0u64, |sum, &i| sum.saturating_add(self.entries[i].size));
+        if total > MAX_TOTAL_SOURCE {
+            return Err(Refusal::TotalSourceTooLarge {
+                max: MAX_TOTAL_SOURCE,
+            });
+        }
+        self.manifest
+            .entries
+            .iter()
+            .map(|name| Ok((name.clone(), self.entry_source(name)?)))
+            .collect()
     }
 
     /// The names of the package's files under `assets/`, in name order.

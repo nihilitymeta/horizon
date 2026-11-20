@@ -579,6 +579,7 @@ fn every_key() -> Vec<&'static str> {
             | Refusal::Method { .. }
             | Refusal::EntryTooLarge { .. }
             | Refusal::TotalTooLarge { .. }
+            | Refusal::TotalSourceTooLarge { .. }
             | Refusal::Ratio { .. }
             | Refusal::TotalRatio
             | Refusal::SizeMismatch { .. }
@@ -655,6 +656,7 @@ fn every_key() -> Vec<&'static str> {
             max: 1,
         },
         Refusal::TotalTooLarge { max: 1 },
+        Refusal::TotalSourceTooLarge { max: 1 },
         Refusal::Ratio { name: "x".into() },
         Refusal::TotalRatio,
         Refusal::SizeMismatch { name: "x".into() },
