@@ -2973,6 +2973,20 @@ mod tests {
     }
 
     #[test]
+    fn an_entity_part_records_the_three_plain_handlers_it_binds() {
+        let declaration = declare_in_fresh_state(
+            "horizon.entity_part(\"minecraft:sheep\", {is_shearable = function() end, on_sheared = function() end, spawn_cluster_size = function() end})",
+        )
+        .unwrap();
+        let hooks: Vec<&str> = declaration.entity_parts[0]
+            .hooks
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(hooks, ["is_shearable", "on_sheared", "spawn_cluster_size"]);
+    }
+
+    #[test]
     fn an_entity_part_takes_only_the_handlers_it_can_bind() {
         let unknown = declare_in_fresh_state(
             "horizon.entity_part(\"minecraft:sheep\", {shear_me = function() end})",
@@ -2982,12 +2996,7 @@ mod tests {
             unknown.contains("'shear_me'") && unknown.contains("not an entity part handler"),
             "got {unknown}"
         );
-        for later in [
-            "on_sheared",
-            "spawn_cluster_size",
-            "register_goals",
-            "general_entity_tick",
-        ] {
+        for later in ["register_goals", "general_entity_tick"] {
             let err = declare_in_fresh_state(&format!(
                 "horizon.entity_part(\"minecraft:sheep\", {{{later} = function() end}})"
             ))

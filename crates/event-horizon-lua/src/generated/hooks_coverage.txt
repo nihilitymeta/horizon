@@ -962,7 +962,7 @@ fluid_part.fluid_rules emitted
 # entity parts (issue 74, P5): the EntityPart trait's methods
 entity_part.general_entity_tick skipped: per-mob object, per-tick turn: needs measurement
 entity_part.is_shearable emitted
-entity_part.on_sheared skipped: plain method: next chunk
+entity_part.on_sheared emitted
 entity_part.register_behaviors skipped: per-mob object, per-tick turn: needs measurement
 entity_part.register_goals skipped: per-mob object, per-tick turn: needs measurement
-entity_part.spawn_cluster_size skipped: plain method: next chunk
+entity_part.spawn_cluster_size emitted

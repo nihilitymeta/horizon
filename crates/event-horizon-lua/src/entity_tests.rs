@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use mlua::Lua;
 use mod_api::testing::FakeHost;
-use mod_api::{EntityPart, EntityRef, Identifier, ItemStack, WorldEpoch};
+use mod_api::{
+    EntityPart, EntityRef, Identifier, ItemStack, SpawnReason, Tag, UnspawnedMobRef, WorldEpoch,
+};
 
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::host::{LuaEntityPart, LuaMod, LuaPart};
@@ -42,12 +44,25 @@ fn part(mods: &Arc<[LuaMod]>, index: usize) -> LuaEntityPart {
     LuaPart::new(mods.clone(), index, 0).unwrap()
 }
 
-/// The fake host, holding `minecraft:shears` in its item table as the game's load does.
+/// The fake host, holding the items the tests name (`minecraft:shears` and the drops) in its item
+/// table as the game's load does.
 fn shears_host() -> FakeHost {
     let mut host = FakeHost::new();
     host.registries
-        .resolve_items([Identifier::parse("minecraft:shears").unwrap()])
+        .resolve_items(
+            [
+                "minecraft:shears",
+                "minecraft:white_wool",
+                "minecraft:ender_pearl",
+            ]
+            .map(|id| Identifier::parse(id).unwrap()),
+        )
         .unwrap();
+    host.registries.item_component(
+        "minecraft:ender_pearl",
+        "minecraft:max_stack_size",
+        Tag::Int(16),
+    );
     host
 }
 
@@ -152,4 +167,261 @@ fn a_panic_in_an_entity_part_build_ends_the_turn_and_quarantines_the_hook() {
         ]
     );
     assert!(!mods[0].turn().held_here());
+}
+
+/// A mod whose entity part on `minecraft:sheep` has `HOOK = function(event) BODY end`, for one of the
+/// plain handlers (`spawn_cluster_size`, `on_sheared`).
+fn plain_mod(root: &Path, id: &str, hook: &str, body: &str) -> LuaMod {
+    load_one(
+        root,
+        id,
+        &format!(
+            "horizon.entity_part(\"minecraft:sheep\", {{{hook} = function(event) {body} end}})"
+        ),
+    )
+}
+
+/// The mob the game asks about: a spawn group's mob just spawned, in no level yet.
+fn mob() -> UnspawnedMobRef {
+    UnspawnedMobRef::new(WorldEpoch::new(1), 9)
+}
+
+/// What the game asks: the part's `spawn_cluster_size` for a natural spawn with no spawner, where the
+/// vanilla limit is 4.
+fn ask_cluster(part: &LuaEntityPart, host: &FakeHost) -> Option<u32> {
+    part.spawn_cluster_size(host, mob(), SpawnReason::Natural, None, 4)
+}
+
+#[test]
+fn a_cluster_handler_sees_the_arguments_and_its_answer_arrives() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "mymod",
+        "spawn_cluster_size",
+        "horizon.log(event.reason .. \" \" .. tostring(event.spawner) .. \" \" .. event.vanilla .. \" \" .. type(event.mob)) return 3",
+    )]);
+    assert_eq!(ask_cluster(&part(&mods, 0), &FakeHost::new()), Some(3));
+    assert_eq!(mods[0].log_lines(), ["natural nil 4 userdata"]);
+}
+
+#[test]
+fn a_cluster_handler_with_no_answer_leaves_the_size_to_vanilla() {
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "silent",
+        "spawn_cluster_size",
+        "",
+    )]);
+    assert_eq!(ask_cluster(&part(&mods, 0), &FakeHost::new()), None);
+}
+
+#[test]
+fn a_cluster_answer_above_the_bound_is_refused_with_one_warning() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "mymod",
+        "spawn_cluster_size",
+        "return 65",
+    )]);
+    assert_eq!(ask_cluster(&part(&mods, 0), &FakeHost::new()), None);
+    assert_eq!(
+        crate::host::tests::captured_with_prefix("mymod: spawn_cluster_size"),
+        [
+            "mymod: spawn_cluster_size: answer refused, the mod gives no answer: 65 is outside 0 to 64"
+        ]
+    );
+}
+
+#[test]
+fn a_cluster_answer_that_is_not_an_integer_is_refused() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "text_mod",
+        "spawn_cluster_size",
+        "return \"three\"",
+    )]);
+    assert_eq!(ask_cluster(&part(&mods, 0), &FakeHost::new()), None);
+    assert_eq!(
+        crate::host::tests::captured_with_prefix("text_mod: spawn_cluster_size: answer refused")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn a_panic_in_a_cluster_handler_ends_the_turn_and_quarantines_the_hook() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "panic_mod",
+        "spawn_cluster_size",
+        "return 2",
+    )]);
+    let build = |_: &Lua,
+                 _: &crate::hostcall::TurnHost<'_>|
+     -> mlua::Result<crate::dispatch::Event> { panic!("the part build broke") };
+    let mut answered = 0;
+    part(&mods, 0)
+        .dispatch_replace(
+            "spawn_cluster_size",
+            crate::hostcall::TurnHost::None,
+            &build,
+            &mut |_, _, _| {
+                answered += 1;
+                true
+            },
+        )
+        .unwrap();
+    assert_eq!(answered, 0);
+    assert_eq!(
+        crate::host::tests::captured_with_prefix(
+            "panic_mod: spawn_cluster_size: the game's host panicked"
+        )
+        .len(),
+        1
+    );
+    assert!(!mods[0].turn().held_here());
+}
+
+/// What the game asks on a player's shears: the part's `on_sheared` for the sheep, on a host the
+/// test holds, with no player.
+fn shear(part: &LuaEntityPart, host: &mut FakeHost) -> Vec<ItemStack> {
+    part.on_sheared(host, sheep(), None, &shears())
+}
+
+/// The counts of a list of drops, in order.
+fn counts(drops: &[ItemStack]) -> Vec<u32> {
+    drops.iter().map(ItemStack::count).collect()
+}
+
+/// A drop table, as a mod writes one: `count` of `minecraft:white_wool`.
+const WOOL: &str = "{id = \"minecraft:white_wool\", count = ";
+
+#[test]
+fn two_drops_reach_the_output_in_order() {
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "mymod",
+        "on_sheared",
+        &format!("return {{{WOOL}2}}, {WOOL}3}}}}"),
+    )]);
+    let mut host = shears_host();
+    assert_eq!(counts(&shear(&part(&mods, 0), &mut host)), [2, 3]);
+}
+
+#[test]
+fn a_silent_shear_drops_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(root.path(), "silent", "on_sheared", "")]);
+    let mut host = shears_host();
+    assert!(shear(&part(&mods, 0), &mut host).is_empty());
+}
+
+#[test]
+fn seventeen_drops_are_refused_whole() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "mymod",
+        "on_sheared",
+        &format!("local t = {{}} for i = 1, 17 do t[i] = {WOOL}1}} end return t"),
+    )]);
+    let mut host = shears_host();
+    assert!(shear(&part(&mods, 0), &mut host).is_empty());
+}
+
+#[test]
+fn a_bad_stack_among_good_ones_refuses_the_whole_list() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "mymod",
+        "on_sheared",
+        &format!("return {{{WOOL}1}}, {{id = \"minecraft:not_an_item\", count = 1}}}}"),
+    )]);
+    let mut host = shears_host();
+    assert!(shear(&part(&mods, 0), &mut host).is_empty());
+}
+
+#[test]
+fn a_count_above_the_items_maximum_is_refused() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "mymod",
+        "on_sheared",
+        "return {{id = \"minecraft:ender_pearl\", count = 17}}",
+    )]);
+    let mut host = shears_host();
+    assert!(shear(&part(&mods, 0), &mut host).is_empty());
+}
+
+#[test]
+fn drops_above_256_items_in_all_are_refused_and_256_is_not() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let five = plain_mod(
+        root.path(),
+        "five",
+        "on_sheared",
+        &format!("local t = {{}} for i = 1, 5 do t[i] = {WOOL}64}} end return t"),
+    );
+    let four = plain_mod(
+        root.path(),
+        "four",
+        "on_sheared",
+        &format!("local t = {{}} for i = 1, 4 do t[i] = {WOOL}64}} end return t"),
+    );
+    let mods: Arc<[LuaMod]> = Arc::from(vec![five, four]);
+    let mut host = shears_host();
+    assert!(shear(&part(&mods, 0), &mut host).is_empty());
+    assert_eq!(counts(&shear(&part(&mods, 1), &mut host)), [64, 64, 64, 64]);
+}
+
+#[test]
+fn a_failing_shear_handler_voids_its_turn() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mods: Arc<[LuaMod]> = Arc::from(vec![plain_mod(
+        root.path(),
+        "mymod",
+        "on_sheared",
+        &format!("error(\"boom\") return {{{WOOL}1}}}}"),
+    )]);
+    let mut host = shears_host();
+    assert!(shear(&part(&mods, 0), &mut host).is_empty());
+}
+
+#[test]
+fn a_shear_runs_only_the_part_the_game_asked() {
+    crate::host::tests::install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let mine = plain_mod(
+        root.path(),
+        "mymod",
+        "on_sheared",
+        &format!("return {{{WOOL}1}}}}"),
+    );
+    let other = plain_mod(
+        root.path(),
+        "other",
+        "on_sheared",
+        "horizon.log(\"ran\") return {}",
+    );
+    let mods: Arc<[LuaMod]> = Arc::from(vec![mine, other]);
+    let mut host = shears_host();
+    assert_eq!(counts(&shear(&part(&mods, 0), &mut host)), [1]);
+    assert!(mods[1].log_lines().is_empty());
 }

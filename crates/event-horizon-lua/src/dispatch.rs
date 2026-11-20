@@ -284,6 +284,31 @@ pub fn answer_of<T: FromLuaValue>(id: &str, hook: &str, value: &Value) -> Option
     })
 }
 
+/// The same as [`answer_of`], for an integer answer that must stay in `range`: an answer outside it
+/// is refused like one of the wrong type (one warning, and the chain goes on).
+pub fn answer_in<T>(
+    id: &str,
+    hook: &str,
+    value: &Value,
+    range: std::ops::RangeInclusive<T>,
+) -> Option<T>
+where
+    T: FromLuaValue + PartialOrd + std::fmt::Display + Copy,
+{
+    answer_by(id, hook, value, |value| {
+        let next = T::from_lua_value(value).map_err(|err| err.to_string())?;
+        if range.contains(&next) {
+            Ok(next)
+        } else {
+            Err(format!(
+                "{next} is outside {} to {}",
+                range.start(),
+                range.end()
+            ))
+        }
+    })
+}
+
 /// The same as [`answer_of`], with the conversion given (a stack or a block state converts through
 /// its host). `horizon.none` is refused: a replace answer is always a value.
 pub fn answer_by<T>(

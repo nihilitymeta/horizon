@@ -441,6 +441,9 @@ fn value_supported(ty: &str, plain: &Plain) -> bool {
 /// The scalar types a value converts as: primitives and `String`, spelled without a path.
 const SCALAR_NAMES: [&str; 6] = ["bool", "i32", "u32", "f32", "f64", "String"];
 
+/// The answer type of a plain method that answers its drops (`on_sheared`): a bounded list of stacks.
+const DROPS_ANSWER: &str = "Vec<ItemStack>";
+
 /// The answer type of a replace hook: its method returns `Option<X>` and `X` converts from Lua.
 /// Returns `mod_api::X` (as the method spells it) for the generated code.
 fn replace_answer(sig: &HookSig, plain: &Plain, reach: Reach) -> Result<String, String> {
@@ -449,6 +452,15 @@ fn replace_answer(sig: &HookSig, plain: &Plain, reach: Reach) -> Result<String, 
         .as_deref()
         .unwrap_or_default()
         .replace("mod_api::", "");
+    // A plain method answers its drops as a list, from a server turn only (`on_sheared`).
+    if sig.plain.is_some() && ret == "Vec<ItemStack>" {
+        return match sig.host_ty.as_deref() {
+            Some("&mut dyn ServerHost") if carried::allowed(Shape::StackList, reach) => {
+                Ok(DROPS_ANSWER.to_owned())
+            }
+            _ => Err("answer: a list of stacks answers from a server host only".to_owned()),
+        };
+    }
     let Some(inner) = ret
         .strip_prefix("Option<")
         .and_then(|rest| rest.strip_suffix('>'))
@@ -1329,8 +1341,13 @@ fn checks_text(method: &Method<'_>, outputs: bool) -> String {
     let event = &method.sig.event_name;
     let ret = if method.cancel {
         format!(" if {event}.cancelled {{ Flow::Cancel }} else {{ Flow::Continue }}")
-    } else if method.answer.is_some() {
-        " None".to_owned()
+    } else if let Some(answer) = &method.answer {
+        if answer == DROPS_ANSWER {
+            " Vec::new()"
+        } else {
+            " None"
+        }
+        .to_owned()
     } else {
         String::new()
     };
@@ -1360,32 +1377,48 @@ fn replace_body(method: &Method<'_>, answer: &str) -> String {
     out.push_str(&format!("            {},\n", turn_text(method)));
     out.push_str(&build_text(method, false));
     let mut body = String::new();
-    match carried::shape_of(answer).and_then(|shape| method.view_for(shape, true)) {
-        Some((shape, view)) => body.push_str(&format!(
-            "                match crate::dispatch::answer_by(id, {hook:?}, &value, {}) {{\n",
-            carried::converter(shape, view)
-        )),
-        None => body.push_str(&format!(
-            "                match crate::dispatch::answer_of::<{answer}>(id, {hook:?}, &value) {{\n"
-        )),
+    let drops = answer == DROPS_ANSWER;
+    // A ranged answer outside its range is refused with a warning, as an answer of the wrong type:
+    // the next part answers.
+    if let Some(range) = answer_range(hook) {
+        body.push_str(&format!(
+            "                match crate::dispatch::answer_in::<{answer}>(id, {hook:?}, &value, {range}) {{\n"
+        ));
+    } else if drops {
+        let view = method
+            .view_for(Shape::StackList, true)
+            .map_or_else(String::new, |(_, view)| view.to_owned());
+        body.push_str(&format!(
+            "                match crate::dispatch::answer_by(id, {hook:?}, &value, |value| crate::stacks::drops_value({view}, value)) {{\n"
+        ));
+    } else {
+        match carried::shape_of(answer).and_then(|shape| method.view_for(shape, true)) {
+            Some((shape, view)) => body.push_str(&format!(
+                "                match crate::dispatch::answer_by(id, {hook:?}, &value, {}) {{\n",
+                carried::converter(shape, view)
+            )),
+            None => body.push_str(&format!(
+                "                match crate::dispatch::answer_of::<{answer}>(id, {hook:?}, &value) {{\n"
+            )),
+        }
     }
-    // A ranged answer outside its range is refused, as an answer of no type: the next part answers.
-    let (guard, other) = match answer_range(hook) {
-        Some(range) => (format!(" if ({range}).contains(&found)"), "_"),
-        None => (String::new(), "None"),
-    };
-    body.push_str(&format!("                    Some(found){guard} => {{\n"));
+    body.push_str("                    Some(found) => {\n");
     body.push_str("                        answer = Some(found);\n");
     body.push_str("                        true\n");
     body.push_str("                    }\n");
-    body.push_str(&format!("                    {other} => false,\n"));
+    body.push_str("                    None => false,\n");
     body.push_str("                }\n");
     out.push_str(&format!(
         "            &mut |id, value, {}| {{\n{body}            }},\n",
         turn_param(&body)
     ));
     out.push_str("        ));\n");
-    out.push_str("        answer\n");
+    // A drops answer is a list: none given is an empty list.
+    out.push_str(if drops {
+        "        answer.unwrap_or_default()\n"
+    } else {
+        "        answer\n"
+    });
     out
 }
 
@@ -1658,14 +1691,14 @@ pub const PLAIN_PART_METHODS: &[PlainPart] = &[
     PlainPart {
         trait_name: "EntityPart",
         method: "on_sheared",
-        route: Err(NEXT_CHUNK_REASON),
+        route: Ok(()),
         answer_range: None,
     },
     PlainPart {
         trait_name: "EntityPart",
         method: "spawn_cluster_size",
-        route: Err(NEXT_CHUNK_REASON),
-        answer_range: None,
+        route: Ok(()),
+        answer_range: Some("0..=64"),
     },
     PlainPart {
         trait_name: "EntityPart",

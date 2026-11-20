@@ -145,7 +145,12 @@ export type ConfigRecord = {
 -- holder must be resident in the server's level, and a client turn raises. Limits, each refused
 -- with its reason and nothing changed: the name at most 256 bytes; the value at most 65536 bytes as
 -- NBT, with the converter's depth, entry and string limits; 16 names per holder per mod; 262144
--- bytes of values per holder per mod. Get costs 1 unit, set and remove 10. `horizon.log` takes a string. Control characters are written as `\u{..}`
+-- bytes of values per holder per mod. Get costs 1 unit, set and remove 10. `entity_part(id, handlers)`
+-- binds one entity type's handlers, at most 16 parts per mod. `is_shearable` answers a boolean or
+-- nothing. `on_sheared` (server only) answers its drops: at most 16 stacks, 256 items in all, each
+-- within its item's maximum; a list over a bound is refused whole, with a warning. `spawn_cluster_size`
+-- answers a whole number from 0 to 64 (an answer above 64 is refused with a warning and the next part,
+-- or vanilla, answers). `horizon.log` takes a string. Control characters are written as `\u{..}`
 -- escapes, and a line is cut at 1000 characters after escaping (host.rs MAX_LOG_LINE; an escape is
 -- never split). A mod may write 20 lines at once, then 20 a second (host.rs LOG_BURST, LOG_PER_SECOND);
 -- a line over that rate is dropped without an error. The mod keeps its last 100 lines
@@ -3555,8 +3560,23 @@ export type IsShearableEvent = {
 	shears: ItemStackSpec, -- read-only
 }
 
+export type OnShearedEvent = {
+	entity: EntityRef, -- read-only
+	player: PlayerRef?, -- read-only
+	shears: ItemStackSpec, -- read-only
+}
+
+export type SpawnClusterSizeEvent = {
+	mob: UnspawnedMobRef, -- read-only
+	reason: SpawnReason, -- read-only
+	spawner: SpawnSource?, -- read-only
+	vanilla: number, -- read-only
+}
+
 export type EntityPartHandlers = {
 	is_shearable: ((event: IsShearableEvent) -> (boolean)?)?,
+	on_sheared: ((event: OnShearedEvent) -> ({ItemStackSpec})?)?,
+	spawn_cluster_size: ((event: SpawnClusterSizeEvent) -> (number)?)?,
 }
 
 export type BlockEntityRef = {
@@ -4466,6 +4486,11 @@ export type SpawnLimits = {
 	water_creature: number,
 	water_ambient: number,
 }
+
+export type SpawnReason = "natural" | "chunk_generation" | "spawner" | "trial_spawner" | "reinforcement" | "patrol" | "structure" | "event" | "command" | "spawn_item_use" | "mob_summoned" | "conversion" | "breeding" | "triggered" | "jockey" | "dispenser" | "bucket" | "load" | "dimension_travel"
+
+export type SpawnSource =
+	| { tag: "block", [number]: BlockPos }
 
 export type SpawnerKey = string
 

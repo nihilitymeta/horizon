@@ -302,6 +302,39 @@ pub fn stack_list_value<H: StackHost + ?Sized>(
         .collect()
 }
 
+/// The most stacks one `on_sheared` answer may drop, and the most items in all of them: the drops
+/// are spawned by the game in the world, so a mod's list is bounded before any stack is made.
+pub const MAX_DROP_STACKS: usize = 16;
+/// See [`MAX_DROP_STACKS`]: the most items one `on_sheared` answer may drop in all.
+pub const MAX_DROP_ITEMS: u32 = 256;
+
+/// The drops a mod's `on_sheared` answered: at most [`MAX_DROP_STACKS`] stacks, each a stack by
+/// [`stack_list_value`]'s rules, and at most [`MAX_DROP_ITEMS`] items in all. A list over either
+/// bound is refused whole, before any stack is converted past it.
+pub fn drops_value<H: StackHost + ?Sized>(
+    host: &H,
+    value: &Value,
+) -> Result<Vec<H::Stack>, String> {
+    if let Value::Table(table) = value
+        && table.raw_len() > MAX_DROP_STACKS
+    {
+        return Err(format!(
+            "a drop list holds at most {MAX_DROP_STACKS} stacks"
+        ));
+    }
+    let specs = Vec::<ItemStackSpec>::from_lua_value(value).map_err(|err| err.to_string())?;
+    let items: u64 = specs.iter().map(|spec| u64::from(spec.count)).sum();
+    if items > u64::from(MAX_DROP_ITEMS) {
+        return Err(format!("a drop list holds at most {MAX_DROP_ITEMS} items"));
+    }
+    specs
+        .iter()
+        .map(|spec| {
+            stack_from_spec(host, spec)?.ok_or_else(|| "a list holds no count 0 entries".to_owned())
+        })
+        .collect()
+}
+
 /// The spec of an optional block state for a Lua table, with the same three outcomes as
 /// [`stack_in`].
 pub fn state_in<H: StateHost + ?Sized>(
