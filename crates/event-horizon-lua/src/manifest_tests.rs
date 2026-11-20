@@ -49,6 +49,11 @@ fn a_full_manifest_is_read_in_full() {
              dependencies = { beta = \"^1\", gamma = { version = \">=1.2, <2\", optional = true } }\n\
              [[settings]]\n\
              key = \"volume\"\n\
+             type = \"slider\"\n\
+             label = \"Volume\"\n\
+             min = 0\n\
+             max = 10\n\
+             step = 1\n\
              default = 3\n"
         )
     ))
@@ -427,8 +432,11 @@ fn settings_are_an_array_of_tables_within_caps() {
 
 #[test]
 fn settings_nest_at_most_four_containers_deep() {
-    // The array is depth 1, the table depth 2, `a` depth 3, `b` depth 4: all allowed.
-    assert!(parse(&with("settings = [{ a = { b = { c = 1 } } }]\n")).is_ok());
+    // Depth 4 is within the cap: the schema refuses the unknown field, not the depth.
+    assert!(matches!(
+        parse(&with("settings = [{ a = { b = { c = 1 } } }]\n")),
+        Err(Refusal::Setting(_))
+    ));
     // A table at depth 5 is refused.
     assert_eq!(
         refused(&with("settings = [{ a = { b = { c = { d = 1 } } } }]\n")),

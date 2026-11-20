@@ -1,7 +1,8 @@
 //! The `lua-mod.toml` manifest of a Lua mod. The same manifest is read from a folder and from a
 //! `.hlua` package (`hlua.rs`); discover.rs reads only its minimal part (id, version, side).
 //!
-//! Nothing here runs a power or a setting: `powers` and `settings` are parsed and recorded only.
+//! Nothing here runs a power. `powers` are parsed and recorded only; `settings` are checked against the
+//! schema in `settings.rs` and kept as data for it.
 //! Every key is known, every string, list and table is capped, and an unknown key, a reserved id,
 //! an unknown power or a field of the wrong type refuses the whole manifest with a named reason.
 
@@ -137,7 +138,7 @@ pub struct Manifest {
     /// The scripts the mod runs, in the order listed. `main.luau` when none is listed.
     pub entries: Vec<String>,
     pub powers: Vec<Power>,
-    /// The settings schema, parsed as data only (the meaning comes in chunk 3e).
+    /// The `[[settings]]` tables, checked against the schema in `settings.rs` before this is built.
     pub settings: Vec<toml::Table>,
 }
 
@@ -178,6 +179,8 @@ impl Manifest {
             return Err(Refusal::BadVersion);
         }
         let side = Side::parse(required_str(&table, "side")?).ok_or(Refusal::BadSide)?;
+        let settings = settings(&table)?;
+        crate::settings::Schema::parse(&settings).map_err(Refusal::Setting)?;
 
         let authors = match string_list(&table, "authors", MAX_AUTHORS)? {
             Some(list) => list
@@ -216,7 +219,7 @@ impl Manifest {
             dependencies: dependencies(&table)?,
             entries: entries(&table)?,
             powers: powers(&table)?,
-            settings: settings(&table)?,
+            settings,
         })
     }
 }

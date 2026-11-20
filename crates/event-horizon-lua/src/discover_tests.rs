@@ -610,7 +610,8 @@ fn every_key() -> Vec<&'static str> {
             | Refusal::BadRequirement { .. }
             | Refusal::BadIcon
             | Refusal::AssetsReserved
-            | Refusal::SettingsTooDeep => {}
+            | Refusal::SettingsTooDeep
+            | Refusal::Setting(_) => {}
         }
     }
     fn listed_fault(fault: &Fault) {
@@ -694,6 +695,11 @@ fn every_key() -> Vec<&'static str> {
         Refusal::BadIcon,
         Refusal::AssetsReserved,
         Refusal::SettingsTooDeep,
+        Refusal::Setting(crate::settings::SettingFault {
+            reason: crate::settings::Reason::BadKey,
+            key: String::new(),
+            field: String::new(),
+        }),
     ];
     for fault in [
         NameFault::Utf8,

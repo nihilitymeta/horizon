@@ -24,6 +24,7 @@ use zip::read::{ArchiveOffset, Config, ZipFile};
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::manifest::{MANIFEST, MAX_MANIFEST, Manifest};
+use crate::settings::SettingFault;
 
 /// Largest `.hlua` file on disk, in bytes.
 pub const MAX_ARCHIVE: u64 = 64 * 1024 * 1024;
@@ -167,6 +168,7 @@ pub enum Refusal {
     BadIcon,
     AssetsReserved,
     SettingsTooDeep,
+    Setting(SettingFault),
 }
 
 impl Refusal {
@@ -226,6 +228,7 @@ impl Refusal {
             Refusal::BadIcon => "lua_mod.refused.bad_icon",
             Refusal::AssetsReserved => "lua_mod.refused.assets_reserved",
             Refusal::SettingsTooDeep => "lua_mod.refused.settings_too_deep",
+            Refusal::Setting(fault) => fault.key(),
         }
     }
 
@@ -269,6 +272,7 @@ impl Refusal {
                 vec![("id", id.clone())]
             }
             Refusal::BadEntry { value } => vec![("value", value.clone())],
+            Refusal::Setting(fault) => fault.args(),
             _ => Vec::new(),
         }
     }
@@ -339,6 +343,7 @@ impl Refusal {
             Refusal::BadIcon => "icon must be a relative .png path".into(),
             Refusal::AssetsReserved => "assets is reserved in this version".into(),
             Refusal::SettingsTooDeep => "settings nests deeper than 4 levels".into(),
+            Refusal::Setting(fault) => fault.reason(),
         }
     }
 }
