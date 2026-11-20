@@ -17,7 +17,12 @@ mod data_maps;
 mod data_maps_tests;
 pub mod declare;
 pub mod discover;
+#[cfg(test)]
+mod discover_tests;
 pub mod dispatch;
+pub mod enabled;
+#[cfg(test)]
+mod enabled_tests;
 #[cfg(test)]
 mod entity_tests;
 #[cfg(test)]
@@ -34,6 +39,7 @@ pub mod hlua;
 mod hlua_tests;
 pub mod host;
 pub mod hostcall;
+mod load_order;
 mod manifest;
 #[cfg(test)]
 mod manifest_tests;

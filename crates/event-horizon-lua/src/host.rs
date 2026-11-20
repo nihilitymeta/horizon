@@ -7,7 +7,9 @@
 
 use std::cell::RefCell;
 use std::cmp::Reverse;
+#[cfg(test)]
 use std::io::Read;
+#[cfg(test)]
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -25,6 +27,7 @@ use crate::declare::{
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::{self, new_event};
 use crate::generated::hooks::{hook_id, is_emitted};
+use crate::hlua::Package;
 use crate::ratelimit::{RateLimit, Verdict};
 use crate::state;
 
@@ -158,14 +161,35 @@ impl Drop for TurnGuard<'_> {
 }
 
 impl LuaMod {
-    /// Loads the mod in `found`: reads its `main.luau`, declares its hooks, and installs the
-    /// runtime `horizon` table in place of the declaring one. Any failure is an error.
+    /// Loads the mod `found` from its package: its first listed script (`main.luau` when the
+    /// manifest lists none) is read through the package reader, then the mod is declared. This is
+    /// the loader's path. Only the first listed script runs; the others are not read.
+    pub fn load_package(found: &Discovered, package: &Package) -> Result<LuaMod, String> {
+        let name = package
+            .manifest()
+            .entries
+            .first()
+            .cloned()
+            .unwrap_or_else(|| ENTRY.to_string());
+        let source = package.entry_source(&name).map_err(|r| r.reason())?;
+        Self::from_source(found, &name, &source)
+    }
+
+    /// Loads a folder's `main.luau` without its manifest. Tests only: the loader reads every mod
+    /// through `load_package`, so no unchecked folder reaches a game.
+    #[cfg(test)]
     pub fn load(found: &Discovered) -> Result<LuaMod, String> {
         let source = read_source(&found.dir)?;
+        Self::from_source(found, ENTRY, &source)
+    }
+
+    /// Declares the mod from its script `source`, named `entry` in its package, and installs the
+    /// runtime `horizon` table in place of the declaring one. Any failure is an error.
+    fn from_source(found: &Discovered, entry: &str, source: &str) -> Result<LuaMod, String> {
         let lua = state::new_state().map_err(|e| e.to_string())?;
-        let chunk_name = format!("@{}", found.dir.join(ENTRY).display());
+        let chunk_name = format!("@{}", found.dir.join(entry).display());
         let (declaration, notices) = collect_load_notices(|| {
-            declare::declare(&lua, &found.id, &source, &chunk_name, &|n| is_emitted(n))
+            declare::declare(&lua, &found.id, source, &chunk_name, &|n| is_emitted(n))
         });
         let declaration = declaration?;
 
@@ -350,6 +374,9 @@ pub struct LuaHost {
     order: Vec<(String, Vec<usize>)>,
     /// One line per folder or mod that did not load, from `builtin`.
     report: Vec<String>,
+    /// The ids of the installed mods the enabled file turned off, and the warnings about that file.
+    disabled: Vec<String>,
+    notices: Vec<String>,
     /// Set once the report is written, so a second `register` writes nothing.
     reported: AtomicBool,
     /// The ids of the mods whose declared keys the game refused. Their blocks and items are not
@@ -436,6 +463,8 @@ impl LuaHost {
             listeners: Box::leak(listeners.into_boxed_slice()),
             order,
             report: Vec::new(),
+            disabled: Vec::new(),
+            notices: Vec::new(),
             reported: AtomicBool::new(false),
             refused_keys: Mutex::new(Vec::new()),
         }
@@ -444,6 +473,14 @@ impl LuaHost {
     /// The lines about the folders and mods that did not load, written by `register`.
     pub fn with_report(mut self, lines: Vec<String>) -> LuaHost {
         self.report = lines;
+        self
+    }
+
+    /// The ids of the mods the enabled file turned off, and the warnings about the file, written by
+    /// `register`.
+    pub fn with_disabled(mut self, ids: Vec<String>, notices: Vec<String>) -> LuaHost {
+        self.disabled = ids;
+        self.notices = notices;
         self
     }
 
@@ -478,6 +515,12 @@ impl LuaHost {
         );
         for line in &self.report {
             log::warn!("Lua mod refused: {}", Escaped(line));
+        }
+        for id in &self.disabled {
+            log::info!("Lua mod disabled: {}", Escaped(id));
+        }
+        for notice in &self.notices {
+            warn_once("enabled.toml", notice);
         }
         // What the loads warned about (`collect_load_notices`) reaches the log only now, when the
         // game's logger is up. A command with no `run_mod_command` handler is declared but never
@@ -1142,12 +1185,14 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
     Ok(horizon)
 }
 
-/// Reads a mod's `main.luau`, reading at most `MAX_SOURCE + 1` bytes. A symlink is refused.
+/// Reads a mod's `main.luau` from its folder, reading at most `MAX_SOURCE + 1` bytes. A symlink is
+/// refused. Tests only (see `LuaMod::load`).
 ///
 /// The file is opened, then the opened file and the path are checked, and only then read, so a
 /// path swapped for a symlink or another file in between is refused (see `same_file`). The path
 /// is also checked before the open, so a FIFO is not opened in the normal case: opening one
 /// blocks until a writer appears.
+#[cfg(test)]
 fn read_source(dir: &Path) -> Result<String, String> {
     let dir_meta = std::fs::symlink_metadata(dir).map_err(|_| format!("no {ENTRY}"))?;
     if dir_meta.file_type().is_symlink() || !dir_meta.is_dir() {
@@ -1180,6 +1225,7 @@ fn read_source(dir: &Path) -> Result<String, String> {
 
 /// Whether `path` still names the file that `opened` was opened from. A path that is now a
 /// symlink, or not a plain file, never does.
+#[cfg(test)]
 fn same_file(opened: &std::fs::File, path: &Path) -> bool {
     let Ok(now) = std::fs::symlink_metadata(path) else {
         return false;
@@ -1191,6 +1237,7 @@ fn same_file(opened: &std::fs::File, path: &Path) -> bool {
 }
 
 /// Whether the opened file and the path's current metadata are the same device and inode.
+#[cfg(test)]
 #[cfg(unix)]
 fn same_inode(opened: &std::fs::File, now: &std::fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
@@ -1200,6 +1247,7 @@ fn same_inode(opened: &std::fs::File, now: &std::fs::Metadata) -> bool {
 }
 
 /// Other platforms have no inode to compare: the symlink and plain-file checks are all there is.
+#[cfg(test)]
 #[cfg(not(unix))]
 fn same_inode(_opened: &std::fs::File, _now: &std::fs::Metadata) -> bool {
     true

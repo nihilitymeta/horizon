@@ -5,9 +5,6 @@
 //! Every key is known, every string, list and table is capped, and an unknown key, a reserved id,
 //! an unknown power or a field of the wrong type refuses the whole manifest with a named reason.
 
-use std::io::Read;
-use std::path::Path;
-
 use crate::hlua::{self, Refusal};
 
 /// The manifest's file name.
@@ -495,35 +492,4 @@ pub fn valid_requirement(text: &str) -> bool {
                     && (*p == "0" || !p.starts_with('0'))
             })
     })
-}
-
-/// Reads and parses a folder's manifest, reading at most `MAX_MANIFEST + 1` bytes. Used by
-/// discover.rs; a symlink or a non-file is refused by name.
-pub fn read_table(path: &Path) -> Result<toml::Table, String> {
-    let meta = std::fs::symlink_metadata(path).map_err(|_| format!("no {MANIFEST}"))?;
-    if meta.file_type().is_symlink() {
-        return Err(format!("{MANIFEST} is a symlink"));
-    }
-    if !meta.is_file() {
-        return Err(format!("no {MANIFEST}"));
-    }
-    let file = std::fs::File::open(path).map_err(|_| format!("{MANIFEST} cannot be read"))?;
-    let mut bytes = Vec::new();
-    file.take(MAX_MANIFEST + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| format!("{MANIFEST} cannot be read"))?;
-    if bytes.len() as u64 > MAX_MANIFEST {
-        return Err(format!("{MANIFEST} is over {} KiB", MAX_MANIFEST / 1024));
-    }
-    let text = std::str::from_utf8(&bytes).map_err(|_| format!("{MANIFEST} is not UTF-8"))?;
-    text.parse::<toml::Table>()
-        .map_err(|_| format!("{MANIFEST} is not valid TOML"))
-}
-
-/// A string key of a minimal manifest; a missing or wrongly typed key is refused by name.
-pub fn text<'a>(manifest: &'a toml::Table, key: &str) -> Result<&'a str, String> {
-    match manifest.get(key) {
-        Some(toml::Value::String(s)) => Ok(s),
-        _ => Err(format!("{key} is missing or not a string")),
-    }
 }

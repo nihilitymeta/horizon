@@ -1,323 +1,407 @@
-//! Finds the Lua mods a player has put in `<game_dir>/lua-mods/`.
+//! Finds the Lua mods: the packages in `<game_dir>/lua-mods/` (folders and `.hlua` archives), the
+//! dev mods named by the caller, and the enabled-state file that turns some of them off.
 //!
-//! Each mod is a folder with a `lua-mod.toml` manifest and a `main.luau` script. The folders are
-//! untrusted input: a symlink is never followed, the manifest is read up to a fixed size, and a
-//! folder that does not pass is reported with a reason instead of being loaded. Only the minimal
-//! manifest (id, version and side) is read here.
+//! Every package is opened through `hlua::Package`, which is the only reader of untrusted bytes.
+//! A package that does not pass is refused with its translation key and arguments (`Fault`), and
+//! the others still load. The result is ordered: a dependency loads before the mods that need it
+//! (`load_order`), and the order is the same on every run.
+//!
+//! Rules, in order: a symlink that names a package or points at a folder is refused by name; other
+//! entries of `lua-mods/` are ignored; at most `MAX_DEV_PATHS` dev paths and `MAX_MODS` candidates
+//! are read, the rest refused; a dev mod replaces an installed one with its id; the first of two
+//! mods with one id by file name is kept; a disabled installed mod is listed, not loaded.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub use crate::manifest::{MANIFEST, MAX_MANIFEST, Side};
-use crate::manifest::{read_table, text, valid_id};
+
+use crate::enabled;
+use crate::hlua::{Package, Refusal};
+use crate::load_order::{self, Dep, Entry, Presence};
 
 /// The folder under the game folder that holds the Lua mods.
 pub const DIR: &str = "lua-mods";
-/// The script every mod folder has.
+/// The script a package runs when its manifest lists none.
 pub const ENTRY: &str = "main.luau";
+/// The most dev paths read; the rest are refused.
+pub const MAX_DEV_PATHS: usize = 8;
+/// The most mods read in one scan (dev paths and installed packages together); the rest refused.
+pub const MAX_MODS: usize = 1024;
+/// The extension of a `.hlua` archive (case-sensitive).
+pub const ARCHIVE_EXT: &str = "hlua";
 
-/// A mod folder that passed.
+/// A package that passed: its id, version and side as its manifest states them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Discovered {
+    /// The package's folder, or its `.hlua` file.
     pub dir: PathBuf,
     pub id: String,
     pub version: String,
     pub side: Side,
 }
 
-/// A folder that was refused, with the reason.
+/// Why something was refused: a package reader refusal, or a rule of the scan. Each has a
+/// translation key (`key`), its arguments by name (`args`) and the English text for a log (`reason`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Fault {
+    Package(Refusal),
+    /// An installed mod whose id an earlier mod (by file name) already has.
+    DuplicateId {
+        id: String,
+        first: String,
+    },
+    /// An installed mod whose id a dev mod takes.
+    ReplacedByDev {
+        id: String,
+    },
+    DevPathMissing,
+    /// A dev path that is a file and not a `.hlua` archive.
+    DevPathNotHlua,
+    DevPathsTooMany {
+        max: usize,
+    },
+    TooManyMods {
+        max: usize,
+    },
+    DependencyMissing {
+        id: String,
+        requirement: String,
+    },
+    DependencyVersion {
+        id: String,
+        requirement: String,
+        found: String,
+    },
+    DependencyDisabled {
+        id: String,
+    },
+    DependencyRefused {
+        id: String,
+    },
+    DependencyCycle,
+}
+
+impl Fault {
+    /// The translation key of the text.
+    pub fn key(&self) -> &'static str {
+        match self {
+            Fault::Package(refusal) => refusal.key(),
+            Fault::DuplicateId { .. } => "lua_mod.refused.duplicate_id",
+            Fault::ReplacedByDev { .. } => "lua_mod.refused.replaced_by_dev",
+            Fault::DevPathMissing => "lua_mod.refused.dev_path_missing",
+            Fault::DevPathNotHlua => "lua_mod.refused.dev_path_not_hlua",
+            Fault::DevPathsTooMany { .. } => "lua_mod.refused.dev_paths_too_many",
+            Fault::TooManyMods { .. } => "lua_mod.refused.too_many_mods",
+            Fault::DependencyMissing { .. } => "lua_mod.refused.dependency_missing",
+            Fault::DependencyVersion { .. } => "lua_mod.refused.dependency_version",
+            Fault::DependencyDisabled { .. } => "lua_mod.refused.dependency_disabled",
+            Fault::DependencyRefused { .. } => "lua_mod.refused.dependency_refused",
+            Fault::DependencyCycle => "lua_mod.refused.dependency_cycle",
+        }
+    }
+
+    /// The arguments the translation of `key` takes, by name.
+    pub fn args(&self) -> Vec<(&'static str, String)> {
+        match self {
+            Fault::Package(refusal) => refusal.args(),
+            Fault::DuplicateId { id, first } => {
+                vec![("id", id.clone()), ("first", first.clone())]
+            }
+            Fault::ReplacedByDev { id }
+            | Fault::DependencyDisabled { id }
+            | Fault::DependencyRefused { id } => vec![("id", id.clone())],
+            Fault::DevPathsTooMany { max } | Fault::TooManyMods { max } => {
+                vec![("max", max.to_string())]
+            }
+            Fault::DependencyMissing { id, requirement } => {
+                vec![("id", id.clone()), ("requirement", requirement.clone())]
+            }
+            Fault::DependencyVersion {
+                id,
+                requirement,
+                found,
+            } => vec![
+                ("id", id.clone()),
+                ("requirement", requirement.clone()),
+                ("found", found.clone()),
+            ],
+            Fault::DevPathMissing | Fault::DevPathNotHlua | Fault::DependencyCycle => Vec::new(),
+        }
+    }
+
+    /// The English text, for a log line. Escape it before it is logged.
+    pub fn reason(&self) -> String {
+        match self {
+            Fault::Package(refusal) => refusal.reason(),
+            Fault::DuplicateId { id, first } => {
+                format!("the id {id:?} is already used by {first:?}")
+            }
+            Fault::ReplacedByDev { id } => format!("a dev mod with the id {id:?} replaces it"),
+            Fault::DevPathMissing => "the dev path does not exist".into(),
+            Fault::DevPathNotHlua => "a dev file must be a .hlua archive or a folder".into(),
+            Fault::DevPathsTooMany { max } => format!("more than {max} dev paths are given"),
+            Fault::TooManyMods { max } => format!("more than {max} mods are scanned"),
+            Fault::DependencyMissing { id, requirement } => {
+                format!("it needs {id:?} {requirement:?}, which is not installed")
+            }
+            Fault::DependencyVersion {
+                id,
+                requirement,
+                found,
+            } => format!("it needs {id:?} {requirement:?}, but {found:?} is installed"),
+            Fault::DependencyDisabled { id } => format!("it needs {id:?}, which is disabled"),
+            Fault::DependencyRefused { id } => format!("it needs {id:?}, which was refused"),
+            Fault::DependencyCycle => "it is part of a dependency cycle".into(),
+        }
+    }
+}
+
+/// A package the scan did not load, with the path it came from and why.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refused {
-    pub dir: PathBuf,
-    pub reason: String,
+    pub path: PathBuf,
+    pub fault: Fault,
 }
 
-/// What a scan found. Both lists are in folder-name order.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Found {
-    pub mods: Vec<Discovered>,
+/// A package that loads: its id, version and side, the package itself (read through `Package`),
+/// whether it is a dev mod, and its position in the load order.
+pub struct ScannedMod {
+    pub found: Discovered,
+    pub dev: bool,
+    pub package: Package,
+    pub index: usize,
+}
+
+/// What a scan found. `loaded` is in load order. `disabled` lists the installed mods the enabled
+/// file turned off, in name order. `notices` are the warnings about the enabled file (one per problem).
+#[derive(Default)]
+pub struct Scan {
+    pub loaded: Vec<ScannedMod>,
     pub refused: Vec<Refused>,
+    pub disabled: Vec<Discovered>,
+    pub notices: Vec<String>,
 }
 
-/// Scans `<game_dir>/lua-mods/`. A missing folder is not an error: the result is empty.
-pub fn scan(game_dir: &Path) -> Found {
-    let Ok(entries) = std::fs::read_dir(game_dir.join(DIR)) else {
-        return Found::default();
-    };
-    let mut dirs: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .collect();
-    dirs.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+/// One path the scan reads: a dev path (canonical) or an entry of `lua-mods/`.
+struct Candidate {
+    path: PathBuf,
+    dev: bool,
+}
 
-    let mut found = Found::default();
-    // The id of each accepted mod, and the folder name that took it first.
-    let mut taken: HashMap<String, String> = HashMap::new();
-    for dir in dirs {
-        let Ok(meta) = std::fs::symlink_metadata(&dir) else {
-            continue;
-        };
-        if meta.file_type().is_symlink() {
-            found.refused.push(Refused {
-                dir,
-                reason: "a symlink is not followed".into(),
+/// A package that opened and whose id is not taken by an earlier one.
+struct Kept {
+    found: Discovered,
+    dev: bool,
+    package: Package,
+}
+
+/// Scans `<game_dir>/lua-mods/` and the dev paths. A missing folder is not an error. `dev_paths` are
+/// folders or `.hlua` files; a dev mod is always enabled, is listed first among equals, and replaces
+/// an installed mod with its id.
+pub fn scan(game_dir: &Path, dev_paths: &[PathBuf]) -> Scan {
+    let mut out = Scan::default();
+    let states = enabled::read(game_dir);
+    out.notices.extend(states.notice.clone());
+
+    let mut candidates = Vec::new();
+    for (k, path) in dev_paths.iter().enumerate() {
+        if k >= MAX_DEV_PATHS {
+            out.refused.push(Refused {
+                path: path.clone(),
+                fault: Fault::DevPathsTooMany { max: MAX_DEV_PATHS },
             });
-        } else if meta.is_dir() {
-            let name = dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            match check(&dir) {
-                Ok(m) => match taken.get(&m.id) {
-                    Some(first) => found.refused.push(Refused {
-                        reason: format!("id {} is already used by {first}", m.id),
-                        dir,
-                    }),
-                    None => {
-                        taken.insert(m.id.clone(), name);
-                        found.mods.push(m);
-                    }
-                },
-                Err(reason) => found.refused.push(Refused { dir, reason }),
+            continue;
+        }
+        match std::fs::canonicalize(path) {
+            Ok(canonical) => candidates.push(Candidate {
+                path: canonical,
+                dev: true,
+            }),
+            Err(_) => out.refused.push(Refused {
+                path: path.clone(),
+                fault: Fault::DevPathMissing,
+            }),
+        }
+    }
+    for path in installed(game_dir, &mut out.refused) {
+        candidates.push(Candidate { path, dev: false });
+    }
+
+    // The opened packages, in candidate order: dev paths first, then installed by file name.
+    let mut kept: Vec<Kept> = Vec::new();
+    let mut taken: HashMap<String, String> = HashMap::new();
+    let mut dev_ids: HashSet<String> = HashSet::new();
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        if index >= MAX_MODS {
+            out.refused.push(Refused {
+                path: candidate.path,
+                fault: Fault::TooManyMods { max: MAX_MODS },
+            });
+            continue;
+        }
+        let package = match open(&candidate.path) {
+            Ok(package) => package,
+            Err(fault) => {
+                out.refused.push(Refused {
+                    path: candidate.path,
+                    fault,
+                });
+                continue;
+            }
+        };
+        let manifest = package.manifest();
+        let id = manifest.id.clone();
+        let found = Discovered {
+            dir: candidate.path.clone(),
+            id: id.clone(),
+            version: manifest.version.clone(),
+            side: manifest.side,
+        };
+        let name = file_name(&candidate.path);
+        let fault = if candidate.dev {
+            match taken.get(&id) {
+                Some(first) => Some(Fault::DuplicateId {
+                    id: id.clone(),
+                    first: first.clone(),
+                }),
+                None => {
+                    dev_ids.insert(id.clone());
+                    None
+                }
+            }
+        } else if dev_ids.contains(&id) {
+            Some(Fault::ReplacedByDev { id: id.clone() })
+        } else {
+            taken.get(&id).map(|first| Fault::DuplicateId {
+                id: id.clone(),
+                first: first.clone(),
+            })
+        };
+        match fault {
+            Some(fault) => out.refused.push(Refused {
+                path: candidate.path,
+                fault,
+            }),
+            None => {
+                taken.entry(id).or_insert(name);
+                kept.push(Kept {
+                    found,
+                    dev: candidate.dev,
+                    package,
+                });
             }
         }
     }
-    found
+
+    // What the planner sees: each enabled mod as an entry, each disabled one as its id.
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut entry_kept: Vec<usize> = Vec::new();
+    let mut presence: HashMap<String, Presence> = HashMap::new();
+    for (k, item) in kept.iter().enumerate() {
+        let id = &item.found.id;
+        if !item.dev && !states.is_enabled(id) {
+            out.disabled.push(item.found.clone());
+            presence.insert(id.clone(), Presence::Disabled);
+            continue;
+        }
+        presence.insert(id.clone(), Presence::Enabled(entries.len()));
+        entries.push(Entry {
+            id: id.clone(),
+            dev: item.dev,
+            version: item.found.version.clone(),
+            deps: item
+                .package
+                .manifest()
+                .dependencies
+                .iter()
+                .map(|d| Dep {
+                    id: d.id.clone(),
+                    requirement: d.requirement.clone(),
+                    optional: d.optional,
+                })
+                .collect(),
+        });
+        entry_kept.push(k);
+    }
+    out.disabled
+        .sort_by(|a, b| a.dir.file_name().cmp(&b.dir.file_name()));
+
+    let plan = load_order::plan(&entries, &presence);
+    let mut slots: Vec<Option<Kept>> = kept.into_iter().map(Some).collect();
+    for (i, fault) in plan.refused {
+        if let Some(item) = slots[entry_kept[i]].take() {
+            out.refused.push(Refused {
+                path: item.found.dir,
+                fault,
+            });
+        }
+    }
+    for (index, i) in plan.order.into_iter().enumerate() {
+        if let Some(item) = slots[entry_kept[i]].take() {
+            out.loaded.push(ScannedMod {
+                found: item.found,
+                dev: item.dev,
+                package: item.package,
+                index,
+            });
+        }
+    }
+    out
 }
 
-/// Checks one mod folder and returns what it declares, or why it is refused.
-fn check(dir: &Path) -> Result<Discovered, String> {
-    let manifest = read_table(&dir.join(MANIFEST))?;
-    let id = text(&manifest, "id")?;
-    if !valid_id(id) {
-        return Err("id is not a valid mod id".into());
-    }
-    let version = text(&manifest, "version")?;
-    if !(1..=64).contains(&version.chars().count()) {
-        return Err("version must be 1 to 64 characters".into());
-    }
-    let side = match text(&manifest, "side")? {
-        "client" => Side::Client,
-        "server" => Side::Server,
-        "both" => Side::Both,
-        _ => return Err("side must be client, server or both".into()),
+/// The entries of `<game_dir>/lua-mods/` that may be packages, in file name order. A symlink that
+/// names a package, or points at a folder or a package, is refused; any other entry is ignored.
+fn installed(game_dir: &Path, refused: &mut Vec<Refused>) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(game_dir.join(DIR)) else {
+        return Vec::new();
     };
-    let entry_is_file = std::fs::symlink_metadata(dir.join(ENTRY)).is_ok_and(|m| m.is_file());
-    if !entry_is_file {
-        return Err(format!("no {ENTRY}"));
+    let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    let mut out = Vec::new();
+    for path in paths {
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            let target = std::fs::canonicalize(&path).ok();
+            let names_package = is_archive(&path);
+            let points_at_package = target
+                .as_deref()
+                .is_some_and(|t| t.is_dir() || is_archive(t));
+            if names_package || points_at_package {
+                refused.push(Refused {
+                    path,
+                    fault: Fault::Package(Refusal::Symlink),
+                });
+            }
+        } else if meta.is_dir() || (meta.is_file() && is_archive(&path)) {
+            out.push(path);
+        }
     }
-    Ok(Discovered {
-        dir: dir.to_path_buf(),
-        id: id.to_string(),
-        version: version.to_string(),
-        side,
-    })
+    out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Whether a path ends in `.hlua` (its extension, case-sensitive).
+fn is_archive(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e == ARCHIVE_EXT)
+}
 
-    fn manifest(id: &str, version: &str, side: &str) -> String {
-        format!("id = \"{id}\"\nversion = \"{version}\"\nside = \"{side}\"\n")
+/// Opens a folder or a `.hlua` archive as a package. Anything else is refused.
+fn open(path: &Path) -> Result<Package, Fault> {
+    let meta = std::fs::metadata(path).map_err(|_| Fault::Package(Refusal::Unreadable))?;
+    if meta.is_dir() {
+        Package::open_dir(path).map_err(Fault::Package)
+    } else if is_archive(path) {
+        Package::open_archive(path).map_err(Fault::Package)
+    } else {
+        Err(Fault::DevPathNotHlua)
     }
+}
 
-    /// Writes `<root>/lua-mods/<name>/` with the manifest text and a `main.luau`.
-    fn mod_folder(root: &Path, name: &str, manifest_text: &str) -> PathBuf {
-        let dir = root.join(DIR).join(name);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(MANIFEST), manifest_text).unwrap();
-        std::fs::write(dir.join(ENTRY), "return {}\n").unwrap();
-        dir
-    }
-
-    fn reasons(found: &Found) -> Vec<String> {
-        found.refused.iter().map(|r| r.reason.clone()).collect()
-    }
-
-    #[test]
-    fn a_valid_mod_folder_is_found() {
-        let root = tempfile::tempdir().unwrap();
-        let dir = mod_folder(
-            root.path(),
-            "alpha",
-            &manifest("alpha_mod", "1.0.0", "both"),
-        );
-        let found = scan(root.path());
-        assert!(found.refused.is_empty());
-        assert_eq!(
-            found.mods,
-            vec![Discovered {
-                dir,
-                id: "alpha_mod".into(),
-                version: "1.0.0".into(),
-                side: Side::Both,
-            }]
-        );
-    }
-
-    #[test]
-    fn a_missing_lua_mods_folder_is_empty() {
-        let root = tempfile::tempdir().unwrap();
-        assert_eq!(scan(root.path()), Found::default());
-    }
-
-    #[test]
-    fn a_folder_without_a_manifest_is_refused() {
-        let root = tempfile::tempdir().unwrap();
-        let dir = root.path().join(DIR).join("nomanifest");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(ENTRY), "return {}\n").unwrap();
-        let found = scan(root.path());
-        assert!(found.mods.is_empty());
-        assert_eq!(reasons(&found), vec!["no lua-mod.toml"]);
-    }
-
-    #[test]
-    fn a_bad_id_is_refused() {
-        let root = tempfile::tempdir().unwrap();
-        mod_folder(root.path(), "a_upper", &manifest("Bad-Id", "1", "both"));
-        mod_folder(root.path(), "b_empty", &manifest("", "1", "both"));
-        mod_folder(
-            root.path(),
-            "c_long",
-            &manifest(&"a".repeat(65), "1", "both"),
-        );
-        mod_folder(
-            root.path(),
-            "d_max",
-            &manifest(&"a".repeat(64), "1", "both"),
-        );
-        let found = scan(root.path());
-        assert_eq!(found.mods.len(), 1);
-        assert_eq!(found.mods[0].id.len(), 64);
-        assert_eq!(reasons(&found), vec!["id is not a valid mod id"; 3]);
-    }
-
-    #[test]
-    fn a_bad_side_and_a_missing_key_are_refused() {
-        let root = tempfile::tempdir().unwrap();
-        mod_folder(root.path(), "a_side", &manifest("side_mod", "1", "Both"));
-        mod_folder(
-            root.path(),
-            "b_nover",
-            "id = \"nover_mod\"\nside = \"both\"\n",
-        );
-        mod_folder(
-            root.path(),
-            "c_int",
-            "id = \"int_mod\"\nversion = 1\nside = \"both\"\n",
-        );
-        let found = scan(root.path());
-        assert!(found.mods.is_empty());
-        assert_eq!(
-            reasons(&found),
-            vec![
-                "side must be client, server or both",
-                "version is missing or not a string",
-                "version is missing or not a string",
-            ]
-        );
-    }
-
-    #[test]
-    fn a_manifest_over_the_cap_is_refused() {
-        let root = tempfile::tempdir().unwrap();
-        let text = format!(
-            "{}# {}\n",
-            manifest("big_mod", "1", "both"),
-            "x".repeat(70 * 1024)
-        );
-        mod_folder(root.path(), "big", &text);
-        let found = scan(root.path());
-        assert!(found.mods.is_empty());
-        assert_eq!(reasons(&found), vec!["lua-mod.toml is over 64 KiB"]);
-    }
-
-    #[test]
-    fn a_folder_without_main_luau_is_refused() {
-        let root = tempfile::tempdir().unwrap();
-        let dir = root.path().join(DIR).join("noentry");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(MANIFEST), manifest("noentry", "1", "both")).unwrap();
-        let found = scan(root.path());
-        assert!(found.mods.is_empty());
-        assert_eq!(reasons(&found), vec!["no main.luau"]);
-    }
-
-    #[test]
-    fn a_duplicate_id_is_refused_and_the_first_is_kept() {
-        let root = tempfile::tempdir().unwrap();
-        let first = mod_folder(root.path(), "a", &manifest("same", "1", "both"));
-        let second = mod_folder(root.path(), "b", &manifest("same", "2", "client"));
-        let found = scan(root.path());
-        assert_eq!(found.mods.len(), 1);
-        assert_eq!(found.mods[0].dir, first);
-        assert_eq!(found.mods[0].version, "1");
-        assert_eq!(
-            found.refused,
-            vec![Refused {
-                dir: second,
-                reason: "id same is already used by a".into(),
-            }]
-        );
-    }
-
-    #[test]
-    fn files_are_ignored_and_the_order_is_by_name() {
-        let root = tempfile::tempdir().unwrap();
-        let lua_mods = root.path().join(DIR);
-        std::fs::create_dir_all(&lua_mods).unwrap();
-        std::fs::write(lua_mods.join("plain.txt"), "hello").unwrap();
-        std::fs::write(lua_mods.join("x.hlua"), "return {}").unwrap();
-        mod_folder(root.path(), "b", &manifest("bee", "1", "both"));
-        mod_folder(root.path(), "a", &manifest("ay", "1", "server"));
-        let found = scan(root.path());
-        assert!(found.refused.is_empty());
-        let ids: Vec<&str> = found.mods.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, vec!["ay", "bee"]);
-        assert_eq!(found.mods[0].side, Side::Server);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_folder_is_refused() {
-        let root = tempfile::tempdir().unwrap();
-        let target = mod_folder(root.path(), "real", &manifest("real_mod", "1", "both"));
-        let lua_mods = root.path().join(DIR);
-        std::fs::create_dir_all(&lua_mods).unwrap();
-        std::os::unix::fs::symlink(&target, lua_mods.join("link")).unwrap();
-        let found = scan(root.path());
-        assert_eq!(found.mods.len(), 1);
-        assert_eq!(found.mods[0].dir, target);
-        assert_eq!(found.refused.len(), 1);
-        assert_eq!(found.refused[0].dir, lua_mods.join("link"));
-        assert_eq!(found.refused[0].reason, "a symlink is not followed");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_main_luau_is_refused() {
-        let root = tempfile::tempdir().unwrap();
-        let outside = root.path().join("outside.luau");
-        std::fs::write(&outside, "return {}\n").unwrap();
-        let dir = root.path().join(DIR).join("linked");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(MANIFEST), manifest("linked_mod", "1", "both")).unwrap();
-        std::os::unix::fs::symlink(&outside, dir.join(ENTRY)).unwrap();
-        let found = scan(root.path());
-        assert!(found.mods.is_empty());
-        assert_eq!(reasons(&found), vec!["no main.luau"]);
-    }
-
-    #[test]
-    fn a_deeply_nested_manifest_is_refused_without_crashing() {
-        // 30,000 levels is under the 64 KiB cap: the TOML parser must refuse it, not overflow.
-        let root = tempfile::tempdir().unwrap();
-        let nested = format!("x = {}{}\n", "[".repeat(30_000), "]".repeat(30_000));
-        assert!(nested.len() < MAX_MANIFEST as usize);
-        mod_folder(root.path(), "deep", &nested);
-        let found = scan(root.path());
-        assert!(found.mods.is_empty());
-        assert_eq!(found.refused.len(), 1);
-    }
+/// The last component of a path as text, for the duplicate's "first" argument.
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }

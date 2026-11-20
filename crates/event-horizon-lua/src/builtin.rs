@@ -7,7 +7,8 @@ use crate::package;
 use mod_api::__private::native::BuiltMod;
 use mod_api::ModEntry;
 use mod_api::Side;
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 /// The built-in mod the loader must find a package for.
 pub const BUILT: &[BuiltMod] = &[BuiltMod {
@@ -24,15 +25,31 @@ pub struct Loaded {
     pub refused: Vec<String>,
 }
 
-/// Scans `<game_dir>/lua-mods/` and loads each mod that passes. A mod that fails is refused and
-/// the others still load. A missing folder is fine: the entry then subscribes to nothing.
-pub fn builtin(game_dir: &Path) -> Loaded {
-    let (mods, refused) = load_mods(game_dir);
+/// The dev paths the environment names: `EH_LUA_MODS`, a list of paths separated by the system's
+/// path separator. Empty entries are dropped; the scan refuses more than `MAX_DEV_PATHS`.
+pub fn env_dev_paths(value: Option<&OsStr>) -> Vec<PathBuf> {
+    value
+        .map(std::env::split_paths)
+        .into_iter()
+        .flatten()
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect()
+}
+
+/// Scans `<game_dir>/lua-mods/` and `dev_paths`, and loads each mod that passes. A mod that fails
+/// is refused and the others still load. A missing folder is fine: the entry then subscribes to
+/// nothing.
+pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf]) -> Loaded {
+    let (mods, refused, disabled, notices) = load_mods(game_dir, dev_paths);
     let loaded = mods.len();
     Loaded {
         entry: ModEntry::new(
             package::ID,
-            Box::new(LuaHost::new(mods).with_report(refused.clone())),
+            Box::new(
+                LuaHost::new(mods)
+                    .with_report(refused.clone())
+                    .with_disabled(disabled, notices),
+            ),
         ),
         loaded,
         refused,
@@ -47,38 +64,50 @@ fn grant_namespace(m: &LuaMod) -> Result<(), String> {
         .map_err(|reason| format!("cannot declare content in its namespace: {reason}"))
 }
 
-/// The mods under `game_dir` that load, and one line per folder or mod that does not. Nothing is
-/// logged here: this runs before the game's logger is up, and `LuaHost::register` reports them.
-fn load_mods(game_dir: &Path) -> (Vec<LuaMod>, Vec<String>) {
-    let found = discover::scan(game_dir);
-    let mut refused: Vec<String> = found
+/// The mods under `game_dir` that load, one line per folder or mod that does not, the ids the
+/// enabled file turned off, and the warnings about that file. Nothing is logged here: this runs
+/// before the game's logger is up, and `LuaHost::register` reports them. A refusal line carries the
+/// translation key after the English reason.
+fn load_mods(
+    game_dir: &Path,
+    dev_paths: &[PathBuf],
+) -> (Vec<LuaMod>, Vec<String>, Vec<String>, Vec<String>) {
+    let scan = discover::scan(game_dir, dev_paths);
+    let mut refused: Vec<String> = scan
         .refused
         .iter()
         .map(|r| {
             let name = r
-                .dir
+                .path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            format!("{name}: {}", r.reason)
+            format!("{name}: {} ({})", r.fault.reason(), r.fault.key())
         })
         .collect();
+    let disabled: Vec<String> = scan.disabled.iter().map(|d| d.id.clone()).collect();
     let mut mods: Vec<LuaMod> = Vec::new();
-    for found_mod in &found.mods {
-        match LuaMod::load(found_mod) {
+    for scanned in &scan.loaded {
+        match LuaMod::load_package(&scanned.found, &scanned.package) {
             Ok(m) => match grant_namespace(&m) {
                 Ok(()) => mods.push(m),
-                Err(reason) => refused.push(format!("{}: {reason}", found_mod.id)),
+                Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
             },
-            Err(reason) => refused.push(format!("{}: {reason}", found_mod.id)),
+            Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
         }
     }
-    (mods, refused)
+    (mods, refused, disabled, scan.notices)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The mods and refusals of a scan with no dev paths (the loader's pair, without the notes).
+    fn load_mods_pair(root: &Path) -> (Vec<LuaMod>, Vec<String>) {
+        let (mods, refused, _, _) = load_mods(root, &[]);
+        (mods, refused)
+    }
 
     /// Writes `<root>/lua-mods/<name>/` with a manifest for `id` and the given script.
     fn mod_folder(root: &Path, name: &str, id: &str, script: &str) {
@@ -118,7 +147,7 @@ mod tests {
             "alpha_mod",
             "horizon.on(\"server_tick\", function() end)\n",
         );
-        let built = builtin(root.path());
+        let built = builtin(root.path(), &[]);
         assert_eq!(built.loaded, 1);
         assert!(built.refused.is_empty());
     }
@@ -138,7 +167,7 @@ mod tests {
             "good_mod",
             "horizon.on(\"server_tick\", function() end)\n",
         );
-        let built = builtin(root.path());
+        let built = builtin(root.path(), &[]);
         assert_eq!(built.loaded, 1);
         assert_eq!(built.refused.len(), 1);
         assert!(built.refused[0].starts_with("bad_mod: "));
@@ -148,7 +177,7 @@ mod tests {
     #[test]
     fn a_missing_lua_mods_folder_is_fine() {
         let root = tempfile::tempdir().unwrap();
-        let built = builtin(root.path());
+        let built = builtin(root.path(), &[]);
         assert_eq!(built.loaded, 0);
         assert!(built.refused.is_empty());
     }
@@ -162,7 +191,7 @@ mod tests {
             "bad_mod",
             "horizon.on(\"nope\", function() end)\n",
         );
-        let (mods, refused) = load_mods(root.path());
+        let (mods, refused) = load_mods_pair(root.path());
         assert!(mods.is_empty());
         assert_eq!(refused.len(), 1);
         let host = LuaHost::new(mods).with_report(refused.clone());
@@ -173,7 +202,7 @@ mod tests {
     fn refused_folders_from_the_scan_are_reported() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join(discover::DIR).join("no_manifest")).unwrap();
-        let built = builtin(root.path());
+        let built = builtin(root.path(), &[]);
         assert_eq!(built.loaded, 0);
         assert_eq!(built.refused.len(), 1);
         assert!(built.refused[0].starts_with("no_manifest: "));
@@ -319,7 +348,7 @@ mod tests {
             "second_mod",
             "horizon.block{id = \"second_mod:cube\", template = \"minecraft:stone\"}\n",
         );
-        let (mods, refused) = load_mods(root.path());
+        let (mods, refused) = load_mods_pair(root.path());
         assert!(refused.is_empty(), "got {refused:?}");
         let host = LuaHost::new(mods);
         assert_eq!(
@@ -373,7 +402,7 @@ mod tests {
             "second_mod",
             "horizon.client_command{usage = \"hi\"}\n",
         );
-        let (mods, refused) = load_mods(root.path());
+        let (mods, refused) = load_mods_pair(root.path());
         assert!(refused.is_empty(), "got {refused:?}");
         let host = LuaHost::new(mods);
         let mut commands = Vec::new();
@@ -398,7 +427,7 @@ mod tests {
             "empty_mod",
             "horizon.on(\"server_tick\", function() end)\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let mut commands = Vec::new();
         host.declared_client_commands(&mut commands);
@@ -431,7 +460,7 @@ mod tests {
             "second_mod",
             "horizon.config{kind = \"common\", default = \"b\"}\n",
         );
-        let (mods, refused) = load_mods(root.path());
+        let (mods, refused) = load_mods_pair(root.path());
         assert!(refused.is_empty(), "got {refused:?}");
         let host = LuaHost::new(mods);
         use mod_api::ConfigKind::{Common, Server};
@@ -479,7 +508,7 @@ mod tests {
             "server",
             "horizon.config{kind = \"client\", default = \"\"}\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let files: Vec<String> = answered_configs(&host).into_iter().map(|c| c.1).collect();
         assert_eq!(files, ["client_mod-client.toml"]);
@@ -494,7 +523,7 @@ mod tests {
             "empty_mod",
             "horizon.on(\"server_tick\", function() end)\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         assert!(answered_configs(&host).is_empty());
         assert!(!subscribes_to(&host, "register_configs"));
@@ -511,7 +540,7 @@ mod tests {
                 "horizon.on(\"config_loading\", function(e) horizon.log(\"saw \" .. e.config.file) end)\n",
             );
         }
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let build = |lua: &mlua::Lua, _: &crate::hostcall::TurnHost<'_>| {
             let config = lua.create_table()?;
@@ -566,7 +595,7 @@ mod tests {
             "server",
             "horizon.command{usage = \"srv <n:integer>\", level = 4}\n",
         );
-        let (mods, refused) = load_mods(root.path());
+        let (mods, refused) = load_mods_pair(root.path());
         assert!(refused.is_empty(), "got {refused:?}");
         let host = LuaHost::new(mods);
         let mut commands = Vec::new();
@@ -592,7 +621,7 @@ mod tests {
             "client",
             "horizon.command{usage = \"unseen\"}\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let mut commands = Vec::new();
         host.declared_commands(&mut commands);
@@ -610,7 +639,7 @@ mod tests {
             "horizon.command{usage = \"lonely\"}\n",
         );
         crate::host::tests::install_capture();
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         host.report();
         let lines = crate::host::tests::captured_with_prefix("nohandler_mod: declares commands");
@@ -626,7 +655,7 @@ mod tests {
             "empty_mod",
             "horizon.on(\"server_tick\", function() end)\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         assert!(answered_blocks(&host).is_empty());
         assert!(!subscribes_to(&host, "blocks"));
@@ -641,7 +670,7 @@ mod tests {
             "block_mod",
             "horizon.block{id = \"block_mod:lamp\", template = \"minecraft:stone\"}\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         assert!(subscribes_to(&host, "blocks"));
         assert!(!subscribes_to(&host, "items"));
@@ -662,7 +691,7 @@ mod tests {
             "good_mod",
             "horizon.block{id = \"good_mod:lamp\", template = \"minecraft:stone\"}\n",
         );
-        let built = builtin(root.path());
+        let built = builtin(root.path(), &[]);
         assert_eq!(built.loaded, 1);
         assert_eq!(built.refused.len(), 1);
         assert!(
@@ -690,7 +719,7 @@ mod tests {
             "second_mod",
             "horizon.block{id = \"second_mod:cube\", template = \"minecraft:stone\"}\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let mut keys = RecordingKeys::default();
         host.request_keys(&mut keys);
@@ -722,7 +751,7 @@ mod tests {
             "second_mod",
             "horizon.block{id = \"second_mod:cube\", template = \"minecraft:stone\"}\n",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let mut keys = RecordingKeys {
             refuse: Some("first_mod:lamp".to_owned()),
@@ -738,7 +767,7 @@ mod tests {
         for (folder, id, script) in folders {
             mod_folder(root.path(), folder, id, script);
         }
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let mut keys = RecordingKeys::default();
         host.request_keys(&mut keys);
@@ -967,7 +996,7 @@ mod tests {
              horizon.block_entity_type{id = \"second_mod:press\", blocks = {\"second_mod:x\"}}\n\
              horizon.block_entity_part(\"second_mod:press\", {on_chunk_unloaded = function() end})",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let mut keys = RecordingKeys {
             refuse: Some("first_mod:press".to_owned()),
@@ -995,7 +1024,7 @@ mod tests {
              horizon.block_entity_type{id = \"second_mod:press\", blocks = {\"second_mod:x\"}}\n\
              horizon.block_entity_part(\"second_mod:press\", {on_chunk_unloaded = function() end})",
         );
-        let (mods, _) = load_mods(root.path());
+        let (mods, _) = load_mods_pair(root.path());
         let host = LuaHost::new(mods);
         let mut keys = RecordingKeys {
             refuse_part: Some("first_mod:press".to_owned()),
@@ -1116,15 +1145,17 @@ mod tests {
             "granted_mod",
             "horizon.block{id = \"granted_mod:lamp\", template = \"minecraft:stone\"}\n",
         );
-        let built = builtin(root.path());
+        let built = builtin(root.path(), &[]);
         assert_eq!(built.loaded, 1);
         assert_eq!(built.refused.len(), 1);
+        // The package reader refuses the id before the mod has one, so the line names the folder.
         assert!(
-            built.refused[0].starts_with("minecraft: "),
+            built.refused[0].starts_with("a_reserved: "),
             "got {:?}",
             built.refused
         );
         assert!(built.refused[0].contains("reserved"));
+        assert!(built.refused[0].ends_with("(lua_mod.refused.reserved_id)"));
     }
 
     /// A level double for the hooks that take one; the container hook reads nothing from it.
