@@ -1,14 +1,16 @@
 //! The built-in mod that runs the Lua mods in `<game_dir>/lua-mods/`: the one entry the game starts
 //! with, and the package the loader checks for it beside the executable.
 
-use crate::discover;
-use crate::host::{LuaHost, LuaMod, both_side_records};
+use crate::discover::{self, ScannedMod};
+use crate::host::{LuaHost, LuaMod, both_side_records, collect_load_notices};
 use crate::package;
+use crate::settings::{Role, Schema, Settings};
 use mod_api::__private::native::BuiltMod;
 use mod_api::ModEntry;
 use mod_api::Side;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// The built-in mod the loader must find a package for.
 pub const BUILT: &[BuiltMod] = &[BuiltMod {
@@ -65,6 +67,21 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
     }
 }
 
+/// The settings of one scanned mod: its schema from the manifest, and its values from
+/// `<game_dir>/config/<id>/settings.toml`. The schema was checked when the package was read, so a
+/// refusal here is a failed check of the same text. The role is the server's for every process:
+/// `Role::PureClient` is not passed by any caller yet, so a server-side setting stays editable.
+fn load_settings(game_dir: &Path, scanned: &ScannedMod) -> Result<Settings, String> {
+    let schema =
+        Schema::parse(&scanned.package.manifest().settings).map_err(|fault| fault.reason())?;
+    Ok(Settings::load(
+        game_dir,
+        &scanned.found.id,
+        schema,
+        Role::ServerRuns,
+    ))
+}
+
 /// Lets the built-in package declare content in `m`'s namespace (its id). The game reads a
 /// package's namespaces when it starts, so a Lua mod's namespace, found in its folder, is granted
 /// here, before the game dispatches the `blocks` and `items` hooks.
@@ -116,7 +133,18 @@ fn load_mods(
     let disabled: Vec<String> = scan.disabled.iter().map(|d| d.id.clone()).collect();
     let mut mods: Vec<LuaMod> = Vec::new();
     for scanned in &scan.loaded {
-        match LuaMod::load_package(&scanned.found, &scanned.package) {
+        // The settings are read before the mod declares, so `horizon.setting` sees the file's values.
+        // Their warnings are kept for `LuaHost::report`, as the declaration's are.
+        let (settings, settings_notices) =
+            collect_load_notices(|| load_settings(game_dir, scanned));
+        let settings = match settings {
+            Ok(settings) => Arc::new(settings),
+            Err(reason) => {
+                refused.push(format!("{}: {reason}", scanned.found.id));
+                continue;
+            }
+        };
+        match LuaMod::load_package(&scanned.found, &scanned.package, settings, settings_notices) {
             Ok(m) => match grant_namespace(&m) {
                 Ok(()) => mods.push(m),
                 Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
@@ -1571,5 +1599,40 @@ mod tests {
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(refused[0].starts_with("b_needs: "));
         assert!(refused[0].ends_with("(lua_mod.refused.dependency_disabled)"));
+    }
+
+    #[test]
+    fn a_settings_file_is_read_when_the_mod_loads_and_the_host_shares_its_values() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join(discover::DIR).join("tuned");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(discover::MANIFEST),
+            "id = \"tuned_mod\"\nversion = \"1.0.0\"\nside = \"both\"\n\n\
+             [[settings]]\nkey = \"level\"\ntype = \"slider\"\nlabel = \"Level\"\n\
+             min = 0\nmax = 10\nstep = 1\ninteger = true\ndefault = 1\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(discover::ENTRY),
+            "horizon.on(\"block_receive_game\", function()\n\
+             horizon.log(\"level \" .. horizon.setting(\"level\"))\nend)\n",
+        )
+        .unwrap();
+        let config = root
+            .path()
+            .join(crate::settings::CONFIG_DIR)
+            .join("tuned_mod");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join(crate::settings::FILE), "level = 6\n").unwrap();
+
+        let (mods, refused, _, _, _) = load_mods(root.path(), &[], false);
+        assert!(refused.is_empty(), "{refused:?}");
+        let host = LuaHost::new(mods);
+        let shared = host.settings("tuned_mod").expect("loaded");
+        assert!(Arc::ptr_eq(&shared, host.mods()[0].settings()));
+        assert_eq!(shared.get("level"), Some(crate::settings::Value::Int(6)));
+        host.fire("block_receive_game");
+        assert_eq!(host.mods()[0].log_lines(), ["level 6"]);
     }
 }

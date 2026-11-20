@@ -13,6 +13,8 @@ use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
 use crate::data_maps;
+use crate::setting_api;
+use crate::settings::Settings;
 
 /// The most `horizon.on` calls one mod may make.
 pub const MAX_HANDLERS: usize = 256;
@@ -143,6 +145,8 @@ pub struct Declaration {
     pub data_map_types: Vec<mod_api::DataMapType>,
     /// The data pack files `horizon.data_pack_file` declared, as (key, JSON text), in order.
     pub data_pack_files: Vec<(String, String)>,
+    /// Whether the chunk called `horizon.on_setting_changed`. Its handler is in the registry, not a hook.
+    pub setting_changed: bool,
 }
 
 /// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
@@ -388,8 +392,28 @@ pub fn declare_scripts_with_budget(
     is_hook: &dyn Fn(&str) -> bool,
     budget: Duration,
 ) -> Result<Declaration, String> {
+    declare_scripts_settings(
+        lua,
+        owner,
+        scripts,
+        is_hook,
+        budget,
+        &Settings::empty(owner),
+    )
+}
+
+/// The same as `declare_scripts_with_budget`, with the mod's loaded settings: `horizon.setting` reads
+/// them while the mod loads, so a declaration can depend on a setting.
+pub fn declare_scripts_settings(
+    lua: &Lua,
+    owner: &str,
+    scripts: &[(&str, &str)],
+    is_hook: &dyn Fn(&str) -> bool,
+    budget: Duration,
+    settings: &Settings,
+) -> Result<Declaration, String> {
     let (recorded, loaded) =
-        run(lua, owner, scripts, is_hook, budget).map_err(|e| e.to_string())?;
+        run(lua, owner, scripts, is_hook, budget, settings).map_err(|e| e.to_string())?;
     let hooks = recorded
         .options
         .iter()
@@ -418,6 +442,7 @@ pub fn declare_scripts_with_budget(
         commands: recorded.commands,
         data_map_types: recorded.data_map_types,
         data_pack_files: recorded.data_pack_files,
+        setting_changed: recorded.setting_changed,
     })
 }
 
@@ -558,6 +583,7 @@ struct Recorded {
     commands: Vec<CommandRecord>,
     data_map_types: Vec<mod_api::DataMapType>,
     data_pack_files: Vec<(String, String)>,
+    setting_changed: bool,
 }
 
 /// Sets up the environment and the `horizon` table, runs the chunk, and then replaces the declaring
@@ -570,6 +596,7 @@ fn run(
     scripts: &[(&str, &str)],
     is_hook: &dyn Fn(&str) -> bool,
     budget_limit: Duration,
+    settings: &Settings,
 ) -> mlua::Result<(Recorded, mlua::Result<()>)> {
     let handlers = lua.create_table()?;
     lua.set_named_registry_value(HANDLERS_KEY, handlers.clone())?;
@@ -612,6 +639,7 @@ fn run(
     let data_pack_files = RefCell::new(Vec::<(String, String)>::new());
     let calls = Cell::new(0_usize);
     let finished = Cell::new(false);
+    let setting_seen = Cell::new(false);
 
     // The declaring functions borrow the caller's `is_hook`, owner and the cells above, so they are
     // scoped functions: they expire when the scope ends, and are replaced below before anything can
@@ -757,6 +785,27 @@ fn run(
             let data_pack_file = scope.create_function(|_, value: Value| {
                 data_maps::declare_file(owner, value, &data_pack_files)
             })?;
+            let setting = scope.create_function(|lua, key: Value| {
+                setting_api::read(lua, settings, &key)
+            })?;
+            let on_setting_changed = scope.create_function(|lua, handler: Value| {
+                if finished.get() {
+                    return Err(Error::runtime(setting_api::LATE));
+                }
+                if setting_seen.get() {
+                    return Err(Error::runtime(setting_api::TWICE));
+                }
+                let Value::Function(handler) = handler else {
+                    return Err(Error::runtime(
+                        "horizon.on_setting_changed needs a function as the handler",
+                    ));
+                };
+                lua.set_named_registry_value(setting_api::HANDLER_KEY, handler)?;
+                setting_seen.set(true);
+                Ok(())
+            })?;
+            horizon.raw_set("setting", setting)?;
+            horizon.raw_set("on_setting_changed", on_setting_changed)?;
             horizon.raw_set("on", on)?;
             horizon.raw_set("client_command", client_command)?;
             horizon.raw_set("config", config)?;
@@ -813,6 +862,7 @@ fn run(
         ("command", LATE_DECLARE),
         ("data_map_type", LATE_DECLARE),
         ("data_pack_file", LATE_DECLARE),
+        ("on_setting_changed", setting_api::LATE),
     ] {
         let refuse = lua.create_function(move |_, _: mlua::MultiValue| -> mlua::Result<()> {
             Err(Error::runtime(message))
@@ -840,6 +890,7 @@ fn run(
         commands: commands.into_inner(),
         data_map_types: data_map_types.into_inner(),
         data_pack_files: data_pack_files.into_inner(),
+        setting_changed: setting_seen.get(),
     };
     Ok((recorded, loaded))
 }

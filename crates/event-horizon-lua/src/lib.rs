@@ -49,6 +49,9 @@ mod mob_turn;
 pub mod package;
 pub mod quarantine;
 pub mod ratelimit;
+mod setting_api;
+#[cfg(test)]
+mod setting_api_tests;
 pub mod settings;
 #[cfg(test)]
 mod settings_tests;

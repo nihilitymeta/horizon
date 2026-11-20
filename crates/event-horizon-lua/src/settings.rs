@@ -613,9 +613,22 @@ pub struct Change {
 /// Why a `set`, `reset` or `reset_all` did nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SettingError {
-    UnknownKey { key: String },
-    NotEditable { key: String },
-    Invalid { key: String, reason: String },
+    UnknownKey {
+        key: String,
+    },
+    NotEditable {
+        key: String,
+    },
+    Invalid {
+        key: String,
+        reason: String,
+    },
+    /// This thread is inside the mod's turn (a call from one of its handlers, say): nothing is changed.
+    Busy,
+    /// No loaded mod has this id.
+    UnknownMod {
+        mod_id: String,
+    },
     File(String),
 }
 
@@ -630,6 +643,10 @@ impl std::fmt::Display for SettingError {
                 )
             }
             SettingError::Invalid { key, reason } => write!(f, "setting {key:?} {reason}"),
+            SettingError::Busy => {
+                f.write_str("the mod is busy on this thread; the setting is not changed")
+            }
+            SettingError::UnknownMod { mod_id } => write!(f, "no loaded mod {mod_id:?}"),
             SettingError::File(text) => f.write_str(text),
         }
     }
@@ -646,6 +663,17 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// A mod with no settings and no file read: what a declaration gets when no schema was loaded.
+    pub(crate) fn empty(mod_id: &str) -> Settings {
+        Settings {
+            mod_id: mod_id.to_owned(),
+            game_dir: PathBuf::new(),
+            schema: Schema::default(),
+            role: Role::ServerRuns,
+            values: Mutex::new(BTreeMap::new()),
+        }
+    }
+
     /// Reads `<game_dir>/config/<mod_id>/settings.toml` against `schema`. Never fails: every problem
     /// with the file is a warning, and the defaults are used for what it does not give.
     pub fn load(game_dir: &Path, mod_id: &str, schema: Schema, role: Role) -> Settings {

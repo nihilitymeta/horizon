@@ -300,6 +300,15 @@ export type HorizonApi = {
 	attachment_set: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string, value: any, opts: AttachmentOpts?) -> boolean,
 	attachment_remove: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string) -> boolean,
 	log: (message: string) -> (),
+	-- `horizon.setting(key)`: the current value of a setting the mod declares in its manifest (`[[settings]]`),
+	-- read from the player's `config/<mod>/settings.toml` or its default. A toggle is a boolean, a slider a
+	-- number, and a choice, colour, keybind or text setting a string. Usable in a handler and while the mod
+	-- loads (a declaration may depend on it). An unknown key is an error that names it.
+	setting: (key: string) -> boolean | number | string,
+	-- `horizon.on_setting_changed(handler)`: the mod's one change handler, registered while the mod loads.
+	-- The handler gets the key, the new value and the old one, once per change, in order. A failing handler
+	-- is logged and does not undo the change. There is no `set` in Lua: a handler cannot change a setting.
+	on_setting_changed: (handler: (key: string, value: boolean | number | string, old: boolean | number | string) -> ()) -> (),
 	none: NoneMarker,
 }
 

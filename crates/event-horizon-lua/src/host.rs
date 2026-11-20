@@ -31,6 +31,8 @@ use crate::dispatch::{self, new_event};
 use crate::generated::hooks::{hook_id, is_emitted};
 use crate::hlua::Package;
 use crate::ratelimit::{RateLimit, Verdict};
+use crate::setting_api;
+use crate::settings::{Change, SettingError, Settings, Value as SettingValue};
 use crate::state;
 
 /// The largest `main.luau` that is read.
@@ -94,6 +96,10 @@ pub struct LuaMod {
     /// The warnings the declaration gave (a refused data map type or file, say), as `(source, line)`
     /// for `warn_once`. They are logged by `LuaHost::report`, once the game's logger is up.
     notices: Vec<(String, String)>,
+    /// The mod's settings, shared with its `horizon.setting` and with the provider API (`LuaHost`).
+    settings: Arc<Settings>,
+    /// Whether the mod declared `horizon.on_setting_changed`; its handler is in the Lua registry.
+    setting_changed: bool,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -166,23 +172,58 @@ impl LuaMod {
     /// Loads the mod `found` from its package: every script its manifest lists is read through the
     /// package reader, in manifest order, and the mod is declared from all of them as one mod (one
     /// environment, one time budget). This is the loader's path.
-    pub fn load_package(found: &Discovered, package: &Package) -> Result<LuaMod, String> {
+    pub fn load_package(
+        found: &Discovered,
+        package: &Package,
+        settings: Arc<Settings>,
+        settings_notices: Vec<(String, String)>,
+    ) -> Result<LuaMod, String> {
         let scripts = package.entry_sources().map_err(|r| r.reason())?;
-        Self::from_sources(found, &scripts)
+        Self::from_sources(found, &scripts, settings, settings_notices)
+    }
+
+    /// The settings the mod loaded, shared with its Lua state.
+    pub(crate) fn settings(&self) -> &Arc<Settings> {
+        &self.settings
+    }
+
+    /// Whether the mod declared `horizon.on_setting_changed`.
+    pub(crate) fn declares_setting_handler(&self) -> bool {
+        self.setting_changed
     }
 
     /// Loads a folder's `main.luau` without its manifest. Tests only: the loader reads every mod
     /// through `load_package`, so no unchecked folder reaches a game.
     #[cfg(test)]
     pub fn load(found: &Discovered) -> Result<LuaMod, String> {
+        Self::load_with(found, Settings::empty(&found.id), Vec::new())
+    }
+
+    /// `load` with the mod's settings, and the notices their load gave (tests of `horizon.setting`).
+    #[cfg(test)]
+    pub(crate) fn load_with(
+        found: &Discovered,
+        settings: Settings,
+        settings_notices: Vec<(String, String)>,
+    ) -> Result<LuaMod, String> {
         let source = read_source(&found.dir)?;
-        Self::from_sources(found, &[(ENTRY.to_string(), source)])
+        Self::from_sources(
+            found,
+            &[(ENTRY.to_string(), source)],
+            Arc::new(settings),
+            settings_notices,
+        )
     }
 
     /// Declares the mod from its scripts, each as (name in its package, source) in manifest order,
     /// and installs the runtime `horizon` table in place of the declaring one. Any failure is an
     /// error. A script's chunk is named by its path under the mod's folder, so an error names it.
-    fn from_sources(found: &Discovered, scripts: &[(String, String)]) -> Result<LuaMod, String> {
+    fn from_sources(
+        found: &Discovered,
+        scripts: &[(String, String)],
+        settings: Arc<Settings>,
+        settings_notices: Vec<(String, String)>,
+    ) -> Result<LuaMod, String> {
         let lua = state::new_state().map_err(|e| e.to_string())?;
         let chunks: Vec<(String, &str)> = scripts
             .iter()
@@ -198,13 +239,21 @@ impl LuaMod {
             .map(|(name, source)| (name.as_str(), *source))
             .collect();
         let (declaration, notices) = collect_load_notices(|| {
-            declare::declare_scripts(&lua, &found.id, &refs, &|n| is_emitted(n))
+            declare::declare_scripts_settings(
+                &lua,
+                &found.id,
+                &refs,
+                &|n| is_emitted(n),
+                declare::DECLARE_BUDGET,
+                &settings,
+            )
         });
         let declaration = declaration?;
+        let notices: Vec<(String, String)> = settings_notices.into_iter().chain(notices).collect();
 
         let log = Arc::new(Mutex::new(Vec::new()));
-        let runtime =
-            runtime_table(&lua, &found.id, Arc::clone(&log)).map_err(|e| e.to_string())?;
+        let runtime = runtime_table(&lua, &found.id, Arc::clone(&log), Arc::clone(&settings))
+            .map_err(|e| e.to_string())?;
         declare::environment(&lua)
             .and_then(|env| env.raw_set("horizon", runtime))
             .map_err(|e| e.to_string())?;
@@ -233,6 +282,8 @@ impl LuaMod {
             data_map_types: declaration.data_map_types,
             data_pack_files: declaration.data_pack_files,
             notices,
+            settings,
+            setting_changed: declaration.setting_changed,
             lua,
             log,
             turn: Turn::default(),
@@ -588,6 +639,65 @@ impl LuaHost {
             &|lua| new_event(lua, lua.create_table()?, &[]),
             &mut |_, _| true,
         );
+    }
+}
+
+impl LuaHost {
+    /// The settings of mod `mod_id`: the same `Arc` the mod's `horizon.setting` reads. `None` for a
+    /// mod that is not loaded.
+    pub fn settings(&self, mod_id: &str) -> Option<Arc<Settings>> {
+        self.mods
+            .iter()
+            .find(|m| m.id() == mod_id)
+            .map(|m| Arc::clone(m.settings()))
+    }
+
+    /// Sets `key` of mod `mod_id` to `value` and delivers the change to the mod's
+    /// `horizon.on_setting_changed` handler. Nothing changes when the value is refused.
+    pub fn set_setting(
+        &self,
+        mod_id: &str,
+        key: &str,
+        value: SettingValue,
+    ) -> Result<(), SettingError> {
+        let m = self.setting_owner(mod_id)?;
+        let change = m.settings().set(key, value)?;
+        setting_api::deliver(m, &change);
+        Ok(())
+    }
+
+    /// Removes `key` of mod `mod_id` from its file, so it takes its default, and delivers the change.
+    pub fn reset_setting(&self, mod_id: &str, key: &str) -> Result<(), SettingError> {
+        let m = self.setting_owner(mod_id)?;
+        let change = m.settings().reset(key)?;
+        setting_api::deliver(m, &change);
+        Ok(())
+    }
+
+    /// Resets every setting of mod `mod_id`, and delivers one change for each value that moved, in
+    /// schema order.
+    pub fn reset_all_settings(&self, mod_id: &str) -> Result<(), SettingError> {
+        let m = self.setting_owner(mod_id)?;
+        let changes: Vec<Change> = m.settings().reset_all()?;
+        for change in &changes {
+            setting_api::deliver(m, change);
+        }
+        Ok(())
+    }
+
+    /// The loaded mod `mod_id`, when this thread may change its settings: `Busy` when this thread is
+    /// already inside the mod's turn, so a call made from one of its handlers does not wait on itself.
+    /// Checked before anything is written.
+    fn setting_owner(&self, mod_id: &str) -> Result<&LuaMod, SettingError> {
+        let m = self.mods.iter().find(|m| m.id() == mod_id).ok_or_else(|| {
+            SettingError::UnknownMod {
+                mod_id: mod_id.to_owned(),
+            }
+        })?;
+        if m.turn().held_here() {
+            return Err(SettingError::Busy);
+        }
+        Ok(m)
     }
 }
 
@@ -1157,7 +1267,12 @@ pub(crate) fn call_handler_value(
 /// The `horizon` table a mod's handlers see: `log`, and `none` (the sentinel that answers None on an
 /// `Option` output). Any other field errors, and `on` only refuses, because hooks are declared while
 /// the mod loads.
-fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Result<Table> {
+fn runtime_table(
+    lua: &Lua,
+    id: &str,
+    log: Arc<Mutex<Vec<String>>>,
+    settings: Arc<Settings>,
+) -> mlua::Result<Table> {
     let horizon = lua.create_table()?;
     let meta = lua.create_table()?;
     meta.raw_set(
@@ -1180,6 +1295,16 @@ fn runtime_table(lua: &Lua, id: &str, log: Arc<Mutex<Vec<String>>>) -> mlua::Res
         })?,
     )?;
     horizon.raw_set("data_map", crate::data_maps::data_map_function(lua)?)?;
+    horizon.raw_set(
+        "setting",
+        lua.create_function(move |lua, key: Value| setting_api::read(lua, &settings, &key))?,
+    )?;
+    horizon.raw_set(
+        "on_setting_changed",
+        lua.create_function(|_, _: mlua::MultiValue| -> mlua::Result<()> {
+            Err(Error::runtime(setting_api::LATE))
+        })?,
+    )?;
     crate::attachments::install(lua, &horizon, id)?;
     let id = id.to_string();
     let limit = Mutex::new(RateLimit::new(LOG_BURST, LOG_PER_SECOND));
