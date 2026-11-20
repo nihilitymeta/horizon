@@ -22,6 +22,9 @@ export type Text = string | { text: string?, color: string?, extra: { Text }?, [
 -- Compound (NBT): a table keyed by tag name. Its tags are read and written as plain Lua values.
 export type Compound = { [string]: any }
 
+-- The options of `attachment_set`: both default to false.
+export type AttachmentOpts = { sync: boolean?, copy_on_death: boolean? }
+
 -- A config file (declare.rs OWNED_HOOKS): the event field of the config hooks. Only the mod that owns
 -- the file's namespace runs their handlers. `text` is the file's contents.
 export type ConfigFile = { mod_id: string, file: string, text: string }
@@ -142,10 +145,17 @@ export type ConfigRecord = {
 -- where it has none); a read costs 1 unit of the turn's budget. The attachment functions keep a
 -- value on an entity or a player under a name `<mod>:<path>` in the mod's own namespace: `get` reads
 -- it (nil where none), `set` stores a table (true), `remove` drops it (true if it was there). A
--- holder must be resident in the server's level, and a client turn raises. Limits, each refused
--- with its reason and nothing changed: the name at most 256 bytes; the value at most 65536 bytes as
--- NBT, with the converter's depth, entry and string limits; 16 names per holder per mod; 262144
--- bytes of values per holder per mod. Get costs 1 unit, set and remove 10. `entity_part(id, handlers)`
+-- holder must be resident in the server's level. Set and remove are server only: a client turn
+-- raises. A client turn's `get` reads the copy of a value the server synced (nil where none). Set
+-- takes an optional `opts` table: `{ sync = true }` sends the value to the clients that see the
+-- holder, `{ copy_on_death = true }` copies it to a respawned player (a player holder only, an
+-- entity raises); both default to false, and an unknown key or a non-boolean value raises naming
+-- it. Limits, each refused with its reason and nothing changed: the name at most 256 bytes; the value
+-- at most 65536 bytes as NBT (4096 for a synced or copied value), with the converter's depth, entry
+-- and string limits; 16 names per holder per mod; 262144 bytes of values per holder per mod; 4 synced
+-- and 4 copied-on-death names per holder per mod; 16 synced writes per turn. A set without `sync`
+-- over a synced name, or a remove of one, sends the clients a removal of their copy. The mod's own
+-- index of names is never synced. Get costs 1 unit, set and remove 10. `entity_part(id, handlers)`
 -- binds one entity type's handlers, at most 16 parts per mod. `is_shearable` answers a boolean or
 -- nothing. `on_sheared` (server only) answers its drops: at most 16 stacks, 256 items in all, each
 -- within its item's maximum; a list over a bound is refused whole, with a warning. `spawn_cluster_size`
@@ -184,7 +194,7 @@ export type HorizonApi = {
 	data_pack_file: (record: DataPackFileRecord) -> (),
 	data_map: (registry: string, entry: string, map: string) -> any,
 	attachment_get: (holder: EntityRef | PlayerRef, name: string) -> any,
-	attachment_set: (holder: EntityRef | PlayerRef, name: string, value: any) -> boolean,
+	attachment_set: (holder: EntityRef | PlayerRef, name: string, value: any, opts: AttachmentOpts?) -> boolean,
 	attachment_remove: (holder: EntityRef | PlayerRef, name: string) -> boolean,
 	log: (message: string) -> (),
 	none: NoneMarker,

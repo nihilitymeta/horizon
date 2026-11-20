@@ -1,7 +1,16 @@
-//! Attachments a Lua mod keeps on entities and players (issue 74, C1): `horizon.attachment_get`,
+//! Attachments a Lua mod keeps on entities and players (issue 74, C1 and C2): `horizon.attachment_get`,
 //! `horizon.attachment_set` and `horizon.attachment_remove`. The values are saved world data that
 //! untrusted Lua output writes, so every limit refuses the one call that breaks it, with the reason,
 //! and nothing is cut short or saved in part. A refused call changes nothing.
+//!
+//! C2 adds two policies, both off by default, given as `horizon.attachment_set(h, name, value, opts)`
+//! with `opts = { sync = bool, copy_on_death = bool }`: `sync` sends the value to the clients that see
+//! the holder (the store queues the send on a write), `copy_on_death` copies it to a respawned player.
+//! A synced or copied value is at most [`MAX_FLAGGED_VALUE_BYTES`]; a mod has at most
+//! [`MAX_SYNC_KEYS`] synced and [`MAX_COPY_KEYS`] copied keys per holder; copy_on_death needs a player
+//! holder (an entity does not respawn). A client turn reads a value the server synced
+//! (`attachment_get` through the client's copy); it never sets or removes one. The mod's `#index` is
+//! never synced or copied.
 //!
 //! A value is kept through the host's attachment store (`ModStateHost::attachments`), the one native
 //! and wasm mods reach, under the mod's own namespace: a name `<mod>:<path>` is the store's key
@@ -29,7 +38,7 @@ use mod_api::{
 use crate::declare::check_path;
 use crate::handles::{Args, refusal_text, server_of};
 use crate::host::warn_once;
-use crate::hostcall::{TurnHost, host_call};
+use crate::hostcall::{TurnHost, Void, host_call};
 
 /// The longest name, `<mod>:<path>`, in bytes.
 pub const MAX_NAME_BYTES: usize = 256;
@@ -39,6 +48,15 @@ pub const MAX_VALUE_BYTES: usize = 64 * 1024;
 pub const MAX_KEYS: usize = 16;
 /// The encoded bytes of all of one mod's values on one holder.
 pub const MAX_HOLDER_BYTES: usize = 256 * 1024;
+/// The largest encoded value of a synced or copied attachment, in bytes (`MAX_VALUE_BYTES` otherwise).
+pub const MAX_FLAGGED_VALUE_BYTES: usize = 4 * 1024;
+/// The synced keys one mod may keep on one holder.
+pub const MAX_SYNC_KEYS: usize = 4;
+/// The copied-on-death keys one mod may keep on one holder.
+pub const MAX_COPY_KEYS: usize = 4;
+/// The synced writes one mod may make, or try, in one turn. The host has no server tick counter, so the
+/// cap is per turn (see `hostcall::Void`): a mod that runs many turns in a tick is limited per turn only.
+pub const MAX_SYNC_WRITES: u32 = 16;
 /// The store key of the mod's own index: the keys it holds on a holder and their sizes. Outside the
 /// game's id charset, so no name a Lua mod gives reaches it.
 const INDEX: &str = "#index";
@@ -80,18 +98,20 @@ pub(crate) fn cost(op: &str) -> Option<u32> {
     }
 }
 
-/// Runs an attachment operation, of a `cost` that is `Some`, against the turn's host.
+/// Runs an attachment operation, of a `cost` that is `Some`, against the turn's host. `turn` counts the
+/// synced writes of the turn.
 pub(crate) fn run(
     lua: &Lua,
     host: &mut TurnHost<'_>,
     op: &str,
     this: &AnyUserData,
     args: MultiValue,
+    turn: &Void,
 ) -> mlua::Result<Value> {
     let owner = this.borrow::<Owner>()?.0.clone();
     let (method, count) = match op {
         GET_OP => ("horizon.attachment_get", 2),
-        SET_OP => ("horizon.attachment_set", 3),
+        SET_OP => ("horizon.attachment_set", 4),
         REMOVE_OP => ("horizon.attachment_remove", 2),
         _ => return Err(Error::runtime(format!("unknown host call {op}"))),
     };
@@ -99,36 +119,143 @@ pub(crate) fn run(
     let target = target_arg(&args, method)?;
     let name: String = args.get(1)?;
     let key = key_of(&owner, &name).map_err(|why| refuse(&owner, method, &why))?;
-    let value = match op {
-        SET_OP => {
-            let compound =
-                compound_of(&args.value(2)).map_err(|why| refuse(&owner, method, &why))?;
-            let len = payload_len(&compound).map_err(|why| refuse(&owner, method, &why))?;
-            if len > MAX_VALUE_BYTES {
-                let why = format!("the value is {len} bytes, more than {MAX_VALUE_BYTES}");
-                return Err(refuse(&owner, method, &why));
-            }
-            Some((compound, len))
-        }
-        _ => None,
-    };
-    let server = server_of(host)?;
-    let holder = holder_of(&*server, target).map_err(|why| refuse(&owner, method, &why))?;
-    let store = server.attachments();
     let fail = |why: String| refuse(&owner, method, &why);
-    match (op, value) {
-        (GET_OP, _) => match read(store, holder, &owner, key).map_err(fail)? {
+    if op == GET_OP {
+        // A client turn reads its copy of what the server synced; a server turn reads its own store.
+        let found = match host {
+            TurnHost::Client(client) => {
+                let holder = holder_of(&**client, target).map_err(fail)?;
+                read(client.attachments(), holder, &owner, key).map_err(fail)?
+            }
+            _ => {
+                let server = server_of(host)?;
+                let holder = holder_of(&*server, target).map_err(fail)?;
+                read(server.attachments(), holder, &owner, key).map_err(fail)?
+            }
+        };
+        return match found {
             Some(found) => found.to_lua_value(lua),
             None => Ok(Value::Nil),
-        },
-        (SET_OP, Some((compound, len))) => {
-            set(store, holder, &owner, key, &compound, len).map_err(fail)?;
+        };
+    }
+    let write = if op == SET_OP {
+        let compound = compound_of(&args.value(2)).map_err(|why| refuse(&owner, method, &why))?;
+        let len = payload_len(&compound).map_err(|why| refuse(&owner, method, &why))?;
+        let flags = flags_of(&args.value(3)).map_err(|why| refuse(&owner, method, &why))?;
+        let limit = if flags.sync || flags.copy_on_death {
+            MAX_FLAGGED_VALUE_BYTES
+        } else {
+            MAX_VALUE_BYTES
+        };
+        if len > limit {
+            let kind = if flags.sync {
+                "synced"
+            } else if flags.copy_on_death {
+                "copied"
+            } else {
+                ""
+            };
+            let why = if kind.is_empty() {
+                format!("the value is {len} bytes, more than {limit}")
+            } else {
+                format!("the {kind} value is {len} bytes, more than {limit}")
+            };
+            return Err(refuse(&owner, method, &why));
+        }
+        Some((compound, len, flags))
+    } else {
+        None
+    };
+    let server = server_of(host)?;
+    let holder = holder_of(&*server, target).map_err(fail)?;
+    let asked = write
+        .as_ref()
+        .map_or(Flags::default(), |(_, _, flags)| *flags);
+    holder_allows(target, asked).map_err(fail)?;
+    let store = server.attachments();
+    match write {
+        Some((compound, len, flags)) => {
+            if flags.sync && !turn.take_synced_write() {
+                let why = format!(
+                    "a mod may make {MAX_SYNC_WRITES} synced writes in one turn, and this turn has made them"
+                );
+                return Err(refuse(&owner, method, &why));
+            }
+            set(store, holder, &owner, key, &compound, len, flags).map_err(fail)?;
             Ok(Value::Boolean(true))
         }
-        (REMOVE_OP, _) => Ok(Value::Boolean(
+        None => Ok(Value::Boolean(
             remove(store, holder, &owner, key).map_err(fail)?,
         )),
-        _ => Err(Error::runtime(format!("{method}: no value to set"))),
+    }
+}
+
+/// The policies a set asks for. Both are false unless the options say otherwise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Flags {
+    pub(crate) sync: bool,
+    pub(crate) copy_on_death: bool,
+}
+
+/// The options table of a set: nil for none, else `{ sync = bool, copy_on_death = bool }`. An unknown
+/// key is refused by name, and so is a value that is not a boolean.
+fn flags_of(value: &Value) -> Result<Flags, String> {
+    let table = match value {
+        Value::Nil => return Ok(Flags::default()),
+        Value::Table(table) => table,
+        other => {
+            return Err(format!(
+                "the options must be a table, not {}",
+                other.type_name()
+            ));
+        }
+    };
+    let mut flags = Flags::default();
+    for pair in table.clone().pairs::<Value, Value>() {
+        let (key, value) = pair.map_err(|err| format!("the options are refused: {err}"))?;
+        let name = match &key {
+            Value::String(name) => name
+                .to_str()
+                .map_err(|err| format!("the options are refused: {err}"))?
+                .to_owned(),
+            other => {
+                return Err(format!(
+                    "the options key must be a name, not {}",
+                    other.type_name()
+                ));
+            }
+        };
+        match name.as_str() {
+            "sync" => flags.sync = flag_of(&value, &name)?,
+            "copy_on_death" => flags.copy_on_death = flag_of(&value, &name)?,
+            _ => {
+                return Err(format!(
+                    "the option '{name}' is unknown; the options are sync and copy_on_death"
+                ));
+            }
+        }
+    }
+    Ok(flags)
+}
+
+fn flag_of(value: &Value, name: &str) -> Result<bool, String> {
+    match value {
+        Value::Boolean(flag) => Ok(*flag),
+        other => Err(format!(
+            "the option '{name}' must be true or false, not {}",
+            other.type_name()
+        )),
+    }
+}
+
+/// The holder kinds a policy may name: the policies exist for entities and players only. An entity
+/// does not respawn, so copy_on_death refuses for one.
+fn holder_allows(target: Target, flags: Flags) -> Result<(), String> {
+    match target {
+        Target::Entity(_) if flags.copy_on_death => {
+            Err("copy_on_death needs a player holder: an entity does not respawn".to_owned())
+        }
+        Target::Entity(_) | Target::Player(_) => Ok(()),
     }
 }
 
@@ -279,21 +406,22 @@ fn read(
     store.saved(holder, owner, key).map_err(store_error)
 }
 
-/// Keeps `value` under `key` on `holder`, as a value a mod set: the saved form it has is the
-/// compound itself, under the store's usual envelope.
+/// Keeps `value` under `key` on `holder`, as a value a mod set: the saved form it has is the compound
+/// itself, under the store's usual envelope, with the policies the set asked for.
 fn keep(
     store: &mut dyn AttachmentStore,
     holder: Holder,
     owner: &str,
     key: &str,
     value: &Compound,
+    flags: Flags,
 ) -> Result<(), String> {
     let shared: AttachmentValue = Arc::new(value.clone());
     let form = AttachmentForm {
         encoded: Some(value.clone()),
         policy: AttachmentPolicy {
-            copy_on_death: false,
-            sync: false,
+            copy_on_death: flags.copy_on_death,
+            sync: flags.sync,
         },
         write: AttachmentWrite::Set,
     };
@@ -302,7 +430,7 @@ fn keep(
         .map_err(store_error)
 }
 
-/// The mod's index on `holder`: each key it holds, and the key's encoded size as an int.
+/// The mod's index on `holder`: each key it holds, with the key's encoded size and policies.
 fn index_of(
     store: &mut dyn AttachmentStore,
     holder: Holder,
@@ -311,7 +439,8 @@ fn index_of(
     Ok(read(store, holder, owner, INDEX)?.unwrap_or_default())
 }
 
-/// Writes the index, or drops it when the mod holds no key on the holder.
+/// Writes the index, or drops it when the mod holds no key on the holder. The index is never synced
+/// or copied: it is stored with no policy.
 fn write_index(
     store: &mut dyn AttachmentStore,
     holder: Holder,
@@ -323,7 +452,7 @@ fn write_index(
             .discard(holder, owner, INDEX, false)
             .map_err(store_error);
     }
-    keep(store, holder, owner, INDEX, index)
+    keep(store, holder, owner, INDEX, index, Flags::default())
 }
 
 /// Whether a compound key is `key`: the same UTF-16 units, so no lossy comparison.
@@ -331,20 +460,72 @@ fn is_key(stored: &[u16], key: &str) -> bool {
     stored.iter().copied().eq(key.encode_utf16())
 }
 
-/// The encoded bytes the index counts for all of a mod's keys on one holder.
-fn total_of(index: &Compound) -> usize {
-    index
-        .values()
-        .map(|tag| match tag {
-            Tag::Int(size) => usize::try_from(*size).unwrap_or(0),
-            _ => 0,
-        })
-        .sum()
+/// One index entry as the mod's keys are indexed: the encoded size and the policies. A plain key is an
+/// int, the size alone (the format C1 wrote); a key with a policy is a compound with the size and the
+/// flags that are set.
+fn entry_tag(size: usize, flags: Flags) -> Tag {
+    let size = i32::try_from(size).unwrap_or(i32::MAX);
+    if flags == Flags::default() {
+        return Tag::Int(size);
+    }
+    let mut entry = Compound::new();
+    entry.insert("size".into(), Tag::Int(size));
+    if flags.sync {
+        entry.insert("sync".into(), Tag::Byte(1));
+    }
+    if flags.copy_on_death {
+        entry.insert("copy_on_death".into(), Tag::Byte(1));
+    }
+    Tag::Compound(entry)
 }
 
-/// Stores `value` under `key`, after checking the key count and the holder's total. Nothing is
-/// written when a limit refuses. A value written before an index write that fails is put back as it
-/// was, so the index and the stored values keep agreeing.
+/// The size and policies of an index entry, read from either form of [`entry_tag`].
+fn entry_of(tag: &Tag) -> (usize, Flags) {
+    match tag {
+        Tag::Int(size) => (usize::try_from(*size).unwrap_or(0), Flags::default()),
+        Tag::Compound(entry) => {
+            let size = match entry.get(&"size".into()) {
+                Some(Tag::Int(size)) => usize::try_from(*size).unwrap_or(0),
+                _ => 0,
+            };
+            let flag = |name: &str| matches!(entry.get(&name.into()), Some(Tag::Byte(1)));
+            (
+                size,
+                Flags {
+                    sync: flag("sync"),
+                    copy_on_death: flag("copy_on_death"),
+                },
+            )
+        }
+        _ => (0, Flags::default()),
+    }
+}
+
+/// The index entry of `key`, when the mod holds it on the holder.
+fn entry_at(index: &Compound, key: &str) -> Option<(usize, Flags)> {
+    index
+        .iter()
+        .find(|(stored, _)| is_key(&stored.0, key))
+        .map(|(_, tag)| entry_of(tag))
+}
+
+/// How many of the mod's other keys on the holder have the policy `pick` names.
+fn others_with(index: &Compound, key: &str, pick: fn(Flags) -> bool) -> usize {
+    index
+        .iter()
+        .filter(|(stored, tag)| !is_key(&stored.0, key) && pick(entry_of(tag).1))
+        .count()
+}
+
+/// The encoded bytes the index counts for all of a mod's keys on one holder.
+fn total_of(index: &Compound) -> usize {
+    index.values().map(|tag| entry_of(tag).0).sum()
+}
+
+/// Stores `value` under `key` with `flags`, after checking the key count and the holder's total.
+/// Nothing is written when a limit refuses. A value written before an index write that fails is put
+/// back as it was, so the index and the stored values keep agreeing. Turning sync off queues the
+/// clients' removal of the value, in the store.
 fn set(
     store: &mut dyn AttachmentStore,
     holder: Holder,
@@ -352,35 +533,46 @@ fn set(
     key: &str,
     value: &Compound,
     len: usize,
+    flags: Flags,
 ) -> Result<(), String> {
     let mut index = index_of(store, holder, owner)?;
-    let before = match index.iter().find(|(stored, _)| is_key(&stored.0, key)) {
-        Some((_, Tag::Int(size))) => usize::try_from(*size).unwrap_or(0),
-        _ => 0,
-    };
-    let exists = index.iter().any(|(stored, _)| is_key(&stored.0, key));
-    if !exists && index.len() >= MAX_KEYS {
+    let before = entry_at(&index, key);
+    let (before_len, before_flags) = before.unwrap_or((0, Flags::default()));
+    if before.is_none() && index.len() >= MAX_KEYS {
         return Err(format!(
             "a holder keeps at most {MAX_KEYS} attachments of one mod, and this holder has {MAX_KEYS}"
         ));
     }
-    let total = total_of(&index).saturating_sub(before) + len;
+    if flags.sync && !before_flags.sync && others_with(&index, key, |f| f.sync) >= MAX_SYNC_KEYS {
+        return Err(format!(
+            "a holder keeps at most {MAX_SYNC_KEYS} synced attachments of one mod, and this holder has {MAX_SYNC_KEYS}"
+        ));
+    }
+    if flags.copy_on_death
+        && !before_flags.copy_on_death
+        && others_with(&index, key, |f| f.copy_on_death) >= MAX_COPY_KEYS
+    {
+        return Err(format!(
+            "a holder keeps at most {MAX_COPY_KEYS} copied-on-death attachments of one mod, and this holder has {MAX_COPY_KEYS}"
+        ));
+    }
+    let total = total_of(&index).saturating_sub(before_len) + len;
     if total > MAX_HOLDER_BYTES {
         return Err(format!(
             "the holder's values would be {total} bytes, more than {MAX_HOLDER_BYTES}"
         ));
     }
     let previous = read(store, holder, owner, key)?;
-    keep(store, holder, owner, key, value)?;
+    keep(store, holder, owner, key, value, flags)?;
     index.retain(|stored, _| !is_key(&stored.0, key));
-    index.insert(key.into(), Tag::Int(i32::try_from(len).unwrap_or(i32::MAX)));
+    index.insert(key.into(), entry_tag(len, flags));
     if let Err(why) = write_index(store, holder, owner, &index) {
         // The holder refused the index: put the value back as it was. The rollback is the same
         // store on the same holder, so if it refuses too the holder has gone and the value with it.
         let _ = match previous {
-            Some(earlier) => keep(store, holder, owner, key, &earlier),
+            Some(earlier) => keep(store, holder, owner, key, &earlier, before_flags),
             None => store
-                .discard(holder, owner, key, false)
+                .discard(holder, owner, key, flags.sync)
                 .map_err(store_error),
         };
         return Err(why);
@@ -389,6 +581,7 @@ fn set(
 }
 
 /// Removes `key` from `holder`: true when a value was there, false when not. The index drops the key.
+/// A synced key's removal is queued in the store, so the clients drop their copy.
 fn remove(
     store: &mut dyn AttachmentStore,
     holder: Holder,
@@ -398,10 +591,11 @@ fn remove(
     if !store.holds(holder, owner, key).map_err(store_error)? {
         return Ok(false);
     }
-    store
-        .discard(holder, owner, key, false)
-        .map_err(store_error)?;
     let mut index = index_of(store, holder, owner)?;
+    let flags = entry_at(&index, key).map_or(Flags::default(), |(_, flags)| flags);
+    store
+        .discard(holder, owner, key, flags.sync)
+        .map_err(store_error)?;
     index.retain(|stored, _| !is_key(&stored.0, key));
     write_index(store, holder, owner, &index)?;
     Ok(true)

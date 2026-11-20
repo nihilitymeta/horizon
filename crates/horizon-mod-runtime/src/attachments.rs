@@ -1025,13 +1025,15 @@ impl Attachments {
             JavaString(units)
         });
         let key = (owned_namespace, owned_name);
+        // A key that was synced sends its clients a change even when this write is not synced.
+        let was_synced = self.was_synced(namespace, name);
         self.write_entry(
             &key,
             Some(Arc::new(AttachmentEntry {
                 state: Entry::Decoded(value),
             })),
         );
-        if sync && write != AttachmentWrite::Decoded {
+        if (sync || was_synced) && write != AttachmentWrite::Decoded {
             self.pending.insert(key);
         }
         if write == AttachmentWrite::Set {
@@ -1040,11 +1042,19 @@ impl Attachments {
     }
     fn discard(&mut self, namespace: &str, name: &str, sync: bool) {
         let key: (JavaString, JavaString) = (namespace.into(), name.into());
+        // A synced value's removal reaches the clients whatever the caller passes.
+        let was_synced = self.was_synced(namespace, name);
         self.write_entry(&key, None);
-        if sync {
+        if sync || was_synced {
             self.pending.insert(key);
         }
         self.remove_saved(namespace, name);
+    }
+    /// Whether the key holds a value that is synced, saved or decoded.
+    fn was_synced(&self, namespace: &str, name: &str) -> bool {
+        self.entries
+            .get(&(namespace, name) as &dyn AttachmentKeyView)
+            .is_some_and(|entry| entry.is_synced())
     }
     fn remove_saved(&mut self, namespace: &str, name: &str) {
         if let Some(raw) = &mut self.raw
@@ -1057,7 +1067,7 @@ impl Attachments {
         self.pending.insert((namespace.into(), name.into()));
     }
     /// The changes to send to clients since the last call: the current value
-    /// of each queued key, or `None` for one that is gone.
+    /// of each queued key, or `None` for one that is gone or no longer synced.
     pub fn take_sync_changes(&mut self) -> Vec<AttachmentSync> {
         std::mem::take(&mut self.pending)
             .into_iter()
@@ -1065,6 +1075,7 @@ impl Attachments {
                 let value = self
                     .entries
                     .get(&(namespace.clone(), name.clone()))
+                    .filter(|entry| entry.is_synced())
                     .and_then(|entry| entry.synced_value())
                     .cloned();
                 AttachmentSync {
@@ -1162,6 +1173,56 @@ mod tests {
             .iter()
             .map(|row| (row.holder, *row.entry.read(key).unwrap()))
             .collect()
+    }
+
+    /// The same key as `SYNCED` (`test:synced`), written without sync: a later unsynced write of it.
+    static SYNCED_AS_PLAIN: AttachmentType<i32> = AttachmentType {
+        namespace: "test",
+        name: "synced",
+        default: || 7,
+        codec: Some(AttachmentCodec { encode, decode }),
+        copy_on_death: false,
+        sync: false,
+    };
+
+    #[test]
+    fn a_synced_key_removed_then_set_unsynced_in_one_pass_queues_only_a_removal() {
+        let mut map = Attachments::default();
+        SYNCED.set(&mut map, Holder::Level, 9).unwrap();
+        SYNCED.remove(&mut map, Holder::Level).unwrap();
+        SYNCED_AS_PLAIN.set(&mut map, Holder::Level, 5).unwrap();
+        // The unsynced value is kept, and clients get a removal, never the value.
+        assert_eq!(SYNCED_AS_PLAIN.get(&mut map, Holder::Level), Ok(5));
+        assert_eq!(map.take_sync_changes(), [change("synced", None)]);
+    }
+
+    #[test]
+    fn a_synced_key_set_unsynced_queues_a_removal_not_the_value() {
+        let mut map = Attachments::default();
+        SYNCED.set(&mut map, Holder::Level, 9).unwrap();
+        SYNCED_AS_PLAIN.set(&mut map, Holder::Level, 5).unwrap();
+        assert_eq!(map.take_sync_changes(), [change("synced", None)]);
+        assert!(map.take_sync_changes().is_empty());
+    }
+
+    #[test]
+    fn a_discard_of_a_synced_key_queues_a_removal_whatever_the_caller_passes() {
+        let mut map = Attachments::default();
+        SYNCED.set(&mut map, Holder::Level, 9).unwrap();
+        map.take_sync_changes();
+        map.discard("test", "synced", false);
+        assert_eq!(map.take_sync_changes(), [change("synced", None)]);
+    }
+
+    #[test]
+    fn an_unsynced_key_never_appears_in_take_sync_changes() {
+        let mut map = Attachments::default();
+        COUNTER.set(&mut map, Holder::Level, 4).unwrap();
+        SYNCED_AS_PLAIN.set(&mut map, Holder::Level, 5).unwrap();
+        assert!(map.take_sync_changes().is_empty());
+        map.discard("test", "synced", false);
+        COUNTER.remove(&mut map, Holder::Level).unwrap();
+        assert!(map.take_sync_changes().is_empty());
     }
 
     #[test]

@@ -196,9 +196,22 @@ pub(crate) fn note_skipped(id: &str, hook: &str) {
 pub(crate) struct Void {
     spent: Cell<bool>,
     panic: RefCell<Option<String>>,
+    /// Synced attachment writes this turn has made or tried (see `attachments::MAX_SYNC_WRITES`).
+    synced: Cell<u32>,
 }
 
 impl Void {
+    /// Counts one synced attachment write in this turn: false, and nothing counted, once the turn has
+    /// `attachments::MAX_SYNC_WRITES` of them.
+    pub(crate) fn take_synced_write(&self) -> bool {
+        let count = self.synced.get();
+        if count >= crate::attachments::MAX_SYNC_WRITES {
+            return false;
+        }
+        self.synced.set(count + 1);
+        true
+    }
+
     /// Whether the turn is void: its budget was spent or a host call panicked.
     pub(crate) fn is_void(&self) -> bool {
         self.spent.get() || self.panic.borrow().is_some()
@@ -249,7 +262,7 @@ pub(crate) fn scoped<R>(
                 spent += cost;
                 // A panic in the game's host is contained here, so it does not reach the panic hook's
                 // exit or unwind through Lua: the turn is void and the handler sees a plain error.
-                match contain(|| run_op(lua, &mut turn_host, &op, this, args)) {
+                match contain(|| run_op(lua, &mut turn_host, &op, this, args, void)) {
                     Ok(result) => result,
                     Err(message) => {
                         void.panic.borrow_mut().get_or_insert(message);
@@ -387,6 +400,7 @@ fn run_op(
     op: &str,
     this: AnyUserData,
     args: MultiValue,
+    void: &Void,
 ) -> mlua::Result<Value> {
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);
@@ -395,7 +409,7 @@ fn run_op(
         return crate::data_maps::data_map_op(lua, host, args);
     }
     if crate::attachments::cost(op).is_some() {
-        return crate::attachments::run(lua, host, op, &this, args);
+        return crate::attachments::run(lua, host, op, &this, args, void);
     }
     crate::generated::handles::run(lua, host, op, &this, args).unwrap_or_else(|| Err(unknown(op)))
 }
@@ -425,6 +439,7 @@ fn run_op(
     op: &str,
     this: AnyUserData,
     args: MultiValue,
+    void: &Void,
 ) -> mlua::Result<Value> {
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);
@@ -433,7 +448,7 @@ fn run_op(
         return crate::data_maps::data_map_op(lua, host, args);
     }
     if crate::attachments::cost(op).is_some() {
-        return crate::attachments::run(lua, host, op, &this, args);
+        return crate::attachments::run(lua, host, op, &this, args, void);
     }
     match stub::run(lua, host, op, &this, args.clone()) {
         Some(out) => out,

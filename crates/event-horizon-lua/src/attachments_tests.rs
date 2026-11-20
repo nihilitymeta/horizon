@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use horizon_mod_runtime::attachments::AttachmentSync;
 use mlua::Lua;
 use mod_api::prelude::{EntitiesHost, ModStateHost, ModStateServerHost};
 use mod_api::{
@@ -13,7 +14,10 @@ use mod_api::{
     Compound, EntityRef, EntityResidency, Holder, Host, ServerHost, Tag, WorldEpoch,
 };
 
-use crate::attachments::{MAX_HOLDER_BYTES, MAX_KEYS, MAX_NAME_BYTES, MAX_VALUE_BYTES};
+use crate::attachments::{
+    MAX_COPY_KEYS, MAX_FLAGGED_VALUE_BYTES, MAX_HOLDER_BYTES, MAX_KEYS, MAX_NAME_BYTES,
+    MAX_SYNC_KEYS, MAX_SYNC_WRITES, MAX_VALUE_BYTES,
+};
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::new_event;
 use crate::handles::Token;
@@ -405,5 +409,382 @@ fn values_and_the_key_count_survive_a_save_and_a_reload() {
     assert!(
         refused(&lines, "n16").contains(&format!("at most {MAX_KEYS} attachments")),
         "{lines:?}"
+    );
+}
+
+// ---- C2: sync, copy_on_death, the client read (issue 74, C2) ----
+
+/// The uuid of the test player, who is the resident entity's player.
+const PLAYER: u128 = 7;
+
+/// A world with the resident entity and its player (uuid [`PLAYER`]), who has the same entity handle.
+fn player_world() -> World {
+    let mut world = World::new();
+    world
+        .maps
+        .insert(Holder::Player(PLAYER), Attachments::default());
+    world
+}
+
+/// The player handle of the test world.
+fn player() -> mod_api::PlayerRef {
+    mod_api::__private::game::player_ref(resident(), PLAYER)
+}
+
+/// Runs `body` with `player` as the event's entity, as a server turn of `world`.
+fn run_player(world: &mut World, id: &str, body: &str) -> Vec<String> {
+    install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let host = load(root.path(), id, body);
+    let player = player();
+    let make = move |lua: &Lua, _: &TurnHost<'_>| {
+        let data = lua.create_table()?;
+        data.raw_set("entity", lua.create_userdata(Token(player))?)?;
+        new_event(lua, data, &["cancelled", "result"])
+    };
+    host.dispatch_turns(
+        HOOK,
+        TurnHost::Server(world),
+        &|| false,
+        &make,
+        &mut |_, _, _| true,
+    )
+    .unwrap();
+    let prefix = format!("{id}: R ");
+    captured_with_prefix(&prefix)
+        .iter()
+        .map(|line| line[prefix.len()..].to_owned())
+        .collect()
+}
+
+/// The envelope the store saves for `key` on the resident entity's map of `world`.
+fn envelope(world: &World, holder: Holder, namespace: &str, key: &str) -> Compound {
+    world.maps[&holder]
+        .entry(namespace, key)
+        .unwrap()
+        .unwrap()
+        .saved()
+        .unwrap()
+}
+
+/// The synced changes the entity's map has queued since the last drain.
+fn drain(world: &mut World, holder: Holder) -> Vec<AttachmentSync> {
+    world.maps.get_mut(&holder).unwrap().take_sync_changes()
+}
+
+#[test]
+fn a_synced_set_is_saved_as_its_value_and_queues_the_send() {
+    let mut world = World::new();
+    let lines = run(
+        &mut world,
+        "sy1",
+        "horizon.log(\"R set \" .. tostring(horizon.attachment_set(event.entity, \"sy1:charge\", { a = { b = 7 }, names = { \"x\", \"y\" } }, { sync = true })))",
+    );
+    assert_eq!(lines, ["set true"]);
+    let saved = envelope(&world, Holder::Entity(1), "sy1", "charge");
+    assert_eq!(
+        saved.get(&"value".into()),
+        Some(&Tag::Compound(nested_value()))
+    );
+    assert_eq!(saved.get(&"sync".into()), Some(&Tag::Byte(1)));
+    assert!(!saved.contains_key(&"copy_on_death".into()));
+    let queued = drain(&mut world, Holder::Entity(1));
+    assert_eq!(queued.len(), 1, "{queued:?}");
+    assert_eq!(queued[0].value, Some(nested_value()));
+    assert_eq!(queued[0].name, "charge".into());
+}
+
+#[test]
+fn the_index_keeps_its_keys_flags_and_is_never_synced() {
+    let mut world = World::new();
+    run(
+        &mut world,
+        "ix",
+        "horizon.attachment_set(event.entity, \"ix:s\", { v = 1 }, { sync = true })\n\
+         horizon.attachment_set(event.entity, \"ix:p\", { v = 2 })",
+    );
+    let index = envelope(&world, Holder::Entity(1), "ix", "#index");
+    // The index's own envelope carries no policy: it is never synced or copied.
+    assert!(!index.contains_key(&"sync".into()));
+    assert!(!index.contains_key(&"copy_on_death".into()));
+    // Its value says which keys are synced: the synced key has the flag, the plain key its size only.
+    let Some(Tag::Compound(keys)) = index.get(&"value".into()) else {
+        panic!("{index:?}")
+    };
+    let Some(Tag::Compound(s)) = keys.get(&"s".into()) else {
+        panic!("{keys:?}")
+    };
+    assert_eq!(s.get(&"sync".into()), Some(&Tag::Byte(1)));
+    assert_eq!(keys.get(&"p".into()), Some(&Tag::Int(9)));
+    // The index is never queued for the clients.
+    let queued = drain(&mut world, Holder::Entity(1));
+    assert!(
+        queued.iter().all(|change| change.name != "#index".into()),
+        "{queued:?}"
+    );
+}
+
+#[test]
+fn a_synced_value_of_4_kib_is_accepted_and_one_byte_more_is_refused() {
+    // { c = "x" * N } is 7 + N bytes: N = 4089 is exactly 4096.
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}\
+         try(\"fits\", function() horizon.attachment_set(event.entity, \"sz:c\", {{ c = string.rep(\"x\", 4089) }}, {{ sync = true }}) end)\n\
+         try(\"over\", function() horizon.attachment_set(event.entity, \"sz:c\", {{ c = string.rep(\"x\", 4090) }}, {{ sync = true }}) end)\n\
+         try(\"plain\", function() horizon.attachment_set(event.entity, \"sz:p\", {{ c = string.rep(\"x\", 4090) }}) end)"
+    );
+    let lines = run(&mut world, "sz", &body);
+    assert_eq!(refused(&lines, "fits"), "fits true nil");
+    assert!(
+        refused(&lines, "over").contains(&format!(
+            "the synced value is 4097 bytes, more than {MAX_FLAGGED_VALUE_BYTES}"
+        )),
+        "{lines:?}"
+    );
+    // The same size without sync is an ordinary value, well under the 64 KiB cap.
+    assert_eq!(refused(&lines, "plain"), "plain true nil");
+    assert!(
+        world.maps[&Holder::Entity(1)]
+            .entry("sz", "c")
+            .unwrap()
+            .unwrap()
+            .saved()
+            .is_some()
+    );
+}
+
+#[test]
+fn the_fifth_synced_key_is_refused_and_resyncing_a_synced_key_is_not_a_new_one() {
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}\
+         for i = 1, 4 do horizon.attachment_set(event.entity, \"sk:k\" .. i, {{ v = i }}, {{ sync = true }}) end\n\
+         try(\"k5\", function() horizon.attachment_set(event.entity, \"sk:k5\", {{ v = 5 }}, {{ sync = true }}) end)\n\
+         try(\"again\", function() horizon.attachment_set(event.entity, \"sk:k2\", {{ v = 22 }}, {{ sync = true }}) end)\n\
+         try(\"plain5\", function() horizon.attachment_set(event.entity, \"sk:k5\", {{ v = 5 }}) end)\n\
+         horizon.log(\"R value \" .. horizon.attachment_get(event.entity, \"sk:k2\").v)"
+    );
+    let lines = run(&mut world, "sk", &body);
+    assert!(
+        refused(&lines, "k5").contains(&format!("at most {MAX_SYNC_KEYS} synced attachments")),
+        "{lines:?}"
+    );
+    assert_eq!(refused(&lines, "again"), "again true nil");
+    // A fifth key without sync is an ordinary key: 5 of 16 names.
+    assert_eq!(refused(&lines, "plain5"), "plain5 true nil");
+    assert!(lines.contains(&"value 22".to_owned()), "{lines:?}");
+}
+
+#[test]
+fn copy_on_death_is_accepted_on_a_player_and_refused_on_an_entity() {
+    let mut world = player_world();
+    let lines = run_player(
+        &mut world,
+        "cd",
+        &format!(
+            "{TRY}\
+             try(\"player\", function() horizon.attachment_set(event.entity, \"cd:gear\", {{ v = 1 }}, {{ copy_on_death = true }}) end)"
+        ),
+    );
+    assert_eq!(refused(&lines, "player"), "player true nil");
+    let saved = envelope(&world, Holder::Player(PLAYER), "cd", "gear");
+    assert_eq!(saved.get(&"copy_on_death".into()), Some(&Tag::Byte(1)));
+    let entity_lines = run(
+        &mut world,
+        "cd2",
+        &format!(
+            "{TRY}\
+             try(\"entity\", function() horizon.attachment_set(event.entity, \"cd2:gear\", {{ v = 1 }}, {{ copy_on_death = true }}) end)"
+        ),
+    );
+    assert!(
+        refused(&entity_lines, "entity")
+            .contains("copy_on_death needs a player holder: an entity does not respawn"),
+        "{entity_lines:?}"
+    );
+}
+
+#[test]
+fn the_fifth_copied_key_and_an_oversized_copied_value_are_refused() {
+    let mut world = player_world();
+    let body = format!(
+        "{TRY}\
+         for i = 1, 4 do horizon.attachment_set(event.entity, \"cp:k\" .. i, {{ v = i }}, {{ copy_on_death = true }}) end\n\
+         try(\"k5\", function() horizon.attachment_set(event.entity, \"cp:k5\", {{ v = 5 }}, {{ copy_on_death = true }}) end)\n\
+         try(\"big\", function() horizon.attachment_set(event.entity, \"cp:big\", {{ c = string.rep(\"x\", 4090) }}, {{ copy_on_death = true }}) end)"
+    );
+    let lines = run_player(&mut world, "cp", &body);
+    assert!(
+        refused(&lines, "k5").contains(&format!(
+            "at most {MAX_COPY_KEYS} copied-on-death attachments"
+        )),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "big").contains(&format!(
+            "the copied value is 4097 bytes, more than {MAX_FLAGGED_VALUE_BYTES}"
+        )),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_mod_makes_16_synced_writes_per_turn_and_the_next_turn_is_fresh() {
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}\
+         for i = 1, 16 do horizon.attachment_set(event.entity, \"rc:k\" .. (i % 4), {{ v = i }}, {{ sync = true }}) end\n\
+         try(\"seventeenth\", function() horizon.attachment_set(event.entity, \"rc:k1\", {{ v = 0 }}, {{ sync = true }}) end)\n\
+         try(\"plain\", function() horizon.attachment_set(event.entity, \"rc:p\", {{ v = 0 }}) end)"
+    );
+    let lines = run(&mut world, "rc", &body);
+    assert!(
+        refused(&lines, "seventeenth").contains(&format!(
+            "a mod may make {MAX_SYNC_WRITES} synced writes in one turn"
+        )),
+        "{lines:?}"
+    );
+    // Plain writes are not counted against the synced cap.
+    assert_eq!(refused(&lines, "plain"), "plain true nil");
+    let next = run(
+        &mut world,
+        "rc",
+        &format!(
+            "{TRY}try(\"next\", function() horizon.attachment_set(event.entity, \"rc:k1\", {{ v = 0 }}, {{ sync = true }}) end)"
+        ),
+    );
+    assert_eq!(refused(&next, "next"), "next true nil");
+}
+
+#[test]
+fn unknown_option_keys_and_non_boolean_values_are_refused_and_change_nothing() {
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}\
+         try(\"typo\", function() horizon.attachment_set(event.entity, \"op:k\", {{ v = 1 }}, {{ sycn = true }}) end)\n\
+         try(\"number\", function() horizon.attachment_set(event.entity, \"op:k\", {{ v = 1 }}, {{ sync = 1 }}) end)\n\
+         try(\"opts\", function() horizon.attachment_set(event.entity, \"op:k\", {{ v = 1 }}, 5) end)\n\
+         try(\"index\", function() horizon.attachment_set(event.entity, \"op:k\", {{ v = 1 }}, {{ [1] = true }}) end)"
+    );
+    let lines = run(&mut world, "op", &body);
+    assert!(
+        refused(&lines, "typo").contains("the option 'sycn' is unknown"),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "number").contains("the option 'sync' must be true or false, not integer"),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "opts").contains("the options must be a table, not integer"),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "index").contains("the options key must be a name, not integer"),
+        "{lines:?}"
+    );
+    assert!(world.maps[&Holder::Entity(1)].to_nbt().is_empty());
+}
+
+#[test]
+fn turning_sync_off_queues_the_clients_removal_and_keeps_the_plain_value() {
+    let mut world = World::new();
+    run(
+        &mut world,
+        "fl",
+        "horizon.attachment_set(event.entity, \"fl:k\", { v = 1 }, { sync = true })",
+    );
+    drain(&mut world, Holder::Entity(1));
+    let lines = run(
+        &mut world,
+        "fl",
+        "horizon.attachment_set(event.entity, \"fl:k\", { v = 2 })\n\
+         horizon.log(\"R kept \" .. horizon.attachment_get(event.entity, \"fl:k\").v)",
+    );
+    assert_eq!(lines, ["kept 2"]);
+    // The clients get a removal, never the unsynced value.
+    let queued = drain(&mut world, Holder::Entity(1));
+    assert_eq!(queued.len(), 1, "{queued:?}");
+    assert_eq!(queued[0].value, None);
+    let saved = envelope(&world, Holder::Entity(1), "fl", "k");
+    assert!(!saved.contains_key(&"sync".into()));
+}
+
+#[test]
+fn removing_a_synced_value_queues_the_clients_removal() {
+    let mut world = World::new();
+    run(
+        &mut world,
+        "rs",
+        "horizon.attachment_set(event.entity, \"rs:k\", { v = 1 }, { sync = true })",
+    );
+    drain(&mut world, Holder::Entity(1));
+    let lines = run(
+        &mut world,
+        "rs",
+        "horizon.log(\"R removed \" .. tostring(horizon.attachment_remove(event.entity, \"rs:k\")))",
+    );
+    assert_eq!(lines, ["removed true"]);
+    let queued = drain(&mut world, Holder::Entity(1));
+    assert_eq!(queued.len(), 1, "{queued:?}");
+    assert_eq!(queued[0].name, "k".into());
+    assert_eq!(queued[0].value, None);
+}
+
+#[test]
+fn a_synced_value_removed_then_set_unsynced_in_one_pass_sends_no_value() {
+    // The defect this pins: a removal, then an unsynced set of the same key, in one pass.
+    let mut world = World::new();
+    run(
+        &mut world,
+        "pr",
+        "horizon.attachment_set(event.entity, \"pr:k\", { v = 1 }, { sync = true })\n\
+         horizon.attachment_remove(event.entity, \"pr:k\")\n\
+         horizon.attachment_set(event.entity, \"pr:k\", { v = 2 })",
+    );
+    let queued = drain(&mut world, Holder::Entity(1));
+    assert_eq!(queued.len(), 1, "{queued:?}");
+    assert_eq!(queued[0].value, None);
+}
+
+#[test]
+fn a_client_turn_reads_a_synced_value_and_cannot_set_or_remove_it() {
+    let mut world = World::new();
+    run(
+        &mut world,
+        "cl",
+        "horizon.attachment_set(event.entity, \"cl:k\", { v = 9 }, { sync = true })",
+    );
+    let lines = run_on(
+        TurnHost::Client(&mut world),
+        "cl",
+        &format!(
+            "{TRY}\
+             horizon.log(\"R got \" .. horizon.attachment_get(event.entity, \"cl:k\").v)\n\
+             horizon.log(\"R missing \" .. tostring(horizon.attachment_get(event.entity, \"cl:none\")))\n\
+             try(\"set\", function() horizon.attachment_set(event.entity, \"cl:k\", {{ v = 1 }}) end)\n\
+             try(\"remove\", function() horizon.attachment_remove(event.entity, \"cl:k\") end)"
+        ),
+        resident(),
+    );
+    assert!(lines.contains(&"got 9".to_owned()), "{lines:?}");
+    assert!(lines.contains(&"missing nil".to_owned()), "{lines:?}");
+    assert!(
+        refused(&lines, "set").contains("not available in this hook"),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "remove").contains("not available in this hook"),
+        "{lines:?}"
+    );
+    // The client's refused calls changed nothing on the server's copy.
+    assert_eq!(
+        envelope(&world, Holder::Entity(1), "cl", "k").get(&"value".into()),
+        Some(&Tag::Compound({
+            let mut v = Compound::new();
+            v.insert("v".into(), Tag::Int(9));
+            v
+        }))
     );
 }
