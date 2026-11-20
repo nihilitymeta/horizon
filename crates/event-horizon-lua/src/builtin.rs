@@ -2,7 +2,7 @@
 //! with, and the package the loader checks for it beside the executable.
 
 use crate::discover;
-use crate::host::{LuaHost, LuaMod};
+use crate::host::{LuaHost, LuaMod, both_side_records};
 use crate::package;
 use mod_api::__private::native::BuiltMod;
 use mod_api::ModEntry;
@@ -42,6 +42,14 @@ pub fn env_dev_paths(value: Option<&OsStr>) -> Vec<PathBuf> {
 pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf]) -> Loaded {
     let (mods, refused, disabled, notices) = load_mods(game_dir, dev_paths);
     let loaded = mods.len();
+    // The both-side Lua mods are announced on `horizon:mod_list` and recorded in a world beside the
+    // compiled mods. This runs before the game builds its announcement (`content_overlay`).
+    let _previous = horizon_mod_package::runtime::set_declared(
+        both_side_records(&mods)
+            .into_iter()
+            .map(|m| (m.id, m.version))
+            .collect(),
+    );
     Loaded {
         entry: ModEntry::new(
             package::ID,
@@ -119,6 +127,85 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.join(discover::ENTRY), script).unwrap();
+    }
+
+    /// Writes `<root>/lua-mods/<name>.hlua`, a zip archive mod with `id`, `version` and `side`.
+    fn archive_on(root: &Path, name: &str, id: &str, version: &str, side: &str) {
+        use std::io::Write;
+        let dir = root.join(discover::DIR);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = std::fs::File::create(dir.join(format!("{name}.hlua"))).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let manifest = format!("id = \"{id}\"\nversion = \"{version}\"\nside = \"{side}\"\n");
+        writer
+            .start_file(discover::MANIFEST, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(manifest.as_bytes()).unwrap();
+        writer
+            .start_file(discover::ENTRY, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"return {}\n").unwrap();
+        writer.finish().unwrap();
+    }
+
+    /// The records the announcement and the saved worlds take from a scan of `root`.
+    fn announced(root: &Path) -> Vec<(String, String)> {
+        let (mods, _) = load_mods_pair(root);
+        both_side_records(&mods)
+            .into_iter()
+            .map(|m| (m.id, m.version))
+            .collect()
+    }
+
+    #[test]
+    fn only_loaded_both_side_mods_are_announced_in_load_order() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder_on(root.path(), "alpha", "alpha_mod", "both", "return {}\n");
+        mod_folder_on(root.path(), "beta", "beta_mod", "client", "return {}\n");
+        mod_folder_on(root.path(), "gamma", "gamma_mod", "server", "return {}\n");
+        mod_folder_on(root.path(), "delta", "delta_mod", "both", "return {}\n");
+        mod_folder_on(
+            root.path(),
+            "epsilon",
+            "epsilon_mod",
+            "sideways",
+            "return {}\n",
+        );
+        archive_on(root.path(), "zeta", "zeta_mod", "4.2.0", "both");
+        archive_on(root.path(), "eta", "eta_mod", "5.0.0", "client");
+        let (_, refused, disabled, _) = load_mods(root.path(), &[]);
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert!(disabled.is_empty());
+        assert_eq!(
+            announced(root.path()),
+            [
+                ("alpha_mod".to_string(), "1.0.0".to_string()),
+                ("delta_mod".to_string(), "1.0.0".to_string()),
+                ("zeta_mod".to_string(), "4.2.0".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_mod_turned_off_in_enabled_toml_is_not_announced_and_turning_it_on_adds_it_back() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder_on(root.path(), "alpha", "alpha_mod", "both", "return {}\n");
+        mod_folder_on(root.path(), "delta", "delta_mod", "both", "return {}\n");
+        let enabled = root.path().join(discover::DIR).join(crate::enabled::FILE);
+        std::fs::write(&enabled, "[mods]\ndelta_mod = false\n").unwrap();
+        let ids: Vec<_> = announced(root.path()).into_iter().map(|m| m.0).collect();
+        assert_eq!(ids, ["alpha_mod"]);
+        std::fs::write(&enabled, "[mods]\ndelta_mod = true\n").unwrap();
+        let ids: Vec<_> = announced(root.path()).into_iter().map(|m| m.0).collect();
+        assert_eq!(ids, ["alpha_mod", "delta_mod"]);
+    }
+
+    #[test]
+    fn no_lua_mods_announce_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(announced(root.path()).is_empty());
+        mod_folder_on(root.path(), "beta", "beta_mod", "client", "return {}\n");
+        assert!(announced(root.path()).is_empty());
     }
 
     #[test]

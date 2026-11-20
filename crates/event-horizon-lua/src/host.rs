@@ -355,18 +355,25 @@ impl LuaMod {
 /// affect a world, so it is not recorded.
 pub fn merged_records(existing: Option<Vec<ModRecord>>, mods: &[LuaMod]) -> Vec<ModRecord> {
     let mut records = existing.unwrap_or_default();
-    for m in mods
-        .iter()
-        .filter(|m| matches!(m.side, Side::Server | Side::Both))
-    {
+    for m in both_side_records(mods) {
         if !records.iter().any(|r| r.id == m.id) {
-            records.push(ModRecord {
-                id: m.id.clone(),
-                version: m.version.clone(),
-            });
+            records.push(m);
         }
     }
     records
+}
+
+/// The loaded mods of side `both`, in load order, each with its manifest version. These are the
+/// Lua mods a world records as required and the game announces on `horizon:mod_list`. A client-only
+/// or server-only mod is absent: it stays private to its side.
+pub fn both_side_records(mods: &[LuaMod]) -> Vec<ModRecord> {
+    mods.iter()
+        .filter(|m| m.side == Side::Both)
+        .map(|m| ModRecord {
+            id: m.id.clone(),
+            version: m.version.clone(),
+        })
+        .collect()
 }
 
 /// The one `Hooks` implementation the game installs: it fans each hook out to the Lua mods.
@@ -550,7 +557,7 @@ impl LuaHost {
         }
     }
 
-    /// Adds the server-side Lua mods to the code mods the world records (`level_mods::set_loaded`),
+    /// Adds the both-side Lua mods to the code mods the world records (`level_mods::set_loaded`),
     /// so a world saved with them remembers them. Nothing changes when there are no such mods
     /// and the list was never set.
     pub fn record_loaded(&self) {
@@ -1867,17 +1874,27 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn server_and_both_mods_are_added_and_client_mods_are_not() {
+    fn only_both_side_mods_are_recorded_in_load_order() {
         let root = tempfile::tempdir().unwrap();
         let mods = [
             lua_mod(root.path(), "client_mod", "1.0.0", Side::Client),
             lua_mod(root.path(), "server_mod", "2.0.0", Side::Server),
             lua_mod(root.path(), "both_mod", "3.0.0", Side::Both),
+            lua_mod(root.path(), "other_both", "4.1.0", Side::Both),
         ];
         assert_eq!(
             merged_records(None, &mods),
-            [record("server_mod", "2.0.0"), record("both_mod", "3.0.0")]
+            [record("both_mod", "3.0.0"), record("other_both", "4.1.0")]
         );
+        assert_eq!(both_side_records(&mods), merged_records(None, &mods));
+    }
+
+    #[test]
+    fn a_server_only_mod_is_not_recorded_as_required() {
+        let root = tempfile::tempdir().unwrap();
+        let mods = [lua_mod(root.path(), "server_mod", "2.0.0", Side::Server)];
+        assert!(merged_records(None, &mods).is_empty());
+        assert!(merged_records(None, &[]).is_empty());
     }
 
     #[test]
@@ -1885,7 +1902,7 @@ pub(crate) mod tests {
         let root = tempfile::tempdir().unwrap();
         let mods = [
             lua_mod(root.path(), "alpha_mod", "1.0.0", Side::Both),
-            lua_mod(root.path(), "beta_mod", "2.0.0", Side::Server),
+            lua_mod(root.path(), "beta_mod", "2.0.0", Side::Both),
         ];
         let existing = Some(vec![
             record("native_mod", "0.1.0"),

@@ -580,8 +580,13 @@ impl LuaHost {
 /// and a mod quarantined for the hook (see `quarantine`) runs none. Every dispatch loop and part gate
 /// asks this, so it is the one place the rule lives.
 pub(crate) fn side_runs(m: &LuaMod, hook: &str) -> bool {
-    let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
-    !(server_hook && m.side() == Side::Client) && !quarantine::is_quarantined(m.id(), hook)
+    let side = hook_info(hook).map(|info| info.side);
+    let refused = match m.side() {
+        Side::Client => side == Some(HookSide::Server),
+        Side::Server => side == Some(HookSide::Client),
+        Side::Both => false,
+    };
+    !refused && !quarantine::is_quarantined(m.id(), hook)
 }
 
 /// The body of `LuaHost::dispatch_turns`, over the mods at `order` in `mods`. A mod's handlers for
@@ -1637,6 +1642,16 @@ mod handler_gate_tests {
             Side::Client,
         )]);
         assert!(!host.has_handlers("block_receive_game"));
+    }
+
+    #[test]
+    fn a_server_mod_does_not_handle_a_client_hook() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"client_chat\", function() end)";
+        let server = LuaHost::new(vec![load(root.path(), "mod_s", source, Side::Server)]);
+        assert!(!server.has_handlers("client_chat"));
+        let both = LuaHost::new(vec![load(root.path(), "mod_b", source, Side::Both)]);
+        assert!(both.has_handlers("client_chat"));
     }
 }
 

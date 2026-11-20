@@ -726,6 +726,13 @@ pub(super) fn content_overlay(
             .built()
             .iter()
             .map(|m| announced_entry(m.id, m.version, m.side))
+            // Lua mods of side `both`, declared by their host when it scanned them (DEVIATION,
+            // 74-3c: the announcement was fixed to the compiled mods).
+            .chain(
+                horizon_mod_package::runtime::declared()
+                    .iter()
+                    .map(|(id, version)| announced_entry(id, version, mod_api::Side::Both)),
+            )
             .collect()
     } else {
         Vec::new()

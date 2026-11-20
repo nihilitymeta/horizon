@@ -7,6 +7,26 @@ use crate::{
 use std::path::{Path, PathBuf};
 
 use mod_vocab::__private::native::BuiltMod;
+use std::sync::RwLock;
+
+/// Code mods a built-in host declares once its own mods are scanned (Event Horizon's Lua mods of
+/// side `both`): `(id, version)`. They are announced and recorded beside the compiled ones. The
+/// host sets them before the game builds its announcement, and `set_declared` returns the list it
+/// replaced, for a test to put back.
+static DECLARED: RwLock<Vec<(String, String)>> = RwLock::new(Vec::new());
+
+/// Sets the declared code mods; returns the list it replaced.
+pub fn set_declared(mods: Vec<(String, String)>) -> Vec<(String, String)> {
+    std::mem::replace(
+        &mut *DECLARED.write().unwrap_or_else(|e| e.into_inner()),
+        mods,
+    )
+}
+
+/// The code mods `set_declared` gave; empty before it.
+pub fn declared() -> Vec<(String, String)> {
+    DECLARED.read().unwrap_or_else(|e| e.into_inner()).clone()
+}
 
 /// Validated once before installing hooks. Vanilla explicitly supplies an empty inventory.
 #[derive(Debug, Default)]
