@@ -167,7 +167,7 @@ impl GoalCxBackend for Cx {
 /// turn answers or applies use a generous one, so a loaded machine cannot time them out; the deadline
 /// tests and the tests that loop on purpose use the real one.
 fn turn_deadline(limit: Option<Duration>) {
-    crate::goal::TURN_BUDGET_OVERRIDE.with(|cell| cell.set(limit));
+    crate::mob_turn::TURN_BUDGET_OVERRIDE.with(|cell| cell.set(limit));
 }
 
 /// The goals of one mob, built from the mod's entity part `index` (the part's `register_goals`).

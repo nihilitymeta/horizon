@@ -65,6 +65,13 @@ impl GoalCtx {
     }
 }
 
+impl GoalCtx {
+    /// The userdata `e.ctx` of the goal call `call`, as the turn runner makes it.
+    pub(crate) fn userdata(lua: &Lua, call: u64) -> mlua::Result<AnyUserData> {
+        lua.create_userdata(GoalCtx::new(call))
+    }
+}
+
 impl UserData for GoalCtx {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         // A colon call passes `e.ctx` as the first argument, so each method takes it as a userdata.
@@ -104,7 +111,12 @@ pub(crate) fn cost(op: &str) -> Option<u32> {
 
 /// From a Lua method: the call must be inside a turn (else it is not available), and the turn checks
 /// the call's number and queues the action.
-fn enter(lua: &Lua, this: AnyUserData, op: &'static str, args: Vec<Value>) -> mlua::Result<Value> {
+pub(crate) fn enter(
+    lua: &Lua,
+    this: AnyUserData,
+    op: &'static str,
+    args: Vec<Value>,
+) -> mlua::Result<Value> {
     let inside = lua
         .named_registry_value::<Option<mlua::Function>>(crate::hostcall::SLOT)?
         .is_some();
@@ -135,12 +147,7 @@ pub(crate) fn run(
         return Err(Error::runtime(NOT_THIS_CALL));
     }
     let action = parse(op, args)?;
-    if actions.len() >= MAX_ACTIONS {
-        return Err(Error::runtime(format!(
-            "a goal call may make at most {MAX_ACTIONS} actions; this one is over"
-        )));
-    }
-    actions.push(action);
+    crate::mob_turn::queue(actions, *current, call, action, NOT_THIS_CALL)?;
     Ok(Value::Nil)
 }
 
@@ -169,7 +176,7 @@ fn parse(op: &str, args: MultiValue) -> mlua::Result<GoalAction> {
 }
 
 /// The finite number at `index`, named `what` in a refusal.
-fn finite(args: &Args, index: usize, name: &str, what: &str) -> mlua::Result<f64> {
+pub(crate) fn finite(args: &Args, index: usize, name: &str, what: &str) -> mlua::Result<f64> {
     let value: f64 = args.get(index)?;
     if value.is_finite() {
         Ok(value)
@@ -190,7 +197,7 @@ fn position(args: &Args, name: &str) -> mlua::Result<[f64; 3]> {
 }
 
 /// The `move_to` speed (argument 4): finite, from 0.0 to `MAX_SPEED`.
-fn speed(args: &Args, name: &str) -> mlua::Result<f64> {
+pub(crate) fn speed(args: &Args, name: &str) -> mlua::Result<f64> {
     let speed = finite(args, 3, name, "speed")?;
     if (0.0..=MAX_SPEED).contains(&speed) {
         Ok(speed)
@@ -202,7 +209,7 @@ fn speed(args: &Args, name: &str) -> mlua::Result<f64> {
 }
 
 /// The `set_target` argument: nil (no target), or a mob or an entity handle.
-fn target(args: &Args, name: &str) -> mlua::Result<Option<LivingRef>> {
+pub(crate) fn target(args: &Args, name: &str) -> mlua::Result<Option<LivingRef>> {
     if args.value(0).is_nil() {
         return Ok(None);
     }

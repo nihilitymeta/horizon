@@ -1674,9 +1674,14 @@ pub const MENU_SLOT_REASON: &str =
 pub const MENU_TRANSFER_REASON: &str =
     "hot path (needs measurement): asked per recipe transfer action on a mod menu";
 const NBT_REASON: &str = "NBT output (Compound is denied)";
-/// The reason of a mob's goals and brains and of a general entity row's tick: each runs per mob or per
-/// tick, and needs a measurement before it is bound.
+/// The reason of a general entity row's tick: it runs per tick, and needs a measurement before it is bound.
 pub const MOB_REASON: &str = "per-mob object, per-tick turn: needs measurement";
+/// The reason of a mob's brain behaviors as a handler name: a mod declares them in the `behaviors` table of
+/// its entity part, and the host adds them to each brain as it is built (see [`DECLARED_BEHAVIORS_METHOD`]).
+pub const BEHAVIORS_REASON: &str = "declared in the entity part's behaviors table (not a handler)";
+/// The method the generated `EntityPart` adapter gets for `register_behaviors`, hand-written in `host.rs`: it
+/// adds the behaviors the entity part's `behaviors` table declared, one `LuaBehavior` each.
+pub const DECLARED_BEHAVIORS_METHOD: &str = "    fn register_behaviors(&self, behaviors: &mut mod_api::BehaviorRegistrar<'_>) {\n        self.declared_behaviors(behaviors)\n    }\n";
 /// The reason of a mob's goals as a handler name: a mod declares them in the `goals` table of its
 /// entity part, and the host adds them at each mob's construction (see [`DECLARED_GOALS_METHOD`]).
 pub const GOALS_REASON: &str = "declared in the entity part's goals table (not a handler)";
@@ -1730,7 +1735,7 @@ pub const PLAIN_PART_METHODS: &[PlainPart] = &[
     PlainPart {
         trait_name: "EntityPart",
         method: "register_behaviors",
-        route: Err(MOB_REASON),
+        route: Err(BEHAVIORS_REASON),
         answer_range: None,
     },
 ];
@@ -1887,10 +1892,14 @@ pub fn emit_parts(
             _ => None,
         };
         let declared_goals = part == PartTrait::Entity && name == "register_goals";
+        let declared_behaviors = part == PartTrait::Entity && name == "register_behaviors";
         let result = if declared_goals {
             // The table row says why it is not a handler; the method itself is the hand-written one.
             hand.push_str(DECLARED_GOALS_METHOD);
             Err(GOALS_REASON.to_owned())
+        } else if declared_behaviors {
+            hand.push_str(DECLARED_BEHAVIORS_METHOD);
+            Err(BEHAVIORS_REASON.to_owned())
         } else if let Some(reason) = skipped_route {
             Err(reason)
         } else if hot {

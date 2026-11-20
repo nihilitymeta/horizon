@@ -1,7 +1,7 @@
 //! Mob goals a mod declares (#74, B1): the `goals` table of an entity part adds one [`LuaGoal`] per
 //! declared goal to each mob of that type, at the mob's construction. Declaring a goal runs no Lua;
 //! each of the goal's calls is one Lua turn of the goal's own handler, under the shared time budget of
-//! `goal_budget`.
+//! `goal_budget`, on the turn runner of `mob_turn`.
 //!
 //! What a handler gets: one argument `e` with `e.mob`, the mob as a `MobRef`. Its turn reads through
 //! the tick's view (the mob itself, the player, the tick's snapshot); its writes raise, because a goal
@@ -14,70 +14,20 @@
 //! other handler. `start`, `tick` and `stop` answer nothing.
 
 use std::cell::Cell;
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::sync::Arc;
 
-use mlua::{Lua, Value};
-use mod_api::{Goal, GoalContext, GoalFlags, GoalRegistrar, MobRef};
+use mod_api::{Goal, GoalContext, GoalFlags, GoalRegistrar};
 
-use crate::budget;
 use crate::declare::{GoalRecord, goal_handler_key};
 use crate::dispatch;
 use crate::goal_actions::{self, GoalCtx};
-use crate::goal_budget::{Budget, GOAL_STRIKES, GOAL_TURN_BUDGET};
+use crate::goal_budget::Budget;
 use crate::host::{HANDLER_BUDGET, LuaMod, warn_once};
-use crate::hostcall::{TurnHost, refused};
-use crate::quarantine;
-
-/// The goal names this process has seen, each leaked once: a `Goal` names itself with `&'static str`,
-/// and the names are the mods' declared goals, so the leak is bounded by the goals declared.
-static NAMES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
-
-/// The budget failures in a row of each goal handler, by (mod, goal handler key).
-static STRIKES: Mutex<BTreeMap<(String, String), u32>> = Mutex::new(BTreeMap::new());
-
-/// The deadline a goal turn runs under: `GOAL_TURN_BUDGET`, or in tests a value the test set on its
-/// own thread (see `goal_tests`), so tests that check results are not timed against the wall clock.
-fn turn_budget() -> Duration {
-    #[cfg(test)]
-    {
-        if let Some(limit) = TURN_BUDGET_OVERRIDE.with(Cell::get) {
-            return limit;
-        }
-    }
-    GOAL_TURN_BUDGET
-}
-
-#[cfg(test)]
-thread_local! {
-    /// A test's own goal turn deadline, on its thread; unset in production.
-    pub(crate) static TURN_BUDGET_OVERRIDE: Cell<Option<Duration>> = const { Cell::new(None) };
-}
+use crate::hostcall::TurnHost;
+use crate::mob_turn::{self, Handler, STOP};
 
 /// The message of a goal turn stopped by its own deadline.
 const GOAL_TURN_MESSAGE: &str = "the goal's turn ran over its time budget";
-
-fn intern(name: &str) -> &'static str {
-    let mut names = NAMES.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(found) = names.iter().find(|known| **known == name) {
-        return found;
-    }
-    let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
-    names.push(leaked);
-    leaked
-}
-
-/// The event a goal's handler gets: `mob` (the MobRef) and `ctx` (the `GoalCtx` of this call).
-fn event(mob: MobRef) -> impl Fn(&Lua, &TurnHost<'_>) -> mlua::Result<crate::dispatch::Event> {
-    move |lua, turn| {
-        let data = lua.create_table()?;
-        data.raw_set("mob", crate::handles::family_out(lua, mob)?)?;
-        let call = turn.goal_call().unwrap_or(0);
-        data.raw_set("ctx", lua.create_userdata(GoalCtx::new(call))?)?;
-        crate::dispatch::new_event(lua, data, &[])
-    }
-}
 
 /// Adds the goals `mods[index]` declared for the entity type `entity` to the mob being built, on the
 /// process's shared budget.
@@ -106,7 +56,7 @@ pub(crate) fn add_declared_on(
                     mods: Arc::clone(mods),
                     index,
                     goal,
-                    name: intern(&record.name),
+                    name: mob_turn::intern(&record.name),
                     flags: record.flags,
                     budget: Arc::clone(&budget),
                     last: true,
@@ -148,47 +98,24 @@ impl LuaGoal {
         self.record().hooks.iter().any(|name| name == hook)
     }
 
-    fn key(&self, hook: &str) -> String {
-        goal_handler_key(&self.record().name, hook)
-    }
-
-    /// Whether the goal handler `hook` is quarantined: after `GOAL_STRIKES` budget failures in a row,
-    /// for this mod and goal (its quarantine key is the goal handler's own key).
-    fn quarantined(&self, hook: &str) -> bool {
-        quarantine::is_quarantined(self.module().id(), &self.key(hook))
-    }
-
-    /// Records how a turn of `hook` ended: a budget failure (the turn failed with its deadline passed)
-    /// adds a strike, and any other turn clears them. Returns whether this turn was a budget failure,
-    /// whose queued actions the caller drops. The third strike quarantines the goal handler.
-    fn settle(&self, hook: &str, failed: bool, expired: bool) -> bool {
-        let id = self.module().id();
-        let key = self.key(hook);
-        let mut strikes = STRIKES.lock().unwrap_or_else(PoisonError::into_inner);
-        let count = strikes.entry((id.to_owned(), key.clone())).or_insert(0);
-        if !(failed && expired) {
-            *count = 0;
-            return false;
+    /// The handler `hook` of this goal, as the turn runner records it.
+    fn handler<'a>(&'a self, hook: &'a str) -> Handler<'a> {
+        let record = self.record();
+        Handler {
+            module: self.module(),
+            label: &record.name,
+            noun: "goal",
+            hook,
+            key: goal_handler_key(&record.name, hook),
         }
-        *count += 1;
-        if *count >= GOAL_STRIKES {
-            quarantine::quarantine(id, &key);
-            warn_once(
-                id,
-                &format!(
-                    "{id}: {}: {hook} went over its {GOAL_TURN_BUDGET:?} turn budget {GOAL_STRIKES} times in a row; the goal is quarantined",
-                    self.record().name
-                ),
-            );
-        }
-        true
     }
 
     /// Runs the `can_use` or `can_continue` handler as one replace turn on the goal's own deadline, then
-    /// applies the actions the call queued (none, when the turn was stopped by its deadline). Says
-    /// whether the turn failed (so a caller can tell a failure from a handler that returned nothing).
+    /// applies the actions the call queued (none, when the turn was dropped). Says whether the turn
+    /// failed (so a caller can tell a failure from a handler that returned nothing).
     fn ask(&self, hook: &str, cx: &mut GoalContext<'_>) -> (Option<bool>, bool) {
-        if self.quarantined(hook) {
+        let handler = self.handler(hook);
+        if handler.quarantined() {
             return (None, true);
         }
         let mob = cx.mob();
@@ -196,26 +123,26 @@ impl LuaGoal {
         let mut actions = Vec::new();
         let failed = Cell::new(false);
         let mut answer = None;
-        let build = event(mob);
-        let (opened, expired) = budget::within_with_expiry(
-            self.module().lua(),
-            turn_budget(),
+        let build = mob_turn::event(mob, GoalCtx::userdata);
+        let dropped = mob_turn::run_turn(
+            &handler,
+            mob_turn::turn_budget(),
             GOAL_TURN_MESSAGE,
-            || {
+            &failed,
+            &mut actions,
+            |actions| {
                 dispatch::replace_in_reporting(
                     &self.mods,
                     &[self.index],
                     hook,
-                    &self.key(hook),
+                    &handler.key,
                     TurnHost::Goal {
                         host: cx.host(),
-                        actions: &mut actions,
+                        actions,
                         call,
                     },
                     &build,
-                    &mut |id, value: Value, _turn| match dispatch::answer_of::<bool>(
-                        id, hook, &value,
-                    ) {
+                    &mut |id, value, _turn| match dispatch::answer_of::<bool>(id, hook, &value) {
                         Some(found) => {
                             answer = Some(found);
                             true
@@ -226,12 +153,7 @@ impl LuaGoal {
                 )
             },
         );
-        if opened.is_err() {
-            failed.set(true);
-        }
-        refused(opened);
-        if self.settle(hook, failed.get(), expired) {
-            actions.clear();
+        if dropped {
             answer = None;
         }
         goal_actions::apply(cx, actions, self.module().id(), hook);
@@ -246,7 +168,8 @@ impl LuaGoal {
         if !self.has(hook) {
             return;
         }
-        if hook != "stop" && self.quarantined(hook) {
+        let handler = self.handler(hook);
+        if hook != STOP && handler.quarantined() {
             return;
         }
         let mob = cx.mob();
@@ -254,40 +177,30 @@ impl LuaGoal {
         let mut actions = Vec::new();
         let failed = Cell::new(false);
         let started = self.budget.now();
-        let build = event(mob);
-        let (limit, message) = if hook == "stop" {
+        let build = mob_turn::event(mob, GoalCtx::userdata);
+        let (limit, message) = if hook == STOP {
             (HANDLER_BUDGET, "the handler ran over its time budget")
         } else {
-            (turn_budget(), GOAL_TURN_MESSAGE)
+            (mob_turn::turn_budget(), GOAL_TURN_MESSAGE)
         };
-        let (result, expired) =
-            budget::within_with_expiry(self.module().lua(), limit, message, || {
-                dispatch::turns_in_reporting(
-                    &self.mods,
-                    &[self.index],
-                    hook,
-                    &self.key(hook),
-                    TurnHost::Goal {
-                        host: cx.host(),
-                        actions: &mut actions,
-                        call,
-                    },
-                    &|_| true,
-                    &|| false,
-                    &build,
-                    &mut |_, _, _| true,
-                    &failed,
-                )
-            });
-        refused(result);
-        let dropped = if hook == "stop" {
-            failed.get() && expired
-        } else {
-            self.settle(hook, failed.get(), expired)
-        };
-        if dropped {
-            actions.clear();
-        }
+        mob_turn::run_turn(&handler, limit, message, &failed, &mut actions, |actions| {
+            dispatch::turns_in_reporting(
+                &self.mods,
+                &[self.index],
+                hook,
+                &handler.key,
+                TurnHost::Goal {
+                    host: cx.host(),
+                    actions,
+                    call,
+                },
+                &|_| true,
+                &|| false,
+                &build,
+                &mut |_, _, _| true,
+                &failed,
+            )
+        });
         goal_actions::apply(cx, actions, self.module().id(), hook);
         self.budget
             .charge(self.budget.now().saturating_duration_since(started));
@@ -325,6 +238,7 @@ impl Goal for LuaGoal {
             // No handler of its own: the trait's default, can_use's answer.
             return self.can_use(cx);
         }
+        // A panic quarantines the raw hook name (contained in hostcall), so this guard checks that name.
         if crate::quarantine::is_quarantined(self.module().id(), "can_continue") {
             return false;
         }
@@ -353,7 +267,7 @@ impl Goal for LuaGoal {
 
     fn stop(&mut self, cx: &mut GoalContext<'_>) {
         // Always runs, so a goal can release its locks; its time is charged but never refused.
-        self.run("stop", cx);
+        self.run(STOP, cx);
     }
 
     fn name(&self) -> &'static str {

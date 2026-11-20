@@ -19,8 +19,8 @@ use mlua::{Error, Function, Lua, Table, Value};
 
 use crate::budget;
 use crate::declare::{
-    self, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord, FluidRecord,
-    GoalRecord, ItemRecord, ListenerOptions, PartKind, PartRecord,
+    self, BehaviorRecord, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord,
+    FluidRecord, GoalRecord, ItemRecord, ListenerOptions, PartKind, PartRecord,
 };
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::{self, new_event};
@@ -74,6 +74,8 @@ pub struct LuaMod {
     menu_parts: Vec<PartRecord>,
     /// The mob goals the `goals` tables of the mod's entity parts declared (see `goal.rs`).
     goals: Vec<GoalRecord>,
+    /// The brain behaviors the `behaviors` tables of the mod's entity parts declared (see `behavior.rs`).
+    behaviors: Vec<BehaviorRecord>,
     /// The client commands the mod declared with `horizon.client_command`.
     client_commands: Vec<ClientCommandRecord>,
     /// The server commands the mod declared with `horizon.command`.
@@ -191,6 +193,7 @@ impl LuaMod {
             entity_parts: declaration.entity_parts,
             menu_parts: declaration.menu_parts,
             goals: declaration.goals,
+            behaviors: declaration.behaviors,
             client_commands: declaration.client_commands,
             commands: declaration.commands,
             configs: declaration.configs,
@@ -216,6 +219,11 @@ impl LuaMod {
     /// The block parts this mod declared, in declaration order.
     pub fn parts(&self) -> &[PartRecord] {
         &self.parts
+    }
+
+    /// The brain behaviors this mod declared, in declaration order.
+    pub(crate) fn behavior_records(&self) -> &[BehaviorRecord] {
+        &self.behaviors
     }
 
     /// The mob goals this mod declared, in declaration order.
@@ -912,6 +920,12 @@ impl LuaEntityPart {
     /// it (the generated `register_goals` calls this): one `LuaGoal` per declared goal of this entity type.
     pub(crate) fn declared_goals(&self, goals: &mut mod_api::GoalRegistrar<'_>) {
         crate::goal::add_declared(&self.mods, self.index, &self.id, goals);
+    }
+
+    /// The brain behaviors this part's `behaviors` table declared, added to the brain as it is built (the
+    /// generated `register_behaviors` calls this): one behavior per declared entry of this entity type.
+    pub(crate) fn declared_behaviors(&self, behaviors: &mut mod_api::BehaviorRegistrar<'_>) {
+        crate::behavior::add_declared(&self.mods, self.index, &self.id, behaviors);
     }
 }
 

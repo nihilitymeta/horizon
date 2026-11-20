@@ -65,6 +65,19 @@ pub const MAX_GOALS: usize = 8;
 /// The longest goal name, in bytes.
 pub const MAX_GOAL_NAME: usize = 64;
 
+/// The most behaviors one entity part may declare in its `behaviors` table (#74, B2).
+pub const MAX_BEHAVIORS: usize = 8;
+
+/// The longest behavior name, in bytes.
+pub const MAX_BEHAVIOR_NAME: usize = 64;
+
+/// The highest priority of a behavior, as `horizon.entity_part` takes it (a lower number runs first).
+pub const MAX_BEHAVIOR_PRIORITY: i64 = 20;
+
+/// The duration window a behavior gets when it declares none: 40 to 80 brain ticks. An assumption, not a
+/// vanilla value; documented in the d.luau.
+pub const DEFAULT_BEHAVIOR_DURATION: (i32, i32) = (40, 80);
+
 /// The highest priority of a goal, as `horizon.entity_part` takes it (as vanilla's `addGoal`: a lower
 /// number runs first).
 pub const MAX_GOAL_PRIORITY: i64 = 20;
@@ -118,6 +131,8 @@ pub struct Declaration {
     pub menu_parts: Vec<PartRecord>,
     /// The mob goals the `goals` tables of the entity parts declared, in declaration order.
     pub goals: Vec<GoalRecord>,
+    /// The brain behaviors the `behaviors` tables of the entity parts declared, in declaration order.
+    pub behaviors: Vec<BehaviorRecord>,
     /// The client commands `horizon.client_command` declared, in declaration order.
     pub client_commands: Vec<ClientCommandRecord>,
     /// The configs `horizon.config` declared, in declaration order. Each names the mod as its owner.
@@ -216,6 +231,27 @@ pub struct GoalRecord {
 /// name or a hook name, so the key is never a hook's own name or a part's.
 pub fn goal_handler_key(name: &str, hook: &str) -> String {
     format!("goal {name} {hook}")
+}
+
+/// A brain behavior a mod declared in the `behaviors` table of an entity part (#74, B2): the entity type
+/// it is for, its name in the mod's namespace, its activity, priority and duration window (as
+/// `BehaviorRegistrar::add` takes them), and the handlers it has (sorted). Each handler is stored under
+/// [`behavior_handler_key`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BehaviorRecord {
+    pub entity: String,
+    pub name: String,
+    pub activity: mod_api::Activity,
+    pub priority: i32,
+    pub min_duration: i32,
+    pub max_duration: i32,
+    pub hooks: Vec<String>,
+}
+
+/// The key a behavior's handler is stored under in the mod's handler table. Its prefix differs from a
+/// goal's, so a behavior and a goal of one name never share a key or a quarantine entry.
+pub fn behavior_handler_key(name: &str, hook: &str) -> String {
+    format!("behavior {name} {hook}")
 }
 
 /// A world fluid a mod declared with `horizon.world_fluid{...}`: its id in the mod's own namespace and
@@ -351,6 +387,7 @@ pub fn declare_with_budget(
         entity_parts: recorded.entity_parts,
         menu_parts: recorded.menu_parts,
         goals: recorded.goals,
+        behaviors: recorded.behaviors,
         client_commands: recorded.client_commands,
         configs: recorded.configs,
         commands: recorded.commands,
@@ -490,6 +527,7 @@ struct Recorded {
     entity_parts: Vec<PartRecord>,
     menu_parts: Vec<PartRecord>,
     goals: Vec<GoalRecord>,
+    behaviors: Vec<BehaviorRecord>,
     client_commands: Vec<ClientCommandRecord>,
     configs: Vec<mod_api::Config>,
     commands: Vec<CommandRecord>,
@@ -542,6 +580,7 @@ fn run(
     let entity_parts = RefCell::new(Vec::<PartRecord>::new());
     let menu_parts = RefCell::new(Vec::<PartRecord>::new());
     let goals = RefCell::new(Vec::<GoalRecord>::new());
+    let behaviors = RefCell::new(Vec::<BehaviorRecord>::new());
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
     let configs = RefCell::new(Vec::<mod_api::Config>::new());
     let commands = RefCell::new(Vec::<CommandRecord>::new());
@@ -669,7 +708,11 @@ fn run(
                     spec,
                     &entity_parts,
                     &handlers,
-                    Some((owner, &goals)),
+                    Some(EntityRecords {
+                        owner,
+                        goals: &goals,
+                        behaviors: &behaviors,
+                    }),
                 )
             })?;
             let menu_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
@@ -764,6 +807,7 @@ fn run(
         entity_parts: entity_parts.into_inner(),
         menu_parts: menu_parts.into_inner(),
         goals: goals.into_inner(),
+        behaviors: behaviors.into_inner(),
         client_commands: client_commands.into_inner(),
         configs: configs.into_inner(),
         commands: commands.into_inner(),
@@ -1389,8 +1433,8 @@ fn declare_config(
 
 /// Reads `horizon.block_part(id, {hook = fn, ...})` or `horizon.item_part(...)` (`kind` names it): the
 /// part's id and handlers are checked, each handler is stored under [`part_handler_key`], and the
-/// record is kept in `records`. An entity part also takes a `goals` table, read by `declare_goals`
-/// into the goal records of `goals` (given with the mod's id, which the goals' names must be in).
+/// record is kept in `records`. An entity part also takes a `goals` and a `behaviors` table, read by
+/// `declare_goals` and `declare_behaviors` into the records of `entity`.
 fn declare_part(
     lua: &Lua,
     kind: PartKind,
@@ -1398,7 +1442,7 @@ fn declare_part(
     spec: Value,
     records: &RefCell<Vec<PartRecord>>,
     handlers: &Table,
-    goals: Option<(&str, &RefCell<Vec<GoalRecord>>)>,
+    entity: Option<EntityRecords<'_>>,
 ) -> mlua::Result<()> {
     let keyword = kind.keyword();
     let id = part_id(lua, kind, id)?;
@@ -1431,6 +1475,7 @@ fn declare_part(
     }
     let mut hooks = Vec::new();
     let mut goal_list = None;
+    let mut behavior_list = None;
     for pair in table.pairs::<Value, Value>() {
         let (key, value) = pair?;
         let Value::String(name) = key else {
@@ -1440,8 +1485,12 @@ fn declare_part(
             ));
         };
         let name = name.to_str()?.to_string();
-        if name == "goals" && goals.is_some() {
+        if name == "goals" && entity.is_some() {
             goal_list = Some(value);
+            continue;
+        }
+        if name == "behaviors" && entity.is_some() {
+            behavior_list = Some(value);
             continue;
         }
         let Value::Function(handler) = value else {
@@ -1458,11 +1507,21 @@ fn declare_part(
         hooks.push(name);
     }
     let mut declared = 0;
-    if let (Some((owner, goal_records)), Some(value)) = (goals, goal_list) {
-        declared = declare_goals(lua, owner, &id, value, goal_records, handlers)?;
+    if let Some(records) = &entity {
+        if let Some(value) = goal_list {
+            declared += declare_goals(lua, records.owner, &id, value, records.goals, handlers)?;
+        }
+        if let Some(value) = behavior_list {
+            declared +=
+                declare_behaviors(lua, records.owner, &id, value, records.behaviors, handlers)?;
+        }
     }
     if hooks.is_empty() && declared == 0 {
-        let or_goal = if goals.is_some() { " or goal" } else { "" };
+        let or_goal = if entity.is_some() {
+            " or goal or behavior"
+        } else {
+            ""
+        };
         return Err(at_line(
             lua,
             format!("horizon.{keyword} for '{id}' needs at least one handler{or_goal}"),
@@ -1471,6 +1530,52 @@ fn declare_part(
     hooks.sort();
     records.push(PartRecord { id, hooks });
     Ok(())
+}
+
+/// What an entity part's table may declare beside its handlers: the mod's id (its goals' and behaviors'
+/// names must be in its namespace) and the mod's goal and behavior records.
+struct EntityRecords<'a> {
+    owner: &'a str,
+    goals: &'a RefCell<Vec<GoalRecord>>,
+    behaviors: &'a RefCell<Vec<BehaviorRecord>>,
+}
+
+/// Reads a list of tables from the `key` field (`goals` or `behaviors`) of the entity part `entity`: a
+/// sequence of at most `max` entries, each returned for its own declaration. `noun` names an entry in
+/// the messages.
+fn entity_list(
+    lua: &Lua,
+    entity: &str,
+    key: &str,
+    noun: &str,
+    value: Value,
+    max: usize,
+) -> mlua::Result<Vec<Value>> {
+    let Value::Table(list) = value else {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part '{entity}': {key} is a list of {noun} tables"),
+        ));
+    };
+    let count = list.raw_len();
+    let mut entries = 0;
+    for pair in list.pairs::<Value, Value>() {
+        pair?;
+        entries += 1;
+    }
+    if entries != count {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part '{entity}': {key} is a list, with entries 1 to {count}"),
+        ));
+    }
+    if count > max {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part '{entity}' declares at most {max} {key}"),
+        ));
+    }
+    (1..=count).map(|index| list.raw_get(index)).collect()
 }
 
 /// Reads the `goals` table of the entity part `entity`: a list of at most `MAX_GOALS` goal tables,
@@ -1483,35 +1588,242 @@ fn declare_goals(
     records: &RefCell<Vec<GoalRecord>>,
     handlers: &Table,
 ) -> mlua::Result<usize> {
-    let Value::Table(list) = value else {
+    let goals = entity_list(lua, entity, "goals", "goal", value, MAX_GOALS)?;
+    for goal in &goals {
+        declare_goal(lua, owner, entity, goal.clone(), records, handlers)?;
+    }
+    Ok(goals.len())
+}
+
+/// Reads the `behaviors` table of the entity part `entity`: a list of at most `MAX_BEHAVIORS` behavior
+/// tables, each read by `declare_behavior`. Returns how many behaviors it declared.
+fn declare_behaviors(
+    lua: &Lua,
+    owner: &str,
+    entity: &str,
+    value: Value,
+    records: &RefCell<Vec<BehaviorRecord>>,
+    handlers: &Table,
+) -> mlua::Result<usize> {
+    let behaviors = entity_list(lua, entity, "behaviors", "behavior", value, MAX_BEHAVIORS)?;
+    for behavior in &behaviors {
+        declare_behavior(lua, owner, entity, behavior.clone(), records, handlers)?;
+    }
+    Ok(behaviors.len())
+}
+
+/// The vanilla activity a behavior's `activity` names (the brain's lanes, as `Activity` has them).
+pub fn activity_named(name: &str) -> Option<mod_api::Activity> {
+    use mod_api::Activity as A;
+    Some(match name {
+        "core" => A::Core,
+        "idle" => A::Idle,
+        "work" => A::Work,
+        "play" => A::Play,
+        "rest" => A::Rest,
+        "meet" => A::Meet,
+        "panic" => A::Panic,
+        "raid" => A::Raid,
+        "pre_raid" => A::PreRaid,
+        "hide" => A::Hide,
+        "fight" => A::Fight,
+        "play_dead" => A::PlayDead,
+        "sniff" => A::Sniff,
+        "dig" => A::Dig,
+        "emerge" => A::Emerge,
+        "roar" => A::Roar,
+        "investigate" => A::Investigate,
+        _ => return None,
+    })
+}
+
+/// Reads one behavior table of the entity part `entity`: `name` (namespaced to the mod, at most
+/// `MAX_BEHAVIOR_NAME` bytes, declared once per mod), `activity` (a vanilla activity name), `priority`
+/// (a whole number from 0 to `MAX_BEHAVIOR_PRIORITY`), `min_duration` and `max_duration` (optional, the
+/// duration window of `DEFAULT_BEHAVIOR_DURATION`, which `BehaviorRegistrar::add` checks), and the
+/// handlers. Any other key is refused by name.
+fn declare_behavior(
+    lua: &Lua,
+    owner: &str,
+    entity: &str,
+    value: Value,
+    records: &RefCell<Vec<BehaviorRecord>>,
+    handlers: &Table,
+) -> mlua::Result<()> {
+    let Value::Table(table) = value else {
         return Err(at_line(
             lua,
-            format!("horizon.entity_part '{entity}': goals is a list of goal tables"),
+            format!("horizon.entity_part '{entity}': each behavior is a table"),
         ));
     };
-    let count = list.raw_len();
-    let mut entries = 0;
-    for pair in list.pairs::<Value, Value>() {
-        pair?;
-        entries += 1;
+    let mut name = None;
+    let mut activity = None;
+    let mut priority = None;
+    let mut min_duration = None;
+    let mut max_duration = None;
+    let mut found = Vec::<(String, mlua::Function)>::new();
+    for pair in table.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let Value::String(key) = key else {
+            return Err(at_line(lua, "a behavior's keys are names".to_owned()));
+        };
+        let key = key.to_str()?.to_string();
+        match (key.as_str(), value) {
+            ("name", Value::String(text)) => name = Some(text.to_str()?.to_string()),
+            ("name", _) => return Err(at_line(lua, "a behavior's name is a string".to_owned())),
+            ("activity", Value::String(text)) => {
+                let text = text.to_str()?.to_string();
+                let Some(found) = activity_named(&text) else {
+                    return Err(at_line(
+                        lua,
+                        format!(
+                            "a behavior's activity '{text}' is not a brain activity; the activities are core, idle, work, play, rest, meet, panic, raid, pre_raid, hide, fight, play_dead, sniff, dig, emerge, roar and investigate"
+                        ),
+                    ));
+                };
+                activity = Some(found);
+            }
+            ("activity", _) => {
+                return Err(at_line(lua, "a behavior's activity is a name".to_owned()));
+            }
+            ("priority", Value::Integer(number)) => {
+                if !(0..=MAX_BEHAVIOR_PRIORITY).contains(&number) {
+                    return Err(at_line(
+                        lua,
+                        format!(
+                            "a behavior's priority is from 0 to {MAX_BEHAVIOR_PRIORITY}, not {number}"
+                        ),
+                    ));
+                }
+                priority = Some(number as i32);
+            }
+            ("priority", _) => {
+                return Err(at_line(
+                    lua,
+                    "a behavior's priority is a whole number".to_owned(),
+                ));
+            }
+            ("min_duration", Value::Integer(number)) => min_duration = Some(duration(lua, number)?),
+            ("max_duration", Value::Integer(number)) => max_duration = Some(duration(lua, number)?),
+            ("min_duration" | "max_duration", _) => {
+                return Err(at_line(
+                    lua,
+                    format!("a behavior's {key} is a whole number"),
+                ));
+            }
+            (
+                hook @ ("check_extra_start_conditions"
+                | "start"
+                | "can_still_use"
+                | "tick"
+                | "stop"),
+                Value::Function(f),
+            ) => {
+                found.push((hook.to_owned(), f));
+            }
+            (
+                hook @ ("check_extra_start_conditions"
+                | "start"
+                | "can_still_use"
+                | "tick"
+                | "stop"),
+                _,
+            ) => {
+                return Err(at_line(
+                    lua,
+                    format!("a behavior's handler '{hook}' needs a function"),
+                ));
+            }
+            (other, _) => {
+                return Err(at_line(
+                    lua,
+                    format!(
+                        "unknown behavior key '{other}'; the keys are name, activity, priority, min_duration, max_duration, check_extra_start_conditions, start, can_still_use, tick and stop"
+                    ),
+                ));
+            }
+        }
     }
-    if entries != count {
+    let Some(name) = name else {
         return Err(at_line(
             lua,
-            format!("horizon.entity_part '{entity}': goals is a list, with entries 1 to {count}"),
+            format!("a behavior of '{entity}' needs a name"),
         ));
-    }
-    if count > MAX_GOALS {
+    };
+    if name.len() > MAX_BEHAVIOR_NAME {
         return Err(at_line(
             lua,
-            format!("horizon.entity_part '{entity}' declares at most {MAX_GOALS} goals"),
+            format!("the behavior '{name}' is longer than {MAX_BEHAVIOR_NAME} bytes"),
         ));
     }
-    for index in 1..=count {
-        let goal: Value = list.raw_get(index)?;
-        declare_goal(lua, owner, entity, goal, records, handlers)?;
+    check_id(owner, &name)
+        .map_err(|reason| at_line(lua, format!("horizon.entity_part behavior: {reason}")))?;
+    let mut records = records.borrow_mut();
+    if records.iter().any(|record| record.name == name) {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part: the behavior '{name}' is declared twice in this mod"),
+        ));
     }
-    Ok(count)
+    let Some(activity) = activity else {
+        return Err(at_line(
+            lua,
+            format!("the behavior '{name}' needs an activity"),
+        ));
+    };
+    let Some(priority) = priority else {
+        return Err(at_line(
+            lua,
+            format!("the behavior '{name}' needs a priority"),
+        ));
+    };
+    let (default_min, default_max) = DEFAULT_BEHAVIOR_DURATION;
+    let min_duration = min_duration.unwrap_or(default_min);
+    let max_duration = max_duration.unwrap_or(default_max);
+    // The window `BehaviorRegistrar::add` draws from: `nextInt(max + 1 - min)` needs min >= 0 and a span of 1 or more.
+    let span = i64::from(max_duration) + 1 - i64::from(min_duration);
+    if min_duration < 0 || span < 1 {
+        return Err(at_line(
+            lua,
+            format!(
+                "the behavior '{name}': the duration ({min_duration}, {max_duration}) is not one vanilla draws: min_duration >= 0 and max_duration + 1 - min_duration >= 1"
+            ),
+        ));
+    }
+    if found.is_empty() {
+        return Err(at_line(
+            lua,
+            format!("the behavior '{name}' needs a handler"),
+        ));
+    }
+    let mut hooks = Vec::new();
+    for (hook, handler) in found {
+        let list = lua.create_table()?;
+        list.raw_set(1, handler)?;
+        handlers.raw_set(behavior_handler_key(&name, &hook), list)?;
+        hooks.push(hook);
+    }
+    hooks.sort();
+    records.push(BehaviorRecord {
+        entity: entity.to_owned(),
+        name,
+        activity,
+        priority,
+        min_duration,
+        max_duration,
+        hooks,
+    });
+    Ok(())
+}
+
+/// A duration bound of a behavior: a whole number that fits the registrar's `i32`.
+fn duration(lua: &Lua, number: i64) -> mlua::Result<i32> {
+    i32::try_from(number).map_err(|_| {
+        at_line(
+            lua,
+            format!("a behavior's duration {number} does not fit a 32-bit whole number"),
+        )
+    })
 }
 
 /// Reads one goal table of the entity part `entity`: `name` (namespaced to the mod, at most

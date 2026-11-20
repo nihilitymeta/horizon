@@ -3,6 +3,9 @@
 mod attachments;
 #[cfg(test)]
 mod attachments_tests;
+mod behavior;
+#[cfg(test)]
+mod behavior_tests;
 #[cfg(test)]
 mod block_state_tests;
 pub mod budget;
@@ -29,6 +32,7 @@ pub mod host;
 pub mod hostcall;
 #[cfg(test)]
 mod menu_tests;
+mod mob_turn;
 pub mod package;
 pub mod quarantine;
 pub mod ratelimit;

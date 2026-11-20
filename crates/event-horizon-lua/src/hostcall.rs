@@ -2006,7 +2006,7 @@ mod tests {
                 "entity_part.general_entity_tick skipped: per-mob object, per-tick turn: needs measurement",
                 "entity_part.is_shearable emitted",
                 "entity_part.on_sheared emitted",
-                "entity_part.register_behaviors skipped: per-mob object, per-tick turn: needs measurement",
+                "entity_part.register_behaviors skipped: declared in the entity part's behaviors table (not a handler)",
                 "entity_part.register_goals skipped: declared in the entity part's goals table (not a handler)",
                 "entity_part.spawn_cluster_size emitted",
             ]

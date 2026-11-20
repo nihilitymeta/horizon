@@ -138,6 +138,34 @@ export type GoalCtx = {
 
 export type GoalEvent = { mob: MobRef, ctx: GoalCtx }
 
+-- A brain behavior of an entity part's `behaviors` table (#74, B2). `name` is `<mod>:<path>` in the mod's
+-- own namespace (at most 64 bytes, declared once per mod). `activity` is the brain activity it starts in:
+-- core, idle, work, play, rest, meet, panic, raid, pre_raid, hide, fight, play_dead, sniff, dig, emerge,
+-- roar or investigate; any other name raises. `priority` is a whole number from 0 to 20 (a lower number
+-- runs first). `min_duration` and `max_duration` give the window the behavior's run is drawn from (default
+-- 40 and 80 brain ticks: an assumption, not a vanilla value); the window must be one vanilla draws
+-- (min_duration at least 0, and max_duration + 1 - min_duration at least 1). At most 8 behaviors per part.
+-- The handlers: `check_extra_start_conditions` answers whether the behavior may start, `can_still_use`
+-- whether it keeps running, and `start`, `tick` and `stop` answer nothing. At least one handler is needed.
+-- B2a (this chunk): the handlers are not run yet. A behavior never starts (check_extra_start_conditions
+-- answers false), and nothing keeps it running. The handler arguments, the `e.ctx` actions
+-- (`set_walk_target`, `set_brain_target`) and the shared budget are the next chunk, B2b.
+export type BehaviorSpec = {
+	name: string,
+	activity: string,
+	priority: number,
+	min_duration: number?,
+	max_duration: number?,
+	check_extra_start_conditions: ((event: BehaviorEvent) -> (boolean?))?,
+	can_still_use: ((event: BehaviorEvent) -> (boolean?))?,
+	start: ((event: BehaviorEvent) -> ())?,
+	tick: ((event: BehaviorEvent) -> ())?,
+	stop: ((event: BehaviorEvent) -> ())?,
+}
+
+-- The argument of a behavior handler. B2a: `mob` only; `ctx` (BehaviorCtx) is the next chunk, B2b.
+export type BehaviorEvent = { mob: MobRef }
+
 -- A block made from a vanilla block of the given template: `id` is `<mod>:<path>`, `template` is
 -- `minecraft:<path>`. At most 256 blocks per mod.
 export type BlockRecord = { id: string, template: string }
@@ -237,7 +265,7 @@ export type HorizonApi = {
 	item_part: (id: string, handlers: ItemPartHandlers) -> (),
 	block_entity_part: (id: string, handlers: BlockEntityPartHandlers) -> (),
 	fluid_part: (id: string, handlers: FluidPartHandlers) -> (),
-	entity_part: (id: string, handlers: EntityPartHandlers & { goals: { EntityGoalSpec }? }) -> (),
+	entity_part: (id: string, handlers: EntityPartHandlers & { goals: { EntityGoalSpec }?, behaviors: { BehaviorSpec }? }) -> (),
 	-- A menu part's id is the mod menu type's id (`<mod>:<path>`, any namespace); it is not checked
 	-- against the game's menus, so a part on a menu that never opens is never asked.
 	menu_part: (id: string, handlers: MenuPartHandlers) -> (),
