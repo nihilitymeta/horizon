@@ -750,10 +750,11 @@ fn every_key() -> Vec<&'static str> {
 fn every_refusal_and_scanner_key_has_an_english_entry() {
     let text = include_str!("../../horizon-client/assets/horizon/lang/en_us.json");
     let lang: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text).unwrap();
-    let keys = every_key();
-    assert!(keys.len() >= 71, "{} keys", keys.len());
+    let mut keys = every_key();
+    keys.push(SKIPPED_CLIENT_ONLY);
+    assert!(keys.len() >= 72, "{} keys", keys.len());
     for key in keys {
-        assert!(key.starts_with("lua_mod.refused."), "{key}");
+        assert!(key.starts_with("lua_mod."), "{key}");
         let value = lang.get(key).and_then(|v| v.as_str());
         assert!(
             value.is_some_and(|v| !v.is_empty()),

@@ -393,6 +393,8 @@ pub struct LuaHost {
     /// The ids of the installed mods the enabled file turned off, and the warnings about that file.
     disabled: Vec<String>,
     notices: Vec<String>,
+    /// The client-only mods a dedicated server did not load, one line each (not refusals).
+    skipped: Vec<String>,
     /// Set once the report is written, so a second `register` writes nothing.
     reported: AtomicBool,
     /// The ids of the mods whose declared keys the game refused. Their blocks and items are not
@@ -481,6 +483,7 @@ impl LuaHost {
             report: Vec::new(),
             disabled: Vec::new(),
             notices: Vec::new(),
+            skipped: Vec::new(),
             reported: AtomicBool::new(false),
             refused_keys: Mutex::new(Vec::new()),
         }
@@ -497,6 +500,11 @@ impl LuaHost {
     pub fn with_disabled(mut self, ids: Vec<String>, notices: Vec<String>) -> LuaHost {
         self.disabled = ids;
         self.notices = notices;
+        self
+    }
+
+    pub fn with_skipped(mut self, lines: Vec<String>) -> LuaHost {
+        self.skipped = lines;
         self
     }
 
@@ -534,6 +542,9 @@ impl LuaHost {
         }
         for id in &self.disabled {
             log::info!("Lua mod disabled: {}", Escaped(id));
+        }
+        for line in &self.skipped {
+            log::info!("Lua mod skipped: {}", Escaped(line));
         }
         for notice in &self.notices {
             warn_once("enabled.toml", notice);

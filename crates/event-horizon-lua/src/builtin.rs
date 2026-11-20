@@ -38,9 +38,9 @@ pub fn env_dev_paths(value: Option<&OsStr>) -> Vec<PathBuf> {
 
 /// Scans `<game_dir>/lua-mods/` and `dev_paths`, and loads each mod that passes. A mod that fails
 /// is refused and the others still load. A missing folder is fine: the entry then subscribes to
-/// nothing.
-pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf]) -> Loaded {
-    let (mods, refused, disabled, notices) = load_mods(game_dir, dev_paths);
+/// nothing. `dedicated` is the game's role: on a dedicated server a client-only mod is not loaded.
+pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loaded {
+    let (mods, refused, disabled, notices, skipped) = load_mods(game_dir, dev_paths, dedicated);
     let loaded = mods.len();
     // The both-side Lua mods are announced on `horizon:mod_list` and recorded in a world beside the
     // compiled mods. This runs before the game builds its announcement (`content_overlay`).
@@ -56,7 +56,8 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf]) -> Loaded {
             Box::new(
                 LuaHost::new(mods)
                     .with_report(refused.clone())
-                    .with_disabled(disabled, notices),
+                    .with_disabled(disabled, notices)
+                    .with_skipped(skipped),
             ),
         ),
         loaded,
@@ -73,14 +74,33 @@ fn grant_namespace(m: &LuaMod) -> Result<(), String> {
 }
 
 /// The mods under `game_dir` that load, one line per folder or mod that does not, the ids the
-/// enabled file turned off, and the warnings about that file. Nothing is logged here: this runs
-/// before the game's logger is up, and `LuaHost::register` reports them. A refusal line carries the
-/// translation key after the English reason.
+/// enabled file turned off, the warnings about that file, and one line per client-only mod a
+/// dedicated server skips. Nothing is logged here: this runs before the game's logger is up, and
+/// `LuaHost::register` reports them. A refusal line carries the translation key after the English
+/// reason; a skip line carries `discover::SKIPPED_CLIENT_ONLY`.
 fn load_mods(
     game_dir: &Path,
     dev_paths: &[PathBuf],
-) -> (Vec<LuaMod>, Vec<String>, Vec<String>, Vec<String>) {
-    let scan = discover::scan(game_dir, dev_paths);
+    dedicated: bool,
+) -> (
+    Vec<LuaMod>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+) {
+    let scan = discover::scan_on(game_dir, dev_paths, dedicated);
+    let skipped: Vec<String> = scan
+        .skipped
+        .iter()
+        .map(|d| {
+            format!(
+                "{}: not loaded on a dedicated server, it is client-only ({})",
+                d.id,
+                discover::SKIPPED_CLIENT_ONLY
+            )
+        })
+        .collect();
     let mut refused: Vec<String> = scan
         .refused
         .iter()
@@ -104,7 +124,7 @@ fn load_mods(
             Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
         }
     }
-    (mods, refused, disabled, scan.notices)
+    (mods, refused, disabled, scan.notices, skipped)
 }
 
 #[cfg(test)]
@@ -113,7 +133,7 @@ mod tests {
 
     /// The mods and refusals of a scan with no dev paths (the loader's pair, without the notes).
     fn load_mods_pair(root: &Path) -> (Vec<LuaMod>, Vec<String>) {
-        let (mods, refused, _, _) = load_mods(root, &[]);
+        let (mods, refused, _, _, _) = load_mods(root, &[], false);
         (mods, refused)
     }
 
@@ -173,7 +193,7 @@ mod tests {
         );
         archive_on(root.path(), "zeta", "zeta_mod", "4.2.0", "both");
         archive_on(root.path(), "eta", "eta_mod", "5.0.0", "client");
-        let (_, refused, disabled, _) = load_mods(root.path(), &[]);
+        let (_, refused, disabled, _, _) = load_mods(root.path(), &[], false);
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(disabled.is_empty());
         assert_eq!(
@@ -234,7 +254,7 @@ mod tests {
             "alpha_mod",
             "horizon.on(\"server_tick\", function() end)\n",
         );
-        let built = builtin(root.path(), &[]);
+        let built = builtin(root.path(), &[], false);
         assert_eq!(built.loaded, 1);
         assert!(built.refused.is_empty());
     }
@@ -254,7 +274,7 @@ mod tests {
             "good_mod",
             "horizon.on(\"server_tick\", function() end)\n",
         );
-        let built = builtin(root.path(), &[]);
+        let built = builtin(root.path(), &[], false);
         assert_eq!(built.loaded, 1);
         assert_eq!(built.refused.len(), 1);
         assert!(built.refused[0].starts_with("bad_mod: "));
@@ -264,7 +284,7 @@ mod tests {
     #[test]
     fn a_missing_lua_mods_folder_is_fine() {
         let root = tempfile::tempdir().unwrap();
-        let built = builtin(root.path(), &[]);
+        let built = builtin(root.path(), &[], false);
         assert_eq!(built.loaded, 0);
         assert!(built.refused.is_empty());
     }
@@ -289,7 +309,7 @@ mod tests {
     fn refused_folders_from_the_scan_are_reported() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join(discover::DIR).join("no_manifest")).unwrap();
-        let built = builtin(root.path(), &[]);
+        let built = builtin(root.path(), &[], false);
         assert_eq!(built.loaded, 0);
         assert_eq!(built.refused.len(), 1);
         assert!(built.refused[0].starts_with("no_manifest: "));
@@ -778,7 +798,7 @@ mod tests {
             "good_mod",
             "horizon.block{id = \"good_mod:lamp\", template = \"minecraft:stone\"}\n",
         );
-        let built = builtin(root.path(), &[]);
+        let built = builtin(root.path(), &[], false);
         assert_eq!(built.loaded, 1);
         assert_eq!(built.refused.len(), 1);
         assert!(
@@ -1232,7 +1252,7 @@ mod tests {
             "granted_mod",
             "horizon.block{id = \"granted_mod:lamp\", template = \"minecraft:stone\"}\n",
         );
-        let built = builtin(root.path(), &[]);
+        let built = builtin(root.path(), &[], false);
         assert_eq!(built.loaded, 1);
         assert_eq!(built.refused.len(), 1);
         // The package reader refuses the id before the mod has one, so the line names the folder.
@@ -1436,5 +1456,120 @@ mod tests {
             "{:<58} {:>12.1}",
             "3. one mod subscribed, handler reads three fields", three_fields
         );
+    }
+
+    /// A folder mod `name` with `manifest` text and the given script.
+    fn folder_with(root: &Path, name: &str, manifest: &str, script: &str) -> PathBuf {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(discover::MANIFEST), manifest).unwrap();
+        std::fs::write(dir.join(discover::ENTRY), script).unwrap();
+        dir
+    }
+
+    /// The skip lines of a scan of `root` with `dedicated` set, and the loaded mod ids.
+    fn skipped_and_loaded(root: &Path, dedicated: bool) -> (Vec<String>, Vec<String>) {
+        let (mods, _, _, _, skipped) = load_mods(root, &[], dedicated);
+        (skipped, mods.iter().map(|m| m.id().to_string()).collect())
+    }
+
+    #[test]
+    fn on_a_dedicated_server_a_client_only_mod_is_skipped_with_its_key_and_never_loads() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder_on(
+            root.path(),
+            "a_client",
+            "client_mod",
+            "client",
+            "horizon.block{id = \"client_mod:lamp\", template = \"minecraft:stone\"}\n",
+        );
+        mod_folder_on(
+            root.path(),
+            "b_server",
+            "server_mod",
+            "server",
+            "return {}\n",
+        );
+        mod_folder_on(root.path(), "c_both", "both_mod", "both", "return {}\n");
+        let (mods, refused, _, _, skipped) = load_mods(root.path(), &[], true);
+        assert!(refused.is_empty(), "{refused:?}");
+        assert_eq!(
+            skipped,
+            [
+                "client_mod: not loaded on a dedicated server, it is client-only (lua_mod.skipped.client_only_on_server)"
+            ]
+        );
+        let mut loaded: Vec<&str> = mods.iter().map(|m| m.id()).collect();
+        loaded.sort();
+        assert_eq!(loaded, ["both_mod", "server_mod"]);
+        // Not announced, and its block is not declared.
+        let announced: Vec<String> = both_side_records(&mods).into_iter().map(|m| m.id).collect();
+        assert_eq!(announced, ["both_mod"]);
+        assert!(!answered_blocks(&LuaHost::new(mods)).contains(&"client_mod:lamp".to_string()));
+    }
+
+    #[test]
+    fn off_a_dedicated_server_every_side_loads_and_nothing_is_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder_on(
+            root.path(),
+            "a_client",
+            "client_mod",
+            "client",
+            "return {}\n",
+        );
+        mod_folder_on(
+            root.path(),
+            "b_server",
+            "server_mod",
+            "server",
+            "return {}\n",
+        );
+        mod_folder_on(root.path(), "c_both", "both_mod", "both", "return {}\n");
+        let (skipped, loaded) = skipped_and_loaded(root.path(), false);
+        assert!(skipped.is_empty());
+        let mut sorted = loaded.clone();
+        sorted.sort();
+        assert_eq!(sorted, ["both_mod", "client_mod", "server_mod"]);
+    }
+
+    #[test]
+    fn a_dev_client_only_mod_obeys_the_same_rule_on_a_dedicated_server() {
+        let root = tempfile::tempdir().unwrap();
+        let dev_root = tempfile::tempdir().unwrap();
+        let dev = folder_with(
+            dev_root.path(),
+            "dev",
+            "id = \"dev_client\"\nversion = \"1.0.0\"\nside = \"client\"\n",
+            "return {}\n",
+        );
+        let (mods, _, _, _, skipped) = load_mods(root.path(), std::slice::from_ref(&dev), true);
+        assert!(mods.is_empty());
+        assert_eq!(skipped.len(), 1, "{skipped:?}");
+        assert!(skipped[0].starts_with("dev_client: "));
+        let (mods, _, _, _, skipped) = load_mods(root.path(), std::slice::from_ref(&dev), false);
+        assert_eq!(mods.len(), 1);
+        assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn a_mod_that_needs_a_skipped_client_only_mod_is_refused_as_disabled() {
+        let root = tempfile::tempdir().unwrap();
+        mod_folder_on(root.path(), "a_client", "base_mod", "client", "return {}\n");
+        folder_with(
+            &root.path().join(discover::DIR),
+            "b_needs",
+            "id = \"needs_mod\"\nversion = \"1.0.0\"\nside = \"both\"\n[dependencies]\nbase_mod = \"1\"\n",
+            "return {}\n",
+        );
+        let (mods, refused, _, _, skipped) = load_mods(root.path(), &[], true);
+        assert!(
+            mods.is_empty(),
+            "the base is skipped and its dependent refused: nothing loads"
+        );
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert!(refused[0].starts_with("b_needs: "));
+        assert!(refused[0].ends_with("(lua_mod.refused.dependency_disabled)"));
     }
 }

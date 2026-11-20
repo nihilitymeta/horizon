@@ -1381,5 +1381,6 @@
   "lua_mod.refused.unknown_key": "lua-mod.toml has an unknown key %1$s.",
   "lua_mod.refused.unknown_power": "The power %1$s is not known.",
   "lua_mod.refused.unreadable": "It cannot be read.",
-  "lua_mod.refused.wrong_type": "%1$s has the wrong type."
+  "lua_mod.refused.wrong_type": "%1$s has the wrong type.",
+  "lua_mod.skipped.client_only_on_server": "Client-only mods are not loaded on a dedicated server."
 }

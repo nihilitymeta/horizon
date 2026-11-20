@@ -15,7 +15,14 @@ fn main() {
     // itself, so a `--lua-mod` flag cannot be taken out here (see the report of chunk 3b).
     let dev_paths =
         event_horizon_lua::builtin::env_dev_paths(std::env::var_os("EH_LUA_MODS").as_deref());
-    let lua = event_horizon_lua::builtin::builtin(&startup.launch().context.game_dir, &dev_paths);
+    // A dedicated server is the server installation: a client-only Lua mod is not loaded there.
+    let dedicated =
+        startup.launch().installation_side() == horizon_mod_package::manifest::Side::Server;
+    let lua = event_horizon_lua::builtin::builtin(
+        &startup.launch().context.game_dir,
+        &dev_paths,
+        dedicated,
+    );
     horizon_mod_host::main_with(
         vec![lua.entry],
         &[],

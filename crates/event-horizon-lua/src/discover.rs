@@ -28,6 +28,10 @@ pub const ENTRY: &str = "main.luau";
 pub const MAX_DEV_PATHS: usize = 8;
 /// The most mods read in one scan (dev paths and installed packages together); the rest refused.
 pub const MAX_MODS: usize = 1024;
+
+/// The translation key of a client-only mod a dedicated server does not load. It is a notice, not
+/// a refusal: the mod is correct, it just has no side to run on here.
+pub const SKIPPED_CLIENT_ONLY: &str = "lua_mod.skipped.client_only_on_server";
 /// The extension of a `.hlua` archive (case-sensitive).
 pub const ARCHIVE_EXT: &str = "hlua";
 
@@ -174,12 +178,14 @@ pub struct ScannedMod {
 }
 
 /// What a scan found. `loaded` is in load order. `disabled` lists the installed mods the enabled
-/// file turned off, in name order. `notices` are the warnings about the enabled file (one per problem).
+/// file turned off, in name order. `skipped` lists the client-only mods a dedicated server does not
+/// load (`scan_on`), in name order. `notices` are the warnings about the enabled file (one per problem).
 #[derive(Default)]
 pub struct Scan {
     pub loaded: Vec<ScannedMod>,
     pub refused: Vec<Refused>,
     pub disabled: Vec<Discovered>,
+    pub skipped: Vec<Discovered>,
     pub notices: Vec<String>,
 }
 
@@ -200,6 +206,12 @@ struct Kept {
 /// folders or `.hlua` files; a dev mod is always enabled, is listed first among equals, and replaces
 /// an installed mod with its id.
 pub fn scan(game_dir: &Path, dev_paths: &[PathBuf]) -> Scan {
+    scan_on(game_dir, dev_paths, false)
+}
+
+/// `scan`, for the game's role: on a dedicated server (`dedicated`) a client-only mod is skipped,
+/// as `Scan::skipped`, and counts as disabled for the mods that depend on it.
+pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan {
     let mut out = Scan::default();
     let states = enabled::read(game_dir);
     out.notices.extend(states.notice.clone());
@@ -305,6 +317,11 @@ pub fn scan(game_dir: &Path, dev_paths: &[PathBuf]) -> Scan {
             presence.insert(id.clone(), Presence::Disabled);
             continue;
         }
+        if dedicated && item.found.side == Side::Client {
+            out.skipped.push(item.found.clone());
+            presence.insert(id.clone(), Presence::Disabled);
+            continue;
+        }
         presence.insert(id.clone(), Presence::Enabled(entries.len()));
         entries.push(Entry {
             id: id.clone(),
@@ -325,6 +342,8 @@ pub fn scan(game_dir: &Path, dev_paths: &[PathBuf]) -> Scan {
         entry_kept.push(k);
     }
     out.disabled
+        .sort_by(|a, b| a.dir.file_name().cmp(&b.dir.file_name()));
+    out.skipped
         .sort_by(|a, b| a.dir.file_name().cmp(&b.dir.file_name()));
 
     let plan = load_order::plan(&entries, &presence);
