@@ -210,9 +210,20 @@ mod tests {
         refuse_part: Option<String>,
         fluids: Vec<(String, mod_api::WorldFluid)>,
         fluid_parts: Vec<crate::host::LuaFluidPart>,
+        entity_parts: Vec<crate::host::LuaEntityPart>,
     }
 
     impl crate::host::DeclaredKeys for RecordingKeys {
+        fn entity_part(
+            &mut self,
+            id: &str,
+            part: crate::host::LuaEntityPart,
+        ) -> Result<(), String> {
+            self.asked.push(format!("entity part {id}"));
+            self.entity_parts.push(part);
+            Ok(())
+        }
+
         fn block_key(&mut self, id: &str) -> Result<(), String> {
             self.asked.push(format!("block {id}"));
             self.answer(id)

@@ -958,3 +958,11 @@ block_entity_part.stateful_block_entity skipped: attachment state: not a Part st
 
 # fluid parts (issue 74, P4): the FluidPart trait's methods
 fluid_part.fluid_rules emitted
+
+# entity parts (issue 74, P5): the EntityPart trait's methods
+entity_part.general_entity_tick skipped: per-mob object, per-tick turn: needs measurement
+entity_part.is_shearable emitted
+entity_part.on_sheared skipped: plain method: next chunk
+entity_part.register_behaviors skipped: per-mob object, per-tick turn: needs measurement
+entity_part.register_goals skipped: per-mob object, per-tick turn: needs measurement
+entity_part.spawn_cluster_size skipped: plain method: next chunk

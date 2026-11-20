@@ -133,7 +133,7 @@ export type ConfigRecord = {
 
 -- The `horizon` global. Its functions split by time: the declaring functions (block, item,
 -- block_entity_type, world_fluid, block_part, item_part, block_entity_part, fluid_part,
--- client_command, config, command, data_map_type, data_pack_file) and `on` work only while the mod
+-- entity_part, client_command, config, command, data_map_type, data_pack_file) and `on` work only while the mod
 -- loads; `log`, `none`, `data_map` and the attachment functions work only inside a handler.
 -- `data_map(registry, entry, map)` reads the value an entry has in a data map, as NBT in Lua (nil
 -- where it has none); a read costs 1 unit of the turn's budget. The attachment functions keep a
@@ -161,6 +161,7 @@ export type HorizonApi = {
 	item_part: (id: string, handlers: ItemPartHandlers) -> (),
 	block_entity_part: (id: string, handlers: BlockEntityPartHandlers) -> (),
 	fluid_part: (id: string, handlers: FluidPartHandlers) -> (),
+	entity_part: (id: string, handlers: EntityPartHandlers) -> (),
 	client_command: (record: ClientCommandRecord) -> (),
 	config: (record: ConfigRecord) -> (),
 	command: (record: CommandRecord) -> (),

@@ -68,6 +68,8 @@ pub struct LuaMod {
     /// `horizon.fluid_part`.
     fluids: Vec<FluidRecord>,
     fluid_parts: Vec<PartRecord>,
+    /// The entity parts the mod declared with `horizon.entity_part`.
+    entity_parts: Vec<PartRecord>,
     /// The client commands the mod declared with `horizon.client_command`.
     client_commands: Vec<ClientCommandRecord>,
     /// The server commands the mod declared with `horizon.command`.
@@ -182,6 +184,7 @@ impl LuaMod {
             block_entity_parts: declaration.block_entity_parts,
             fluids: declaration.fluids,
             fluid_parts: declaration.fluid_parts,
+            entity_parts: declaration.entity_parts,
             client_commands: declaration.client_commands,
             commands: declaration.commands,
             configs: declaration.configs,
@@ -216,6 +219,7 @@ impl LuaMod {
             PartKind::Item => &self.item_parts,
             PartKind::BlockEntity => &self.block_entity_parts,
             PartKind::Fluid => &self.fluid_parts,
+            PartKind::Entity => &self.entity_parts,
         }
     }
 
@@ -562,6 +566,7 @@ impl LuaHost {
         self.attach_parts::<ItemTag>(|id, part| keys.item_part(id, part));
         self.attach_parts::<BlockEntityTag>(|id, part| keys.block_entity_part(id, part));
         self.attach_parts::<FluidTag>(|id, part| keys.fluid_part(id, part));
+        self.attach_parts::<EntityTag>(|id, part| keys.entity_part(id, part));
     }
 
     /// Hands each part of kind `K` the mods declared to `attach`, with the id it attaches to. A part
@@ -706,6 +711,9 @@ pub(crate) trait DeclaredKeys {
     fn world_fluid(&mut self, id: &str, fluid: &mod_api::WorldFluid) -> Result<(), String>;
     /// Attaches `part` to the world fluid `id`: as [`DeclaredKeys::block_part`].
     fn fluid_part(&mut self, id: &str, part: LuaFluidPart) -> Result<(), String>;
+    /// Attaches `part` to the entity type `id` (any namespace). The game's Registrar checks no type when a
+    /// part is attached, so an unknown type is never asked and never refuses the mod.
+    fn entity_part(&mut self, id: &str, part: LuaEntityPart) -> Result<(), String>;
 }
 
 /// The game's Registrar as the keys' requester.
@@ -762,6 +770,12 @@ impl DeclaredKeys for RegistrarKeys<'_> {
         self.0.fluid_part(id, part);
         Ok(())
     }
+
+    fn entity_part(&mut self, id: &str, part: LuaEntityPart) -> Result<(), String> {
+        self.0
+            .attach_entity_part(id, std::any::type_name::<LuaEntityPart>(), Arc::new(part));
+        Ok(())
+    }
 }
 
 /// The most distinct sets of part handler names one process interns, per kind of part. Each set's
@@ -776,6 +790,7 @@ static BLOCK_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static ITEM_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static BLOCK_ENTITY_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static FLUID_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
+static ENTITY_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 
 /// The subscription of a set of handler names (sorted, no repeats) in `table`: the same slice for
 /// the same set, a new one for a new set, and an error once `MAX_PART_SETS` sets are interned.
@@ -823,6 +838,13 @@ pub struct BlockEntityTag;
 /// The marker of a FluidPart.
 pub struct FluidTag;
 
+/// The marker of an EntityPart.
+pub struct EntityTag;
+
+impl PartTag for EntityTag {
+    const KIND: PartKind = PartKind::Entity;
+}
+
 impl PartTag for BlockTag {
     const KIND: PartKind = PartKind::Block;
 }
@@ -852,6 +874,9 @@ pub type LuaBlockEntityPart = LuaPart<BlockEntityTag>;
 /// One fluid part of a loaded mod: the FluidPart the game calls for a world fluid the mod declared.
 pub type LuaFluidPart = LuaPart<FluidTag>;
 
+/// One entity part of a loaded mod: the EntityPart the game calls for an entity type the mod attached to.
+pub type LuaEntityPart = LuaPart<EntityTag>;
+
 /// One part of a loaded mod (a block or an item part, by `K`). It runs that mod's handlers for the
 /// hooks the part declared, and no other mod's.
 pub struct LuaPart<K: PartTag> {
@@ -870,7 +895,10 @@ impl<K: PartTag> LuaPart<K> {
             let record = &mods[index].part_records(K::KIND)[part];
             (record.id.clone(), record.hooks.clone())
         };
-        let subscribed = intern_in(&mut lock_subscriptions(K::KIND), &hooks)?;
+        let subscribed = intern_in(
+            &mut lock_subscriptions(K::KIND),
+            &subscribed_names(K::KIND, &hooks),
+        )?;
         Ok(LuaPart {
             mods,
             index,
@@ -938,6 +966,21 @@ impl<K: PartTag> LuaPart<K> {
     }
 }
 
+/// The hook names a part of `kind` subscribes to, from its handler names. An entity part's plain
+/// methods (`is_shearable` and the rest) are no hook and have no hook id: the game calls them
+/// directly, and the part's handler table decides which ones run. So only the names that are hooks
+/// are interned for an entity part; for the other kinds every handler name is a hook.
+fn subscribed_names(kind: PartKind, hooks: &[String]) -> Vec<String> {
+    match kind {
+        PartKind::Entity => hooks
+            .iter()
+            .filter(|name| hook_id(name).is_some())
+            .cloned()
+            .collect(),
+        _ => hooks.to_vec(),
+    }
+}
+
 /// The table of the subscriptions of parts of `kind`.
 fn subscriptions_of(kind: PartKind) -> &'static Mutex<Subscriptions> {
     match kind {
@@ -945,6 +988,7 @@ fn subscriptions_of(kind: PartKind) -> &'static Mutex<Subscriptions> {
         PartKind::Item => &ITEM_SUBSCRIPTIONS,
         PartKind::BlockEntity => &BLOCK_ENTITY_SUBSCRIPTIONS,
         PartKind::Fluid => &FLUID_SUBSCRIPTIONS,
+        PartKind::Entity => &ENTITY_SUBSCRIPTIONS,
     }
 }
 

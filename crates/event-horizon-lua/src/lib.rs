@@ -15,6 +15,8 @@ pub mod declare;
 pub mod discover;
 pub mod dispatch;
 #[cfg(test)]
+mod entity_tests;
+#[cfg(test)]
 mod fluid_tests;
 pub mod generated;
 pub mod handles;

@@ -32,6 +32,9 @@ pub const MAX_BLOCK_ENTITY_TYPES: usize = 64;
 /// The most `horizon.world_fluid` calls one mod may make.
 pub const MAX_WORLD_FLUIDS: usize = 8;
 
+/// The most `horizon.entity_part` calls one mod may make: one per entity type.
+pub const MAX_ENTITY_PARTS: usize = 16;
+
 /// The most blocks one `horizon.block_entity_type` may name.
 pub const MAX_BLOCKS_PER_TYPE: usize = 32;
 
@@ -96,6 +99,8 @@ pub struct Declaration {
     pub fluids: Vec<FluidRecord>,
     /// The fluid parts `horizon.fluid_part` declared, in declaration order.
     pub fluid_parts: Vec<PartRecord>,
+    /// The entity parts `horizon.entity_part` declared, in declaration order.
+    pub entity_parts: Vec<PartRecord>,
     /// The client commands `horizon.client_command` declared, in declaration order.
     pub client_commands: Vec<ClientCommandRecord>,
     /// The configs `horizon.config` declared, in declaration order. Each names the mod as its owner.
@@ -109,14 +114,16 @@ pub struct Declaration {
 }
 
 /// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
-/// ItemPart), `horizon.block_entity_part` (a BlockEntityPart) or `horizon.fluid_part` (a FluidPart).
-/// Each kind has its own handler table, its own id check and its own cap.
+/// ItemPart), `horizon.block_entity_part` (a BlockEntityPart), `horizon.fluid_part` (a FluidPart) or
+/// `horizon.entity_part` (an EntityPart). Each kind has its own handler table, its own id check and
+/// its own cap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartKind {
     Block,
     Item,
     BlockEntity,
     Fluid,
+    Entity,
 }
 
 impl PartKind {
@@ -127,6 +134,7 @@ impl PartKind {
             PartKind::Item => "item_part",
             PartKind::BlockEntity => "block_entity_part",
             PartKind::Fluid => "fluid_part",
+            PartKind::Entity => "entity_part",
         }
     }
 
@@ -137,6 +145,7 @@ impl PartKind {
             PartKind::Item => "item",
             PartKind::BlockEntity => "block entity",
             PartKind::Fluid => "fluid",
+            PartKind::Entity => "entity",
         }
     }
 
@@ -147,6 +156,7 @@ impl PartKind {
             PartKind::Item => crate::generated::item_parts::ITEM_PARTS,
             PartKind::BlockEntity => crate::generated::block_entity_parts::BLOCK_ENTITY_PARTS,
             PartKind::Fluid => crate::generated::fluid_parts::FLUID_PARTS,
+            PartKind::Entity => crate::generated::entity_parts::ENTITY_PARTS,
         }
     }
 }
@@ -299,6 +309,7 @@ pub fn declare_with_budget(
         block_entity_parts: recorded.block_entity_parts,
         fluids: recorded.fluids,
         fluid_parts: recorded.fluid_parts,
+        entity_parts: recorded.entity_parts,
         client_commands: recorded.client_commands,
         configs: recorded.configs,
         commands: recorded.commands,
@@ -435,6 +446,7 @@ struct Recorded {
     block_entity_parts: Vec<PartRecord>,
     fluids: Vec<FluidRecord>,
     fluid_parts: Vec<PartRecord>,
+    entity_parts: Vec<PartRecord>,
     client_commands: Vec<ClientCommandRecord>,
     configs: Vec<mod_api::Config>,
     commands: Vec<CommandRecord>,
@@ -484,6 +496,7 @@ fn run(
     let block_entity_parts = RefCell::new(Vec::<PartRecord>::new());
     let fluids = RefCell::new(Vec::<FluidRecord>::new());
     let fluid_parts = RefCell::new(Vec::<PartRecord>::new());
+    let entity_parts = RefCell::new(Vec::<PartRecord>::new());
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
     let configs = RefCell::new(Vec::<mod_api::Config>::new());
     let commands = RefCell::new(Vec::<CommandRecord>::new());
@@ -602,6 +615,9 @@ fn run(
             let fluid_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
                 declare_part(lua, PartKind::Fluid, id, spec, &fluid_parts, &handlers)
             })?;
+            let entity_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
+                declare_part(lua, PartKind::Entity, id, spec, &entity_parts, &handlers)
+            })?;
             let client_command = scope.create_function(|lua, value: Value| {
                 declare_client_command(lua, value, &client_commands)
             })?;
@@ -631,6 +647,7 @@ fn run(
             horizon.raw_set("block_entity_part", block_entity_part)?;
             horizon.raw_set("world_fluid", world_fluid)?;
             horizon.raw_set("fluid_part", fluid_part)?;
+            horizon.raw_set("entity_part", entity_part)?;
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
@@ -661,6 +678,7 @@ fn run(
         ("block_entity_part", LATE_DECLARE),
         ("world_fluid", LATE_DECLARE),
         ("fluid_part", LATE_DECLARE),
+        ("entity_part", LATE_DECLARE),
         ("client_command", LATE_DECLARE),
         ("config", LATE_DECLARE),
         ("command", LATE_DECLARE),
@@ -684,6 +702,7 @@ fn run(
         block_entity_parts: block_entity_parts.into_inner(),
         fluids: fluids.into_inner(),
         fluid_parts: fluid_parts.into_inner(),
+        entity_parts: entity_parts.into_inner(),
         client_commands: client_commands.into_inner(),
         configs: configs.into_inner(),
         commands: commands.into_inner(),
@@ -1327,13 +1346,14 @@ fn declare_part(
         ));
     };
     let mut records = records.borrow_mut();
-    if records.len() >= MAX_PARTS {
+    let cap = match kind {
+        PartKind::Entity => MAX_ENTITY_PARTS,
+        _ => MAX_PARTS,
+    };
+    if records.len() >= cap {
         return Err(at_line(
             lua,
-            format!(
-                "a mod may declare at most {MAX_PARTS} {} parts",
-                kind.noun()
-            ),
+            format!("a mod may declare at most {cap} {} parts", kind.noun()),
         ));
     }
     if records.iter().any(|record| record.id == id) {
@@ -1388,6 +1408,7 @@ fn check_part_handler(kind: PartKind, name: &str) -> Result<(), String> {
             PartKind::Item => "not an item part handler".to_owned(),
             PartKind::BlockEntity => "not a block entity part handler".to_owned(),
             PartKind::Fluid => "not a fluid part handler".to_owned(),
+            PartKind::Entity => "not an entity part handler".to_owned(),
         }),
         Some((_, None)) => Ok(()),
         Some((_, Some(reason))) => Err(format!("not available: {reason}")),
@@ -1416,6 +1437,7 @@ fn part_id(lua: &Lua, kind: PartKind, value: Value) -> mlua::Result<String> {
             PartKind::Item => "minecraft:stick",
             PartKind::BlockEntity => "mymod:press",
             PartKind::Fluid => "mymod:oil",
+            PartKind::Entity => "minecraft:zombie",
         };
         return Err(at_line(
             lua,
@@ -2912,5 +2934,99 @@ mod tests {
             err.contains("declarations are only allowed while the mod loads"),
             "got {err}"
         );
+    }
+
+    fn entity_parts_of(count: usize) -> String {
+        (0..count)
+            .map(|i| {
+                format!(
+                    "horizon.entity_part(\"minecraft:mob{i}\", {{is_shearable = function() end}})\n"
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_entity_part_records_its_type_and_its_handlers_for_any_namespace() {
+        let declaration = declare_in_fresh_state(
+            "horizon.entity_part(\"minecraft:sheep\", {is_shearable = function() end})\n\
+             horizon.entity_part(\"mymod:robot\", {is_shearable = function() end})",
+        )
+        .unwrap();
+        let ids: Vec<(&str, Vec<&str>)> = declaration
+            .entity_parts
+            .iter()
+            .map(|part| {
+                (
+                    part.id.as_str(),
+                    part.hooks.iter().map(String::as_str).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                ("minecraft:sheep", vec!["is_shearable"]),
+                ("mymod:robot", vec!["is_shearable"])
+            ]
+        );
+    }
+
+    #[test]
+    fn an_entity_part_takes_only_the_handlers_it_can_bind() {
+        let unknown = declare_in_fresh_state(
+            "horizon.entity_part(\"minecraft:sheep\", {shear_me = function() end})",
+        )
+        .unwrap_err();
+        assert!(
+            unknown.contains("'shear_me'") && unknown.contains("not an entity part handler"),
+            "got {unknown}"
+        );
+        for later in [
+            "on_sheared",
+            "spawn_cluster_size",
+            "register_goals",
+            "general_entity_tick",
+        ] {
+            let err = declare_in_fresh_state(&format!(
+                "horizon.entity_part(\"minecraft:sheep\", {{{later} = function() end}})"
+            ))
+            .unwrap_err();
+            assert!(
+                err.contains(&format!("'{later}'")) && err.contains("not available"),
+                "got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_entity_part_id_is_namespaced_and_one_per_entity_type() {
+        let bare = declare_in_fresh_state(
+            "horizon.entity_part(\"sheep\", {is_shearable = function() end})",
+        )
+        .unwrap_err();
+        assert!(bare.contains("needs a namespaced entity id"), "got {bare}");
+        let twice = declare_in_fresh_state(
+            "horizon.entity_part(\"minecraft:sheep\", {is_shearable = function() end})\n\
+             horizon.entity_part(\"minecraft:sheep\", {is_shearable = function() end})",
+        )
+        .unwrap_err();
+        assert!(
+            twice.contains("entity 'minecraft:sheep' has two parts"),
+            "got {twice}"
+        );
+    }
+
+    #[test]
+    fn at_most_sixteen_entity_parts_per_mod() {
+        let sixteen = declare_in_fresh_state(&entity_parts_of(16)).unwrap();
+        assert_eq!(sixteen.entity_parts.len(), 16);
+        let err = declare_in_fresh_state(&format!(
+            "{}{}",
+            entity_parts_of(16),
+            "horizon.entity_part(\"minecraft:extra\", {is_shearable = function() end})"
+        ))
+        .unwrap_err();
+        assert!(err.contains("at most 16 entity parts"), "got {err}");
     }
 }

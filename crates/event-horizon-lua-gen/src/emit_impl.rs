@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::carried::{self, Reach, Shape};
 use crate::dispatch_sigs::{DispatchSigs, OutputSig};
 use crate::emit_types::Plain;
-use crate::ir::{HookIr, Ir, Kind};
+use crate::ir::{ArgIr, HookIr, Ir, Kind, Side};
 use crate::trait_sigs::HookSig;
 use crate::types::{Access, FloatKind, IntKind, Mapped, TypeIr, kind_of, map_type};
 
@@ -748,7 +748,7 @@ fn plan<'a>(
             let (Some(view), true) = (shape_view, carried::allowed(shape, reach)) else {
                 return Err(carried::refusal(shape));
             };
-            let field = format!("{}.{}", sig.event_name, arg.name);
+            let field = field_of(sig, &arg.name);
             checks.push(carried::input_check(shape, &arg.rust_type, &field, view));
             let built = shape_turn.unwrap_or(view);
             fields.push((
@@ -766,7 +766,7 @@ fn plan<'a>(
                     arg.name
                 ));
             }
-            let field = format!("{}.{}", sig.event_name, arg.name);
+            let field = field_of(sig, &arg.name);
             let built = match (turn.is_some(), turn_view.as_deref()) {
                 (true, Some(built)) => built,
                 _ => {
@@ -781,7 +781,7 @@ fn plan<'a>(
             continue;
         }
         if is_generated_handle(&arg.rust_type, handles) {
-            let field = format!("{}.{}", sig.event_name, arg.name);
+            let field = field_of(sig, &arg.name);
             let expr = handle_input(&hook.name, &arg.name, &arg.rust_type, &field)?;
             if turn.is_none() {
                 return Err(match sig.host_ty.as_deref() {
@@ -800,7 +800,7 @@ fn plan<'a>(
             ) else {
                 return Err(carried::refusal(Shape::OptStack));
             };
-            let field = format!("{}.{}", sig.event_name, arg.name);
+            let field = field_of(sig, &arg.name);
             let stack_field = format!("{field}.stack");
             checks.push(carried::input_check(
                 Shape::OptStack,
@@ -843,7 +843,7 @@ fn plan<'a>(
                 "{shown}: a reference inside Option has no Lua conversion"
             ));
         }
-        match to_lua_expr(&format!("{}.{}", sig.event_name, arg.name), &mapped, plain) {
+        match to_lua_expr(&field_of(sig, &arg.name), &mapped, plain) {
             Some(expr) => fields.push((arg.name.clone(), expr)),
             None => return Err(format!("{shown}: no Lua conversion")),
         }
@@ -972,6 +972,15 @@ fn handle_input(hook: &str, name: &str, ty: &str, field: &str) -> Result<String,
     })
 }
 
+/// The expression that reads argument `name` of `sig`: its event's field, or the parameter itself for a
+/// plain method (the game passes the parameters, there is no event struct).
+fn field_of(sig: &HookSig, name: &str) -> String {
+    match sig.plain {
+        Some(_) => name.to_owned(),
+        None => format!("{}.{name}", sig.event_name),
+    }
+}
+
 /// The Lua value of the field `field_expr` (such as `event.pos`) as an `mlua::Value`, or `None`
 /// when the type has no conversion. Every conversion used here is an impl of `ToLuaValue`.
 fn to_lua_expr(field_expr: &str, mapped: &Mapped, plain: &Plain) -> Option<String> {
@@ -1068,6 +1077,10 @@ fn imports(methods: &[Method<'_>], host_use: &str) -> String {
         ];
         for text in texts.into_iter().flatten() {
             names.extend(type_names(text));
+        }
+        // A plain method's arguments are its parameters: their types are named too.
+        for (_, ty) in method.sig.plain.iter().flatten() {
+            names.extend(type_names(ty));
         }
     }
     if !names.is_empty() {
@@ -1356,11 +1369,16 @@ fn replace_body(method: &Method<'_>, answer: &str) -> String {
             "                match crate::dispatch::answer_of::<{answer}>(id, {hook:?}, &value) {{\n"
         )),
     }
-    body.push_str("                    Some(found) => {\n");
+    // A ranged answer outside its range is refused, as an answer of no type: the next part answers.
+    let (guard, other) = match answer_range(hook) {
+        Some(range) => (format!(" if ({range}).contains(&found)"), "_"),
+        None => (String::new(), "None"),
+    };
+    body.push_str(&format!("                    Some(found){guard} => {{\n"));
     body.push_str("                        answer = Some(found);\n");
     body.push_str("                        true\n");
     body.push_str("                    }\n");
-    body.push_str("                    None => false,\n");
+    body.push_str(&format!("                    {other} => false,\n"));
     body.push_str("                }\n");
     out.push_str(&format!(
         "            &mut |id, value, {}| {{\n{body}            }},\n",
@@ -1508,13 +1526,14 @@ fn commit_text(method: &Method<'_>) -> String {
 }
 
 /// The Part traits the Lua host binds one adapter for: the BlockPart, the ItemPart, the
-/// BlockEntityPart and the FluidPart methods.
+/// BlockEntityPart, the FluidPart and the EntityPart methods.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartTrait {
     Block,
     Item,
     BlockEntity,
     Fluid,
+    Entity,
 }
 
 impl PartTrait {
@@ -1525,6 +1544,7 @@ impl PartTrait {
             PartTrait::Item => "ItemPart",
             PartTrait::BlockEntity => "BlockEntityPart",
             PartTrait::Fluid => "FluidPart",
+            PartTrait::Entity => "EntityPart",
         }
     }
 
@@ -1535,6 +1555,7 @@ impl PartTrait {
             PartTrait::Item => "LuaItemPart",
             PartTrait::BlockEntity => "LuaBlockEntityPart",
             PartTrait::Fluid => "LuaFluidPart",
+            PartTrait::Entity => "LuaEntityPart",
         }
     }
 
@@ -1545,6 +1566,7 @@ impl PartTrait {
             PartTrait::Item => "item_subscribed",
             PartTrait::BlockEntity => "block_entity_subscribed",
             PartTrait::Fluid => "fluid_subscribed",
+            PartTrait::Entity => "entity_subscribed",
         }
     }
 
@@ -1555,6 +1577,7 @@ impl PartTrait {
             PartTrait::Item => "ITEM_PARTS",
             PartTrait::BlockEntity => "BLOCK_ENTITY_PARTS",
             PartTrait::Fluid => "FLUID_PARTS",
+            PartTrait::Entity => "ENTITY_PARTS",
         }
     }
 }
@@ -1600,8 +1623,127 @@ pub const PART_EXCLUDED: &[(&str, &str, &str)] = &[
         "stateful_block_entity",
         ATTACHMENT_REASON,
     ),
+    ("EntityPart", "general_entity_tick", MOB_REASON),
 ];
 const NBT_REASON: &str = "NBT output (Compound is denied)";
+/// The reason of a mob's goals and brains and of a general entity row's tick: each runs per mob or per
+/// tick, and needs a measurement before it is bound.
+pub const MOB_REASON: &str = "per-mob object, per-tick turn: needs measurement";
+/// The reason of a plain method the route table does not bind yet (see [`PLAIN_PART_METHODS`]).
+pub const NEXT_CHUNK_REASON: &str = "plain method: next chunk";
+
+/// How a plain Part method (one the game calls directly, with no event struct: see
+/// `trait_sigs::parse_plain`) enters the generator. A bound method is planned like a replace hook,
+/// from the parameters of its trait signature; a skipped one is listed with its reason.
+pub struct PlainPart {
+    /// The Part trait the method is on.
+    pub trait_name: &'static str,
+    /// The method.
+    pub method: &'static str,
+    /// `Ok(())` to bind it, or the reason it is skipped.
+    pub route: Result<(), &'static str>,
+    /// The inclusive range a bound answer must stay in (an out-of-range answer is refused, and the
+    /// next part or the game's own answer applies). `None`: the answer's type is the whole range.
+    pub answer_range: Option<&'static str>,
+}
+
+/// The route of every plain Part method the generator knows. Anything not listed here is not bound.
+pub const PLAIN_PART_METHODS: &[PlainPart] = &[
+    PlainPart {
+        trait_name: "EntityPart",
+        method: "is_shearable",
+        route: Ok(()),
+        answer_range: None,
+    },
+    PlainPart {
+        trait_name: "EntityPart",
+        method: "on_sheared",
+        route: Err(NEXT_CHUNK_REASON),
+        answer_range: None,
+    },
+    PlainPart {
+        trait_name: "EntityPart",
+        method: "spawn_cluster_size",
+        route: Err(NEXT_CHUNK_REASON),
+        answer_range: None,
+    },
+    PlainPart {
+        trait_name: "EntityPart",
+        method: "register_goals",
+        route: Err(MOB_REASON),
+        answer_range: None,
+    },
+    PlainPart {
+        trait_name: "EntityPart",
+        method: "register_behaviors",
+        route: Err(MOB_REASON),
+        answer_range: None,
+    },
+];
+
+/// The route of `method` on `part`, if the table names it.
+fn plain_route(part: PartTrait, method: &str) -> Option<&'static PlainPart> {
+    PLAIN_PART_METHODS
+        .iter()
+        .find(|route| route.trait_name == part.name() && route.method == method)
+}
+
+/// The surface and dispatch signatures of a Part trait with its bound plain methods added: each bound
+/// plain method becomes a replace hook of the surface, with its parameters as arguments and no
+/// outputs, so [`plan`] plans it like one. The surface itself is not changed (the plain methods are
+/// not in it: the game does not fire them as hooks).
+pub fn with_plain(
+    ir: &Ir,
+    dispatch: &DispatchSigs,
+    sigs: &[HookSig],
+    part: PartTrait,
+) -> (Ir, DispatchSigs) {
+    let mut ir = ir.clone();
+    let mut dispatch = DispatchSigs {
+        hooks: dispatch.hooks.clone(),
+        structs: dispatch.structs.clone(),
+    };
+    for sig in sigs {
+        let (Some(args), Some(route)) = (&sig.plain, plain_route(part, &sig.name)) else {
+            continue;
+        };
+        if route.route.is_err() {
+            continue;
+        }
+        ir.hooks.push(HookIr {
+            id: format!("hook:{}", sig.name),
+            name: sig.name.clone(),
+            kind: Kind::Replace,
+            side: Side::Server,
+            cancellable: None,
+            scope: None,
+            engine_target: String::new(),
+            arguments: args
+                .iter()
+                .map(|(name, ty)| ArgIr {
+                    name: name.clone(),
+                    rust_type: ty.clone(),
+                })
+                .collect(),
+            output: None,
+            hash: "0".to_owned(),
+            version: 1,
+        });
+        dispatch.hooks.insert(sig.name.clone(), Some(Vec::new()));
+    }
+    ir.hooks.sort_by(|a, b| a.name.cmp(&b.name));
+    (ir, dispatch)
+}
+
+/// The answer range of the plain method `method`, if the route table names one (see
+/// [`PlainPart::answer_range`]). Method names are unique across the Part traits the table names.
+fn answer_range(method: &str) -> Option<&'static str> {
+    PLAIN_PART_METHODS
+        .iter()
+        .find(|route| route.method == method)
+        .and_then(|route| route.answer_range)
+}
+
 const ATTACHMENT_REASON: &str = "attachment state: not a Part state in v1";
 const HOT_REASON: &str = "hot path (needs measurement)";
 /// The hooks, on either a Hooks or a Part trait, that stay unbound with [`HOT_REASON`]: the ones
@@ -1685,7 +1827,13 @@ pub fn emit_parts(
             .iter()
             .find(|(trait_name, method, _)| *trait_name == part.name() && *method == name)
             .map(|(_, _, reason)| (*reason).to_owned());
-        let result = if hot {
+        let skipped_route = match plain_route(part, name).map(|route| route.route) {
+            Some(Err(reason)) => Some(reason.to_owned()),
+            _ => None,
+        };
+        let result = if let Some(reason) = skipped_route {
+            Err(reason)
+        } else if hot {
             Err(HOT_REASON.to_owned())
         } else if let Some(reason) = excluded {
             Err(reason)
@@ -1814,6 +1962,7 @@ mod tests {
             event_name: event_name.to_owned(),
             event_ty: event_ty.to_owned(),
             ret: ret.map(str::to_owned),
+            plain: None,
         }
     }
 

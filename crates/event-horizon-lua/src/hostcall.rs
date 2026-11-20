@@ -1852,6 +1852,7 @@ mod tests {
                     && !line.starts_with("item_part.")
                     && !line.starts_with("block_entity_part.")
                     && !line.starts_with("fluid_part.")
+                    && !line.starts_with("entity_part.")
             })
             .collect();
         assert_eq!(lines.len(), 749);
@@ -1941,6 +1942,22 @@ mod tests {
             .filter(|line| line.starts_with("fluid_part."))
             .collect();
         assert_eq!(fluids, ["fluid_part.fluid_rules emitted"]);
+        // The EntityPart methods: is_shearable is bound; the plain methods and the mob's methods are not.
+        let entities: Vec<&str> = coverage
+            .lines()
+            .filter(|line| line.starts_with("entity_part."))
+            .collect();
+        assert_eq!(
+            entities,
+            [
+                "entity_part.general_entity_tick skipped: per-mob object, per-tick turn: needs measurement",
+                "entity_part.is_shearable emitted",
+                "entity_part.on_sheared skipped: plain method: next chunk",
+                "entity_part.register_behaviors skipped: per-mob object, per-tick turn: needs measurement",
+                "entity_part.register_goals skipped: per-mob object, per-tick turn: needs measurement",
+                "entity_part.spawn_cluster_size skipped: plain method: next chunk",
+            ]
+        );
         let emitted = lines
             .iter()
             .filter(|line| line.ends_with(" emitted"))

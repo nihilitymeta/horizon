@@ -23,11 +23,27 @@ pub struct HookSig {
     pub event_ty: String,
     /// The return type, e.g. `Flow`; `None` when the method returns nothing.
     pub ret: Option<String>,
+    /// For a plain method (see [`parse_plain`]): its arguments after the host, as `(name, type)`.
+    /// `None` for an event-shaped hook, whose arguments are the fields of its event.
+    pub plain: Option<Vec<(String, String)>>,
 }
 
 impl HookSig {
     /// The method's signature as the generated file spells it, without the default body.
     pub fn signature(&self) -> String {
+        if let Some(args) = &self.plain {
+            let mut params = vec!["&self".to_owned()];
+            if let (Some(name), Some(ty)) = (&self.host_name, &self.host_ty) {
+                params.push(format!("{name}: {ty}"));
+            }
+            params.extend(args.iter().map(|(name, ty)| format!("{name}: {ty}")));
+            let mut out = format!("fn {}({})", self.name, params.join(", "));
+            if let Some(ret) = &self.ret {
+                out.push_str(" -> ");
+                out.push_str(ret);
+            }
+            return out;
+        }
         let host = match (&self.host_name, &self.host_ty) {
             (Some(name), Some(ty)) => format!("{name}: {ty}, "),
             _ => String::new(),
@@ -115,12 +131,86 @@ fn hook_sig(method: &TraitItemFn) -> Result<Option<HookSig>, String> {
         host_ty: host.map(|host| spell(&host.ty.to_token_stream().to_string())),
         event_name: ident_of(event, &name)?,
         event_ty: spell(&event_ref.elem.to_token_stream().to_string()),
-        ret: match &method.sig.output {
-            ReturnType::Default => None,
-            ReturnType::Type(_, ty) => Some(spell(&ty.to_token_stream().to_string())),
-        },
+        ret: return_of(method),
         name,
+        plain: None,
     }))
+}
+
+/// The return type of `method`, spelled, or `None` when it returns nothing.
+fn return_of(method: &TraitItemFn) -> Option<String> {
+    match &method.sig.output {
+        ReturnType::Default => None,
+        ReturnType::Type(_, ty) => Some(spell(&ty.to_token_stream().to_string())),
+    }
+}
+
+/// The plain methods of `trait_name`: a `&self` method with no event parameter (`(&self, host:
+/// &dyn Host, entity: EntityRef, ...) -> R`). The game calls these directly on each part, not
+/// through a hook. Its first parameter is the host when its type is a host (`&dyn ...Host`), and
+/// the rest are the handler's arguments. A method [`parse_trait`] reads as a hook is not here.
+pub fn parse_plain(source: &str, trait_name: &str) -> Result<Vec<HookSig>, String> {
+    let file =
+        syn::parse_file(source).map_err(|error| format!("cannot parse the trait: {error}"))?;
+    let item = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Trait(item) if item.ident == trait_name => Some(item),
+            _ => None,
+        })
+        .ok_or_else(|| format!("no `trait {trait_name}` in the source"))?;
+    let mut sigs = Vec::new();
+    for item in &item.items {
+        let TraitItem::Fn(method) = item else {
+            continue;
+        };
+        let name = method.sig.ident.to_string();
+        let mut inputs = method.sig.inputs.iter();
+        match inputs.next() {
+            Some(FnArg::Receiver(receiver))
+                if receiver.reference.is_some() && receiver.mutability.is_none() => {}
+            _ => continue,
+        }
+        let params: Vec<&PatType> = inputs
+            .filter_map(|arg| match arg {
+                FnArg::Typed(param) => Some(param),
+                FnArg::Receiver(_) => None,
+            })
+            .collect();
+        // A method with no parameter after `&self` is the trait's own (`entity_subscribed`), not a call.
+        if params.is_empty() || hook_sig(method)?.is_some() {
+            continue;
+        }
+        let (host, rest) = match params.split_first() {
+            Some((first, rest)) if is_host(&first.ty) => (Some(*first), rest),
+            _ => (None, &params[..]),
+        };
+        let mut args = Vec::new();
+        for param in rest {
+            args.push((
+                ident_of(param, &name)?,
+                spell(&param.ty.to_token_stream().to_string()),
+            ));
+        }
+        sigs.push(HookSig {
+            host_name: host.map(|host| ident_of(host, &name)).transpose()?,
+            host_ty: host.map(|host| spell(&host.ty.to_token_stream().to_string())),
+            event_name: String::new(),
+            event_ty: String::new(),
+            ret: return_of(method),
+            name,
+            plain: Some(args),
+        });
+    }
+    sigs.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(sigs)
+}
+
+/// Whether a parameter type is a host: `&dyn ...Host` or `&mut dyn ...Host`.
+fn is_host(ty: &Type) -> bool {
+    let text = spell(&ty.to_token_stream().to_string());
+    (text.starts_with("&dyn ") || text.starts_with("&mut dyn ")) && text.ends_with("Host")
 }
 
 /// The reference of a `&mut T` type, if it is one.

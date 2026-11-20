@@ -21,3 +21,5 @@ pub mod item_parts;
 pub mod block_entity_parts;
 #[rustfmt::skip]
 pub mod fluid_parts;
+#[rustfmt::skip]
+pub mod entity_parts;
