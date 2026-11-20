@@ -28,6 +28,33 @@ pub fn declared() -> Vec<(String, String)> {
     DECLARED.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Content packs a built-in host publishes from its own mods (Event Horizon's Lua mods' assets,
+/// data and lang, `event-horizon-lua::assets`): folders in the package layout. The host sets them
+/// once its scan is done; the game chains them into the selected packages at startup and at each
+/// reload, whatever the enabled set says (the host already decided they are on).
+static CONTENT: RwLock<Vec<PathBuf>> = RwLock::new(Vec::new());
+
+/// Sets the content pack folders; returns the list it replaced.
+pub fn set_content_packs(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    std::mem::replace(
+        &mut *CONTENT.write().unwrap_or_else(|e| e.into_inner()),
+        paths,
+    )
+}
+
+/// The packs `set_content_packs` gave that still read as valid packages, as selected packages.
+/// A pack that no longer reads is skipped, not fatal: the game loads what the rest give.
+pub fn selected_content_packs() -> Vec<crate::selection::SelectedPackage> {
+    let paths = CONTENT.read().unwrap_or_else(|e| e.into_inner()).clone();
+    paths
+        .into_iter()
+        .filter_map(|path| {
+            let package = crate::Package::read(&path).ok()?;
+            Some(crate::selection::SelectedPackage { path, package })
+        })
+        .collect()
+}
+
 /// Validated once before installing hooks. Vanilla explicitly supplies an empty inventory.
 #[derive(Debug, Default)]
 pub struct Runtime {
@@ -289,5 +316,37 @@ mod tests {
             &f.load().unwrap_err().refused[..],
             [PackageError::Read { .. }]
         ));
+    }
+}
+
+#[cfg(test)]
+mod content_pack_tests {
+    use super::*;
+
+    fn pack(root: &Path, id: &str) -> PathBuf {
+        let dir = root.join(id);
+        std::fs::create_dir_all(dir.join("assets/alpha/lang")).unwrap();
+        std::fs::write(
+            dir.join("horizon-mod.toml"),
+            format!(
+                "id = '{id}'\nname = '{id}'\nversion = '1.0.0'\napi = '0.2'\nside = 'client'\n\
+                 capabilities = ['registries']\nnamespaces = ['alpha']\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.join("assets/alpha/lang/en_us.json"), "{}").unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_selected_packs_are_the_set_packs_that_still_read() {
+        let root = tempfile::tempdir().unwrap();
+        let good = pack(root.path(), "lua_alpha");
+        let gone = root.path().join("lua_gone");
+        let previous = set_content_packs(vec![good.clone(), gone]);
+        let selected = selected_content_packs();
+        set_content_packs(previous);
+        let paths: Vec<PathBuf> = selected.into_iter().map(|p| p.path).collect();
+        assert_eq!(paths, [good]);
     }
 }

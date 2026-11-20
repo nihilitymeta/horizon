@@ -1310,6 +1310,7 @@
   "horizon.options.menu_navigation": "Menu Navigation",
   "horizon.options.menu_pointer": "Pointer",
   "horizon.screenshot.canceled": "Screenshot canceled",
+  "lua_mod.content.refused": "The mod's assets, data and lang files are not loaded: %1$s",
   "lua_mod.refused.archive_too_large": "The package archive is over 64 MiB.",
   "lua_mod.refused.assets_reserved": "The assets folder is reserved in this version.",
   "lua_mod.refused.bad_dependency": "The dependency %1$s is not a valid mod id.",

@@ -487,6 +487,27 @@ impl Package {
         self.read_file(name, MAX_ENTRY)
     }
 
+    /// The names of the package's files under `assets/`, `data/` and `lang/`, in name order.
+    pub fn content_files(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .entries
+            .iter()
+            .filter(|e| !e.dir && FOLDERS.contains(&e.name.split('/').next().unwrap_or("")))
+            .map(|e| e.name.clone())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// The bytes of one file under `assets/`, `data/` or `lang/`, at most `MAX_ENTRY`.
+    pub fn read_content_file(&self, name: &str) -> Result<Vec<u8>, Refusal> {
+        let first = name.split('/').next().unwrap_or("");
+        if !FOLDERS.contains(&first) || !name.contains('/') {
+            return Err(Refusal::NotAnAsset { name: name.into() });
+        }
+        self.read_file(name, MAX_ENTRY)
+    }
+
     /// Reads a file of the package, refusing it if it is missing, a folder, or over `limit`.
     fn read_file(&self, name: &str, limit: u64) -> Result<Vec<u8>, Refusal> {
         let entry = self

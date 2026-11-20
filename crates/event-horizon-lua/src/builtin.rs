@@ -1,6 +1,7 @@
 //! The built-in mod that runs the Lua mods in `<game_dir>/lua-mods/`: the one entry the game starts
 //! with, and the package the loader checks for it beside the executable.
 
+use crate::assets;
 use crate::discover::{self, ScannedMod};
 use crate::host::{LuaHost, LuaMod, both_side_records, collect_load_notices};
 use crate::package;
@@ -42,7 +43,8 @@ pub fn env_dev_paths(value: Option<&OsStr>) -> Vec<PathBuf> {
 /// is refused and the others still load. A missing folder is fine: the entry then subscribes to
 /// nothing. `dedicated` is the game's role: on a dedicated server a client-only mod is not loaded.
 pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loaded {
-    let (mods, refused, disabled, notices, skipped) = load_mods(game_dir, dev_paths, dedicated);
+    let (mods, refused, disabled, notices, skipped, packs) =
+        load_mods(game_dir, dev_paths, dedicated);
     let loaded = mods.len();
     // The both-side Lua mods are announced on `horizon:mod_list` and recorded in a world beside the
     // compiled mods. This runs before the game builds its announcement (`content_overlay`).
@@ -52,6 +54,9 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
             .map(|m| (m.id, m.version))
             .collect(),
     );
+    // The content packs of the mods that loaded (`assets::publish`): the game selects them at its
+    // startup and at each reload.
+    let _previous = horizon_mod_package::runtime::set_content_packs(packs);
     Loaded {
         entry: ModEntry::new(
             package::ID,
@@ -91,10 +96,13 @@ fn grant_namespace(m: &LuaMod) -> Result<(), String> {
 }
 
 /// The mods under `game_dir` that load, one line per folder or mod that does not, the ids the
-/// enabled file turned off, the warnings about that file, and one line per client-only mod a
-/// dedicated server skips. Nothing is logged here: this runs before the game's logger is up, and
-/// `LuaHost::register` reports them. A refusal line carries the translation key after the English
-/// reason; a skip line carries `discover::SKIPPED_CLIENT_ONLY`.
+/// enabled file turned off, the warnings about that file, one line per client-only mod a
+/// dedicated server skips, and the content packs of the loaded mods. Nothing is logged here: this
+/// runs before the game's logger is up, and `LuaHost::register` reports them. A refusal line
+/// carries the translation key after the English reason; a skip line carries
+/// `discover::SKIPPED_CLIENT_ONLY`. A mod whose content is refused still loads: its notice is kept
+/// with the mod (`LuaMod::push_notice`), and it contributes no pack.
+#[allow(clippy::type_complexity)]
 fn load_mods(
     game_dir: &Path,
     dev_paths: &[PathBuf],
@@ -105,6 +113,7 @@ fn load_mods(
     Vec<String>,
     Vec<String>,
     Vec<String>,
+    Vec<PathBuf>,
 ) {
     let scan = discover::scan_on(game_dir, dev_paths, dedicated);
     let skipped: Vec<String> = scan
@@ -132,6 +141,7 @@ fn load_mods(
         .collect();
     let disabled: Vec<String> = scan.disabled.iter().map(|d| d.id.clone()).collect();
     let mut mods: Vec<LuaMod> = Vec::new();
+    let mut packs: Vec<PathBuf> = Vec::new();
     for scanned in &scan.loaded {
         // The settings are read before the mod declares, so `horizon.setting` sees the file's values.
         // Their warnings are kept for `LuaHost::report`, as the declaration's are.
@@ -145,14 +155,29 @@ fn load_mods(
             }
         };
         match LuaMod::load_package(&scanned.found, &scanned.package, settings, settings_notices) {
-            Ok(m) => match grant_namespace(&m) {
-                Ok(()) => mods.push(m),
+            Ok(mut m) => match grant_namespace(&m) {
+                Ok(()) => {
+                    match assets::publish(game_dir, &scanned.package) {
+                        Ok(Some(pack)) => packs.push(pack),
+                        Ok(None) => {}
+                        Err(error) => m.push_notice(
+                            &scanned.found.id,
+                            format!(
+                                "{}: its assets, data and lang are not loaded: {} ({})",
+                                scanned.found.id,
+                                error.reason(),
+                                assets::KEY
+                            ),
+                        ),
+                    }
+                    mods.push(m);
+                }
                 Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
             },
             Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
         }
     }
-    (mods, refused, disabled, scan.notices, skipped)
+    (mods, refused, disabled, scan.notices, skipped, packs)
 }
 
 #[cfg(test)]
@@ -161,7 +186,7 @@ mod tests {
 
     /// The mods and refusals of a scan with no dev paths (the loader's pair, without the notes).
     fn load_mods_pair(root: &Path) -> (Vec<LuaMod>, Vec<String>) {
-        let (mods, refused, _, _, _) = load_mods(root, &[], false);
+        let (mods, refused, _, _, _, _) = load_mods(root, &[], false);
         (mods, refused)
     }
 
@@ -221,7 +246,7 @@ mod tests {
         );
         archive_on(root.path(), "zeta", "zeta_mod", "4.2.0", "both");
         archive_on(root.path(), "eta", "eta_mod", "5.0.0", "client");
-        let (_, refused, disabled, _, _) = load_mods(root.path(), &[], false);
+        let (_, refused, disabled, _, _, _) = load_mods(root.path(), &[], false);
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(disabled.is_empty());
         assert_eq!(
@@ -1497,7 +1522,7 @@ mod tests {
 
     /// The skip lines of a scan of `root` with `dedicated` set, and the loaded mod ids.
     fn skipped_and_loaded(root: &Path, dedicated: bool) -> (Vec<String>, Vec<String>) {
-        let (mods, _, _, _, skipped) = load_mods(root, &[], dedicated);
+        let (mods, _, _, _, skipped, _) = load_mods(root, &[], dedicated);
         (skipped, mods.iter().map(|m| m.id().to_string()).collect())
     }
 
@@ -1519,7 +1544,7 @@ mod tests {
             "return {}\n",
         );
         mod_folder_on(root.path(), "c_both", "both_mod", "both", "return {}\n");
-        let (mods, refused, _, _, skipped) = load_mods(root.path(), &[], true);
+        let (mods, refused, _, _, skipped, _) = load_mods(root.path(), &[], true);
         assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(
             skipped,
@@ -1571,11 +1596,11 @@ mod tests {
             "id = \"dev_client\"\nversion = \"1.0.0\"\nside = \"client\"\n",
             "return {}\n",
         );
-        let (mods, _, _, _, skipped) = load_mods(root.path(), std::slice::from_ref(&dev), true);
+        let (mods, _, _, _, skipped, _) = load_mods(root.path(), std::slice::from_ref(&dev), true);
         assert!(mods.is_empty());
         assert_eq!(skipped.len(), 1, "{skipped:?}");
         assert!(skipped[0].starts_with("dev_client: "));
-        let (mods, _, _, _, skipped) = load_mods(root.path(), std::slice::from_ref(&dev), false);
+        let (mods, _, _, _, skipped, _) = load_mods(root.path(), std::slice::from_ref(&dev), false);
         assert_eq!(mods.len(), 1);
         assert!(skipped.is_empty());
     }
@@ -1590,7 +1615,7 @@ mod tests {
             "id = \"needs_mod\"\nversion = \"1.0.0\"\nside = \"both\"\n[dependencies]\nbase_mod = \"1\"\n",
             "return {}\n",
         );
-        let (mods, refused, _, _, skipped) = load_mods(root.path(), &[], true);
+        let (mods, refused, _, _, skipped, _) = load_mods(root.path(), &[], true);
         assert!(
             mods.is_empty(),
             "the base is skipped and its dependent refused: nothing loads"
@@ -1626,7 +1651,7 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::write(config.join(crate::settings::FILE), "level = 6\n").unwrap();
 
-        let (mods, refused, _, _, _) = load_mods(root.path(), &[], false);
+        let (mods, refused, _, _, _, _) = load_mods(root.path(), &[], false);
         assert!(refused.is_empty(), "{refused:?}");
         let host = LuaHost::new(mods);
         let shared = host.settings("tuned_mod").expect("loaded");
@@ -1634,5 +1659,101 @@ mod tests {
         assert_eq!(shared.get("level"), Some(crate::settings::Value::Int(6)));
         host.fire("block_receive_game");
         assert_eq!(host.mods()[0].log_lines(), ["level 6"]);
+    }
+
+    /// Writes `<root>/lua-mods/<name>/`: a manifest for `id` with `side`, a script, and `files`.
+    fn mod_with_files(root: &Path, name: &str, id: &str, side: &str, files: &[(&str, &[u8])]) {
+        let dir = root.join(discover::DIR).join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(discover::MANIFEST),
+            format!("id = \"{id}\"\nversion = \"1.0.0\"\nside = \"{side}\"\nname = \"{id}\"\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join(discover::ENTRY), "return {}\n").unwrap();
+        for (rel, bytes) in files {
+            let path = dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_mods_content_is_published_as_a_pack_and_a_refused_one_still_loads() {
+        let root = tempfile::tempdir().unwrap();
+        mod_with_files(
+            root.path(),
+            "good",
+            "good",
+            "both",
+            &[("assets/good/textures/a.png", b"a")],
+        );
+        mod_with_files(
+            root.path(),
+            "bad",
+            "bad",
+            "both",
+            &[("assets/bad/textures/Upper.png", b"b")],
+        );
+        let (mods, refused, _, _, _, packs) = load_mods(root.path(), &[], false);
+        assert_eq!(refused, Vec::<String>::new());
+        assert_eq!(mods.len(), 2, "a refused content must not refuse the mod");
+        assert_eq!(packs.len(), 1, "{packs:?}");
+        assert_eq!(
+            packs[0].parent(),
+            Some(
+                root.path()
+                    .join(".horizon-cache")
+                    .join("lua-mods")
+                    .as_path()
+            )
+        );
+        assert!(
+            packs[0]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("lua_good-")
+        );
+        let bad = mods.iter().find(|m| m.id() == "bad").unwrap();
+        let notices = bad.notices();
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert_eq!(notices[0].0, "bad");
+        assert!(
+            notices[0].1.contains("(lua_mod.content.refused)"),
+            "{notices:?}"
+        );
+        assert!(
+            mods.iter()
+                .find(|m| m.id() == "good")
+                .unwrap()
+                .notices()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_disabled_mod_and_a_skipped_client_only_mod_publish_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        mod_with_files(
+            root.path(),
+            "off",
+            "off",
+            "both",
+            &[("assets/off/a.png", b"a")],
+        );
+        mod_with_files(
+            root.path(),
+            "client",
+            "client_mod",
+            "client",
+            &[("assets/client_mod/a.png", b"a")],
+        );
+        crate::enabled::write(root.path(), "off", false).unwrap();
+        let (mods, _, disabled, _, skipped, packs) = load_mods(root.path(), &[], true);
+        assert!(mods.is_empty());
+        assert_eq!(disabled, ["off"]);
+        assert_eq!(skipped.len(), 1, "{skipped:?}");
+        assert!(packs.is_empty(), "{packs:?}");
     }
 }

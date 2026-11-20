@@ -382,7 +382,9 @@ impl Game<'_> {
                     .built()
                     .iter()
                     .any(|built| built.id == p.package.manifest.id)
-        });
+        })
+        // The built-in host's packs (its Lua mods' content), as `ModsState::select` takes them.
+        .chain(horizon_mod_package::runtime::selected_content_packs());
         let code = self
             .mods
             .selected

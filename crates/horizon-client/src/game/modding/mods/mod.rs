@@ -178,6 +178,22 @@ impl ModsState {
         game_dir: &std::path::Path,
         enabled: &std::collections::BTreeSet<String>,
     ) {
+        self.select_with(
+            game_dir,
+            enabled,
+            horizon_mod_package::runtime::selected_content_packs(),
+        );
+    }
+
+    /// `select`, with the packs the built-in host published (`runtime::selected_content_packs`).
+    /// They are chained after the enabled set's packs, unfiltered: the host has already decided
+    /// that they are on (a disabled or skipped Lua mod publishes none).
+    fn select_with(
+        &mut self,
+        game_dir: &std::path::Path,
+        enabled: &std::collections::BTreeSet<String>,
+        host_packs: Vec<horizon_mod_package::selection::SelectedPackage>,
+    ) {
         self.selected =
             horizon_mod_package::selection::content_packages(game_dir, enabled, &self.dev)
                 .filter(|selected| {
@@ -186,6 +202,7 @@ impl ModsState {
                     !self.native.built().iter().any(|built| built.id == *id)
                         && !crate::entry::code_startup_refused(id)
                 })
+                .chain(host_packs)
                 .collect();
         self.refused = Default::default();
     }
@@ -2776,6 +2793,28 @@ mod tests {
         ];
         let bytes = horizon_mod_package::Package::write_files(&manifest, files).unwrap();
         std::fs::write(dir.join(format!("{id}.hmod")), bytes).unwrap();
+    }
+
+    #[test]
+    fn select_keeps_the_host_packs_whatever_the_enabled_set_says() {
+        let f = Fixture::new("host-packs-select");
+        let pack = f.0.join("lua_alpha");
+        std::fs::create_dir_all(pack.join("assets/alpha/lang")).unwrap();
+        std::fs::write(
+            pack.join("horizon-mod.toml"),
+            "id='lua_alpha'\nname='Alpha'\nversion='1.0.0'\napi='0.2'\nside='client'\ncapabilities=['registries']\nnamespaces=['alpha']\n",
+        )
+        .unwrap();
+        std::fs::write(pack.join("assets/alpha/lang/en_us.json"), "{}").unwrap();
+        let host = vec![horizon_mod_package::selection::SelectedPackage {
+            path: pack.clone(),
+            package: horizon_mod_package::Package::read(&pack).unwrap(),
+        }];
+        let mut sources = ModsState::default();
+        sources.select_with(&f.0, &Default::default(), host);
+        let selected: Vec<std::path::PathBuf> =
+            sources.selected.iter().map(|p| p.path.clone()).collect();
+        assert_eq!(selected, [pack]);
     }
 
     #[test]

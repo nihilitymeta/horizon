@@ -187,6 +187,17 @@ impl Drop for TurnGuard<'_> {
 }
 
 impl LuaMod {
+    /// Keeps a notice the mod's content gave, logged with its other load notices (`report`).
+    pub(crate) fn push_notice(&mut self, source: &str, line: String) {
+        self.notices.push((source.to_string(), line));
+    }
+
+    /// The notices the mod gave at its load, as `(source, line)`.
+    #[cfg(test)]
+    pub(crate) fn notices(&self) -> &[(String, String)] {
+        &self.notices
+    }
+
     /// Loads the mod `found` from its package: every script its manifest lists is read through the
     /// package reader, in manifest order, and the mod is declared from all of them as one mod (one
     /// environment, one time budget). This is the loader's path.
