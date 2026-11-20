@@ -29,8 +29,14 @@ mod goal_budget;
 #[cfg(test)]
 mod goal_tests;
 pub mod handles;
+pub mod hlua;
+#[cfg(test)]
+mod hlua_tests;
 pub mod host;
 pub mod hostcall;
+mod manifest;
+#[cfg(test)]
+mod manifest_tests;
 #[cfg(test)]
 mod menu_tests;
 mod mob_turn;

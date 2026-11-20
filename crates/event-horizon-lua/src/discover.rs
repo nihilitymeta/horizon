@@ -6,25 +6,15 @@
 //! manifest (id, version and side) is read here.
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
+
+pub use crate::manifest::{MANIFEST, MAX_MANIFEST, Side};
+use crate::manifest::{read_table, text, valid_id};
 
 /// The folder under the game folder that holds the Lua mods.
 pub const DIR: &str = "lua-mods";
-/// The manifest every mod folder has.
-pub const MANIFEST: &str = "lua-mod.toml";
 /// The script every mod folder has.
 pub const ENTRY: &str = "main.luau";
-/// The largest manifest that is read; a bigger file is refused without reading all of it.
-pub const MAX_MANIFEST: u64 = 64 * 1024;
-
-/// The side a mod runs on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Side {
-    Client,
-    Server,
-    Both,
-}
 
 /// A mod folder that passed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,7 +86,7 @@ pub fn scan(game_dir: &Path) -> Found {
 
 /// Checks one mod folder and returns what it declares, or why it is refused.
 fn check(dir: &Path) -> Result<Discovered, String> {
-    let manifest = read_manifest(&dir.join(MANIFEST))?;
+    let manifest = read_table(&dir.join(MANIFEST))?;
     let id = text(&manifest, "id")?;
     if !valid_id(id) {
         return Err("id is not a valid mod id".into());
@@ -121,44 +111,6 @@ fn check(dir: &Path) -> Result<Discovered, String> {
         version: version.to_string(),
         side,
     })
-}
-
-/// Reads and parses the manifest, reading at most `MAX_MANIFEST + 1` bytes.
-fn read_manifest(path: &Path) -> Result<toml::Table, String> {
-    let meta = std::fs::symlink_metadata(path).map_err(|_| format!("no {MANIFEST}"))?;
-    if meta.file_type().is_symlink() {
-        return Err(format!("{MANIFEST} is a symlink"));
-    }
-    if !meta.is_file() {
-        return Err(format!("no {MANIFEST}"));
-    }
-    let file = std::fs::File::open(path).map_err(|_| format!("{MANIFEST} cannot be read"))?;
-    let mut bytes = Vec::new();
-    file.take(MAX_MANIFEST + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| format!("{MANIFEST} cannot be read"))?;
-    if bytes.len() as u64 > MAX_MANIFEST {
-        return Err(format!("{MANIFEST} is over {} KiB", MAX_MANIFEST / 1024));
-    }
-    let text = std::str::from_utf8(&bytes).map_err(|_| format!("{MANIFEST} is not UTF-8"))?;
-    text.parse::<toml::Table>()
-        .map_err(|_| format!("{MANIFEST} is not valid TOML"))
-}
-
-/// A string key of the manifest; a missing or wrongly typed key is refused by name.
-fn text<'a>(manifest: &'a toml::Table, key: &str) -> Result<&'a str, String> {
-    match manifest.get(key) {
-        Some(toml::Value::String(s)) => Ok(s),
-        _ => Err(format!("{key} is missing or not a string")),
-    }
-}
-
-/// A mod id: 1 to 64 bytes of lowercase ASCII letters, digits and underscores.
-fn valid_id(id: &str) -> bool {
-    (1..=64).contains(&id.len())
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
 #[cfg(test)]
