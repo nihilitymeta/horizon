@@ -1,7 +1,15 @@
-//! Attachments a Lua mod keeps on entities and players (issue 74, C1 and C2): `horizon.attachment_get`,
-//! `horizon.attachment_set` and `horizon.attachment_remove`. The values are saved world data that
+//! Attachments a Lua mod keeps on entities, players and block entities (issue 74, C1, C2 and A1):
+//! `horizon.attachment_get`, `horizon.attachment_set` and `horizon.attachment_remove`. The values are saved world data that
 //! untrusted Lua output writes, so every limit refuses the one call that breaks it, with the reason,
 //! and nothing is cut short or saved in part. A refused call changes nothing.
+//!
+//! A block entity holder (A1) takes the same caps, with the same `#index`. It has no sync and no
+//! copy_on_death: both are refused by name, since a block entity needs chunk-level sync and does not
+//! respawn. Its handle must be the current one of the server's level (a removed, replaced or unloaded
+//! block entity raises, as the Part state of a block entity does). A client turn cannot read it: the
+//! server does not send block entity attachments to clients. A process-wide guard counts the
+//! block-entity keys each mod creates ([`MAX_BLOCK_ENTITY_NEW_KEYS`]); it is a runaway guard, not an
+//! accounting, and resets when the process starts.
 //!
 //! C2 adds two policies, both off by default, given as `horizon.attachment_set(h, name, value, opts)`
 //! with `opts = { sync = bool, copy_on_death = bool }`: `sync` sends the value to the clients that see
@@ -30,9 +38,13 @@ use std::sync::Arc;
 
 use event_horizon_lua_convert::scalar::{FromLuaValue, ToLuaValue};
 use mlua::{AnyUserData, Error, Lua, MultiValue, Table, UserData, Value};
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
 use mod_api::{
     AttachmentError, AttachmentForm, AttachmentPolicy, AttachmentStore, AttachmentValue,
-    AttachmentWrite, Compound, EntityRef, EntityResidency, Holder, Host, PlayerRef, Tag,
+    AttachmentWrite, BlockEntityRef, Compound, EntityRef, EntityResidency, Holder, Host,
+    PartStateError, PartStateHolder, PlayerRef, Tag,
 };
 
 use crate::declare::check_path;
@@ -54,6 +66,14 @@ pub const MAX_FLAGGED_VALUE_BYTES: usize = 4 * 1024;
 pub const MAX_SYNC_KEYS: usize = 4;
 /// The copied-on-death keys one mod may keep on one holder.
 pub const MAX_COPY_KEYS: usize = 4;
+/// The block-entity keys one mod may create by new-key sets in one process lifetime. A runaway guard,
+/// not an accounting: an overwrite never counts, a removal does not give a key back, and the count
+/// starts at zero each time the process starts.
+#[cfg(not(test))]
+pub const MAX_BLOCK_ENTITY_NEW_KEYS: usize = 4096;
+/// The same guard with a small limit, so the test that reaches it stays fast.
+#[cfg(test)]
+pub const MAX_BLOCK_ENTITY_NEW_KEYS: usize = 16;
 /// The synced writes one mod may make, or try, in one turn. The host has no server tick counter, so the
 /// cap is per turn (see `hostcall::Void`): a mod that runs many turns in a tick is limited per turn only.
 pub const MAX_SYNC_WRITES: u32 = 16;
@@ -123,6 +143,13 @@ pub(crate) fn run(
     if op == GET_OP {
         // A client turn reads its copy of what the server synced; a server turn reads its own store.
         let found = match host {
+            TurnHost::Client(_) if matches!(target, Target::BlockEntity(_)) => {
+                return Err(refuse(
+                    &owner,
+                    method,
+                    "a client turn cannot read a block entity's attachments: the server does not send them",
+                ));
+            }
             TurnHost::Client(client) => {
                 let holder = holder_of(&**client, target).map_err(fail)?;
                 read(client.attachments(), holder, &owner, key).map_err(fail)?
@@ -248,14 +275,22 @@ fn flag_of(value: &Value, name: &str) -> Result<bool, String> {
     }
 }
 
-/// The holder kinds a policy may name: the policies exist for entities and players only. An entity
-/// does not respawn, so copy_on_death refuses for one.
+/// The holder kinds a policy may name: sync for entities and players, copy_on_death for players only.
+/// An entity does not respawn, so copy_on_death refuses for one. A block entity takes neither: its
+/// clients need chunk-level sync, which is not in this version, and it does not respawn.
 fn holder_allows(target: Target, flags: Flags) -> Result<(), String> {
     match target {
+        Target::BlockEntity(_) if flags.sync => Err(
+            "sync does not apply to block entities: their clients need chunk-level sync, not in this version"
+                .to_owned(),
+        ),
+        Target::BlockEntity(_) if flags.copy_on_death => Err(
+            "copy_on_death does not apply to block entities: a block entity does not respawn".to_owned(),
+        ),
         Target::Entity(_) if flags.copy_on_death => {
             Err("copy_on_death needs a player holder: an entity does not respawn".to_owned())
         }
-        Target::Entity(_) | Target::Player(_) => Ok(()),
+        Target::Entity(_) | Target::Player(_) | Target::BlockEntity(_) => Ok(()),
     }
 }
 
@@ -267,22 +302,26 @@ fn refuse(owner: &str, method: &str, why: &str) -> Error {
     Error::runtime(format!("{method}: {reason}"))
 }
 
-/// The holder a call names: an entity or a player handle.
+/// The holder a call names: an entity, a player or a block entity handle.
 #[derive(Clone, Copy)]
 enum Target {
     Entity(EntityRef),
     Player(PlayerRef),
+    BlockEntity(BlockEntityRef),
 }
 
 fn target_arg(args: &Args, method: &str) -> mlua::Result<Target> {
     if let Ok(player) = args.handle::<PlayerRef>(0) {
         return Ok(Target::Player(player));
     }
-    args.handle::<EntityRef>(0)
-        .map(Target::Entity)
+    if let Ok(entity) = args.handle::<EntityRef>(0) {
+        return Ok(Target::Entity(entity));
+    }
+    args.handle::<BlockEntityRef>(0)
+        .map(Target::BlockEntity)
         .map_err(|_| {
             Error::runtime(format!(
-                "{method}: argument 1 must be an EntityRef or PlayerRef"
+                "{method}: argument 1 must be an EntityRef, PlayerRef or BlockEntityRef"
             ))
         })
 }
@@ -293,6 +332,13 @@ fn holder_of(host: &dyn Host, target: Target) -> Result<Holder, String> {
     let (entity, holder) = match target {
         Target::Entity(entity) => (entity, Holder::Entity(entity.id())),
         Target::Player(player) => (player.entity(), Holder::Player(player.uuid())),
+        // The Part state's own check: the handle's level is the host's, and its identity is current.
+        Target::BlockEntity(block) => {
+            return block.part_state_holder(host).map_err(|why| match why {
+                PartStateError::OtherLevel => "the holder is in another level".to_owned(),
+                _ => "the holder is gone, or its handle is stale".to_owned(),
+            });
+        }
     };
     match host.entity_residency(entity) {
         EntityResidency::InPlace => Ok(holder),
@@ -543,6 +589,13 @@ fn set(
             "a holder keeps at most {MAX_KEYS} attachments of one mod, and this holder has {MAX_KEYS}"
         ));
     }
+    let block_entity = matches!(holder, Holder::BlockEntity(_));
+    if block_entity && before.is_none() && new_block_entity_keys(owner) >= MAX_BLOCK_ENTITY_NEW_KEYS
+    {
+        return Err(format!(
+            "a mod may create at most {MAX_BLOCK_ENTITY_NEW_KEYS} block-entity attachment keys in one run of the game, and it has created them"
+        ));
+    }
     if flags.sync && !before_flags.sync && others_with(&index, key, |f| f.sync) >= MAX_SYNC_KEYS {
         return Err(format!(
             "a holder keeps at most {MAX_SYNC_KEYS} synced attachments of one mod, and this holder has {MAX_SYNC_KEYS}"
@@ -577,7 +630,30 @@ fn set(
         };
         return Err(why);
     }
+    if block_entity && before.is_none() {
+        count_block_entity_key(owner);
+    }
     Ok(())
+}
+
+/// The block-entity keys each mod has created by new-key sets in this process, by mod id. A runaway
+/// guard only: nothing is saved, so it starts at zero when the process starts.
+static BLOCK_ENTITY_NEW_KEYS: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
+
+/// How many block-entity keys `owner` has created in this process.
+fn new_block_entity_keys(owner: &str) -> usize {
+    let counts = BLOCK_ENTITY_NEW_KEYS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    counts.get(owner).copied().unwrap_or(0)
+}
+
+/// Counts one block-entity key `owner` has created.
+fn count_block_entity_key(owner: &str) {
+    let mut counts = BLOCK_ENTITY_NEW_KEYS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *counts.entry(owner.to_owned()).or_insert(0) += 1;
 }
 
 /// Removes `key` from `holder`: true when a value was there, false when not. The index drops the key.

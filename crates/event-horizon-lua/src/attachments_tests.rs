@@ -1,22 +1,25 @@
-//! Attachments a Lua mod keeps on entities (issue 74, C1): get, set and remove, the name and value
+//! Attachments a Lua mod keeps on entities and block entities (issue 74, C1 and A1): get, set and remove, the name and value
 //! limits, the key and total caps, the turn rules, the save round trip and the index's agreement
-//! with the stored values. The world double resolves one entity, id 1 of epoch 1, and every other
-//! handle is gone. Each test loads its own mod, whose handler logs its results as `R <label> ...`.
+//! with the stored values. The world double resolves one entity, id 1 of epoch 1, and two block
+//! entities of the overworld ([`BLOCK`] and [`OTHER_BLOCK`]); every other handle is gone. Each test loads its own mod, whose handler logs its results as `R <label> ...`.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use horizon_mod_runtime::attachments::AttachmentSync;
 use mlua::Lua;
-use mod_api::prelude::{EntitiesHost, ModStateHost, ModStateServerHost};
+use mod_api::prelude::{
+    BlockEntitiesHost, ConfigHost, EntitiesHost, ModStateHost, ModStateServerHost,
+};
 use mod_api::{
-    AttachmentAccess, AttachmentError, AttachmentHost, AttachmentStore, Attachments, ClientHost,
-    Compound, EntityRef, EntityResidency, Holder, Host, ServerHost, Tag, WorldEpoch,
+    AttachmentAccess, AttachmentError, AttachmentHost, AttachmentStore, Attachments,
+    BlockEntityRef, ClientHost, Compound, DimensionKey, EntityRef, EntityResidency, Holder, Host,
+    LevelRef, ServerHost, Tag, WorldEpoch,
 };
 
 use crate::attachments::{
-    MAX_COPY_KEYS, MAX_FLAGGED_VALUE_BYTES, MAX_HOLDER_BYTES, MAX_KEYS, MAX_NAME_BYTES,
-    MAX_SYNC_KEYS, MAX_SYNC_WRITES, MAX_VALUE_BYTES,
+    MAX_BLOCK_ENTITY_NEW_KEYS, MAX_COPY_KEYS, MAX_FLAGGED_VALUE_BYTES, MAX_HOLDER_BYTES, MAX_KEYS,
+    MAX_NAME_BYTES, MAX_SYNC_KEYS, MAX_SYNC_WRITES, MAX_VALUE_BYTES,
 };
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::new_event;
@@ -28,18 +31,41 @@ use crate::hostcall::TurnHost;
 
 const HOOK: &str = "block_receive_game";
 
-/// The holders of the test world: one attachment map per holder the store keeps.
+/// The holders of the test world: one attachment map per holder the store keeps, and the block
+/// entities the world holds now, each with its position: a block entity handle is current only
+/// while it is in this list.
 #[derive(Default)]
 struct World {
     maps: HashMap<Holder, Attachments>,
+    blocks: Vec<(BlockEntityRef, [i32; 3])>,
+}
+
+/// The position of the test world's first block entity.
+const BLOCK: [i32; 3] = [1, 2, 3];
+/// The position of its second block entity.
+const OTHER_BLOCK: [i32; 3] = [4, 5, 6];
+
+/// The overworld of the test world: where its block entities are.
+fn block_level() -> LevelRef {
+    LevelRef::new(WorldEpoch::new(1), DimensionKey::OVERWORLD)
+}
+
+/// A block entity handle of the test world at `pos`, with lifecycle `generation`.
+fn block_handle(pos: [i32; 3], generation: u64) -> BlockEntityRef {
+    mod_api::__private::game::block_entity_ref(block_level(), pos, generation)
 }
 
 impl World {
-    /// A world with the resident entity's map.
+    /// A world with the resident entity's map, and the two block entities, each with its map.
     fn new() -> World {
         let mut maps = HashMap::new();
         maps.insert(Holder::Entity(1), Attachments::default());
-        World { maps }
+        let mut blocks = Vec::new();
+        for pos in [BLOCK, OTHER_BLOCK] {
+            maps.insert(Holder::BlockEntity(pos), Attachments::default());
+            blocks.push((block_handle(pos, 0), pos));
+        }
+        World { maps, blocks }
     }
 }
 
@@ -49,7 +75,13 @@ fn resident() -> EntityRef {
 }
 
 impl Host for World {}
-mod_api::impl_host_areas!(World, except(mod_state, entities));
+mod_api::impl_host_areas!(World, except(mod_state, entities, block_entities, config));
+
+impl ConfigHost for World {
+    fn dimension(&self) -> &'static str {
+        "minecraft:overworld"
+    }
+}
 
 impl EntitiesHost for World {
     fn entity_residency(&self, entity: EntityRef) -> EntityResidency {
@@ -58,6 +90,24 @@ impl EntitiesHost for World {
         } else {
             EntityResidency::Gone
         }
+    }
+    fn level(&self, dimension: &str) -> Option<LevelRef> {
+        (dimension == "minecraft:overworld").then(block_level)
+    }
+}
+
+impl BlockEntitiesHost for World {
+    fn block_entity(&self, level: LevelRef, pos: [i32; 3]) -> Option<BlockEntityRef> {
+        self.block_entity_identity(level, pos)
+    }
+    fn block_entity_identity(&self, level: LevelRef, pos: [i32; 3]) -> Option<BlockEntityRef> {
+        if level != block_level() {
+            return None;
+        }
+        self.blocks
+            .iter()
+            .find(|(_, at)| *at == pos)
+            .map(|(block, _)| *block)
     }
 }
 
@@ -96,7 +146,10 @@ fn reload(world: &World) -> World {
         .iter()
         .map(|(holder, map)| (*holder, Attachments::from_nbt(map.to_nbt())))
         .collect();
-    World { maps }
+    World {
+        maps,
+        blocks: world.blocks.clone(),
+    }
 }
 
 /// Loads a server-and-client mod `id` whose `block_receive_game` handler runs `body` on `event`.
@@ -786,5 +839,294 @@ fn a_client_turn_reads_a_synced_value_and_cannot_set_or_remove_it() {
             v.insert("v".into(), Tag::Int(9));
             v
         }))
+    );
+}
+
+// ---- A1: block entity holders (issue 74, A1) ----
+
+/// Runs `body` on `turn` with `block` as the event's `block`, and returns the mod's `R` lines.
+fn run_block_on(turn: TurnHost<'_>, id: &str, body: &str, block: BlockEntityRef) -> Vec<String> {
+    install_capture();
+    let root = tempfile::tempdir().unwrap();
+    let host = load(root.path(), id, body);
+    let make = move |lua: &Lua, _: &TurnHost<'_>| {
+        let data = lua.create_table()?;
+        data.raw_set("block", lua.create_userdata(Token(block))?)?;
+        new_event(lua, data, &["cancelled", "result"])
+    };
+    host.dispatch_turns(HOOK, turn, &|| false, &make, &mut |_, _, _| true)
+        .unwrap();
+    let prefix = format!("{id}: R ");
+    captured_with_prefix(&prefix)
+        .iter()
+        .map(|line| line[prefix.len()..].to_owned())
+        .collect()
+}
+
+/// Runs `body` as a server turn of `world`, on the current block entity at [`BLOCK`].
+fn run_block(world: &mut World, id: &str, body: &str) -> Vec<String> {
+    run_block_on(TurnHost::Server(world), id, body, block_handle(BLOCK, 0))
+}
+
+#[test]
+fn a_block_entity_value_is_kept_read_back_saved_and_removed() {
+    let mut world = World::new();
+    let lines = run_block(
+        &mut world,
+        "bl1",
+        "local v = { a = { b = 7 }, names = { \"x\", \"y\" } }\n\
+         horizon.log(\"R set \" .. tostring(horizon.attachment_set(event.block, \"bl1:charge\", v)))\n\
+         local got = horizon.attachment_get(event.block, \"bl1:charge\")\n\
+         horizon.log(\"R get \" .. got.a.b .. \" \" .. got.names[2])\n\
+         horizon.log(\"R missing \" .. tostring(horizon.attachment_get(event.block, \"bl1:none\")))",
+    );
+    assert_eq!(lines, ["set true", "get 7 y", "missing nil"]);
+    // The saved form is the value as set, on the block entity's own map.
+    let mut saved = reload(&world);
+    assert_eq!(
+        AttachmentStore::saved(&mut saved, Holder::BlockEntity(BLOCK), "bl1", "charge").unwrap(),
+        Some(nested_value())
+    );
+    // A later turn reads it back from the reloaded world.
+    let again = run_block(
+        &mut saved,
+        "bl1",
+        "horizon.log(\"R again \" .. horizon.attachment_get(event.block, \"bl1:charge\").a.b)",
+    );
+    assert!(again.contains(&"again 7".to_owned()), "{again:?}");
+    let removed = run_block(
+        &mut world,
+        "bl1",
+        "horizon.log(\"R removed \" .. tostring(horizon.attachment_remove(event.block, \"bl1:charge\")))",
+    );
+    assert!(removed.contains(&"removed true".to_owned()), "{removed:?}");
+    // The last key gone, the index goes with it: the holder's map saves nothing for the mod.
+    let mut gone = reload(&world);
+    assert_eq!(
+        AttachmentStore::saved(&mut gone, Holder::BlockEntity(BLOCK), "bl1", "charge").unwrap(),
+        None
+    );
+    assert_eq!(
+        AttachmentStore::saved(&mut gone, Holder::BlockEntity(BLOCK), "bl1", "#index").unwrap(),
+        None
+    );
+}
+
+#[test]
+fn a_block_entity_index_keeps_its_size_and_no_policy() {
+    let mut world = World::new();
+    run_block(
+        &mut world,
+        "bi",
+        "horizon.attachment_set(event.block, \"bi:p\", { v = 2 })",
+    );
+    // The index is saved with no policy, and its entry for the plain key is the size alone.
+    let index = envelope(&world, Holder::BlockEntity(BLOCK), "bi", "#index");
+    assert!(!index.contains_key(&"sync".into()));
+    assert!(!index.contains_key(&"copy_on_death".into()));
+    let Some(Tag::Compound(keys)) = index.get(&"value".into()) else {
+        panic!("{index:?}")
+    };
+    // { v = 2 } is 1 + (3 + 1 + 4) bytes: the root's end tag, then the entry.
+    assert_eq!(keys.get(&"p".into()), Some(&Tag::Int(9)));
+    let value = envelope(&world, Holder::BlockEntity(BLOCK), "bi", "p");
+    assert!(!value.contains_key(&"sync".into()));
+    assert!(!value.contains_key(&"copy_on_death".into()));
+}
+
+#[test]
+fn a_block_entity_refuses_sync_and_copy_on_death_by_name_and_stores_nothing_for_them() {
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}\
+         try(\"sync\", function() horizon.attachment_set(event.block, \"sy:k\", {{ v = 1 }}, {{ sync = true }}) end)\n\
+         try(\"copy\", function() horizon.attachment_set(event.block, \"sy:k\", {{ v = 1 }}, {{ copy_on_death = true }}) end)\n\
+         try(\"plain\", function() horizon.attachment_set(event.block, \"sy:k\", {{ v = 1 }}) end)"
+    );
+    let lines = run_block(&mut world, "sy", &body);
+    assert!(
+        refused(&lines, "sync")
+            .contains("sync does not apply to block entities: their clients need chunk-level sync"),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "copy").contains(
+            "copy_on_death does not apply to block entities: a block entity does not respawn"
+        ),
+        "{lines:?}"
+    );
+    assert_eq!(refused(&lines, "plain"), "plain true nil");
+    // Only the plain value was kept: nothing was queued for the clients, and it has no policy.
+    assert!(drain(&mut world, Holder::BlockEntity(BLOCK)).is_empty());
+    let kept = envelope(&world, Holder::BlockEntity(BLOCK), "sy", "k");
+    assert!(!kept.contains_key(&"sync".into()));
+    assert!(!kept.contains_key(&"copy_on_death".into()));
+}
+
+#[test]
+fn a_block_entity_name_must_be_the_mods_own() {
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}\
+         try(\"other\", function() horizon.attachment_set(event.block, \"other:x\", {{ v = 1 }}) end)\n\
+         try(\"vanilla\", function() horizon.attachment_get(event.block, \"minecraft:x\") end)"
+    );
+    let lines = run_block(&mut world, "fb", &body);
+    assert!(
+        refused(&lines, "other").contains("is outside this mod's namespace 'fb'"),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "vanilla").contains("is outside this mod's namespace 'fb'"),
+        "{lines:?}"
+    );
+    assert!(world.maps[&Holder::BlockEntity(BLOCK)].to_nbt().is_empty());
+}
+
+#[test]
+fn a_stale_or_other_level_block_entity_handle_is_refused_and_changes_nothing() {
+    let mut world = World::new();
+    // Each run has its own mod id: the log lines are kept per id, so one id per run keeps them apart.
+    let run = |world: &mut World, id: &str, handle: BlockEntityRef| {
+        let body = format!(
+            "{TRY}\
+             try(\"set\", function() horizon.attachment_set(event.block, \"{id}:k\", {{ v = 1 }}) end)\n\
+             try(\"get\", function() horizon.attachment_get(event.block, \"{id}:k\") end)"
+        );
+        run_block_on(TurnHost::Server(world), id, &body, handle)
+    };
+    // A new generation at the same position: the block entity was replaced.
+    let replaced = run(&mut world, "st1", block_handle(BLOCK, 9));
+    // No block entity at the position at all.
+    let nothing = run(&mut world, "st2", block_handle([9, 9, 9], 0));
+    // The same position in another dimension: the host's level is the overworld.
+    let nether = mod_api::__private::game::block_entity_ref(
+        LevelRef::new(WorldEpoch::new(1), DimensionKey::NETHER),
+        BLOCK,
+        0,
+    );
+    let other = run(&mut world, "st3", nether);
+    for lines in [&replaced, &nothing] {
+        assert!(
+            refused(lines, "set").contains("the holder is gone, or its handle is stale"),
+            "{lines:?}"
+        );
+        assert!(
+            refused(lines, "get").contains("the holder is gone, or its handle is stale"),
+            "{lines:?}"
+        );
+    }
+    assert!(
+        refused(&other, "set").contains("the holder is in another level"),
+        "{other:?}"
+    );
+    assert!(world.maps[&Holder::BlockEntity(BLOCK)].to_nbt().is_empty());
+}
+
+#[test]
+fn a_client_turn_cannot_read_a_block_entity_and_a_server_turn_can() {
+    let mut world = World::new();
+    run_block(
+        &mut world,
+        "cr",
+        "horizon.attachment_set(event.block, \"cr:k\", { v = 4 })",
+    );
+    let body =
+        format!("{TRY}try(\"get\", function() horizon.attachment_get(event.block, \"cr:k\") end)");
+    let lines = run_block_on(
+        TurnHost::Client(&mut world),
+        "cr",
+        &body,
+        block_handle(BLOCK, 0),
+    );
+    assert!(
+        refused(&lines, "get").contains("a client turn cannot read a block entity's attachments"),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_block_entity_keeps_the_key_and_value_caps_of_an_entity() {
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}{BIG}\
+         for i = 1, {MAX_KEYS} do horizon.attachment_set(event.block, \"bc:k\" .. i, {{ v = i }}) end\n\
+         try(\"k17\", function() horizon.attachment_set(event.block, \"bc:k17\", {{ v = 17 }}) end)\n\
+         try(\"over\", function() horizon.attachment_set(event.block, \"bc:k1\", big(1)) end)\n\
+         try(\"fits\", function() horizon.attachment_set(event.block, \"bc:k1\", big(0)) end)"
+    );
+    let lines = run_block(&mut world, "bc", &body);
+    assert!(
+        refused(&lines, "k17").contains(&format!("at most {MAX_KEYS} attachments")),
+        "{lines:?}"
+    );
+    assert!(
+        refused(&lines, "over").contains(&format!(
+            "the value is {} bytes, more than {MAX_VALUE_BYTES}",
+            MAX_VALUE_BYTES + 1
+        )),
+        "{lines:?}"
+    );
+    assert_eq!(refused(&lines, "fits"), "fits true nil");
+}
+
+#[test]
+fn a_block_entity_holds_at_most_256_kib_of_values_per_mod() {
+    let mut world = World::new();
+    let body = format!(
+        "{TRY}{BIG}\
+         for i = 1, 4 do horizon.attachment_set(event.block, \"bt:b\" .. i, big(0)) end\n\
+         try(\"fifth\", function() horizon.attachment_set(event.block, \"bt:b5\", {{ v = 1 }}) end)"
+    );
+    let lines = run_block(&mut world, "bt", &body);
+    assert!(
+        refused(&lines, "fifth")
+            .contains("the holder's values would be 262153 bytes, more than 262144"),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_mod_creates_at_most_the_block_entity_key_guard_and_then_only_overwrites() {
+    let mut world = World::new();
+    // The guard's count is the keys a mod created in the process: MAX_BLOCK_ENTITY_NEW_KEYS of them
+    // on one block entity, all allowed.
+    let first = run_block(
+        &mut world,
+        "rg",
+        &format!(
+            "for i = 1, {MAX_BLOCK_ENTITY_NEW_KEYS} do horizon.attachment_set(event.block, \"rg:k\" .. i, {{ v = i }}) end"
+        ),
+    );
+    assert!(first.is_empty(), "{first:?}");
+    // An overwrite of an existing key is not a new key: it is allowed past the guard.
+    let again = run_block(
+        &mut world,
+        "rg",
+        &format!(
+            "{TRY}try(\"again\", function() horizon.attachment_set(event.block, \"rg:k1\", {{ v = 9 }}) end)"
+        ),
+    );
+    assert_eq!(refused(&again, "again"), "again true nil");
+    // The next new key, on the other block entity, is refused by name.
+    let other = run_block_on(
+        TurnHost::Server(&mut world),
+        "rg",
+        &format!(
+            "{TRY}try(\"new\", function() horizon.attachment_set(event.block, \"rg:new\", {{ v = 1 }}) end)"
+        ),
+        block_handle(OTHER_BLOCK, 0),
+    );
+    assert!(
+        refused(&other, "new").contains(&format!(
+            "at most {MAX_BLOCK_ENTITY_NEW_KEYS} block-entity attachment keys in one run of the game"
+        )),
+        "{other:?}"
+    );
+    assert!(
+        world.maps[&Holder::BlockEntity(OTHER_BLOCK)]
+            .to_nbt()
+            .is_empty(),
+        "a refused new key stores nothing"
     );
 }

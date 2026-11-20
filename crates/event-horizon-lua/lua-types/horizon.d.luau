@@ -143,19 +143,23 @@ export type ConfigRecord = {
 -- loads; `log`, `none`, `data_map` and the attachment functions work only inside a handler.
 -- `data_map(registry, entry, map)` reads the value an entry has in a data map, as NBT in Lua (nil
 -- where it has none); a read costs 1 unit of the turn's budget. The attachment functions keep a
--- value on an entity or a player under a name `<mod>:<path>` in the mod's own namespace: `get` reads
--- it (nil where none), `set` stores a table (true), `remove` drops it (true if it was there). A
--- holder must be resident in the server's level. Set and remove are server only: a client turn
--- raises. A client turn's `get` reads the copy of a value the server synced (nil where none). Set
--- takes an optional `opts` table: `{ sync = true }` sends the value to the clients that see the
--- holder, `{ copy_on_death = true }` copies it to a respawned player (a player holder only, an
--- entity raises); both default to false, and an unknown key or a non-boolean value raises naming
--- it. Limits, each refused with its reason and nothing changed: the name at most 256 bytes; the value
--- at most 65536 bytes as NBT (4096 for a synced or copied value), with the converter's depth, entry
--- and string limits; 16 names per holder per mod; 262144 bytes of values per holder per mod; 4 synced
--- and 4 copied-on-death names per holder per mod; 16 synced writes per turn. A set without `sync`
--- over a synced name, or a remove of one, sends the clients a removal of their copy. The mod's own
--- index of names is never synced. Get costs 1 unit, set and remove 10. `entity_part(id, handlers)`
+-- value on an entity, a player or a block entity under a name `<mod>:<path>` in the mod's own
+-- namespace: `get` reads it (nil where none), `set` stores a table (true), `remove` drops it (true if
+-- it was there). A holder must be resident in the server's level; a block entity handle must be the
+-- current one (a removed or unloaded block entity raises). Set and remove are server only: a client
+-- turn raises. A client turn's `get` reads the copy of a value the server synced (nil where none), and
+-- raises for a block entity, whose attachments the server does not send. Set takes an optional `opts`
+-- table: `{ sync = true }` sends the value to the clients that see the holder, `{ copy_on_death = true
+-- }` copies it to a respawned player (a player holder only, an entity raises); both default to false,
+-- and an unknown key or a non-boolean value raises naming it. A block entity takes neither option
+-- (each raises). Limits, each refused with its reason and nothing changed: the name at most 256 bytes;
+-- the value at most 65536 bytes as NBT (4096 for a synced or copied value), with the converter's
+-- depth, entry and string limits; 16 names per holder per mod; 262144 bytes of values per holder per
+-- mod; 4 synced and 4 copied-on-death names per holder per mod; 16 synced writes per turn; 4096
+-- block-entity names created by new-name sets per mod in one run of the game (a runaway guard: an
+-- overwrite does not count, and the count starts again at each start). A set without `sync` over a
+-- synced name, or a remove of one, sends the clients a removal of their copy. The mod's own index of
+-- names is never synced. Get costs 1 unit, set and remove 10. `entity_part(id, handlers)`
 -- binds one entity type's handlers, at most 16 parts per mod. `is_shearable` answers a boolean or
 -- nothing. `on_sheared` (server only) answers its drops: at most 16 stacks, 256 items in all, each
 -- within its item's maximum; a list over a bound is refused whole, with a warning. `spawn_cluster_size`
@@ -193,9 +197,9 @@ export type HorizonApi = {
 	data_map_type: (record: DataMapTypeRecord) -> (),
 	data_pack_file: (record: DataPackFileRecord) -> (),
 	data_map: (registry: string, entry: string, map: string) -> any,
-	attachment_get: (holder: EntityRef | PlayerRef, name: string) -> any,
-	attachment_set: (holder: EntityRef | PlayerRef, name: string, value: any, opts: AttachmentOpts?) -> boolean,
-	attachment_remove: (holder: EntityRef | PlayerRef, name: string) -> boolean,
+	attachment_get: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string) -> any,
+	attachment_set: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string, value: any, opts: AttachmentOpts?) -> boolean,
+	attachment_remove: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string) -> boolean,
 	log: (message: string) -> (),
 	none: NoneMarker,
 }
