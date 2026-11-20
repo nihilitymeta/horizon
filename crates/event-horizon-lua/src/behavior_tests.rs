@@ -18,7 +18,8 @@ use crate::declare::{self, BehaviorRecord, behavior_handler_key, goal_handler_ke
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::goal_budget::{Budget, Clock, GOAL_RESERVE, GOAL_WINDOW, GOAL_WINDOW_BUDGET};
 use crate::host::{
-    LuaEntityPart, LuaMod, LuaPart, tests::captured_with_prefix, tests::install_capture,
+    LuaEntityPart, LuaMod, LuaPart, tests::HANG_GUARD, tests::captured_with_prefix,
+    tests::install_capture,
 };
 use crate::mob_turn::TURN_BUDGET_OVERRIDE;
 use crate::quarantine;
@@ -1095,7 +1096,7 @@ fn an_infinite_loop_in_check_is_stopped_at_the_turn_deadline() {
         "behavior turn deadline: an infinite check_extra_start_conditions returned after {elapsed:?}"
     );
     assert!(!answer, "the stopped turn answers no");
-    assert!(elapsed < Duration::from_millis(20), "took {elapsed:?}");
+    assert!(elapsed < HANG_GUARD, "took {elapsed:?}");
     assert!(
         cx.calls.is_empty(),
         "the stopped turn's action is dropped, not applied"

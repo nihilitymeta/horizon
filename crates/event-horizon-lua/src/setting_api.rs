@@ -14,7 +14,7 @@ use mlua::{Error, Function, Lua, Value as LuaValue};
 
 use crate::budget;
 use crate::dispatch::side_runs;
-use crate::host::{Escaped, HANDLER_BUDGET, LuaMod, warn_once};
+use crate::host::{Escaped, LuaMod, handler_budget, warn_once};
 use crate::hostcall::{TurnHost, Void, contained, scoped};
 use crate::settings::{Change, Settings, Value};
 
@@ -100,7 +100,7 @@ pub(crate) fn deliver_with(
             build(lua, change).and_then(|event| {
                 budget::within_with(
                     lua,
-                    HANDLER_BUDGET,
+                    handler_budget(),
                     "the handler ran over its time budget",
                     || handler.call::<()>(event),
                 )

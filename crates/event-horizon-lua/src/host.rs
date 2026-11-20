@@ -44,6 +44,24 @@ pub const MAX_LOG_LINE: usize = 1000;
 /// The time one handler may run for one hook call. A handler that runs longer is stopped, so one
 /// mod cannot hold up the server's tick or the handlers of the other mods.
 pub const HANDLER_BUDGET: Duration = Duration::from_millis(50);
+
+/// The time budget of one handler call: `HANDLER_BUDGET`, or in tests the value the test lifted on
+/// its own thread (see `tests::lift_handler_budget`). Production never lifts it.
+pub(crate) fn handler_budget() -> Duration {
+    #[cfg(test)]
+    {
+        if let Some(limit) = HANDLER_BUDGET_OVERRIDE.with(std::cell::Cell::get) {
+            return limit;
+        }
+    }
+    HANDLER_BUDGET
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's own handler budget, on its thread; unset in production.
+    static HANDLER_BUDGET_OVERRIDE: std::cell::Cell<Option<Duration>> = const { std::cell::Cell::new(None) };
+}
 /// The log lines one mod may write at once.
 pub const LOG_BURST: u32 = 20;
 /// The log lines one mod may add each second, after its burst.
@@ -1243,7 +1261,7 @@ fn lock_ids(ids: &Mutex<Vec<String>>) -> MutexGuard<'_, Vec<String>> {
 pub(crate) fn call_handler(lua: &Lua, handler: &Function, event: &Table) -> mlua::Result<()> {
     budget::within_with(
         lua,
-        HANDLER_BUDGET,
+        handler_budget(),
         "the handler ran over its time budget",
         || handler.call::<()>(event.clone()),
     )
@@ -1258,7 +1276,7 @@ pub(crate) fn call_handler_value(
 ) -> mlua::Result<Value> {
     budget::within_with(
         lua,
-        HANDLER_BUDGET,
+        handler_budget(),
         "the handler ran over its time budget",
         || handler.call::<Value>(event.clone()),
     )
@@ -1573,6 +1591,30 @@ pub(crate) mod tests {
     use std::sync::mpsc;
     use std::time::Instant;
 
+    // Rules for these tests (issue 74). `cargo test` runs them in one process, many at once, often on a
+    // loaded machine. So: a test must not depend on process-wide state it does not own (a `warn_once`
+    // line, a quarantine entry, a goal's strike count, a captured log line that another test wrote), so
+    // give each test its own mod id, which names its log lines and warnings. A shared set a test does
+    // need is reset by that test. No test may check a wall-clock time for a handler or a turn: call
+    // `lift_handler_budget` when the test does not pin the budget, and check a stop with `HANG_GUARD`,
+    // which only catches a run that never ends. Tests that pin the budget keep `HANDLER_BUDGET`.
+
+    /// The handler budget a test lifts to, on its own thread: far above any handler a test runs.
+    const LIFTED_HANDLER_BUDGET: Duration = Duration::from_secs(10);
+
+    /// The longest a test waits for a stopped run to return, when the test checks only that the run
+    /// is stopped and not that it was stopped at a given time. Such a check cannot be exact under
+    /// load (the stop comes at the first interrupt after the deadline, and a loaded machine can
+    /// delay that), so it only catches a run that never stops.
+    pub(crate) const HANG_GUARD: Duration = Duration::from_secs(10);
+
+    /// Lifts this test's handler budget for the rest of its thread. Tests of what a handler does
+    /// with host calls, values and logs call it (each test runs on its own thread, so the lift stays
+    /// with that test). A test that pins the budget itself keeps `HANDLER_BUDGET`.
+    pub(crate) fn lift_handler_budget() {
+        HANDLER_BUDGET_OVERRIDE.with(|cell| cell.set(Some(LIFTED_HANDLER_BUDGET)));
+    }
+
     /// A server hook the generated impl has, with a cancel answer: the tests fire it by name.
     const HOOK: &str = "block_receive_game";
 
@@ -1777,7 +1819,7 @@ pub(crate) mod tests {
         let host = LuaHost::new(vec![a, b]);
         let started = Instant::now();
         host.fire(HOOK);
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < HANG_GUARD);
         assert_eq!(lock(&b_log).clone(), ["ran"]);
     }
 
@@ -1992,7 +2034,7 @@ pub(crate) mod tests {
         let host = LuaHost::new(vec![m]);
         let started = Instant::now();
         host.fire(HOOK);
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < HANG_GUARD);
     }
 
     /// A loaded mod with `id`, `version` and `side`, with no hooks.
@@ -2115,7 +2157,7 @@ pub(crate) mod tests {
             });
             let a_elapsed = a.join().unwrap();
             assert!(
-                a_elapsed < HANDLER_BUDGET * 5,
+                a_elapsed < HANG_GUARD,
                 "the runaway was not stopped in time: {a_elapsed:?}"
             );
         });

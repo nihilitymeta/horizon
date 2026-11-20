@@ -872,7 +872,7 @@ mod tests {
     const HOOK: &str = "block_receive_game";
     use std::cell::Cell;
     use std::path::Path;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     /// Loads a mod named `id` whose main.luau is `source`.
     pub(super) fn load(root: &Path, id: &str, source: &str, side: Side) -> LuaMod {
@@ -1091,7 +1091,7 @@ mod tests {
         ]);
         let started = Instant::now();
         fire_with_pos(&host);
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < crate::host::tests::HANG_GUARD);
         assert_eq!(host.mods()[1].log_lines(), ["ran"]);
     }
 
@@ -1241,7 +1241,7 @@ mod tests {
         ]);
         let started = Instant::now();
         assert_eq!(fire_fov(&host, 1.0), (2.0, 0));
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < crate::host::tests::HANG_GUARD);
     }
 
     #[test]

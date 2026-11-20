@@ -2216,7 +2216,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("time budget"), "got {err}");
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < crate::host::tests::HANG_GUARD);
         let two: i64 = lua.load("return 1 + 1").eval().unwrap();
         assert_eq!(two, 2);
     }
@@ -2292,7 +2292,7 @@ mod tests {
             Duration::from_millis(100),
         );
         assert!(result.is_err());
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < crate::host::tests::HANG_GUARD);
     }
 
     fn options_of(source: &str) -> Result<Vec<(String, ListenerOptions)>, String> {

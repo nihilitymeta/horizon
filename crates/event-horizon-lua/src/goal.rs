@@ -22,7 +22,7 @@ use crate::declare::{GoalRecord, goal_handler_key};
 use crate::dispatch;
 use crate::goal_actions::{self, GoalCtx};
 use crate::goal_budget::Budget;
-use crate::host::{HANDLER_BUDGET, LuaMod, warn_once};
+use crate::host::{LuaMod, handler_budget, warn_once};
 use crate::hostcall::TurnHost;
 use crate::mob_turn::{self, Handler, STOP};
 
@@ -179,7 +179,7 @@ impl LuaGoal {
         let started = self.budget.now();
         let build = mob_turn::event(mob, GoalCtx::userdata);
         let (limit, message) = if hook == STOP {
-            (HANDLER_BUDGET, "the handler ran over its time budget")
+            (handler_budget(), "the handler ran over its time budget")
         } else {
             (mob_turn::turn_budget(), GOAL_TURN_MESSAGE)
         };

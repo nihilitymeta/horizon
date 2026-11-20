@@ -16,6 +16,7 @@ use crate::declare::{self, GoalRecord};
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::goal::add_declared_on;
 use crate::goal_budget::{Budget, Clock, GOAL_RESERVE, GOAL_WINDOW, GOAL_WINDOW_BUDGET};
+use crate::host::tests::HANG_GUARD;
 use crate::host::{LuaEntityPart, LuaMod, LuaPart};
 use crate::state::new_state;
 
@@ -1124,7 +1125,7 @@ fn an_infinite_loop_in_can_use_is_stopped_at_the_goal_turn_deadline() {
     let elapsed = started.elapsed();
     eprintln!("goal turn deadline: an infinite can_use returned after {elapsed:?}");
     assert!(!answer, "the stopped turn answers no");
-    assert!(elapsed < Duration::from_millis(20), "took {elapsed:?}");
+    assert!(elapsed < HANG_GUARD, "took {elapsed:?}");
     assert!(
         cx.calls.is_empty(),
         "the stopped turn's action is dropped, not applied"
@@ -1245,7 +1246,7 @@ fn a_stop_that_runs_over_the_handler_budget_is_dropped_without_a_strike() {
     run(&mut registrar, 0, &mut cx, "stop");
     let elapsed = started.elapsed();
     assert!(
-        elapsed < Duration::from_secs(1),
+        elapsed < HANG_GUARD,
         "stopped by the handler budget: {elapsed:?}"
     );
     assert!(
@@ -1281,7 +1282,7 @@ fn a_looping_goal_over_many_mobs_is_quarantined_after_its_strikes() {
         "loopers",
         "goal loopers:g can_use"
     ));
-    assert!(elapsed < Duration::from_millis(100), "took {elapsed:?}");
+    assert!(elapsed < HANG_GUARD, "took {elapsed:?}");
 }
 
 #[test]

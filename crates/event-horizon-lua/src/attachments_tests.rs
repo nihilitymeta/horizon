@@ -182,6 +182,7 @@ fn event_for(
 /// Runs `body` once on `turn`, with `entity` as the event's entity, and returns the mod's `R` lines
 /// without the id and the `R ` marker.
 fn run_on(turn: TurnHost<'_>, id: &str, body: &str, entity: EntityRef) -> Vec<String> {
+    crate::host::tests::lift_handler_budget();
     // The capture must be in place before the mod logs, or its first lines are lost.
     install_capture();
     let root = tempfile::tempdir().unwrap();
@@ -486,6 +487,7 @@ fn player() -> mod_api::PlayerRef {
 
 /// Runs `body` with `player` as the event's entity, as a server turn of `world`.
 fn run_player(world: &mut World, id: &str, body: &str) -> Vec<String> {
+    crate::host::tests::lift_handler_budget();
     install_capture();
     let root = tempfile::tempdir().unwrap();
     let host = load(root.path(), id, body);
@@ -846,6 +848,7 @@ fn a_client_turn_reads_a_synced_value_and_cannot_set_or_remove_it() {
 
 /// Runs `body` on `turn` with `block` as the event's `block`, and returns the mod's `R` lines.
 fn run_block_on(turn: TurnHost<'_>, id: &str, body: &str, block: BlockEntityRef) -> Vec<String> {
+    crate::host::tests::lift_handler_budget();
     install_capture();
     let root = tempfile::tempdir().unwrap();
     let host = load(root.path(), id, body);

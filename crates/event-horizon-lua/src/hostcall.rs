@@ -842,6 +842,7 @@ mod tests {
 
     /// Fires `HOOK` with `turn` and `n`; returns how many turns committed.
     fn fire(host: &LuaHost, turn: TurnHost<'_>, n: u32) -> u32 {
+        crate::host::tests::lift_handler_budget();
         let mut commits = 0;
         host.dispatch_turns(HOOK, turn, &|| false, &build(n), &mut |_, _, _| {
             commits += 1;
@@ -1337,6 +1338,7 @@ mod tests {
 
     /// Fires `HOOK` with real handles and `turn`; returns how many turns committed.
     fn fire_real(host: &LuaHost, turn: TurnHost<'_>, n: u32) -> u32 {
+        crate::host::tests::lift_handler_budget();
         let mut commits = 0;
         host.dispatch_turns(HOOK, turn, &|| false, &build_real(n), &mut |_, _, _| {
             commits += 1;
@@ -1542,6 +1544,7 @@ mod tests {
 
     /// Fires `HOOK` with the handles of [`build_families`] and `turn`.
     fn fire_families(host: &LuaHost, turn: TurnHost<'_>) -> u32 {
+        crate::host::tests::lift_handler_budget();
         let mut commits = 0;
         host.dispatch_turns(HOOK, turn, &|| false, &build_families(), &mut |_, _, _| {
             commits += 1;
