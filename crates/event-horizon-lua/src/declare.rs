@@ -59,6 +59,16 @@ pub const MAX_CONFIGS: usize = 8;
 /// The longest config file path `horizon.config` accepts, in characters.
 pub const MAX_CONFIG_FILE: usize = 128;
 
+/// The most goals one entity part may declare in its `goals` table.
+pub const MAX_GOALS: usize = 8;
+
+/// The longest goal name, in bytes.
+pub const MAX_GOAL_NAME: usize = 64;
+
+/// The highest priority of a goal, as `horizon.entity_part` takes it (as vanilla's `addGoal`: a lower
+/// number runs first).
+pub const MAX_GOAL_PRIORITY: i64 = 20;
+
 /// The most bytes of a `horizon.config` default. Smaller than the game's config file cap on purpose.
 pub const MAX_CONFIG_DEFAULT: usize = 65536;
 
@@ -106,6 +116,8 @@ pub struct Declaration {
     pub entity_parts: Vec<PartRecord>,
     /// The menu parts `horizon.menu_part` declared, in declaration order.
     pub menu_parts: Vec<PartRecord>,
+    /// The mob goals the `goals` tables of the entity parts declared, in declaration order.
+    pub goals: Vec<GoalRecord>,
     /// The client commands `horizon.client_command` declared, in declaration order.
     pub client_commands: Vec<ClientCommandRecord>,
     /// The configs `horizon.config` declared, in declaration order. Each names the mod as its owner.
@@ -186,6 +198,24 @@ pub struct BlockEntityTypeRecord {
 pub struct PartRecord {
     pub id: String,
     pub hooks: Vec<String>,
+}
+
+/// A mob goal a mod declared in the `goals` table of an entity part: the entity type it is for, its
+/// name in the mod's namespace, its priority and flags, and the handlers it has (sorted). Each handler
+/// is stored under [`goal_handler_key`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GoalRecord {
+    pub entity: String,
+    pub name: String,
+    pub priority: i32,
+    pub flags: mod_api::GoalFlags,
+    pub hooks: Vec<String>,
+}
+
+/// The key a goal's handler is stored under in the mod's handler table. A space cannot be in a goal
+/// name or a hook name, so the key is never a hook's own name or a part's.
+pub fn goal_handler_key(name: &str, hook: &str) -> String {
+    format!("goal {name} {hook}")
 }
 
 /// A world fluid a mod declared with `horizon.world_fluid{...}`: its id in the mod's own namespace and
@@ -320,6 +350,7 @@ pub fn declare_with_budget(
         fluid_parts: recorded.fluid_parts,
         entity_parts: recorded.entity_parts,
         menu_parts: recorded.menu_parts,
+        goals: recorded.goals,
         client_commands: recorded.client_commands,
         configs: recorded.configs,
         commands: recorded.commands,
@@ -458,6 +489,7 @@ struct Recorded {
     fluid_parts: Vec<PartRecord>,
     entity_parts: Vec<PartRecord>,
     menu_parts: Vec<PartRecord>,
+    goals: Vec<GoalRecord>,
     client_commands: Vec<ClientCommandRecord>,
     configs: Vec<mod_api::Config>,
     commands: Vec<CommandRecord>,
@@ -509,6 +541,7 @@ fn run(
     let fluid_parts = RefCell::new(Vec::<PartRecord>::new());
     let entity_parts = RefCell::new(Vec::<PartRecord>::new());
     let menu_parts = RefCell::new(Vec::<PartRecord>::new());
+    let goals = RefCell::new(Vec::<GoalRecord>::new());
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
     let configs = RefCell::new(Vec::<mod_api::Config>::new());
     let commands = RefCell::new(Vec::<CommandRecord>::new());
@@ -603,10 +636,10 @@ fn run(
                 Ok(())
             })?;
             let block_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
-                declare_part(lua, PartKind::Block, id, spec, &parts, &handlers)
+                declare_part(lua, PartKind::Block, id, spec, &parts, &handlers, None)
             })?;
             let item_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
-                declare_part(lua, PartKind::Item, id, spec, &item_parts, &handlers)
+                declare_part(lua, PartKind::Item, id, spec, &item_parts, &handlers, None)
             })?;
             let block_entity_type = scope.create_function(|lua, value: Value| {
                 declare_block_entity_type(lua, owner, value, &block_entity_types)
@@ -619,19 +652,28 @@ fn run(
                     spec,
                     &block_entity_parts,
                     &handlers,
+                    None,
                 )
             })?;
             let world_fluid = scope.create_function(|lua, value: Value| {
                 declare_world_fluid(lua, owner, value, &fluids)
             })?;
             let fluid_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
-                declare_part(lua, PartKind::Fluid, id, spec, &fluid_parts, &handlers)
+                declare_part(lua, PartKind::Fluid, id, spec, &fluid_parts, &handlers, None)
             })?;
             let entity_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
-                declare_part(lua, PartKind::Entity, id, spec, &entity_parts, &handlers)
+                declare_part(
+                    lua,
+                    PartKind::Entity,
+                    id,
+                    spec,
+                    &entity_parts,
+                    &handlers,
+                    Some((owner, &goals)),
+                )
             })?;
             let menu_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
-                declare_part(lua, PartKind::Menu, id, spec, &menu_parts, &handlers)
+                declare_part(lua, PartKind::Menu, id, spec, &menu_parts, &handlers, None)
             })?;
             let client_command = scope.create_function(|lua, value: Value| {
                 declare_client_command(lua, value, &client_commands)
@@ -721,6 +763,7 @@ fn run(
         fluid_parts: fluid_parts.into_inner(),
         entity_parts: entity_parts.into_inner(),
         menu_parts: menu_parts.into_inner(),
+        goals: goals.into_inner(),
         client_commands: client_commands.into_inner(),
         configs: configs.into_inner(),
         commands: commands.into_inner(),
@@ -1346,7 +1389,8 @@ fn declare_config(
 
 /// Reads `horizon.block_part(id, {hook = fn, ...})` or `horizon.item_part(...)` (`kind` names it): the
 /// part's id and handlers are checked, each handler is stored under [`part_handler_key`], and the
-/// record is kept in `records`.
+/// record is kept in `records`. An entity part also takes a `goals` table, read by `declare_goals`
+/// into the goal records of `goals` (given with the mod's id, which the goals' names must be in).
 fn declare_part(
     lua: &Lua,
     kind: PartKind,
@@ -1354,6 +1398,7 @@ fn declare_part(
     spec: Value,
     records: &RefCell<Vec<PartRecord>>,
     handlers: &Table,
+    goals: Option<(&str, &RefCell<Vec<GoalRecord>>)>,
 ) -> mlua::Result<()> {
     let keyword = kind.keyword();
     let id = part_id(lua, kind, id)?;
@@ -1385,6 +1430,7 @@ fn declare_part(
         ));
     }
     let mut hooks = Vec::new();
+    let mut goal_list = None;
     for pair in table.pairs::<Value, Value>() {
         let (key, value) = pair?;
         let Value::String(name) = key else {
@@ -1394,6 +1440,10 @@ fn declare_part(
             ));
         };
         let name = name.to_str()?.to_string();
+        if name == "goals" && goals.is_some() {
+            goal_list = Some(value);
+            continue;
+        }
         let Value::Function(handler) = value else {
             return Err(at_line(
                 lua,
@@ -1407,15 +1457,204 @@ fn declare_part(
         handlers.raw_set(part_handler_key(kind, &id, &name), list)?;
         hooks.push(name);
     }
-    if hooks.is_empty() {
+    let mut declared = 0;
+    if let (Some((owner, goal_records)), Some(value)) = (goals, goal_list) {
+        declared = declare_goals(lua, owner, &id, value, goal_records, handlers)?;
+    }
+    if hooks.is_empty() && declared == 0 {
+        let or_goal = if goals.is_some() { " or goal" } else { "" };
         return Err(at_line(
             lua,
-            format!("horizon.{keyword} for '{id}' needs at least one handler"),
+            format!("horizon.{keyword} for '{id}' needs at least one handler{or_goal}"),
         ));
     }
     hooks.sort();
     records.push(PartRecord { id, hooks });
     Ok(())
+}
+
+/// Reads the `goals` table of the entity part `entity`: a list of at most `MAX_GOALS` goal tables,
+/// each read by `declare_goal`. Returns how many goals it declared.
+fn declare_goals(
+    lua: &Lua,
+    owner: &str,
+    entity: &str,
+    value: Value,
+    records: &RefCell<Vec<GoalRecord>>,
+    handlers: &Table,
+) -> mlua::Result<usize> {
+    let Value::Table(list) = value else {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part '{entity}': goals is a list of goal tables"),
+        ));
+    };
+    let count = list.raw_len();
+    let mut entries = 0;
+    for pair in list.pairs::<Value, Value>() {
+        pair?;
+        entries += 1;
+    }
+    if entries != count {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part '{entity}': goals is a list, with entries 1 to {count}"),
+        ));
+    }
+    if count > MAX_GOALS {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part '{entity}' declares at most {MAX_GOALS} goals"),
+        ));
+    }
+    for index in 1..=count {
+        let goal: Value = list.raw_get(index)?;
+        declare_goal(lua, owner, entity, goal, records, handlers)?;
+    }
+    Ok(count)
+}
+
+/// Reads one goal table of the entity part `entity`: `name` (namespaced to the mod, at most
+/// `MAX_GOAL_NAME` bytes, declared once), `priority` (a whole number from 0 to `MAX_GOAL_PRIORITY`),
+/// `flags` (optional: a list of `move`, `look`, `jump` and `target`), and the handlers `can_use`
+/// (required), `can_continue`, `start`, `tick` and `stop`. Any other key is refused by name.
+fn declare_goal(
+    lua: &Lua,
+    owner: &str,
+    entity: &str,
+    value: Value,
+    records: &RefCell<Vec<GoalRecord>>,
+    handlers: &Table,
+) -> mlua::Result<()> {
+    let Value::Table(goal) = value else {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part '{entity}': each goal is a table"),
+        ));
+    };
+    let mut name = None;
+    let mut priority = None;
+    let mut flags = mod_api::GoalFlags::NONE;
+    let mut found = Vec::<(&str, mlua::Function)>::new();
+    for pair in goal.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        let Value::String(key) = key else {
+            return Err(at_line(lua, "a goal's keys are names".to_owned()));
+        };
+        let key = key.to_str()?.to_string();
+        match (key.as_str(), value) {
+            ("name", Value::String(text)) => name = Some(text.to_str()?.to_string()),
+            ("priority", Value::Integer(number)) => {
+                if !(0..=MAX_GOAL_PRIORITY).contains(&number) {
+                    return Err(at_line(
+                        lua,
+                        format!("a goal's priority is from 0 to {MAX_GOAL_PRIORITY}, not {number}"),
+                    ));
+                }
+                priority = Some(number as i32);
+            }
+            ("priority", _) => {
+                return Err(at_line(
+                    lua,
+                    "a goal's priority is a whole number".to_owned(),
+                ));
+            }
+            ("flags", value) => flags = goal_flags(lua, value)?,
+            ("name", _) => return Err(at_line(lua, "a goal's name is a string".to_owned())),
+            ("can_use", Value::Function(f)) => found.push(("can_use", f)),
+            ("can_continue", Value::Function(f)) => found.push(("can_continue", f)),
+            ("start", Value::Function(f)) => found.push(("start", f)),
+            ("tick", Value::Function(f)) => found.push(("tick", f)),
+            ("stop", Value::Function(f)) => found.push(("stop", f)),
+            (hook @ ("can_use" | "can_continue" | "start" | "tick" | "stop"), _) => {
+                return Err(at_line(
+                    lua,
+                    format!("a goal's handler '{hook}' needs a function"),
+                ));
+            }
+            (other, _) => {
+                return Err(at_line(
+                    lua,
+                    format!(
+                        "unknown goal key '{other}'; the keys are name, priority, flags, can_use, can_continue, start, tick and stop"
+                    ),
+                ));
+            }
+        }
+    }
+    let Some(name) = name else {
+        return Err(at_line(lua, format!("a goal of '{entity}' needs a name")));
+    };
+    if name.len() > MAX_GOAL_NAME {
+        return Err(at_line(
+            lua,
+            format!("the goal '{name}' is longer than {MAX_GOAL_NAME} bytes"),
+        ));
+    }
+    check_id(owner, &name)
+        .map_err(|reason| at_line(lua, format!("horizon.entity_part goal: {reason}")))?;
+    let mut records = records.borrow_mut();
+    if records.iter().any(|record| record.name == name) {
+        return Err(at_line(
+            lua,
+            format!("horizon.entity_part: the goal '{name}' is declared twice in this mod"),
+        ));
+    }
+    let Some(priority) = priority else {
+        return Err(at_line(lua, format!("the goal '{name}' needs a priority")));
+    };
+    if !found.iter().any(|(hook, _)| *hook == "can_use") {
+        return Err(at_line(lua, format!("the goal '{name}' needs can_use")));
+    }
+    let mut hooks = Vec::new();
+    for (hook, handler) in found {
+        let list = lua.create_table()?;
+        list.raw_set(1, handler)?;
+        handlers.raw_set(goal_handler_key(&name, hook), list)?;
+        hooks.push(hook.to_owned());
+    }
+    hooks.sort();
+    records.push(GoalRecord {
+        entity: entity.to_owned(),
+        name,
+        priority,
+        flags,
+        hooks,
+    });
+    Ok(())
+}
+
+/// The flags a goal's `flags` list names: `move`, `look`, `jump` and `target`, each as the game's
+/// `GoalFlags`. Any other name is refused by name.
+fn goal_flags(lua: &Lua, value: Value) -> mlua::Result<mod_api::GoalFlags> {
+    let Value::Table(list) = value else {
+        return Err(at_line(
+            lua,
+            "a goal's flags are a list of names: move, look, jump and target".to_owned(),
+        ));
+    };
+    let mut flags = mod_api::GoalFlags::NONE;
+    for entry in list.sequence_values::<Value>() {
+        let Value::String(text) = entry? else {
+            return Err(at_line(lua, "a goal's flags are names".to_owned()));
+        };
+        let text = text.to_str()?.to_string();
+        flags = flags.union(match text.as_str() {
+            "move" => mod_api::GoalFlags::MOVE,
+            "look" => mod_api::GoalFlags::LOOK,
+            "jump" => mod_api::GoalFlags::JUMP,
+            "target" => mod_api::GoalFlags::TARGET,
+            other => {
+                return Err(at_line(
+                    lua,
+                    format!(
+                        "unknown goal flag '{other}'; the flags are move, look, jump and target"
+                    ),
+                ));
+            }
+        });
+    }
+    Ok(flags)
 }
 
 /// Whether `name` is a handler the host binds for a part of `kind`: an error with the reason when it

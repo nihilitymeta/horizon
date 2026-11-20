@@ -964,7 +964,7 @@ entity_part.general_entity_tick skipped: per-mob object, per-tick turn: needs me
 entity_part.is_shearable emitted
 entity_part.on_sheared emitted
 entity_part.register_behaviors skipped: per-mob object, per-tick turn: needs measurement
-entity_part.register_goals skipped: per-mob object, per-tick turn: needs measurement
+entity_part.register_goals skipped: declared in the entity part's goals table (not a handler)
 entity_part.spawn_cluster_size emitted
 
 # menu parts (issue 74, B): the MenuPart trait's methods

@@ -59,6 +59,8 @@ impl Budget {
 struct Guard {
     budget: Arc<Budget>,
     depth: usize,
+    /// The deadline this call asked for (its own, which an outer call may have shortened).
+    own: u64,
 }
 
 impl Drop for Guard {
@@ -88,6 +90,22 @@ pub fn within_with<T>(
     let budget = install(lua);
     let _guard = enter(&budget, limit, message);
     f()
+}
+
+/// Runs `f` as `within_with`, and also says whether the call's own deadline had passed by the time `f`
+/// returned. A call that failed with the deadline passed was stopped by its time budget, as opposed to
+/// failing for another reason; the caller uses this to tell the two apart.
+pub fn within_with_expiry<T>(
+    lua: &Lua,
+    limit: Duration,
+    message: &'static str,
+    f: impl FnOnce() -> T,
+) -> (T, bool) {
+    let budget = install(lua);
+    let guard = enter(&budget, limit, message);
+    let out = f();
+    let expired = budget.now() >= guard.own;
+    (out, expired)
 }
 
 /// The state's budget, installing its one interrupt on first use.
@@ -124,6 +142,7 @@ fn enter(budget: &Arc<Budget>, limit: Duration, message: &'static str) -> Guard 
     Guard {
         budget: Arc::clone(budget),
         depth,
+        own,
     }
 }
 
@@ -238,6 +257,23 @@ mod tests {
         });
         assert!(result.is_err(), "a pcall must not swallow the stop");
         assert!(started.elapsed() < SLACK);
+    }
+
+    #[test]
+    fn expiry_tells_a_stopped_call_from_one_that_failed_early() {
+        let lua = new_state().unwrap();
+        let limit = Duration::from_millis(20);
+        let (stopped, expired) = within_with_expiry(&lua, limit, "stopped", || {
+            lua.load("while true do end").exec().is_err()
+        });
+        assert!(stopped && expired, "the loop is stopped by its deadline");
+        let (failed, expired) = within_with_expiry(&lua, Duration::from_secs(5), "late", || {
+            lua.load("error('early')").exec().is_err()
+        });
+        assert!(
+            failed && !expired,
+            "an ordinary error well before the deadline"
+        );
     }
 
     #[test]

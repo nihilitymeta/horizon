@@ -91,6 +91,56 @@ export type HandlerOptions = {
 -- The records a mod declares while it loads (declare.rs). Declarations are refused once the chunk has
 -- run, and `horizon.on` too.
 
+-- A goal of an entity part's `goals` table. `name` is `<mod>:<path>` in the mod's own namespace (at
+-- most 64 bytes, declared once per mod). `priority` is a whole number from 0 to 20; as vanilla's
+-- addGoal, a lower number runs first. `flags` lists what the goal holds while it runs (at most one
+-- goal holds each flag): `move`, `look`, `jump`, `target`; an unknown flag raises. `can_use` (required)
+-- answers true to start the goal, and anything else (nil included) does not. `can_continue` answers
+-- whether a running goal keeps running: nil keeps it running, false stops it, and a failed call stops
+-- it; without a `can_continue` the goal keeps its `can_use` answer. `start`, `tick` and `stop` answer
+-- nothing; `stop` always runs. Each handler is called with one argument, `e.mob` (a MobRef). A goal
+-- can read through its mob's handle, but its writes raise (no server host in a goal's turn). Keep a
+-- table per mob in an upvalue keyed by `e.mob:entity()` if you need one: the host does not save it.
+-- Each goal's can_use, can_continue, start and tick runs under its own deadline of 1 ms (a loop is
+-- stopped there); stop runs under the 50 ms handler budget. The goals of all mobs share a budget of 4 ms
+-- per 50 ms window, so one window costs at most 4 ms plus one turn's 1 ms. Once the window's budget is
+-- spent: can_use answers false, can_continue keeps its last answer, and tick is skipped (stop still
+-- runs). A turn stopped by its deadline is a budget failure: it answers nothing (can_use false,
+-- can_continue stops the goal), and the actions it queued are DROPPED. An ordinary Lua error is not a
+-- budget failure: the actions made before the error stay applied, as handle writes do. Three budget
+-- failures in a row of one goal handler quarantine that goal handler (the other goals of the mod keep
+-- theirs) and log one warning; a turn that is not a budget failure resets the count. A stop stopped by
+-- its budget is dropped with its actions and is not counted. A panic in a goal handler quarantines its
+-- handler name (`can_use`, `tick`, ...) for the whole mod, so every goal of the mod stops getting that
+-- call, not only the one that panicked. `e.ctx` (GoalCtx) makes the mob's navigation and target
+-- changes, at most 64 per call, each costing 10 units of the turn's budget; they are applied in order
+-- when the handler returns, so a read in the same handler does not see them yet. A read in a handler
+-- sees the mob as the tick left it.
+export type EntityGoalSpec = {
+	name: string,
+	priority: number,
+	flags: { string }?,
+	can_use: (event: GoalEvent) -> (boolean?),
+	can_continue: ((event: GoalEvent) -> (boolean?))?,
+	start: ((event: GoalEvent) -> ())?,
+	tick: ((event: GoalEvent) -> ())?,
+	stop: ((event: GoalEvent) -> ())?,
+}
+
+-- The goal actions of one goal call (goal_actions.rs). Each returns nothing. `move_to` takes a
+-- finite position and a finite speed from 0.0 to 3.0; `look_at` a finite position; `set_target` a
+-- MobRef, an EntityRef or nil (no target). A value outside these is an error naming it, and the
+-- action is not made. A `GoalCtx` kept past its call raises "not available outside this goal call".
+export type GoalCtx = {
+	move_to: (self: GoalCtx, x: number, y: number, z: number, speed: number) -> (),
+	stop_navigation: (self: GoalCtx) -> (),
+	look_at: (self: GoalCtx, x: number, y: number, z: number) -> (),
+	set_target: (self: GoalCtx, target: MobRef | EntityRef | nil) -> (),
+	jump: (self: GoalCtx) -> (),
+}
+
+export type GoalEvent = { mob: MobRef, ctx: GoalCtx }
+
 -- A block made from a vanilla block of the given template: `id` is `<mod>:<path>`, `template` is
 -- `minecraft:<path>`. At most 256 blocks per mod.
 export type BlockRecord = { id: string, template: string }
@@ -160,7 +210,10 @@ export type ConfigRecord = {
 -- overwrite does not count, and the count starts again at each start). A set without `sync` over a
 -- synced name, or a remove of one, sends the clients a removal of their copy. The mod's own index of
 -- names is never synced. Get costs 1 unit, set and remove 10. `entity_part(id, handlers)`
--- binds one entity type's handlers, at most 16 parts per mod. `is_shearable` answers a boolean or
+-- binds one entity type's handlers, at most 16 parts per mod, and its `goals` (EntityGoalSpec: at most
+-- 8 goals per part, each a mob goal of the mod that the mob gets at its construction, at most one
+-- entity part per type). Declaring a goal runs no Lua; each of its calls is one Lua turn under a shared
+-- budget of 4 ms of goal time per 50 ms of wall clock for all mobs (goal_budget.rs). `is_shearable` answers a boolean or
 -- nothing. `on_sheared` (server only) answers its drops: at most 16 stacks, 256 items in all, each
 -- within its item's maximum; a list over a bound is refused whole, with a warning. `spawn_cluster_size`
 -- answers a whole number from 0 to 64 (an answer above 64 is refused with a warning and the next part,
@@ -187,7 +240,7 @@ export type HorizonApi = {
 	item_part: (id: string, handlers: ItemPartHandlers) -> (),
 	block_entity_part: (id: string, handlers: BlockEntityPartHandlers) -> (),
 	fluid_part: (id: string, handlers: FluidPartHandlers) -> (),
-	entity_part: (id: string, handlers: EntityPartHandlers) -> (),
+	entity_part: (id: string, handlers: EntityPartHandlers & { goals: { EntityGoalSpec }? }) -> (),
 	-- A menu part's id is the mod menu type's id (`<mod>:<path>`, any namespace); it is not checked
 	-- against the game's menus, so a part on a menu that never opens is never asked.
 	menu_part: (id: string, handlers: MenuPartHandlers) -> (),

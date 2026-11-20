@@ -9,7 +9,7 @@ pub const ENTITY_PARTS: &[(&str, Option<&str>)] = &[
     ("is_shearable", None),
     ("on_sheared", None),
     ("register_behaviors", Some("per-mob object, per-tick turn: needs measurement")),
-    ("register_goals", Some("per-mob object, per-tick turn: needs measurement")),
+    ("register_goals", Some("declared in the entity part's goals table (not a handler)")),
     ("spawn_cluster_size", None),
 ];
 
@@ -109,5 +109,8 @@ impl mod_api::EntityPart for LuaEntityPart {
             },
         ));
         answer
+    }
+    fn register_goals(&self, goals: &mut mod_api::GoalRegistrar<'_>) {
+        self.declared_goals(goals)
     }
 }

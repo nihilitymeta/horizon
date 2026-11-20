@@ -1677,6 +1677,12 @@ const NBT_REASON: &str = "NBT output (Compound is denied)";
 /// The reason of a mob's goals and brains and of a general entity row's tick: each runs per mob or per
 /// tick, and needs a measurement before it is bound.
 pub const MOB_REASON: &str = "per-mob object, per-tick turn: needs measurement";
+/// The reason of a mob's goals as a handler name: a mod declares them in the `goals` table of its
+/// entity part, and the host adds them at each mob's construction (see [`DECLARED_GOALS_METHOD`]).
+pub const GOALS_REASON: &str = "declared in the entity part's goals table (not a handler)";
+/// The method the generated `EntityPart` adapter gets for `register_goals`, hand-written in
+/// `host.rs`: it adds the goals the entity part's `goals` table declared, one `LuaGoal` each.
+pub const DECLARED_GOALS_METHOD: &str = "    fn register_goals(&self, goals: &mut mod_api::GoalRegistrar<'_>) {\n        self.declared_goals(goals)\n    }\n";
 /// The reason of a plain method the route table does not bind yet (see [`PLAIN_PART_METHODS`]).
 pub const NEXT_CHUNK_REASON: &str = "plain method: next chunk";
 
@@ -1718,7 +1724,7 @@ pub const PLAIN_PART_METHODS: &[PlainPart] = &[
     PlainPart {
         trait_name: "EntityPart",
         method: "register_goals",
-        route: Err(MOB_REASON),
+        route: Err(GOALS_REASON),
         answer_range: None,
     },
     PlainPart {
@@ -1852,6 +1858,7 @@ pub fn emit_parts(
     let mut methods = Vec::new();
     let mut skipped = Vec::new();
     let mut table = String::new();
+    let mut hand = String::new();
     let mut names: Vec<&HookSig> = sigs.iter().collect();
     names.sort_by(|a, b| a.name.cmp(&b.name));
     for sig in names {
@@ -1879,7 +1886,12 @@ pub fn emit_parts(
             Some(Err(reason)) => Some(reason.to_owned()),
             _ => None,
         };
-        let result = if let Some(reason) = skipped_route {
+        let declared_goals = part == PartTrait::Entity && name == "register_goals";
+        let result = if declared_goals {
+            // The table row says why it is not a handler; the method itself is the hand-written one.
+            hand.push_str(DECLARED_GOALS_METHOD);
+            Err(GOALS_REASON.to_owned())
+        } else if let Some(reason) = skipped_route {
             Err(reason)
         } else if hot {
             Err(HOT_REASON.to_owned())
@@ -1944,6 +1956,7 @@ pub fn emit_parts(
     for method in &methods {
         text.push_str(&method_text(method));
     }
+    text.push_str(&hand);
     text.push_str("}\n");
     if part == PartTrait::BlockEntity {
         // A block entity part is a BlockPart too (the supertrait), and it subscribes to no block hook:

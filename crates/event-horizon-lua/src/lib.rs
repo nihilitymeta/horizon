@@ -19,6 +19,11 @@ mod entity_tests;
 #[cfg(test)]
 mod fluid_tests;
 pub mod generated;
+mod goal;
+mod goal_actions;
+mod goal_budget;
+#[cfg(test)]
+mod goal_tests;
 pub mod handles;
 pub mod host;
 pub mod hostcall;

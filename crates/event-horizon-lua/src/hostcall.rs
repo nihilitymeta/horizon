@@ -64,7 +64,7 @@ pub const TURN_BUDGET: u32 = 10_000;
 /// The hook calls that may be open at once on one thread. A call past this is refused.
 pub const MAX_DEPTH: u32 = 8;
 /// The Lua registry key of the turn's scoped function. Only [`scoped`] sets it, and only in a turn.
-const SLOT: &str = "event_horizon.host_call";
+pub(crate) const SLOT: &str = "event_horizon.host_call";
 /// Raised when a handle is called with no turn open.
 pub const OUTSIDE: &str = "no host call outside a hook";
 /// Raised when the turn's host is not of the kind the operation needs.
@@ -85,6 +85,13 @@ pub enum TurnHost<'a> {
     ClientRead(&'a dyn ClientHost),
     /// A read-only hook.
     Read(&'a dyn Host),
+    /// A goal's handler (#74, B1): reads through `host`; its `e.ctx` actions are queued in `actions`
+    /// for the goal call `call` (see goal_actions.rs), and no handle write reaches the mob here.
+    Goal {
+        host: &'a dyn Host,
+        actions: &'a mut Vec<crate::goal_actions::GoalAction>,
+        call: u64,
+    },
     /// A hook that gets no host. Its handles raise `no host call outside a hook`.
     None,
 }
@@ -105,6 +112,7 @@ impl<'a> TurnHost<'a> {
             TurnHost::Client(host) => Some(&**host as &dyn Host),
             TurnHost::ClientRead(host) => Some(*host as &dyn Host),
             TurnHost::Read(host) => Some(*host),
+            TurnHost::Goal { host, .. } => Some(*host),
             TurnHost::None => None,
         }
     }
@@ -138,7 +146,24 @@ impl<'a> TurnHost<'a> {
             TurnHost::Client(host) => TurnHost::Client(&mut **host),
             TurnHost::ClientRead(host) => TurnHost::ClientRead(*host),
             TurnHost::Read(host) => TurnHost::Read(*host),
+            TurnHost::Goal {
+                host,
+                actions,
+                call,
+            } => TurnHost::Goal {
+                host: *host,
+                actions,
+                call: *call,
+            },
             TurnHost::None => TurnHost::None,
+        }
+    }
+
+    /// The goal call a goal's turn is for, if the turn is a goal's.
+    pub(crate) fn goal_call(&self) -> Option<u64> {
+        match self {
+            TurnHost::Goal { call, .. } => Some(*call),
+            _ => None,
         }
     }
 }
@@ -380,6 +405,9 @@ fn unknown(op: &str) -> Error {
 /// What an operation costs, from the generated table of the handle families.
 #[cfg(not(test))]
 fn op_cost(op: &str) -> mlua::Result<u32> {
+    if let Some(cost) = crate::goal_actions::cost(op) {
+        return Ok(cost);
+    }
     if op == crate::commands::FEEDBACK_OP {
         return Ok(crate::commands::FEEDBACK_COST);
     }
@@ -402,6 +430,9 @@ fn run_op(
     args: MultiValue,
     void: &Void,
 ) -> mlua::Result<Value> {
+    if crate::goal_actions::is_op(op) {
+        return crate::goal_actions::run(host, op, &this, args);
+    }
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);
     }
@@ -417,6 +448,9 @@ fn run_op(
 /// The H0 stub's table first, then the generated one: the stub's names are not generated names.
 #[cfg(test)]
 fn op_cost(op: &str) -> mlua::Result<u32> {
+    if let Some(cost) = crate::goal_actions::cost(op) {
+        return Ok(cost);
+    }
     if op == crate::commands::FEEDBACK_OP {
         return Ok(crate::commands::FEEDBACK_COST);
     }
@@ -441,6 +475,9 @@ fn run_op(
     args: MultiValue,
     void: &Void,
 ) -> mlua::Result<Value> {
+    if crate::goal_actions::is_op(op) {
+        return crate::goal_actions::run(host, op, &this, args);
+    }
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);
     }
@@ -1970,7 +2007,7 @@ mod tests {
                 "entity_part.is_shearable emitted",
                 "entity_part.on_sheared emitted",
                 "entity_part.register_behaviors skipped: per-mob object, per-tick turn: needs measurement",
-                "entity_part.register_goals skipped: per-mob object, per-tick turn: needs measurement",
+                "entity_part.register_goals skipped: declared in the entity part's goals table (not a handler)",
                 "entity_part.spawn_cluster_size emitted",
             ]
         );

@@ -11,7 +11,7 @@
 //! has written, then to the data. Writes go through a host function that accepts only the writable
 //! keys. The proxy is read-only too, so `rawset` cannot store a field on it and shadow the data.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{Error, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
@@ -599,6 +599,34 @@ pub(crate) fn turns_in(
     build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
     commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
 ) -> Result<(), String> {
+    turns_in_reporting(
+        mods,
+        order,
+        hook,
+        key,
+        host,
+        delivers,
+        is_cancelled,
+        build,
+        commit,
+        &Cell::new(false),
+    )
+}
+
+/// `turns_in`, which also sets `failed_turn` when a mod's turn failed (as `replace_in_reporting`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn turns_in_reporting(
+    mods: &[LuaMod],
+    order: &[usize],
+    hook: &str,
+    key: &str,
+    host: TurnHost<'_>,
+    delivers: &dyn Fn(&LuaMod) -> bool,
+    is_cancelled: &dyn Fn() -> bool,
+    build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+    commit: &mut dyn FnMut(&str, &Event, &TurnHost<'_>) -> bool,
+    failed_turn: &Cell<bool>,
+) -> Result<(), String> {
     {
         let _open = open_call(hook)?;
         let mut host = host;
@@ -621,6 +649,7 @@ pub(crate) fn turns_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
+                    failed_turn.set(true);
                     warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
@@ -631,16 +660,21 @@ pub(crate) fn turns_in(
             let event = match contained(m.id(), hook, || build(m.lua(), &host)) {
                 Some(Ok(event)) => event,
                 Some(Err(err)) => {
+                    failed_turn.set(true);
                     warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
-                None => continue,
+                None => {
+                    failed_turn.set(true);
+                    continue;
+                }
             };
             let failed = contained(m.id(), hook, || {
                 run_hosted(m, hook, &mut host, &handlers, event.table())
             })
             .unwrap_or(true);
             if failed {
+                failed_turn.set(true);
                 warn_once(
                     m.id(),
                     &format!(
@@ -696,6 +730,32 @@ pub(crate) fn replace_in(
     build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
     answer: &mut dyn FnMut(&str, Value, &TurnHost<'_>) -> bool,
 ) -> Result<(), String> {
+    replace_in_reporting(
+        mods,
+        order,
+        hook,
+        key,
+        host,
+        build,
+        answer,
+        &Cell::new(false),
+    )
+}
+
+/// `replace_in`, which also sets `failed` when a mod's turn failed (a handler raised, its budget ran
+/// out, a host call panicked, or the build failed), so a caller can tell a failed turn from a
+/// handler that returned nothing. A call refused for nesting sets it too.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn replace_in_reporting(
+    mods: &[LuaMod],
+    order: &[usize],
+    hook: &str,
+    key: &str,
+    host: TurnHost<'_>,
+    build: &dyn Fn(&Lua, &TurnHost<'_>) -> mlua::Result<Event>,
+    answer: &mut dyn FnMut(&str, Value, &TurnHost<'_>) -> bool,
+    failed_turn: &Cell<bool>,
+) -> Result<(), String> {
     {
         let _open = open_call(hook)?;
         let mut host = host;
@@ -712,6 +772,7 @@ pub(crate) fn replace_in(
             let handlers = match declare::handlers(m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
+                    failed_turn.set(true);
                     warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
@@ -722,10 +783,14 @@ pub(crate) fn replace_in(
             let event = match contained(m.id(), hook, || build(m.lua(), &host)) {
                 Some(Ok(event)) => event,
                 Some(Err(err)) => {
+                    failed_turn.set(true);
                     warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
-                None => continue,
+                None => {
+                    failed_turn.set(true);
+                    continue;
+                }
             };
             let void = Void::default();
             let (found, failed) = match scoped(m.lua(), &mut host, &void, |lua| {
@@ -759,6 +824,7 @@ pub(crate) fn replace_in(
                 }
             };
             if failed {
+                failed_turn.set(true);
                 warn_once(
                     m.id(),
                     &format!(

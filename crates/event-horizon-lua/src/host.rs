@@ -20,7 +20,7 @@ use mlua::{Error, Function, Lua, Table, Value};
 use crate::budget;
 use crate::declare::{
     self, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord, FluidRecord,
-    ItemRecord, ListenerOptions, PartKind, PartRecord,
+    GoalRecord, ItemRecord, ListenerOptions, PartKind, PartRecord,
 };
 use crate::discover::{Discovered, ENTRY, Side};
 use crate::dispatch::{self, new_event};
@@ -72,6 +72,8 @@ pub struct LuaMod {
     /// `horizon.menu_part`.
     entity_parts: Vec<PartRecord>,
     menu_parts: Vec<PartRecord>,
+    /// The mob goals the `goals` tables of the mod's entity parts declared (see `goal.rs`).
+    goals: Vec<GoalRecord>,
     /// The client commands the mod declared with `horizon.client_command`.
     client_commands: Vec<ClientCommandRecord>,
     /// The server commands the mod declared with `horizon.command`.
@@ -188,6 +190,7 @@ impl LuaMod {
             fluid_parts: declaration.fluid_parts,
             entity_parts: declaration.entity_parts,
             menu_parts: declaration.menu_parts,
+            goals: declaration.goals,
             client_commands: declaration.client_commands,
             commands: declaration.commands,
             configs: declaration.configs,
@@ -213,6 +216,11 @@ impl LuaMod {
     /// The block parts this mod declared, in declaration order.
     pub fn parts(&self) -> &[PartRecord] {
         &self.parts
+    }
+
+    /// The mob goals this mod declared, in declaration order.
+    pub(crate) fn goal_records(&self) -> &[GoalRecord] {
+        &self.goals
     }
 
     /// The records of the parts of `kind` this mod declared, in declaration order.
@@ -898,6 +906,14 @@ pub type LuaFluidPart = LuaPart<FluidTag>;
 
 /// One entity part of a loaded mod: the EntityPart the game calls for an entity type the mod attached to.
 pub type LuaEntityPart = LuaPart<EntityTag>;
+
+impl LuaEntityPart {
+    /// The mob goals this part's `goals` table declared, added to the mob's selectors as the game builds
+    /// it (the generated `register_goals` calls this): one `LuaGoal` per declared goal of this entity type.
+    pub(crate) fn declared_goals(&self, goals: &mut mod_api::GoalRegistrar<'_>) {
+        crate::goal::add_declared(&self.mods, self.index, &self.id, goals);
+    }
+}
 
 /// One menu part of a loaded mod: the MenuPart the game calls for a mod menu type the mod attached to.
 pub type LuaMenuPart = LuaPart<MenuTag>;
