@@ -593,7 +593,8 @@ mod tests {
         );
         crate::host::tests::install_capture();
         let (mods, _) = load_mods(root.path());
-        let _host = LuaHost::new(mods);
+        let host = LuaHost::new(mods);
+        host.report();
         let lines = crate::host::tests::captured_with_prefix("nohandler_mod: declares commands");
         assert_eq!(lines.len(), 1, "got {lines:?}");
     }

@@ -21,6 +21,7 @@ pub mod handles;
 pub mod host;
 pub mod hostcall;
 pub mod package;
+pub mod quarantine;
 pub mod ratelimit;
 pub mod stacks;
 pub mod state;

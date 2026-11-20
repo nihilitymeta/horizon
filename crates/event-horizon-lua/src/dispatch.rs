@@ -21,7 +21,10 @@ use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
 use crate::host::{Escaped, LuaHost, LuaMod, call_handler, call_handler_value, warn_once};
-use crate::hostcall::{TurnHost, note_skipped, open_call, run_hosted, scoped};
+use crate::hostcall::{
+    TurnHost, Void, contained, log_panic, note_skipped, open_call, run_hosted, scoped,
+};
+use crate::quarantine;
 
 /// What `getmetatable` returns for an event, so a mod cannot reach or replace its metatable.
 const LOCKED: bool = false;
@@ -399,11 +402,9 @@ impl LuaHost {
     /// pre-checks).
     pub(crate) fn has_handlers(&self, hook: &str) -> bool {
         let mods = self.mods();
-        let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
         self.run_order(hook).iter().any(|&index| {
             let m = &mods[index];
-            !(server_hook && m.side() == Side::Client)
-                && (hook != "run_mod_command" || m.declares_any_command())
+            side_runs(m, hook) && (hook != "run_mod_command" || m.declares_any_command())
         })
     }
 
@@ -420,8 +421,7 @@ impl LuaHost {
             if is_cancelled() && !m.options(hook).receive_cancelled {
                 continue;
             }
-            let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
-            if server_hook && m.side() == Side::Client {
+            if !side_runs(m, hook) {
                 continue;
             }
             let _turn = m.turn().enter();
@@ -435,16 +435,23 @@ impl LuaHost {
             if handlers.is_empty() {
                 continue;
             }
-            let event = match build(m.lua()) {
-                Ok(event) => event,
-                Err(err) => {
+            let event = match contained(m.id(), hook, || build(m.lua())) {
+                Some(Ok(event)) => event,
+                Some(Err(err)) => {
                     warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
+                None => continue,
             };
             for handler in &handlers {
-                if let Err(err) = call_handler(m.lua(), handler, event.table()) {
-                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                match contained(m.id(), hook, || {
+                    call_handler(m.lua(), handler, event.table())
+                }) {
+                    Some(Err(err)) => {
+                        warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    }
+                    Some(Ok(())) => {}
+                    None => break,
                 }
                 if !answers(m.id(), &event) {
                     return;
@@ -544,10 +551,12 @@ impl LuaHost {
     }
 }
 
-/// Whether a hook of `hook`'s side runs for mod `m`: a client-only mod does not run a server hook.
+/// Whether a hook of `hook`'s side runs for mod `m`: a client-only mod does not run a server hook,
+/// and a mod quarantined for the hook (see `quarantine`) runs none. Every dispatch loop and part gate
+/// asks this, so it is the one place the rule lives.
 pub(crate) fn side_runs(m: &LuaMod, hook: &str) -> bool {
     let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
-    !(server_hook && m.side() == Side::Client)
+    !(server_hook && m.side() == Side::Client) && !quarantine::is_quarantined(m.id(), hook)
 }
 
 /// The body of `LuaHost::dispatch_turns`, over the mods at `order` in `mods`. A mod's handlers for
@@ -573,8 +582,7 @@ pub(crate) fn turns_in(
             if is_cancelled() && !m.options(hook).receive_cancelled {
                 continue;
             }
-            let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
-            if server_hook && m.side() == Side::Client {
+            if !side_runs(m, hook) {
                 continue;
             }
             if !delivers(m) {
@@ -595,14 +603,19 @@ pub(crate) fn turns_in(
             if handlers.is_empty() {
                 continue;
             }
-            let event = match build(m.lua(), &host) {
-                Ok(event) => event,
-                Err(err) => {
+            let event = match contained(m.id(), hook, || build(m.lua(), &host)) {
+                Some(Ok(event)) => event,
+                Some(Err(err)) => {
                     warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
+                None => continue,
             };
-            if run_hosted(m, hook, &mut host, &handlers, event.table()) {
+            let failed = contained(m.id(), hook, || {
+                run_hosted(m, hook, &mut host, &handlers, event.table())
+            })
+            .unwrap_or(true);
+            if failed {
                 warn_once(
                     m.id(),
                     &format!(
@@ -612,7 +625,7 @@ pub(crate) fn turns_in(
                 );
                 continue;
             }
-            if !commit(m.id(), &event, &host) {
+            if contained(m.id(), hook, || commit(m.id(), &event, &host)) == Some(false) {
                 return Ok(());
             }
         }
@@ -663,8 +676,7 @@ pub(crate) fn replace_in(
         let mut host = host;
         for &index in order {
             let m = &mods[index];
-            let server_hook = hook_info(hook).is_some_and(|info| info.side == HookSide::Server);
-            if server_hook && m.side() == Side::Client {
+            if !side_runs(m, hook) {
                 continue;
             }
             if m.turn().held_here() {
@@ -682,14 +694,16 @@ pub(crate) fn replace_in(
             if handlers.is_empty() {
                 continue;
             }
-            let event = match build(m.lua(), &host) {
-                Ok(event) => event,
-                Err(err) => {
+            let event = match contained(m.id(), hook, || build(m.lua(), &host)) {
+                Some(Ok(event)) => event,
+                Some(Err(err)) => {
                     warn_build_failure(m.id(), hook, &err);
                     continue;
                 }
+                None => continue,
             };
-            let (found, failed) = match scoped(m.lua(), &mut host, |lua| {
+            let void = Void::default();
+            let (found, failed) = match scoped(m.lua(), &mut host, &void, |lua| {
                 let mut found: Option<Value> = None;
                 let mut failed = false;
                 for handler in &handlers {
@@ -700,14 +714,20 @@ pub(crate) fn replace_in(
                             }
                         }
                         Err(err) => {
-                            warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                            // A panicking host call already has its line; the handler's error is its echo.
+                            if void.panic_message().is_none() {
+                                warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                            }
                             failed = true;
                         }
                     }
                 }
                 (found, failed)
             }) {
-                Ok(((found, failed), spent)) => (found, failed || spent),
+                Ok((found, failed)) => {
+                    let panicked = log_panic(m.id(), hook, &void);
+                    (found, failed || panicked || void.is_void())
+                }
                 Err(err) => {
                     warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     (None, true)
@@ -724,7 +744,9 @@ pub(crate) fn replace_in(
                 continue;
             }
             let answered = match found {
-                Some(value) => answer(m.id(), value, &host),
+                Some(value) => {
+                    contained(m.id(), hook, || answer(m.id(), value, &host)).unwrap_or(false)
+                }
                 None => false,
             };
             if answered {

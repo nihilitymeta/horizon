@@ -30,9 +30,10 @@
 //! `pcall` cannot keep the turn going. The turn is then void, as a failing handler's is. A write is
 //! not rolled back by a void turn: the host keeps it.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use event_horizon_lua_convert::scalar::ToLuaValue;
+use horizon_client::crash::contain;
 use mlua::{AnyUserData, Error, Lua, MultiValue, Table, Value};
 use mod_api::{BlockClick, ClientHost, Host, HostSide, ServerHost};
 
@@ -69,6 +70,10 @@ pub const OUTSIDE: &str = "no host call outside a hook";
 /// Raised when the turn's host is not of the kind the operation needs.
 pub const NOT_HERE: &str = "not available in this hook";
 const SPENT: &str = "host call budget is spent for this turn";
+/// Raised by a host call that panicked, and by every later host call of that turn.
+const HOST_PANICKED: &str = "the game's host panicked";
+/// How much of a panic's message a log line keeps, in characters.
+const PANIC_CHARS: usize = 200;
 
 /// The host a hook gave for one call, by the kind its method takes.
 pub enum TurnHost<'a> {
@@ -185,46 +190,127 @@ pub(crate) fn note_skipped(id: &str, hook: &str) {
     );
 }
 
+/// What a turn's scope saw: its budget ran out, or a host call panicked (the message of the first).
+/// Either voids the turn, and the scope refuses every later host call of it.
+#[derive(Default)]
+pub(crate) struct Void {
+    spent: Cell<bool>,
+    panic: RefCell<Option<String>>,
+}
+
+impl Void {
+    /// Whether the turn is void: its budget was spent or a host call panicked.
+    pub(crate) fn is_void(&self) -> bool {
+        self.spent.get() || self.panic.borrow().is_some()
+    }
+
+    /// The message of the first host call that panicked in this turn, if one did.
+    pub(crate) fn panic_message(&self) -> Option<String> {
+        self.panic.borrow().clone()
+    }
+}
+
+/// Clears the turn's scoped function from [`SLOT`] when it goes, also when the turn unwinds.
+struct Slot<'a>(&'a Lua);
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.set_named_registry_value(SLOT, Value::Nil);
+    }
+}
+
 /// Runs `body` for one mod's turn with `host` open to its handles. A scope holds the scoped
 /// function under [`SLOT`] while `body` runs, for every turn, the `None` turn included (its
-/// operations find no host). Returns what `body` returned and whether the turn's budget was spent,
-/// which voids the turn even when a `pcall` hid the raise. An error from the scope itself is
-/// returned as is.
+/// operations find no host). What the scope saw (an exhausted budget, a panicking host call) is
+/// recorded in `void`, which the caller checks: it voids the turn even when a `pcall` hid the
+/// raise. An error from the scope itself is returned as is.
 pub(crate) fn scoped<R>(
     lua: &Lua,
     host: &mut TurnHost<'_>,
+    void: &Void,
     body: impl FnOnce(&Lua) -> R,
-) -> mlua::Result<(R, bool)> {
+) -> mlua::Result<R> {
     let mut turn_host = host.reborrow();
-    let spent_cell = Cell::new(false);
-    let spent_out = &spent_cell;
-    let out = lua.scope(|scope| {
+    lua.scope(|scope| {
         let mut spent = 0u32;
         let calls = scope.create_function_mut(
             move |lua: &Lua, (op, this, args): (String, AnyUserData, MultiValue)| {
-                if spent_out.get() {
+                if void.panic.borrow().is_some() {
+                    return Err(Error::runtime(HOST_PANICKED));
+                }
+                if void.spent.get() {
                     return Err(Error::runtime(SPENT));
                 }
                 let cost = op_cost(&op)?;
                 if spent + cost > TURN_BUDGET {
-                    spent_out.set(true);
+                    void.spent.set(true);
                     return Err(Error::runtime(SPENT));
                 }
                 spent += cost;
-                run_op(lua, &mut turn_host, &op, this, args)
+                // A panic in the game's host is contained here, so it does not reach the panic hook's
+                // exit or unwind through Lua: the turn is void and the handler sees a plain error.
+                match contain(|| run_op(lua, &mut turn_host, &op, this, args)) {
+                    Ok(result) => result,
+                    Err(message) => {
+                        void.panic.borrow_mut().get_or_insert(message);
+                        Err(Error::runtime(HOST_PANICKED))
+                    }
+                }
             },
         )?;
         lua.set_named_registry_value(SLOT, calls)?;
-        let out = body(lua);
-        // The slot goes before the scope ends, so nothing finds the function once it is invalid.
-        let _ = lua.set_named_registry_value(SLOT, Value::Nil);
-        Ok(out)
-    })?;
-    Ok((out, spent_cell.get()))
+        let _slot = Slot(lua);
+        Ok(body(lua))
+    })
+}
+
+/// The log line for a host call that panicked in a turn: the mod, the hook, and the first
+/// [`PANIC_CHARS`] characters of the message, escaped. A `not implemented` panic is the game's host
+/// leaving a method unprovided, so the line says so. The panic that quarantined the pair says so too.
+pub(crate) fn panic_line(id: &str, hook: &str, message: &str, quarantined: bool) -> String {
+    let shown: String = message.chars().take(PANIC_CHARS).collect();
+    let mut line = format!("{id}: {hook}: the game's host panicked: {}", Escaped(shown));
+    if message.contains("not implemented") {
+        line.push_str(" (this host does not provide the method named in the message)");
+    }
+    if quarantined {
+        line.push_str(" (this mod no longer receives this hook)");
+    }
+    line
+}
+
+/// Records a contained panic of mod `id` in `hook`: the pair is quarantined (when the set has room),
+/// and the panic is logged once through `warn_once`.
+pub(crate) fn record_panic(id: &str, hook: &str, message: &str) {
+    let quarantined = crate::quarantine::quarantine(id, hook);
+    warn_once(id, &panic_line(id, hook, message, quarantined));
+}
+
+/// Logs a host call's panic once, if the turn had one. Returns whether it had one.
+pub(crate) fn log_panic(id: &str, hook: &str, void: &Void) -> bool {
+    match void.panic_message() {
+        Some(message) => {
+            record_panic(id, hook, &message);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Runs one step of a mod's turn on the host's side (a build, a commit, a handler group). A panic in
+/// it is contained and logged once with [`panic_line`]; the step gives `None`, which ends the turn.
+pub(crate) fn contained<T>(id: &str, hook: &str, step: impl FnOnce() -> T) -> Option<T> {
+    match contain(step) {
+        Ok(value) => Some(value),
+        Err(message) => {
+            record_panic(id, hook, &message);
+            None
+        }
+    }
 }
 
 /// Runs one mod's handlers in its turn with `host` open. Returns whether the turn failed: a handler
-/// raised, the scope failed, or the budget ran out.
+/// raised, the scope failed, the budget ran out, or a host call panicked (logged here, once).
 pub(crate) fn run_hosted(
     m: &LuaMod,
     hook: &str,
@@ -232,18 +318,25 @@ pub(crate) fn run_hosted(
     handlers: &[mlua::Function],
     event: &mlua::Table,
 ) -> bool {
-    let outcome = scoped(m.lua(), host, |lua| {
+    let void = Void::default();
+    let outcome = scoped(m.lua(), host, &void, |lua| {
         let mut failed = false;
         for handler in handlers {
             if let Err(err) = crate::host::call_handler(lua, handler, event) {
-                warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                // A panicking host call already has its line; the handler's error is its echo.
+                if void.panic_message().is_none() {
+                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                }
                 failed = true;
             }
         }
         failed
     });
+    if log_panic(m.id(), hook, &void) {
+        return true;
+    }
     match outcome {
-        Ok((failed, spent)) => failed || spent,
+        Ok(failed) => failed || void.is_void(),
         Err(err) => {
             warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
             true
@@ -1872,5 +1965,345 @@ mod tests {
         assert!(lines.contains(
             &"block_drops skipped: handle input: host `&dyn LevelHost` is not carried by a turn"
         ));
+    }
+
+    /// A host whose entity position panics for its first `panics` reads, then answers `ME` at
+    /// (1, 2, 3). The panic is the message an unprovided method raises (`unimplemented!`), or the
+    /// given one.
+    struct Panicky {
+        panics: Cell<u32>,
+        message: String,
+        /// How many panics this double has raised.
+        raised: Cell<u32>,
+    }
+
+    impl Panicky {
+        fn new(panics: u32, message: &str) -> Panicky {
+            Panicky {
+                panics: Cell::new(panics),
+                message: message.to_owned(),
+                raised: Cell::new(0),
+            }
+        }
+    }
+
+    host_double!(Panicky);
+
+    impl LevelsBackend for Panicky {}
+    impl EntitiesBackendMut for Panicky {}
+
+    impl EntitiesBackend for Panicky {
+        fn entity_position(&self, entity: EntityRef) -> Option<[f64; 3]> {
+            if self.panics.get() > 0 {
+                self.panics.set(self.panics.get() - 1);
+                self.raised.set(self.raised.get() + 1);
+                panic!("{}", self.message);
+            }
+            is_me(entity).then_some([1.0, 2.0, 3.0])
+        }
+    }
+
+    /// `not implemented`, as a host raises for a method it does not provide.
+    const UNPROVIDED: &str = "not implemented: Host::entity_position";
+
+    /// A mod that reads its entity's position, then logs `after` (its handler's last line).
+    fn reader(root: &Path, id: &str) -> LuaMod {
+        load(
+            root,
+            id,
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               local p = event.entity:position()\n\
+               horizon.log(\"read \" .. p.x)\n\
+             end)",
+        )
+    }
+
+    /// The scope's state after a turn: no turn open on this thread, no hook call open, and no
+    /// scoped function left in the mod's registry.
+    fn assert_released(m: &LuaMod) {
+        assert!(!m.turn().held_here(), "{} still holds its turn", m.id());
+        assert_eq!(DEPTH.with(Cell::get), 0, "a hook call is still open");
+        let slot: Value = m.lua().named_registry_value(SLOT).unwrap();
+        assert!(
+            matches!(slot, Value::Nil),
+            "{} kept its scoped function",
+            m.id()
+        );
+    }
+
+    #[test]
+    fn a_panicking_host_read_voids_the_turn_and_the_other_mod_still_runs() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            reader(root.path(), "hc_panic_a"),
+            load(
+                root.path(),
+                "hc_panic_a_other",
+                "horizon.on(\"block_receive_game\", function() horizon.log(\"other ran\") end)",
+            ),
+        ]);
+        let panicky = Panicky::new(1, UNPROVIDED);
+        let first = fire(&host, TurnHost::Read(&panicky), 0);
+        assert_eq!(first, 1, "only the other mod's turn commits");
+        assert!(
+            host.mods()[0].log_lines().is_empty(),
+            "the handler's line ran"
+        );
+        assert_eq!(host.mods()[1].log_lines(), ["other ran"]);
+        assert_eq!(
+            captured_with_prefix("hc_panic_a: block_receive_game: the game's host panicked"),
+            [format!(
+                "hc_panic_a: block_receive_game: the game's host panicked: {UNPROVIDED} \
+                 (this host does not provide the method named in the message) (this mod no longer receives this hook)"
+            )]
+        );
+        assert_released(&host.mods()[0]);
+        // Quarantined for this hook: the next call is not delivered to the mod, and the other mod's
+        // turn still commits.
+        let second = fire(&host, TurnHost::Read(&panicky), 0);
+        assert_eq!(second, 1);
+        assert!(host.mods()[0].log_lines().is_empty());
+        assert_eq!(panicky.raised.get(), 1);
+        assert_released(&host.mods()[0]);
+    }
+
+    #[test]
+    fn a_panic_in_the_event_build_skips_the_mod_and_the_others_run() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            reader(root.path(), "hc_build_b"),
+            load(
+                root.path(),
+                "hc_build_b_other",
+                "horizon.on(\"block_receive_game\", function() horizon.log(\"other ran\") end)",
+            ),
+        ]);
+        let calls = Cell::new(0);
+        let build = |lua: &Lua, _: &TurnHost<'_>| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                panic!("the build broke");
+            }
+            let data = lua.create_table()?;
+            new_event(lua, data, &["cancelled", "result"])
+        };
+        let panicky = Panicky::new(0, UNPROVIDED);
+        let mut committed = 0;
+        host.dispatch_turns(
+            HOOK,
+            TurnHost::Read(&panicky),
+            &|| false,
+            &build,
+            &mut |_, _, _| {
+                committed += 1;
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!(committed, 1);
+        assert!(host.mods()[0].log_lines().is_empty());
+        assert_eq!(host.mods()[1].log_lines(), ["other ran"]);
+        assert_eq!(
+            captured_with_prefix("hc_build_b: block_receive_game: the game's host panicked"),
+            [
+                "hc_build_b: block_receive_game: the game's host panicked: the build broke (this mod no longer receives this hook)"
+            ]
+        );
+        assert_released(&host.mods()[0]);
+    }
+
+    #[test]
+    fn a_panic_in_commit_ends_that_mod_and_the_chain_goes_on() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            load(
+                root.path(),
+                "hc_commit_c",
+                "horizon.on(\"block_receive_game\", function() end)",
+            ),
+            load(
+                root.path(),
+                "hc_commit_c_other",
+                "horizon.on(\"block_receive_game\", function() end)",
+            ),
+        ]);
+        let seen = std::cell::RefCell::new(Vec::new());
+        let panicky = Panicky::new(0, UNPROVIDED);
+        host.dispatch_turns(
+            HOOK,
+            TurnHost::Read(&panicky),
+            &|| false,
+            &build(0),
+            &mut |id, _, _| {
+                seen.borrow_mut().push(id.to_owned());
+                if id == "hc_commit_c" {
+                    panic!("the commit broke");
+                }
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!(*seen.borrow(), ["hc_commit_c", "hc_commit_c_other"]);
+        assert_eq!(
+            captured_with_prefix("hc_commit_c: block_receive_game: the game's host panicked"),
+            [
+                "hc_commit_c: block_receive_game: the game's host panicked: the commit broke (this mod no longer receives this hook)"
+            ]
+        );
+        assert_released(&host.mods()[0]);
+    }
+
+    #[test]
+    fn fifty_panics_log_one_escaped_line_and_forge_no_second() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![reader(root.path(), "hc_many")]);
+        let panicky = Panicky::new(u32::MAX, "first line\nline two: not implemented: forged");
+        for _ in 0..50 {
+            assert_eq!(fire(&host, TurnHost::Read(&panicky), 0), 0);
+        }
+        // The first panic quarantines the mod for the hook: the other 49 fires never reach the host.
+        assert_eq!(panicky.raised.get(), 1);
+        let lines = captured_with_prefix("hc_many: block_receive_game: the game's host panicked");
+        assert_eq!(lines.len(), 1, "got {lines:?}");
+        assert!(
+            lines[0].contains("first line\\u{a}line two: not implemented: forged"),
+            "{}",
+            lines[0]
+        );
+        assert!(captured_with_prefix("line two").is_empty());
+        assert_released(&host.mods()[0]);
+    }
+
+    #[test]
+    fn a_panic_in_a_replace_answer_gives_no_answer_and_the_next_call_answers() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "hc_replace_e",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               return event.entity:position().x\n\
+             end)",
+        )]);
+        let panicky = Panicky::new(1, UNPROVIDED);
+        let answer = |panicky: &Panicky| {
+            let mut answered: Vec<(String, f64)> = Vec::new();
+            host.dispatch_replace(
+                HOOK,
+                TurnHost::Read(panicky),
+                &build(0),
+                &mut |id, value, _| {
+                    let read = match value {
+                        Value::Number(n) => n,
+                        Value::Integer(n) => n as f64,
+                        _ => f64::NAN,
+                    };
+                    answered.push((id.to_owned(), read));
+                    true
+                },
+            )
+            .unwrap();
+            answered
+        };
+        assert!(answer(&panicky).is_empty(), "a void turn gives no answer");
+        assert!(
+            answer(&panicky).is_empty(),
+            "a quarantined mod gives no answer"
+        );
+        assert_eq!(
+            captured_with_prefix("hc_replace_e: block_receive_game: the game's host panicked"),
+            [format!(
+                "hc_replace_e: block_receive_game: the game's host panicked: {UNPROVIDED} \
+                 (this host does not provide the method named in the message) (this mod no longer receives this hook)"
+            )]
+        );
+        assert_released(&host.mods()[0]);
+        assert_eq!(panicky.raised.get(), 1, "the second call is not delivered");
+    }
+
+    /// A mod that logs `entered` and then reads its entity's position.
+    fn logs_then_reads(root: &Path, id: &str) -> LuaMod {
+        load(
+            root,
+            id,
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               horizon.log(\"entered\")\n\
+               local p = event.entity:position()\n\
+               horizon.log(\"after \" .. p.x)\n\
+             end)",
+        )
+    }
+
+    #[test]
+    fn a_quarantined_mod_is_not_delivered_the_hook_again() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![logs_then_reads(root.path(), "hcq_a")]);
+        let panicky = Panicky::new(u32::MAX, UNPROVIDED);
+        for _ in 0..50 {
+            assert_eq!(fire(&host, TurnHost::Read(&panicky), 0), 0);
+        }
+        assert_eq!(panicky.raised.get(), 1, "the host was called once");
+        assert_eq!(
+            host.mods()[0].log_lines(),
+            ["entered"],
+            "the handler ran once"
+        );
+        let lines = captured_with_prefix("hcq_a: block_receive_game: the game's host panicked");
+        assert_eq!(lines.len(), 1, "got {lines:?}");
+        assert!(
+            lines[0].ends_with("(this mod no longer receives this hook)"),
+            "{}",
+            lines[0]
+        );
+    }
+
+    #[test]
+    fn the_same_mods_other_hook_and_another_mod_still_run() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            load(
+                root.path(),
+                "hcq_b",
+                "horizon.on(\"block_receive_game\", function(event)\n\
+                   local p = event.entity:position()\n\
+                 end)\n\
+                 horizon.on(\"server_tick\", function() horizon.log(\"tick\") end)",
+            ),
+            load(
+                root.path(),
+                "hcq_b_other",
+                "horizon.on(\"block_receive_game\", function() horizon.log(\"other ran\") end)",
+            ),
+        ]);
+        let panicky = Panicky::new(1, UNPROVIDED);
+        assert_eq!(fire(&host, TurnHost::Read(&panicky), 0), 1);
+        assert_eq!(fire(&host, TurnHost::Read(&panicky), 0), 1);
+        assert_eq!(host.mods()[1].log_lines(), ["other ran", "other ran"]);
+        let tick = |lua: &Lua| new_event(lua, lua.create_table()?, &[]);
+        for _ in 0..3 {
+            host.dispatch("server_tick", &tick, &mut |_, _| true);
+        }
+        assert_eq!(host.mods()[0].log_lines(), ["tick", "tick", "tick"]);
+        assert_eq!(panicky.raised.get(), 1);
+    }
+
+    #[test]
+    fn has_handlers_is_false_when_the_only_subscriber_is_quarantined() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![logs_then_reads(root.path(), "hcq_c")]);
+        assert!(host.has_handlers(HOOK));
+        let panicky = Panicky::new(1, UNPROVIDED);
+        fire(&host, TurnHost::Read(&panicky), 0);
+        assert!(
+            !host.has_handlers(HOOK),
+            "a quarantined hook converts nothing"
+        );
     }
 }

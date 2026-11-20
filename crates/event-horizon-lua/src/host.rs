@@ -5,6 +5,7 @@
 //! hook fires, runs each handler the mods registered for it. A mod's failure stays in that mod:
 //! its error is logged, its handler is stopped by a time budget, and the others still run.
 
+use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::io::Read;
 use std::path::Path;
@@ -77,6 +78,9 @@ pub struct LuaMod {
     /// with `horizon.data_pack_file` (key and JSON text).
     data_map_types: Vec<mod_api::DataMapType>,
     data_pack_files: Vec<(String, String)>,
+    /// The warnings the declaration gave (a refused data map type or file, say), as `(source, line)`
+    /// for `warn_once`. They are logged by `LuaHost::report`, once the game's logger is up.
+    notices: Vec<(String, String)>,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
@@ -152,8 +156,10 @@ impl LuaMod {
         let source = read_source(&found.dir)?;
         let lua = state::new_state().map_err(|e| e.to_string())?;
         let chunk_name = format!("@{}", found.dir.join(ENTRY).display());
-        let declaration =
-            declare::declare(&lua, &found.id, &source, &chunk_name, &|n| is_emitted(n))?;
+        let (declaration, notices) = collect_load_notices(|| {
+            declare::declare(&lua, &found.id, &source, &chunk_name, &|n| is_emitted(n))
+        });
+        let declaration = declaration?;
 
         let log = Arc::new(Mutex::new(Vec::new()));
         let runtime =
@@ -181,6 +187,7 @@ impl LuaMod {
             configs: declaration.configs,
             data_map_types: declaration.data_map_types,
             data_pack_files: declaration.data_pack_files,
+            notices,
             lua,
             log,
             turn: Turn::default(),
@@ -358,18 +365,6 @@ impl LuaHost {
             }
             order.push((name, run));
         }
-        // A command with no `run_mod_command` handler is declared but never runs: the game fails it
-        // (the host does not answer `ran`). The declaration stays, and the load log says so once.
-        for m in mods
-            .iter()
-            .filter(|m| !m.commands.is_empty() && !m.hooks.iter().any(|h| h == "run_mod_command"))
-        {
-            log::warn!(
-                target: LOG_TARGET,
-                "{}: declares commands but has no run_mod_command handler; they will fail when run",
-                m.id
-            );
-        }
         // The declaration hooks have no Lua handlers: the host answers them from the records. The
         // game asks only the hooks a host subscribes to, so each one is subscribed when a mod
         // declared something for it.
@@ -448,7 +443,7 @@ impl LuaHost {
 
     /// Writes the loaded and refused counts and one line per refusal. The game's logger is up by
     /// `register`, unlike when the mods are read, so this is where the player sees them.
-    fn report(&self) {
+    pub(crate) fn report(&self) {
         if self.reported.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -459,6 +454,23 @@ impl LuaHost {
         );
         for line in &self.report {
             log::warn!("Lua mod refused: {}", Escaped(line));
+        }
+        // What the loads warned about (`collect_load_notices`) reaches the log only now, when the
+        // game's logger is up. A command with no `run_mod_command` handler is declared but never
+        // runs: the game fails it (the host does not answer `ran`). The declaration stays.
+        for m in self.mods.iter() {
+            for (source, line) in &m.notices {
+                warn_once(source, line);
+            }
+            if !m.commands.is_empty() && !m.hooks.iter().any(|h| h == "run_mod_command") {
+                warn_once(
+                    &m.id,
+                    &format!(
+                        "{}: declares commands but has no run_mod_command handler; they will fail when run",
+                        m.id
+                    ),
+                );
+            }
         }
     }
 
@@ -1188,10 +1200,48 @@ static WARNED: Mutex<Warned> = Mutex::new(Warned {
     dropped_sources: 0,
 });
 
+thread_local! {
+    /// The warnings a mod's load gives on this thread, while `collect_load_notices` runs. `None`
+    /// outside a load.
+    static LOAD_NOTICES: RefCell<Option<Vec<(String, String)>>> = const { RefCell::new(None) };
+}
+
+/// Runs `load`, a mod's declaration, and returns what it gave with the warnings it gave: each one
+/// is kept, not logged. A load runs before the game's logger is up (`builtin` reads the mods, and
+/// `register` writes the report), so the warning would be lost. `LuaHost::report` logs them then,
+/// through `warn_once`, with the same text.
+pub(crate) fn collect_load_notices<T>(load: impl FnOnce() -> T) -> (T, Vec<(String, String)>) {
+    /// Puts back the collector of the outer load, if there was one, when this load ends.
+    struct Restore(Option<Vec<(String, String)>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            LOAD_NOTICES.with(|notices| *notices.borrow_mut() = self.0.take());
+        }
+    }
+    let outer = LOAD_NOTICES.with(|notices| notices.borrow_mut().replace(Vec::new()));
+    let _restore = Restore(outer);
+    let out = load();
+    let notices = LOAD_NOTICES
+        .with(|notices| notices.borrow_mut().as_mut().map(std::mem::take))
+        .unwrap_or_default();
+    (out, notices)
+}
+
 /// Logs `line` as a warning from `source` (a mod's id, or "host"), once per process for each
 /// distinct line: a refusal or a failure a mod repeats on every call is logged at its first
 /// occurrence only. Each source has its own cap, so one mod's errors cannot silence another's.
+/// Inside a mod's load (`collect_load_notices`) the line is kept for the report instead.
 pub(crate) fn warn_once(source: &str, line: &str) {
+    let kept = LOAD_NOTICES.with(|notices| match notices.borrow_mut().as_mut() {
+        Some(notices) => {
+            notices.push((source.to_owned(), line.to_owned()));
+            true
+        }
+        None => false,
+    });
+    if kept {
+        return;
+    }
     let text = WARNED
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -1895,10 +1945,12 @@ pub(crate) mod tests {
         let host = LuaHost::new(Vec::new()).with_report(vec!["report_mod: nope".into()]);
         host.report();
         host.report();
-        assert_eq!(
-            captured_with_prefix("Lua mods: "),
-            ["Lua mods: 0 loaded, 1 refused"]
-        );
+        // Other tests' reports log their own counts into the same capture: pick this host's line.
+        let counts: Vec<String> = captured_with_prefix("Lua mods: ")
+            .into_iter()
+            .filter(|line| line.ends_with("0 loaded, 1 refused"))
+            .collect();
+        assert_eq!(counts, ["Lua mods: 0 loaded, 1 refused"]);
         assert_eq!(
             captured_with_prefix("Lua mod refused: "),
             ["Lua mod refused: report_mod: nope"]
@@ -2112,6 +2164,7 @@ pub(crate) mod tests {
 #[cfg(test)]
 mod block_entity_turn_tests {
     use super::*;
+    use crate::host::tests::{captured_with_prefix, install_capture};
     use crate::hostcall::TurnHost;
     use event_horizon_lua_convert::scalar::ToLuaValue;
 
@@ -2268,6 +2321,60 @@ mod block_entity_turn_tests {
     }
 
     #[test]
+    fn a_panic_in_a_part_build_ends_the_part_turn_for_both_hook_kinds() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let mods: Arc<[LuaMod]> = Arc::from(vec![load(
+            root.path(),
+            "panic_part",
+            &source(
+                "panic_part",
+                "block_entity_on_load = function() horizon.log(\"ran\") end,\n\
+                 screen_click = function() return 1 end",
+            ),
+        )]);
+        let build = |_: &Lua, _: &TurnHost<'_>| -> mlua::Result<crate::dispatch::Event> {
+            panic!("the part build broke")
+        };
+        let mut committed = 0;
+        part(&mods, 0)
+            .dispatch_turns(
+                "block_entity_on_load",
+                TurnHost::None,
+                &|| false,
+                &build,
+                &mut |_, _, _| {
+                    committed += 1;
+                    true
+                },
+            )
+            .unwrap();
+        assert_eq!(committed, 0);
+        assert!(mods[0].log_lines().is_empty());
+        assert_eq!(
+            captured_with_prefix("panic_part: block_entity_on_load: the game's host panicked"),
+            [
+                "panic_part: block_entity_on_load: the game's host panicked: the part build broke (this mod no longer receives this hook)"
+            ]
+        );
+        let mut answered = 0;
+        part(&mods, 0)
+            .dispatch_replace("screen_click", TurnHost::None, &build, &mut |_, _, _| {
+                answered += 1;
+                true
+            })
+            .unwrap();
+        assert_eq!(answered, 0);
+        assert_eq!(
+            captured_with_prefix("panic_part: screen_click: the game's host panicked"),
+            [
+                "panic_part: screen_click: the game's host panicked: the part build broke (this mod no longer receives this hook)"
+            ]
+        );
+        assert!(!mods[0].turn().held_here());
+    }
+
+    #[test]
     fn a_failing_screen_click_handler_gives_no_answer() {
         let root = tempfile::tempdir().unwrap();
         let mods: Arc<[LuaMod]> = Arc::from(vec![load(
@@ -2353,5 +2460,67 @@ mod warn_once_tests {
         assert_eq!(warned.sources.len(), MAX_SOURCES);
         assert_eq!(warned.dropped_sources, 300 - MAX_SOURCES as u64);
         assert!(warned.once("mod_0", "mod_0: hook: reason").is_none());
+    }
+}
+
+#[cfg(test)]
+mod load_notice_tests {
+    use super::tests::{captured_with_prefix, install_capture};
+    use super::*;
+    use crate::data_maps::MAX_JSON_BYTES;
+    use crate::discover::{Discovered, ENTRY, Side};
+
+    fn load(root: &Path, id: &str, source: &str) -> LuaMod {
+        let dir = root.join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(ENTRY), source).unwrap();
+        LuaMod::load(&Discovered {
+            dir,
+            id: id.to_owned(),
+            version: "1".to_owned(),
+            side: Side::Server,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_declaration_refusal_is_kept_at_load_and_logged_once_by_the_report() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let source = format!(
+            "horizon.data_pack_file{{ key = \"data_maps/ln_big:item/big\", json = \"[\" .. string.rep(\" \", {}) .. \"]\" }}",
+            MAX_JSON_BYTES
+        );
+        let host = LuaHost::new(vec![load(root.path(), "ln_big", &source)]);
+        assert!(
+            captured_with_prefix("ln_big: ").is_empty(),
+            "a load logs nothing: the logger is not up yet"
+        );
+        host.report();
+        host.report();
+        let expected = format!(
+            "ln_big: data pack file 'data_maps/ln_big:item/big' refused: its JSON is {} bytes, more than {MAX_JSON_BYTES}",
+            MAX_JSON_BYTES + 2
+        );
+        assert_eq!(captured_with_prefix("ln_big: "), [expected]);
+    }
+
+    #[test]
+    fn a_command_without_a_handler_is_warned_by_the_report_not_by_the_load() {
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![load(
+            root.path(),
+            "ln_cmd",
+            "horizon.command{usage = \"ln_cmd run\"}\n",
+        )]);
+        assert!(captured_with_prefix("ln_cmd: ").is_empty());
+        host.report();
+        assert_eq!(
+            captured_with_prefix("ln_cmd: "),
+            [
+                "ln_cmd: declares commands but has no run_mod_command handler; they will fail when run"
+            ]
+        );
     }
 }

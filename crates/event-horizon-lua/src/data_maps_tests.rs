@@ -73,6 +73,8 @@ fn load(root: &Path, id: &str, source: &str) -> LuaMod {
 
 /// The types and files the host answers its data map hooks with, for one mod.
 fn answered(host: &LuaHost) -> (Vec<mod_api::DataMapType>, Vec<(String, Vec<u8>)>) {
+    // What the game's register step does first: the load's warnings are logged then.
+    host.report();
     let mut types = Vec::new();
     let mut files = Vec::new();
     host.declared_data_map_types(&mut types);
