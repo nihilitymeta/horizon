@@ -1031,7 +1031,7 @@ impl<K: PartTag> LuaPart<K> {
     /// Whether the part has a handler for `hook` that its mod runs (see `dispatch::side_runs`).
     pub(crate) fn has_handlers(&self, hook: &str) -> bool {
         self.hooks.iter().any(|name| name == hook)
-            && dispatch::side_runs(&self.mods[self.index], hook)
+            && dispatch::side_runs(&self.mods[self.index], hook, None)
     }
 
     /// The generated methods' turn: the part's handler, as `LuaHost::dispatch_turns` runs a hook.

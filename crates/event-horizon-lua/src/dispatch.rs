@@ -22,7 +22,7 @@ use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
 use crate::host::{Escaped, LuaHost, LuaMod, call_handler, call_handler_value, warn_once};
 use crate::hostcall::{
-    TurnHost, Void, contained, log_panic, note_skipped, open_call, run_hosted, scoped,
+    FiredSide, TurnHost, Void, contained, log_panic, note_skipped, open_call, run_hosted, scoped,
 };
 use crate::quarantine;
 
@@ -429,7 +429,8 @@ impl LuaHost {
         let mods = self.mods();
         self.run_order(hook).iter().any(|&index| {
             let m = &mods[index];
-            side_runs(m, hook) && (hook != "run_mod_command" || m.declares_any_command())
+            // The side the hook fires on is not known yet, so a mod that could run on either side counts.
+            side_runs(m, hook, None) && (hook != "run_mod_command" || m.declares_any_command())
         })
     }
 
@@ -446,7 +447,7 @@ impl LuaHost {
             if is_cancelled() && !m.options(hook).receive_cancelled {
                 continue;
             }
-            if !side_runs(m, hook) {
+            if !side_runs(m, hook, None) {
                 continue;
             }
             let _turn = m.turn().enter();
@@ -576,14 +577,19 @@ impl LuaHost {
     }
 }
 
-/// Whether a hook of `hook`'s side runs for mod `m`: a client-only mod does not run a server hook,
-/// and a mod quarantined for the hook (see `quarantine`) runs none. Every dispatch loop and part gate
-/// asks this, so it is the one place the rule lives.
-pub(crate) fn side_runs(m: &LuaMod, hook: &str) -> bool {
+/// Whether a hook runs for mod `m`, given the side it `fired` on (`None` when that is not known).
+/// Two rules refuse it. A client-only mod does not run a server hook, and a server-only mod does not
+/// run a client hook (the hook's declared side). A client-only mod does not run on the server, and a
+/// server-only mod does not run on the client, whatever the hook's side: a `both` hook fires on
+/// either, and the mod's state of its own side runs only there. An unknown `fired` refuses nothing,
+/// so a mod runs as it did before the side was known. A mod quarantined for the hook (see
+/// `quarantine`) runs none. Every dispatch loop and part gate asks this, so it is the one place the
+/// rule lives.
+pub(crate) fn side_runs(m: &LuaMod, hook: &str, fired: Option<FiredSide>) -> bool {
     let side = hook_info(hook).map(|info| info.side);
     let refused = match m.side() {
-        Side::Client => side == Some(HookSide::Server),
-        Side::Server => side == Some(HookSide::Client),
+        Side::Client => side == Some(HookSide::Server) || fired == Some(FiredSide::Server),
+        Side::Server => side == Some(HookSide::Client) || fired == Some(FiredSide::Client),
         Side::Both => false,
     };
     !refused && !quarantine::is_quarantined(m.id(), hook)
@@ -634,13 +640,14 @@ pub(crate) fn turns_in_reporting(
 ) -> Result<(), String> {
     {
         let _open = open_call(hook)?;
+        let fired = host.fired();
         let mut host = host;
         for &index in order {
             let m = &mods[index];
             if is_cancelled() && !m.options(hook).receive_cancelled {
                 continue;
             }
-            if !side_runs(m, hook) {
+            if !side_runs(m, hook, fired) {
                 continue;
             }
             if !delivers(m) {
@@ -763,10 +770,11 @@ pub(crate) fn replace_in_reporting(
 ) -> Result<(), String> {
     {
         let _open = open_call(hook)?;
+        let fired = host.fired();
         let mut host = host;
         for &index in order {
             let m = &mods[index];
-            if !side_runs(m, hook) {
+            if !side_runs(m, hook, fired) {
                 continue;
             }
             if m.turn().held_here() {

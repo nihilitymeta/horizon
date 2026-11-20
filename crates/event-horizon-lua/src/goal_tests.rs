@@ -163,6 +163,12 @@ impl GoalCxBackend for Cx {
     }
 }
 
+/// The deadline of a turn that loops on purpose, for the tests that count its strikes. A turn is stopped
+/// by the earlier of its own deadline and the call's 50 ms handler budget; a strike needs the turn's own
+/// deadline to be the one that stops it, so this is shorter than the 50 ms. It is long enough for a
+/// handler that answers at once to finish, even on a loaded machine (the real 1 ms is not).
+const STRIKE_TURN: Duration = Duration::from_millis(10);
+
 /// Sets this test's goal turn deadline (`None`: the real `GOAL_TURN_BUDGET`). Tests that check what a
 /// turn answers or applies use a generous one, so a loaded machine cannot time them out; the deadline
 /// tests and the tests that loop on purpose use the real one.
@@ -1136,7 +1142,7 @@ fn three_budget_failures_in_a_row_quarantine_the_goal_handler() {
     );
     let clock = ManualClock::new();
     let mut registrar = mob_goals(&mods, budget_on(&clock));
-    turn_deadline(None);
+    turn_deadline(Some(STRIKE_TURN));
     let mut cx = Cx::new();
     for _ in 0..3 {
         clock.advance(GOAL_WINDOW);
@@ -1146,13 +1152,10 @@ fn three_budget_failures_in_a_row_quarantine_the_goal_handler() {
         "strike",
         "goal strike:g can_use"
     ));
+    let before = lines(&mods).len();
     clock.advance(GOAL_WINDOW);
     assert!(!can_use(&mut registrar, 0, &mut cx));
-    assert_eq!(
-        lines(&mods),
-        ["run", "run", "run"],
-        "a quarantined goal runs no Lua"
-    );
+    assert_eq!(lines(&mods).len(), before, "a quarantined goal runs no Lua");
     assert_eq!(
         crate::host::tests::captured_with_prefix("strike: strike:g: can_use went over").len(),
         1,
@@ -1169,7 +1172,7 @@ fn a_success_between_budget_failures_resets_the_strikes() {
     let mods: Arc<[LuaMod]> = Arc::from(vec![load_one(root.path(), "reset", source)]);
     let clock = ManualClock::new();
     let mut registrar = mob_goals(&mods, budget_on(&clock));
-    turn_deadline(None);
+    turn_deadline(Some(STRIKE_TURN));
     let mut cx = Cx::new();
     let mut answers = Vec::new();
     for _ in 0..6 {
@@ -1200,12 +1203,13 @@ fn a_quarantined_running_goal_gets_its_stop_exactly_once() {
     );
     let clock = ManualClock::new();
     let mut registrar = mob_goals(&mods, budget_on(&clock));
-    turn_deadline(None);
+    turn_deadline(Some(STRIKE_TURN));
     let mut cx = Cx::new();
     for _ in 0..3 {
         clock.advance(GOAL_WINDOW);
         assert!(!can_use(&mut registrar, 0, &mut cx));
     }
+    let uses_before = lines(&mods).iter().filter(|line| *line == "use").count();
     assert!(
         !can_continue(&mut registrar, 0, &mut cx),
         "the quarantined goal stops"
@@ -1217,9 +1221,11 @@ fn a_quarantined_running_goal_gets_its_stop_exactly_once() {
         1,
         "got {logged:?}"
     );
-    // A turn that misses its deadline before its first log line adds no "use" line, but still a strike.
     let uses = logged.iter().filter(|line| *line == "use").count();
-    assert!((1..=3).contains(&uses), "got {logged:?}");
+    assert_eq!(
+        uses, uses_before,
+        "a quarantined goal runs no more turns; got {logged:?}"
+    );
 }
 
 #[test]
@@ -1287,7 +1293,7 @@ fn a_normal_goal_beside_a_looping_one_keeps_working() {
     let mods: Arc<[LuaMod]> = Arc::from(vec![load_one(root.path(), "sib", source)]);
     let clock = ManualClock::new();
     let mut registrar = mob_goals(&mods, budget_on(&clock));
-    turn_deadline(None);
+    turn_deadline(Some(STRIKE_TURN));
     let mut cx = Cx::new();
     assert!(!can_use(&mut registrar, 0, &mut cx));
     assert!(

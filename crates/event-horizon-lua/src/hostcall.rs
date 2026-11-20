@@ -103,12 +103,34 @@ pub enum TurnHost<'a> {
     None,
 }
 
+/// The side a hook call fired on. A hook given a [`HostSide`] (or a server or client host) fires on
+/// the side its host belongs to, so the turn says it; a hook given no such host does not say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FiredSide {
+    Client,
+    Server,
+}
+
 impl<'a> TurnHost<'a> {
     /// The turn of a hook that is given a [`HostSide`]: the side it fired on.
     pub fn of_side(side: HostSide<'a>) -> TurnHost<'a> {
         match side {
             HostSide::Server(host) => TurnHost::Server(host),
             HostSide::Client(host) => TurnHost::Client(host),
+        }
+    }
+
+    /// The side this turn's hook fired on, when its host says: a server host is the server's, a
+    /// client host the client's. `None` for a hook whose turn carries no side (a level, a goal, a
+    /// behavior, a read or no host): the gate then runs the mod as it did before this was known.
+    pub(crate) fn fired(&self) -> Option<FiredSide> {
+        match self {
+            TurnHost::Server(_) => Some(FiredSide::Server),
+            TurnHost::Client(_) | TurnHost::ClientRead(_) => Some(FiredSide::Client),
+            TurnHost::Read(_)
+            | TurnHost::Goal { .. }
+            | TurnHost::Behavior { .. }
+            | TurnHost::None => None,
         }
     }
 
@@ -2404,5 +2426,113 @@ mod tests {
             !host.has_handlers(HOOK),
             "a quarantined hook converts nothing"
         );
+    }
+
+    /// A mod of `side` that handles `player_tick_pre`, a `both` hook that is emitted, with an empty handler.
+    fn both_mod(root: &Path, id: &str, side: Side) -> LuaMod {
+        let dir = root.join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(ENTRY),
+            "horizon.on(\"player_tick_pre\", function() end)",
+        )
+        .unwrap();
+        LuaMod::load(&Discovered {
+            dir,
+            id: id.to_string(),
+            version: "1".to_string(),
+            side,
+        })
+        .unwrap()
+    }
+
+    /// The ids of the mods whose `player_tick_pre` turn ran (and committed) when the hook fired with `turn`,
+    /// sorted.
+    fn both_ran(host: &LuaHost, turn: TurnHost<'_>) -> Vec<String> {
+        let mut ran = Vec::new();
+        host.dispatch_turns(
+            "player_tick_pre",
+            turn,
+            &|| false,
+            &build(0),
+            &mut |id, _, _| {
+                ran.push(id.to_string());
+                true
+            },
+        )
+        .unwrap();
+        ran.sort();
+        ran
+    }
+
+    fn sorted(ids: &[&str]) -> Vec<String> {
+        let mut ids: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn a_both_hook_runs_each_mod_only_on_the_side_it_fired_on() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            both_mod(root.path(), "fs_client", Side::Client),
+            both_mod(root.path(), "fs_server", Side::Server),
+            both_mod(root.path(), "fs_both", Side::Both),
+        ]);
+        let mut server = Fake::at([0.0; 3]);
+        let mut client = Fake::at([0.0; 3]);
+        let read_only = Fake::at([0.0; 3]);
+        assert_eq!(
+            both_ran(&host, TurnHost::Server(&mut server)),
+            sorted(&["fs_server", "fs_both"]),
+            "a client-only mod does not run on the server"
+        );
+        assert_eq!(
+            both_ran(&host, TurnHost::Client(&mut client)),
+            sorted(&["fs_client", "fs_both"]),
+            "a server-only mod does not run on the client"
+        );
+        assert_eq!(
+            both_ran(&host, TurnHost::ClientRead(&read_only)),
+            sorted(&["fs_client", "fs_both"]),
+            "a read-only client hook is a client hook"
+        );
+    }
+
+    #[test]
+    fn a_both_hook_with_no_known_side_runs_every_mod_as_before() {
+        let root = tempfile::tempdir().unwrap();
+        let host = LuaHost::new(vec![
+            both_mod(root.path(), "un_client", Side::Client),
+            both_mod(root.path(), "un_server", Side::Server),
+            both_mod(root.path(), "un_both", Side::Both),
+        ]);
+        let all = sorted(&["un_client", "un_server", "un_both"]);
+        let read_only = Fake::at([0.0; 3]);
+        assert_eq!(both_ran(&host, TurnHost::None), all);
+        assert_eq!(both_ran(&host, TurnHost::Read(&read_only)), all);
+    }
+
+    #[test]
+    fn a_mod_that_could_run_on_either_side_still_counts_as_a_handler() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"player_tick_pre\", function() end)";
+        for side in [Side::Client, Side::Server, Side::Both] {
+            let dir = root.path().join(format!("hh_{side:?}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(ENTRY), source).unwrap();
+            let m = LuaMod::load(&Discovered {
+                dir,
+                id: format!("hh_{side:?}"),
+                version: "1".to_string(),
+                side,
+            })
+            .unwrap();
+            let host = LuaHost::new(vec![m]);
+            assert!(
+                host.has_handlers("player_tick_pre"),
+                "{side:?}: the side is not known yet, so the pre-check stays true"
+            );
+        }
     }
 }
