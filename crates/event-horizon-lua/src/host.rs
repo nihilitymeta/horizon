@@ -68,8 +68,10 @@ pub struct LuaMod {
     /// `horizon.fluid_part`.
     fluids: Vec<FluidRecord>,
     fluid_parts: Vec<PartRecord>,
-    /// The entity parts the mod declared with `horizon.entity_part`.
+    /// The entity parts the mod declared with `horizon.entity_part`, and the menu parts with
+    /// `horizon.menu_part`.
     entity_parts: Vec<PartRecord>,
+    menu_parts: Vec<PartRecord>,
     /// The client commands the mod declared with `horizon.client_command`.
     client_commands: Vec<ClientCommandRecord>,
     /// The server commands the mod declared with `horizon.command`.
@@ -185,6 +187,7 @@ impl LuaMod {
             fluids: declaration.fluids,
             fluid_parts: declaration.fluid_parts,
             entity_parts: declaration.entity_parts,
+            menu_parts: declaration.menu_parts,
             client_commands: declaration.client_commands,
             commands: declaration.commands,
             configs: declaration.configs,
@@ -220,6 +223,7 @@ impl LuaMod {
             PartKind::BlockEntity => &self.block_entity_parts,
             PartKind::Fluid => &self.fluid_parts,
             PartKind::Entity => &self.entity_parts,
+            PartKind::Menu => &self.menu_parts,
         }
     }
 
@@ -567,6 +571,7 @@ impl LuaHost {
         self.attach_parts::<BlockEntityTag>(|id, part| keys.block_entity_part(id, part));
         self.attach_parts::<FluidTag>(|id, part| keys.fluid_part(id, part));
         self.attach_parts::<EntityTag>(|id, part| keys.entity_part(id, part));
+        self.attach_parts::<MenuTag>(|id, part| keys.menu_part(id, part));
     }
 
     /// Hands each part of kind `K` the mods declared to `attach`, with the id it attaches to. A part
@@ -714,6 +719,9 @@ pub(crate) trait DeclaredKeys {
     /// Attaches `part` to the entity type `id` (any namespace). The game's Registrar checks no type when a
     /// part is attached, so an unknown type is never asked and never refuses the mod.
     fn entity_part(&mut self, id: &str, part: LuaEntityPart) -> Result<(), String>;
+    /// Attaches `part` to the mod menu type `id` (any namespace). The game never checks a menu id when a
+    /// part is attached: a part on a menu that does not exist is never asked, and never refuses the mod.
+    fn menu_part(&mut self, id: &str, part: LuaMenuPart) -> Result<(), String>;
 }
 
 /// The game's Registrar as the keys' requester.
@@ -776,6 +784,12 @@ impl DeclaredKeys for RegistrarKeys<'_> {
             .attach_entity_part(id, std::any::type_name::<LuaEntityPart>(), Arc::new(part));
         Ok(())
     }
+
+    fn menu_part(&mut self, id: &str, part: LuaMenuPart) -> Result<(), String> {
+        self.0
+            .attach_menu_part(id, std::any::type_name::<LuaMenuPart>(), Arc::new(part));
+        Ok(())
+    }
 }
 
 /// The most distinct sets of part handler names one process interns, per kind of part. Each set's
@@ -791,6 +805,7 @@ static ITEM_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static BLOCK_ENTITY_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static FLUID_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 static ENTITY_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
+static MENU_SUBSCRIPTIONS: Mutex<Subscriptions> = Mutex::new(Vec::new());
 
 /// The subscription of a set of handler names (sorted, no repeats) in `table`: the same slice for
 /// the same set, a new one for a new set, and an error once `MAX_PART_SETS` sets are interned.
@@ -841,6 +856,13 @@ pub struct FluidTag;
 /// The marker of an EntityPart.
 pub struct EntityTag;
 
+/// The marker of a MenuPart.
+pub struct MenuTag;
+
+impl PartTag for MenuTag {
+    const KIND: PartKind = PartKind::Menu;
+}
+
 impl PartTag for EntityTag {
     const KIND: PartKind = PartKind::Entity;
 }
@@ -876,6 +898,9 @@ pub type LuaFluidPart = LuaPart<FluidTag>;
 
 /// One entity part of a loaded mod: the EntityPart the game calls for an entity type the mod attached to.
 pub type LuaEntityPart = LuaPart<EntityTag>;
+
+/// One menu part of a loaded mod: the MenuPart the game calls for a mod menu type the mod attached to.
+pub type LuaMenuPart = LuaPart<MenuTag>;
 
 /// One part of a loaded mod (a block or an item part, by `K`). It runs that mod's handlers for the
 /// hooks the part declared, and no other mod's.
@@ -989,6 +1014,7 @@ fn subscriptions_of(kind: PartKind) -> &'static Mutex<Subscriptions> {
         PartKind::BlockEntity => &BLOCK_ENTITY_SUBSCRIPTIONS,
         PartKind::Fluid => &FLUID_SUBSCRIPTIONS,
         PartKind::Entity => &ENTITY_SUBSCRIPTIONS,
+        PartKind::Menu => &MENU_SUBSCRIPTIONS,
     }
 }
 
@@ -1365,6 +1391,7 @@ pub(crate) mod tests {
             PartKind::Item,
             PartKind::BlockEntity,
             PartKind::Fluid,
+            PartKind::Menu,
         ];
         for (i, a) in kinds.iter().enumerate() {
             for b in &kinds[i + 1..] {

@@ -27,14 +27,15 @@ pub const LUAURC_EXAMPLE: &str = "{\n  \"languageMode\": \"strict\"\n}\n";
 /// type is an error.
 pub const STATIC_REFERENCES: &[&str] = &["BlockHit", "Hand", "LevelDimension", "LogicalSide"];
 
-/// The five Part traits, in the order of [`Input::parts`]: the `horizon` function that declares a
+/// The six Part traits, in the order of [`Input::parts`]: the `horizon` function that declares a
 /// Part of the kind, and the handler table type it takes.
-pub const PART_KINDS: [(&str, &str); 5] = [
+pub const PART_KINDS: [(&str, &str); 6] = [
     ("block_part", "BlockPartHandlers"),
     ("item_part", "ItemPartHandlers"),
     ("block_entity_part", "BlockEntityPartHandlers"),
     ("fluid_part", "FluidPartHandlers"),
     ("entity_part", "EntityPartHandlers"),
+    ("menu_part", "MenuPartHandlers"),
 ];
 
 /// What the generated part is written from.
@@ -44,7 +45,7 @@ pub struct Input<'a> {
     /// The Hooks trait's emitted hooks, in name order.
     pub hooks: &'a [EventShape],
     /// The emitted methods of each Part trait, in [`PART_KINDS`] order.
-    pub parts: [&'a [EventShape]; 5],
+    pub parts: [&'a [EventShape]; 6],
     /// The generated handle families, in order.
     pub families: &'a [String],
     /// The bound handle members, in family and name order.
@@ -653,7 +654,7 @@ mod tests {
             &Input {
                 hash: "test",
                 hooks: &hooks,
-                parts: [&[], &[], &[], &[], &[]],
+                parts: [&[], &[], &[], &[], &[], &[]],
                 families: &[],
                 members: &[],
                 plain: &plain,
@@ -679,7 +680,7 @@ mod tests {
         let result = emit(&Input {
             hash: "test",
             hooks: &[],
-            parts: [&[], &[], &[], &[], &[]],
+            parts: [&[], &[], &[], &[], &[], &[]],
             families: &[],
             members: &[],
             plain: &plain,

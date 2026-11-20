@@ -22,6 +22,8 @@ pub mod generated;
 pub mod handles;
 pub mod host;
 pub mod hostcall;
+#[cfg(test)]
+mod menu_tests;
 pub mod package;
 pub mod quarantine;
 pub mod ratelimit;

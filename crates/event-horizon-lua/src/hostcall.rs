@@ -1853,6 +1853,7 @@ mod tests {
                     && !line.starts_with("block_entity_part.")
                     && !line.starts_with("fluid_part.")
                     && !line.starts_with("entity_part.")
+                    && !line.starts_with("menu_part.")
             })
             .collect();
         assert_eq!(lines.len(), 749);

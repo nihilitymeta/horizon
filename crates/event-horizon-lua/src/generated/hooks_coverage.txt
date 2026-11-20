@@ -966,3 +966,8 @@ entity_part.on_sheared emitted
 entity_part.register_behaviors skipped: per-mob object, per-tick turn: needs measurement
 entity_part.register_goals skipped: per-mob object, per-tick turn: needs measurement
 entity_part.spawn_cluster_size emitted
+
+# menu parts (issue 74, B): the MenuPart trait's methods
+menu_part.menu_slot_rules skipped: hot path (needs measurement): asked per click for each slot and stack it consults
+menu_part.menu_still_valid emitted
+menu_part.menu_transfer skipped: hot path (needs measurement): asked per recipe transfer action on a mod menu

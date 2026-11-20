@@ -211,9 +211,16 @@ mod tests {
         fluids: Vec<(String, mod_api::WorldFluid)>,
         fluid_parts: Vec<crate::host::LuaFluidPart>,
         entity_parts: Vec<crate::host::LuaEntityPart>,
+        menu_parts: Vec<crate::host::LuaMenuPart>,
     }
 
     impl crate::host::DeclaredKeys for RecordingKeys {
+        fn menu_part(&mut self, id: &str, part: crate::host::LuaMenuPart) -> Result<(), String> {
+            self.asked.push(format!("menu part {id}"));
+            self.menu_parts.push(part);
+            Ok(())
+        }
+
         fn entity_part(
             &mut self,
             id: &str,
@@ -896,6 +903,17 @@ mod tests {
         );
         assert_eq!(keys.fluids.len(), 1);
         assert_eq!(keys.fluid_parts.len(), 1);
+    }
+
+    #[test]
+    fn a_menu_part_is_attached_to_the_menu_it_names_in_any_namespace() {
+        let (_, keys) = requested(&[(
+            "a_first",
+            "first_mod",
+            "horizon.menu_part(\"other:press_menu\", {menu_still_valid = function() end})",
+        )]);
+        assert_eq!(keys.asked, ["menu part other:press_menu"]);
+        assert_eq!(keys.menu_parts.len(), 1);
     }
 
     #[test]

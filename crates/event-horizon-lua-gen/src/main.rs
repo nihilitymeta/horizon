@@ -99,6 +99,8 @@ struct Plan {
     fluid_parts: emit_impl::PartsEmitted,
     /// `entity_parts.rs`: the EntityPart methods and their handler table.
     entity_parts: emit_impl::PartsEmitted,
+    /// `menu_parts.rs`: the MenuPart methods and their handler table.
+    menu_parts: emit_impl::PartsEmitted,
     types: emit_types::TypesPlan,
     /// `hooks_coverage.txt`: every hook of the surface, emitted or with its skip reason.
     hook_coverage: String,
@@ -114,6 +116,7 @@ fn plan_pass(
     block_entity_part_sigs: &[trait_sigs::HookSig],
     fluid_part_sigs: &[trait_sigs::HookSig],
     entity_part_sigs: &[trait_sigs::HookSig],
+    menu_part_sigs: &[trait_sigs::HookSig],
     dispatch: &dispatch_sigs::DispatchSigs,
     members: &[handles::MemberIr],
     families: &[&str],
@@ -155,6 +158,7 @@ fn plan_pass(
                 .chain(block_entity_part_sigs)
                 .chain(fluid_part_sigs)
                 .chain(entity_part_sigs)
+                .chain(menu_part_sigs)
                 .filter_map(|sig| sig.ret.clone()),
         )
         .chain(handle_types.iter().cloned())
@@ -208,12 +212,21 @@ fn plan_pass(
         families,
         emit_impl::PartTrait::Entity,
     );
+    let first_menu_parts = emit_impl::emit_parts(
+        surface,
+        menu_part_sigs,
+        dispatch,
+        &first.plain,
+        families,
+        emit_impl::PartTrait::Menu,
+    );
     let mut decided = first_methods.decisions.clone();
     decided.extend(first_parts.decisions.iter().cloned());
     decided.extend(first_item_parts.decisions.iter().cloned());
     decided.extend(first_block_entity_parts.decisions.iter().cloned());
     decided.extend(first_fluid_parts.decisions.iter().cloned());
     decided.extend(first_entity_parts.decisions.iter().cloned());
+    decided.extend(first_menu_parts.decisions.iter().cloned());
     decided.extend(handle_types.iter().cloned());
     let superset = emit_types::plan_decided(
         &document.types,
@@ -231,6 +244,7 @@ fn plan_pass(
     decided.extend(first_block_entity_parts.decisions.iter().cloned());
     decided.extend(first_fluid_parts.decisions.iter().cloned());
     decided.extend(first_entity_parts.decisions.iter().cloned());
+    decided.extend(first_menu_parts.decisions.iter().cloned());
     decided.extend(bound_types);
     let types = emit_types::plan_decided(
         &document.types,
@@ -299,6 +313,17 @@ fn plan_pass(
     if entity_parts.emitted != first_entity_parts.emitted {
         return Err("the two passes emit different entity part methods".to_owned());
     }
+    let menu_parts = emit_impl::emit_parts(
+        surface,
+        menu_part_sigs,
+        dispatch,
+        &types.plain,
+        families,
+        emit_impl::PartTrait::Menu,
+    );
+    if menu_parts.emitted != first_menu_parts.emitted {
+        return Err("the two passes emit different menu part methods".to_owned());
+    }
     let emitted: Vec<&str> = methods.emitted.iter().map(String::as_str).collect();
     let table = emit_hooks::emit(surface, &emitted);
     let mut hook_coverage = emit_hooks::coverage(
@@ -315,6 +340,7 @@ fn plan_pass(
     ));
     hook_coverage.push_str(&part_coverage(&fluid_parts, emit_impl::PartTrait::Fluid));
     hook_coverage.push_str(&part_coverage(&entity_parts, emit_impl::PartTrait::Entity));
+    hook_coverage.push_str(&part_coverage(&menu_parts, emit_impl::PartTrait::Menu));
 
     let handles =
         emit_handles::emit_listing(members, families, dropped, &types.plain, &document.hash);
@@ -334,6 +360,7 @@ fn plan_pass(
         block_entity_parts,
         fluid_parts,
         entity_parts,
+        menu_parts,
         types,
         hook_coverage,
     })
@@ -350,6 +377,7 @@ fn part_coverage(parts: &emit_impl::PartsEmitted, part: emit_impl::PartTrait) ->
         }
         emit_impl::PartTrait::Fluid => ("fluid parts (issue 74, P4)", "fluid_part"),
         emit_impl::PartTrait::Entity => ("entity parts (issue 74, P5)", "entity_part"),
+        emit_impl::PartTrait::Menu => ("menu parts (issue 74, B)", "menu_part"),
     };
     let mut out = format!("\n# {label}: the {} trait's methods\n", part.name());
     let mut lines: Vec<(String, String)> = parts
@@ -401,6 +429,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
     let fluid_part_sigs = trait_sigs::parse_trait(&trait_text, "FluidPart")
         .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
     // The EntityPart's hook-shaped methods and its plain ones (the game calls these directly).
+    let menu_part_sigs = trait_sigs::parse_trait(&trait_text, "MenuPart")
+        .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
     let mut entity_part_sigs = trait_sigs::parse_trait(&trait_text, "EntityPart")
         .map_err(|error| format!("{}: {error}", args.hooks_trait.display()))?;
     entity_part_sigs.extend(
@@ -424,6 +454,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             &block_entity_part_sigs,
             &fluid_part_sigs,
             &entity_part_sigs,
+            &menu_part_sigs,
             &dispatch,
             &members,
             &refs,
@@ -455,6 +486,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         block_entity_parts,
         fluid_parts,
         entity_parts,
+        menu_parts,
         types,
         hook_coverage,
     } = plan;
@@ -507,6 +539,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
                 true,
             )
         },
+        part_shapes(&menu_part_sigs, &menu_parts.emitted),
     ];
     let bound_members: Vec<&handles::MemberIr> = members
         .iter()
@@ -521,6 +554,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             part_lists[2].as_slice(),
             part_lists[3].as_slice(),
             part_lists[4].as_slice(),
+            part_lists[5].as_slice(),
         ],
         families: &families,
         members: &bound_members,
@@ -545,6 +579,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
     let block_entity_parts_path = args.out.join("block_entity_parts.rs");
     let fluid_parts_path = args.out.join("fluid_parts.rs");
     let entity_parts_path = args.out.join("entity_parts.rs");
+    let menu_parts_path = args.out.join("menu_parts.rs");
     if args.check {
         let mut differ = Vec::new();
         for (path, text) in [
@@ -559,6 +594,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             (&block_entity_parts_path, &block_entity_parts.text),
             (&fluid_parts_path, &fluid_parts.text),
             (&entity_parts_path, &entity_parts.text),
+            (&menu_parts_path, &menu_parts.text),
             (&luau_path, &luau.text),
             (&luaurc_path, &luaurc),
         ] {
@@ -615,6 +651,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .map_err(|error| format!("cannot write {}: {error}", fluid_parts_path.display()))?;
     std::fs::write(&entity_parts_path, &entity_parts.text)
         .map_err(|error| format!("cannot write {}: {error}", entity_parts_path.display()))?;
+    std::fs::write(&menu_parts_path, &menu_parts.text)
+        .map_err(|error| format!("cannot write {}: {error}", menu_parts_path.display()))?;
     println!("handle families: {}", families.join(", "));
     for (family, members, bound) in &handles_out.per_family {
         println!("  {family}: {members} members, {bound} bound");

@@ -136,7 +136,7 @@ export type ConfigRecord = {
 
 -- The `horizon` global. Its functions split by time: the declaring functions (block, item,
 -- block_entity_type, world_fluid, block_part, item_part, block_entity_part, fluid_part,
--- entity_part, client_command, config, command, data_map_type, data_pack_file) and `on` work only while the mod
+-- entity_part, menu_part, client_command, config, command, data_map_type, data_pack_file) and `on` work only while the mod
 -- loads; `log`, `none`, `data_map` and the attachment functions work only inside a handler.
 -- `data_map(registry, entry, map)` reads the value an entry has in a data map, as NBT in Lua (nil
 -- where it has none); a read costs 1 unit of the turn's budget. The attachment functions keep a
@@ -155,7 +155,11 @@ export type ConfigRecord = {
 -- never split). A mod may write 20 lines at once, then 20 a second (host.rs LOG_BURST, LOG_PER_SECOND);
 -- a line over that rate is dropped without an error. The mod keeps its last 100 lines
 -- (MAX_LOG_LINES), dropping the oldest. Log lines have no per-turn cap: the per-turn cap of 16 lines
--- (4096 bytes each) is for a `Vec<Text>` output (dispatch.rs MAX_LINES). Outside its own handler, `horizon.<name>` raises
+-- (4096 bytes each) is for a `Vec<Text>` output (dispatch.rs MAX_LINES). `menu_part(id, handlers)` binds
+-- `menu_still_valid` to a mod menu type that another mod (native or content) declared: at most 16 menu
+-- parts per mod, one per menu id, the id namespaced. A Lua mod cannot declare a menu type itself (menu
+-- types are content files, and a Lua package has none), so the menu it names must come from another mod.
+-- Outside its own handler, `horizon.<name>` raises
 -- "not available yet" (host.rs runtime_table).
 export type HorizonApi = {
 	on: OnHook,
@@ -170,6 +174,9 @@ export type HorizonApi = {
 	block_entity_part: (id: string, handlers: BlockEntityPartHandlers) -> (),
 	fluid_part: (id: string, handlers: FluidPartHandlers) -> (),
 	entity_part: (id: string, handlers: EntityPartHandlers) -> (),
+	-- A menu part's id is the mod menu type's id (`<mod>:<path>`, any namespace); it is not checked
+	-- against the game's menus, so a part on a menu that never opens is never asked.
+	menu_part: (id: string, handlers: MenuPartHandlers) -> (),
 	client_command: (record: ClientCommandRecord) -> (),
 	config: (record: ConfigRecord) -> (),
 	command: (record: CommandRecord) -> (),
@@ -3577,6 +3584,18 @@ export type EntityPartHandlers = {
 	is_shearable: ((event: IsShearableEvent) -> (boolean)?)?,
 	on_sheared: ((event: OnShearedEvent) -> ({ItemStackSpec})?)?,
 	spawn_cluster_size: ((event: SpawnClusterSizeEvent) -> (number)?)?,
+}
+
+export type MenuStillValidEvent = {
+	player: string, -- read-only
+	menu: string, -- read-only
+	pos: { x: number, y: number, z: number }, -- read-only
+	eye: { x: number, y: number, z: number }, -- read-only
+	valid: boolean, -- answer
+}
+
+export type MenuPartHandlers = {
+	menu_still_valid: ((event: MenuStillValidEvent) -> ())?,
 }
 
 export type BlockEntityRef = {

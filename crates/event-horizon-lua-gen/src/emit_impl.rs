@@ -1559,7 +1559,7 @@ fn commit_text(method: &Method<'_>) -> String {
 }
 
 /// The Part traits the Lua host binds one adapter for: the BlockPart, the ItemPart, the
-/// BlockEntityPart, the FluidPart and the EntityPart methods.
+/// BlockEntityPart, the FluidPart, the EntityPart and the MenuPart methods.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartTrait {
     Block,
@@ -1567,6 +1567,7 @@ pub enum PartTrait {
     BlockEntity,
     Fluid,
     Entity,
+    Menu,
 }
 
 impl PartTrait {
@@ -1578,6 +1579,7 @@ impl PartTrait {
             PartTrait::BlockEntity => "BlockEntityPart",
             PartTrait::Fluid => "FluidPart",
             PartTrait::Entity => "EntityPart",
+            PartTrait::Menu => "MenuPart",
         }
     }
 
@@ -1589,6 +1591,7 @@ impl PartTrait {
             PartTrait::BlockEntity => "LuaBlockEntityPart",
             PartTrait::Fluid => "LuaFluidPart",
             PartTrait::Entity => "LuaEntityPart",
+            PartTrait::Menu => "LuaMenuPart",
         }
     }
 
@@ -1600,6 +1603,7 @@ impl PartTrait {
             PartTrait::BlockEntity => "block_entity_subscribed",
             PartTrait::Fluid => "fluid_subscribed",
             PartTrait::Entity => "entity_subscribed",
+            PartTrait::Menu => "menu_subscribed",
         }
     }
 
@@ -1611,6 +1615,7 @@ impl PartTrait {
             PartTrait::BlockEntity => "BLOCK_ENTITY_PARTS",
             PartTrait::Fluid => "FLUID_PARTS",
             PartTrait::Entity => "ENTITY_PARTS",
+            PartTrait::Menu => "MENU_PARTS",
         }
     }
 }
@@ -1647,7 +1652,7 @@ pub const PART_HOT: &[(&str, &str)] = &[
 ];
 /// The Part methods skipped for a reason of their own, as `(trait, method, reason)`: a block entity's
 /// saved data is NBT output, which the Lua host does not hand out; attachment state is not a Part
-/// state in v1.
+/// state in v1; a menu's slot rules and transfer run per click or per recipe action.
 pub const PART_EXCLUDED: &[(&str, &str, &str)] = &[
     ("BlockEntityPart", "block_entity", NBT_REASON),
     ("BlockEntityPart", "block_entity_update_tag", NBT_REASON),
@@ -1657,7 +1662,17 @@ pub const PART_EXCLUDED: &[(&str, &str, &str)] = &[
         ATTACHMENT_REASON,
     ),
     ("EntityPart", "general_entity_tick", MOB_REASON),
+    ("MenuPart", "menu_slot_rules", MENU_SLOT_REASON),
+    ("MenuPart", "menu_transfer", MENU_TRANSFER_REASON),
 ];
+/// The reason of a menu's slot rules: the game asks them per click for each slot and stack the click
+/// consults, so they need a measurement before they are bound.
+pub const MENU_SLOT_REASON: &str =
+    "hot path (needs measurement): asked per click for each slot and stack it consults";
+/// The reason of a menu's transfer: the game asks it per recipe-viewer transfer, before its own, so it
+/// needs a measurement before it is bound.
+pub const MENU_TRANSFER_REASON: &str =
+    "hot path (needs measurement): asked per recipe transfer action on a mod menu";
 const NBT_REASON: &str = "NBT output (Compound is denied)";
 /// The reason of a mob's goals and brains and of a general entity row's tick: each runs per mob or per
 /// tick, and needs a measurement before it is bound.

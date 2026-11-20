@@ -35,6 +35,9 @@ pub const MAX_WORLD_FLUIDS: usize = 8;
 /// The most `horizon.entity_part` calls one mod may make: one per entity type.
 pub const MAX_ENTITY_PARTS: usize = 16;
 
+/// The most `horizon.menu_part` calls one mod may make: one per menu type.
+pub const MAX_MENU_PARTS: usize = 16;
+
 /// The most blocks one `horizon.block_entity_type` may name.
 pub const MAX_BLOCKS_PER_TYPE: usize = 32;
 
@@ -101,6 +104,8 @@ pub struct Declaration {
     pub fluid_parts: Vec<PartRecord>,
     /// The entity parts `horizon.entity_part` declared, in declaration order.
     pub entity_parts: Vec<PartRecord>,
+    /// The menu parts `horizon.menu_part` declared, in declaration order.
+    pub menu_parts: Vec<PartRecord>,
     /// The client commands `horizon.client_command` declared, in declaration order.
     pub client_commands: Vec<ClientCommandRecord>,
     /// The configs `horizon.config` declared, in declaration order. Each names the mod as its owner.
@@ -115,8 +120,8 @@ pub struct Declaration {
 
 /// The kind of a part a mod declares: `horizon.block_part` (a BlockPart), `horizon.item_part` (an
 /// ItemPart), `horizon.block_entity_part` (a BlockEntityPart), `horizon.fluid_part` (a FluidPart) or
-/// `horizon.entity_part` (an EntityPart). Each kind has its own handler table, its own id check and
-/// its own cap.
+/// `horizon.entity_part` (an EntityPart) or `horizon.menu_part` (a MenuPart). Each kind has its own
+/// handler table, its own id check and its own cap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartKind {
     Block,
@@ -124,6 +129,7 @@ pub enum PartKind {
     BlockEntity,
     Fluid,
     Entity,
+    Menu,
 }
 
 impl PartKind {
@@ -135,6 +141,7 @@ impl PartKind {
             PartKind::BlockEntity => "block_entity_part",
             PartKind::Fluid => "fluid_part",
             PartKind::Entity => "entity_part",
+            PartKind::Menu => "menu_part",
         }
     }
 
@@ -146,6 +153,7 @@ impl PartKind {
             PartKind::BlockEntity => "block entity",
             PartKind::Fluid => "fluid",
             PartKind::Entity => "entity",
+            PartKind::Menu => "menu",
         }
     }
 
@@ -157,6 +165,7 @@ impl PartKind {
             PartKind::BlockEntity => crate::generated::block_entity_parts::BLOCK_ENTITY_PARTS,
             PartKind::Fluid => crate::generated::fluid_parts::FLUID_PARTS,
             PartKind::Entity => crate::generated::entity_parts::ENTITY_PARTS,
+            PartKind::Menu => crate::generated::menu_parts::MENU_PARTS,
         }
     }
 }
@@ -310,6 +319,7 @@ pub fn declare_with_budget(
         fluids: recorded.fluids,
         fluid_parts: recorded.fluid_parts,
         entity_parts: recorded.entity_parts,
+        menu_parts: recorded.menu_parts,
         client_commands: recorded.client_commands,
         configs: recorded.configs,
         commands: recorded.commands,
@@ -447,6 +457,7 @@ struct Recorded {
     fluids: Vec<FluidRecord>,
     fluid_parts: Vec<PartRecord>,
     entity_parts: Vec<PartRecord>,
+    menu_parts: Vec<PartRecord>,
     client_commands: Vec<ClientCommandRecord>,
     configs: Vec<mod_api::Config>,
     commands: Vec<CommandRecord>,
@@ -497,6 +508,7 @@ fn run(
     let fluids = RefCell::new(Vec::<FluidRecord>::new());
     let fluid_parts = RefCell::new(Vec::<PartRecord>::new());
     let entity_parts = RefCell::new(Vec::<PartRecord>::new());
+    let menu_parts = RefCell::new(Vec::<PartRecord>::new());
     let client_commands = RefCell::new(Vec::<ClientCommandRecord>::new());
     let configs = RefCell::new(Vec::<mod_api::Config>::new());
     let commands = RefCell::new(Vec::<CommandRecord>::new());
@@ -618,6 +630,9 @@ fn run(
             let entity_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
                 declare_part(lua, PartKind::Entity, id, spec, &entity_parts, &handlers)
             })?;
+            let menu_part = scope.create_function(|lua, (id, spec): (Value, Value)| {
+                declare_part(lua, PartKind::Menu, id, spec, &menu_parts, &handlers)
+            })?;
             let client_command = scope.create_function(|lua, value: Value| {
                 declare_client_command(lua, value, &client_commands)
             })?;
@@ -648,6 +663,7 @@ fn run(
             horizon.raw_set("world_fluid", world_fluid)?;
             horizon.raw_set("fluid_part", fluid_part)?;
             horizon.raw_set("entity_part", entity_part)?;
+            horizon.raw_set("menu_part", menu_part)?;
             horizon.set_readonly(true);
             env.raw_set("horizon", horizon.clone())?;
 
@@ -679,6 +695,7 @@ fn run(
         ("world_fluid", LATE_DECLARE),
         ("fluid_part", LATE_DECLARE),
         ("entity_part", LATE_DECLARE),
+        ("menu_part", LATE_DECLARE),
         ("client_command", LATE_DECLARE),
         ("config", LATE_DECLARE),
         ("command", LATE_DECLARE),
@@ -703,6 +720,7 @@ fn run(
         fluids: fluids.into_inner(),
         fluid_parts: fluid_parts.into_inner(),
         entity_parts: entity_parts.into_inner(),
+        menu_parts: menu_parts.into_inner(),
         client_commands: client_commands.into_inner(),
         configs: configs.into_inner(),
         commands: commands.into_inner(),
@@ -1348,6 +1366,7 @@ fn declare_part(
     let mut records = records.borrow_mut();
     let cap = match kind {
         PartKind::Entity => MAX_ENTITY_PARTS,
+        PartKind::Menu => MAX_MENU_PARTS,
         _ => MAX_PARTS,
     };
     if records.len() >= cap {
@@ -1409,6 +1428,7 @@ fn check_part_handler(kind: PartKind, name: &str) -> Result<(), String> {
             PartKind::BlockEntity => "not a block entity part handler".to_owned(),
             PartKind::Fluid => "not a fluid part handler".to_owned(),
             PartKind::Entity => "not an entity part handler".to_owned(),
+            PartKind::Menu => "not a menu part handler".to_owned(),
         }),
         Some((_, None)) => Ok(()),
         Some((_, Some(reason))) => Err(format!("not available: {reason}")),
@@ -1438,6 +1458,7 @@ fn part_id(lua: &Lua, kind: PartKind, value: Value) -> mlua::Result<String> {
             PartKind::BlockEntity => "mymod:press",
             PartKind::Fluid => "mymod:oil",
             PartKind::Entity => "minecraft:zombie",
+            PartKind::Menu => "mymod:press",
         };
         return Err(at_line(
             lua,
@@ -2984,6 +3005,84 @@ mod tests {
             .map(String::as_str)
             .collect();
         assert_eq!(hooks, ["is_shearable", "on_sheared", "spawn_cluster_size"]);
+    }
+
+    #[test]
+    fn a_menu_part_records_its_menu_and_its_one_handler_for_any_namespace() {
+        let declaration = declare_in_fresh_state(
+            "horizon.menu_part(\"other:press_menu\", {menu_still_valid = function() end})",
+        )
+        .unwrap();
+        let parts: Vec<(&str, Vec<&str>)> = declaration
+            .menu_parts
+            .iter()
+            .map(|part| {
+                (
+                    part.id.as_str(),
+                    part.hooks.iter().map(String::as_str).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(parts, [("other:press_menu", vec!["menu_still_valid"])]);
+    }
+
+    #[test]
+    fn a_menu_part_takes_only_menu_still_valid_and_names_the_skipped_handlers() {
+        let unknown = declare_in_fresh_state(
+            "horizon.menu_part(\"other:press_menu\", {close_me = function() end})",
+        )
+        .unwrap_err();
+        assert!(
+            unknown.contains("'close_me'") && unknown.contains("not a menu part handler"),
+            "got {unknown}"
+        );
+        for later in ["menu_slot_rules", "menu_transfer"] {
+            let err = declare_in_fresh_state(&format!(
+                "horizon.menu_part(\"other:press_menu\", {{{later} = function() end}})"
+            ))
+            .unwrap_err();
+            assert!(
+                err.contains(&format!("'{later}'"))
+                    && err.contains("not available: hot path (needs measurement)"),
+                "got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_menu_part_is_capped_at_sixteen_and_has_one_per_menu_id() {
+        let sixteen: String = (0..MAX_MENU_PARTS)
+            .map(|i| {
+                format!(
+                    "horizon.menu_part(\"other:menu{i}\", {{menu_still_valid = function() end}})\n"
+                )
+            })
+            .collect();
+        assert_eq!(
+            declare_in_fresh_state(&sixteen).unwrap().menu_parts.len(),
+            MAX_MENU_PARTS
+        );
+        let seventeen = format!(
+            "{sixteen}horizon.menu_part(\"other:menu16\", {{menu_still_valid = function() end}})"
+        );
+        let err = declare_in_fresh_state(&seventeen).unwrap_err();
+        assert!(err.contains("at most 16 menu parts"), "got {err}");
+        let twice = "horizon.menu_part(\"other:press_menu\", {menu_still_valid = function() end})\n\
+                     horizon.menu_part(\"other:press_menu\", {menu_still_valid = function() end})";
+        let err = declare_in_fresh_state(twice).unwrap_err();
+        assert!(err.contains("has two parts in this mod"), "got {err}");
+    }
+
+    #[test]
+    fn a_menu_part_needs_a_namespaced_menu_id() {
+        let err = declare_in_fresh_state(
+            "horizon.menu_part(\"press_menu\", {menu_still_valid = function() end})",
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("needs a namespaced menu id such as mymod:press"),
+            "got {err}"
+        );
     }
 
     #[test]
