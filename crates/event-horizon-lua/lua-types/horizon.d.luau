@@ -141,18 +141,26 @@ export type GoalCtx = {
 
 export type GoalEvent = { mob: MobRef, ctx: GoalCtx }
 
--- A brain behavior of an entity part's `behaviors` table (#74, B2). `name` is `<mod>:<path>` in the mod's
+-- A brain behavior of an entity part's `behaviors` table (behavior.rs). `name` is `<mod>:<path>` in the mod's
 -- own namespace (at most 64 bytes, declared once per mod). `activity` is the brain activity it starts in:
 -- core, idle, work, play, rest, meet, panic, raid, pre_raid, hide, fight, play_dead, sniff, dig, emerge,
--- roar or investigate; any other name raises. `priority` is a whole number from 0 to 20 (a lower number
--- runs first). `min_duration` and `max_duration` give the window the behavior's run is drawn from (default
--- 40 and 80 brain ticks: an assumption, not a vanilla value); the window must be one vanilla draws
--- (min_duration at least 0, and max_duration + 1 - min_duration at least 1). At most 8 behaviors per part.
--- The handlers: `check_extra_start_conditions` answers whether the behavior may start, `can_still_use`
--- whether it keeps running, and `start`, `tick` and `stop` answer nothing. At least one handler is needed.
--- B2a (this chunk): the handlers are not run yet. A behavior never starts (check_extra_start_conditions
--- answers false), and nothing keeps it running. The handler arguments, the `e.ctx` actions
--- (`set_walk_target`, `set_brain_target`) and the shared budget are the next chunk, B2b.
+-- roar or investigate; any other name raises. `priority` is a whole number from 0 to 20 (a lower number runs
+-- first). `min_duration` and `max_duration` give the window the run is drawn from (default 40 and 80 brain
+-- ticks: an assumption, not a vanilla value); the window must be one vanilla draws (min_duration at least 0,
+-- and max_duration + 1 - min_duration at least 1). At most 8 behaviors per part. At least one handler is
+-- needed. Each handler is called with one argument, `e` (BehaviorEvent).
+-- `check_extra_start_conditions` answers true to start the behavior; only a boolean true starts it, and nil
+-- or any other value does not (without the handler the behavior starts). `can_still_use` answers whether it
+-- keeps running: nil keeps it running, false stops it, and a failed call stops it; without a handler it
+-- stops after its first tick. `start`, `tick` and `stop` answer nothing; `stop` always runs.
+-- Budget: every behavior of every brain shares the goals' budget of 4 ms per 50 ms of wall clock. Each
+-- handler's turn runs under its own deadline of 1 ms (a loop is stopped there); `stop` runs under the 50 ms
+-- handler budget. Once the window's budget is spent: check_extra_start_conditions answers false (it is not
+-- run), can_still_use keeps its last answer, and tick is skipped (start and stop still run). A turn stopped
+-- by its deadline is a budget failure: it answers nothing (check false, can_still_use stops the behavior), and
+-- the e.ctx actions it queued are DROPPED. An ordinary error keeps the actions made before it. Three budget
+-- failures in a row of one handler quarantine that handler (the mod's other behaviors keep theirs), with one
+-- warning. A panic in a handler quarantines its handler name for the whole mod.
 export type BehaviorSpec = {
 	name: string,
 	activity: string,
@@ -166,8 +174,18 @@ export type BehaviorSpec = {
 	stop: ((event: BehaviorEvent) -> ())?,
 }
 
--- The argument of a behavior handler. B2a: `mob` only; `ctx` (BehaviorCtx) is the next chunk, B2b.
-export type BehaviorEvent = { mob: MobRef }
+-- The behavior actions of one behavior call (behavior_actions.rs). Each returns nothing and is applied after
+-- the handler returns. `set_walk_target` takes whole block coordinates, a speed from 0.0 to 3.0 and `close`,
+-- a whole number from 0 to 64; `set_brain_target` takes a MobRef, an EntityRef or nil. At most 64 actions per
+-- call, each costing 10 units of the turn's budget. A value outside these is an error naming it, and the action
+-- is not made. A `BehaviorCtx` kept past its call raises "not available outside this behavior call".
+export type BehaviorCtx = {
+	set_walk_target: (self: BehaviorCtx, x: number, y: number, z: number, speed: number, close: number) -> (),
+	set_brain_target: (self: BehaviorCtx, target: MobRef | EntityRef | nil) -> (),
+}
+
+-- The argument of a behavior handler: `mob` (a MobRef; its reads go through the handle) and `ctx`.
+export type BehaviorEvent = { mob: MobRef, ctx: BehaviorCtx }
 
 -- A block made from a vanilla block of the given template: `id` is `<mod>:<path>`, `template` is
 -- `minecraft:<path>`. At most 256 blocks per mod.

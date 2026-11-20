@@ -92,6 +92,13 @@ pub enum TurnHost<'a> {
         actions: &'a mut Vec<crate::goal_actions::GoalAction>,
         call: u64,
     },
+    /// A brain behavior's handler (#74, B2b): as a goal's, with its `e.ctx` actions queued in `actions`
+    /// (see behavior_actions.rs) for the behavior call `call`.
+    Behavior {
+        host: &'a dyn Host,
+        actions: &'a mut Vec<crate::behavior_actions::BehaviorAction>,
+        call: u64,
+    },
     /// A hook that gets no host. Its handles raise `no host call outside a hook`.
     None,
 }
@@ -113,6 +120,7 @@ impl<'a> TurnHost<'a> {
             TurnHost::ClientRead(host) => Some(*host as &dyn Host),
             TurnHost::Read(host) => Some(*host),
             TurnHost::Goal { host, .. } => Some(*host),
+            TurnHost::Behavior { host, .. } => Some(*host),
             TurnHost::None => None,
         }
     }
@@ -155,14 +163,23 @@ impl<'a> TurnHost<'a> {
                 actions,
                 call: *call,
             },
+            TurnHost::Behavior {
+                host,
+                actions,
+                call,
+            } => TurnHost::Behavior {
+                host: *host,
+                actions,
+                call: *call,
+            },
             TurnHost::None => TurnHost::None,
         }
     }
 
-    /// The goal call a goal's turn is for, if the turn is a goal's.
-    pub(crate) fn goal_call(&self) -> Option<u64> {
+    /// The call a goal's or a behavior's turn is for, if the turn is one of those.
+    pub(crate) fn mob_call(&self) -> Option<u64> {
         match self {
-            TurnHost::Goal { call, .. } => Some(*call),
+            TurnHost::Goal { call, .. } | TurnHost::Behavior { call, .. } => Some(*call),
             _ => None,
         }
     }
@@ -408,6 +425,9 @@ fn op_cost(op: &str) -> mlua::Result<u32> {
     if let Some(cost) = crate::goal_actions::cost(op) {
         return Ok(cost);
     }
+    if let Some(cost) = crate::behavior_actions::cost(op) {
+        return Ok(cost);
+    }
     if op == crate::commands::FEEDBACK_OP {
         return Ok(crate::commands::FEEDBACK_COST);
     }
@@ -433,6 +453,9 @@ fn run_op(
     if crate::goal_actions::is_op(op) {
         return crate::goal_actions::run(host, op, &this, args);
     }
+    if crate::behavior_actions::is_op(op) {
+        return crate::behavior_actions::run(host, op, &this, args);
+    }
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);
     }
@@ -449,6 +472,9 @@ fn run_op(
 #[cfg(test)]
 fn op_cost(op: &str) -> mlua::Result<u32> {
     if let Some(cost) = crate::goal_actions::cost(op) {
+        return Ok(cost);
+    }
+    if let Some(cost) = crate::behavior_actions::cost(op) {
         return Ok(cost);
     }
     if op == crate::commands::FEEDBACK_OP {
@@ -477,6 +503,9 @@ fn run_op(
 ) -> mlua::Result<Value> {
     if crate::goal_actions::is_op(op) {
         return crate::goal_actions::run(host, op, &this, args);
+    }
+    if crate::behavior_actions::is_op(op) {
+        return crate::behavior_actions::run(host, op, &this, args);
     }
     if op == crate::commands::FEEDBACK_OP {
         return crate::commands::feedback_op(host, &this, args);

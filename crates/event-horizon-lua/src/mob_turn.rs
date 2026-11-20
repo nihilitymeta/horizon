@@ -152,7 +152,7 @@ pub(crate) fn event(
     move |lua, turn| {
         let data = lua.create_table()?;
         data.raw_set("mob", handles::family_out(lua, mob)?)?;
-        let call = turn.goal_call().unwrap_or(0);
+        let call = turn.mob_call().unwrap_or(0);
         data.raw_set("ctx", ctx(lua, call)?)?;
         dispatch::new_event(lua, data, &[])
     }

@@ -4,6 +4,7 @@ mod attachments;
 #[cfg(test)]
 mod attachments_tests;
 mod behavior;
+mod behavior_actions;
 #[cfg(test)]
 mod behavior_tests;
 #[cfg(test)]
