@@ -592,4 +592,73 @@ mod tests {
         let unknown = provider.set_enabled("nobody", false).unwrap_err();
         assert_eq!(unknown.key, keys::UNKNOWN_MOD);
     }
+
+    /// The name of the variant `value` is.
+    fn variant(value: &ViewValue) -> &'static str {
+        match value {
+            ViewValue::Bool(_) => "Bool",
+            ViewValue::Int(_) => "Int",
+            ViewValue::Float(_) => "Float",
+            ViewValue::Text(_) => "Text",
+        }
+    }
+
+    #[test]
+    fn contract_each_kind_carries_its_variant() {
+        // The table in `horizon_hooks::mod_entries::ViewKind`: which variant `value` and
+        // `default` take for each setting of `SETTINGS`.
+        let (_root, _game, provider) = host();
+        let expected = [
+            ("on", "Bool"),
+            ("mode", "Text"),
+            ("level", "Int"),
+            ("gain", "Float"),
+            ("tint", "Text"),
+            ("word", "Text"),
+            ("fire", "Text"),
+        ];
+        let views = provider.settings("alpha_mod");
+        assert_eq!(views.len(), expected.len());
+        for (view, (key, want)) in views.iter().zip(expected) {
+            assert_eq!(view.key, key);
+            assert_eq!(variant(&view.value), want, "{key} value");
+            assert_eq!(variant(&view.default), want, "{key} default");
+        }
+        let tint = views.iter().find(|v| v.key == "tint").unwrap();
+        assert!(matches!(&tint.value, ViewValue::Text(hex) if hex.starts_with('#')));
+    }
+
+    #[test]
+    fn a_choice_is_text_and_round_trips_through_the_store() {
+        let (_root, game, provider) = host();
+        let mode = || {
+            provider
+                .settings("alpha_mod")
+                .into_iter()
+                .find(|v| v.key == "mode")
+                .unwrap()
+        };
+        assert_eq!(mode().value, ViewValue::Text("a".into()));
+        assert_eq!(mode().default, ViewValue::Text("a".into()));
+        assert!(!mode().changed);
+
+        provider
+            .set("alpha_mod", "mode", ViewValue::Text("b".into()))
+            .unwrap();
+        assert_eq!(mode().value, ViewValue::Text("b".into()));
+        assert!(mode().changed);
+        let text =
+            std::fs::read_to_string(game.path().join("config/alpha_mod/settings.toml")).unwrap();
+        assert!(text.contains("mode = \"b\""), "{text}");
+
+        let fault = provider
+            .set("alpha_mod", "mode", ViewValue::Text("nope".into()))
+            .unwrap_err();
+        assert_eq!(fault.key, keys::INVALID_VALUE);
+        assert_eq!(
+            mode().value,
+            ViewValue::Text("b".into()),
+            "a refusal changes nothing"
+        );
+    }
 }

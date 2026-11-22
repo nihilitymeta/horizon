@@ -125,10 +125,9 @@ fn lua_setting(i: usize, j: usize) -> Option<(String, SettingView)> {
 fn lua_value(kind: &ViewKind, value: &ViewValue) -> Text {
     match (kind, value) {
         (_, ViewValue::Bool(on)) => on_off(*on),
-        (ViewKind::Choice { options }, ViewValue::Int(index)) => usize::try_from(*index)
-            .ok()
-            .and_then(|index| options.get(index))
-            .map_or_else(|| Text::literal(""), |option| lua_option(option)),
+        (ViewKind::Choice { options }, ViewValue::Text(option)) if options.contains(option) => {
+            lua_option(option)
+        }
         (ViewKind::Colour, ViewValue::Text(hex)) => {
             Text::literal(hex.clone()).with_color(lua_rgb(hex))
         }
@@ -207,9 +206,16 @@ fn lua_slid(view: &SettingView, fraction: f32) -> Option<ViewValue> {
 fn lua_next(view: &SettingView) -> Option<ViewValue> {
     match (&view.kind, &view.value) {
         (ViewKind::Toggle, ViewValue::Bool(on)) => Some(ViewValue::Bool(!on)),
-        (ViewKind::Choice { options }, ViewValue::Int(index)) => {
-            let count = i64::try_from(options.len().max(1)).ok()?;
-            Some(ViewValue::Int((index + 1).rem_euclid(count)))
+        (ViewKind::Choice { options }, ViewValue::Text(stored)) => {
+            // The option after the stored one, wrapping; a stored value that is not an option
+            // (position -1) moves to the first.
+            let next = options
+                .iter()
+                .position(|option| option == stored)
+                .map_or(0, |i| i + 1);
+            options
+                .get(next % options.len().max(1))
+                .map(|option| ViewValue::Text(option.clone()))
         }
         (ViewKind::Colour, ViewValue::Text(hex)) => {
             let rgb = lua_rgb(hex);
@@ -8971,7 +8977,12 @@ mod lua_page_tests {
                 ViewValue::Bool(true),
                 ViewValue::Bool(true),
             ),
-            view("mode", choice, ViewValue::Int(0), ViewValue::Int(0)),
+            view(
+                "mode",
+                choice,
+                ViewValue::Text("alpha".into()),
+                ViewValue::Text("alpha".into()),
+            ),
             view(
                 "level",
                 K::Slider {
@@ -9155,12 +9166,41 @@ mod lua_page_tests {
         assert_eq!(
             values,
             [
-                ViewValue::Int(1),
-                ViewValue::Int(2),
-                ViewValue::Int(0),
-                ViewValue::Int(1)
+                ViewValue::Text("beta".into()),
+                ViewValue::Text("gamma".into()),
+                ViewValue::Text("alpha".into()),
+                ViewValue::Text("beta".into())
             ]
         );
+    }
+
+    #[test]
+    fn a_choice_row_shows_its_option_text() {
+        let fake = install(None);
+        let s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let label = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1)).2;
+        assert!(label.contains("alpha"), "the row shows the option: {label}");
+        fake.settings.lock().unwrap()[1].value = ViewValue::Text("gamma".into());
+        let label = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1)).2;
+        assert!(
+            label.contains("gamma"),
+            "the row follows the value: {label}"
+        );
+    }
+
+    #[test]
+    fn a_choice_stored_outside_its_options_shows_as_given_and_a_click_goes_to_the_first() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        fake.settings.lock().unwrap()[1].value = ViewValue::Text("zeta".into());
+        let (x, y, label) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1));
+        assert!(label.contains("zeta"), "shown as given: {label}");
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "mode"), ViewValue::Text("alpha".into()));
     }
 
     #[test]
@@ -9252,7 +9292,7 @@ mod lua_page_tests {
         press(&mut ui, &mut s, x, y);
         let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaResetAll(0));
         press(&mut ui, &mut s, x, y);
-        assert_eq!(stored(fake, "mode"), ViewValue::Int(0));
+        assert_eq!(stored(fake, "mode"), ViewValue::Text("alpha".into()));
         assert!(fake.settings.lock().unwrap().iter().all(|s| !s.changed));
     }
 

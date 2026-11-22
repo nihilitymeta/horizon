@@ -65,26 +65,42 @@ pub struct SettingView {
 }
 
 /// What a setting accepts. Colour and keybind values are text (`#rrggbb` or a key name).
+///
+/// The value contract, for each kind: which [`ViewValue`] variant carries its `value` and its
+/// `default` (the provider sends both), and what `set` accepts. The provider's contract test
+/// (`contract_each_kind_carries_its_variant` in `event-horizon-lua`) asserts this table.
+///
+/// | Kind        | `value` / `default` variant | Notes                                              |
+/// |-------------|-----------------------------|----------------------------------------------------|
+/// | `Toggle`    | `Bool`                      |                                                    |
+/// | `Choice`    | `Text(option)`              | `option` is one of `options`; a stored value that is not one is shown as given |
+/// | `Slider`    | `Int` when `integer`, else `Float` |                                             |
+/// | `Colour`    | `Text("#rrggbb")`           | `#rrggbbaa` is also accepted by the store          |
+/// | `Text`      | `Text`                      | at most `max_length` characters                    |
+/// | `Keybind`   | `Text(key name)`            | `[A-Za-z0-9_+ ]`                                   |
 #[derive(Clone, Debug, PartialEq)]
 pub enum ViewKind {
+    /// A switch: `Bool`.
     Toggle,
-    Choice {
-        options: Vec<String>,
-    },
+    /// One of `options`, as `Text(option)`. A click moves to the next option, wrapping. A stored
+    /// value that is not in `options` is shown as given, and a click moves to the first option.
+    Choice { options: Vec<String> },
+    /// A number on a track: `Int` when `integer`, else `Float`.
     Slider {
         min: f64,
         max: f64,
         step: f64,
         integer: bool,
     },
+    /// A colour as `Text("#rrggbb")`.
     Colour,
-    Text {
-        max_length: usize,
-    },
+    /// Text of at most `max_length` characters, as `Text`.
+    Text { max_length: usize },
+    /// A key name, as `Text`.
     Keybind,
 }
 
-/// A setting's value.
+/// A setting's value. Which variant it is follows the setting's [`ViewKind`] (see its table).
 #[derive(Clone, Debug, PartialEq)]
 pub enum ViewValue {
     Bool(bool),
