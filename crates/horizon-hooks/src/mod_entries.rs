@@ -132,6 +132,14 @@ pub mod keys {
 pub trait Provider: Sync {
     /// Every mod: loaded ones in load order, then the disabled, then the refused.
     fn entries(&self) -> Vec<Entry>;
+    /// The id and the name of entry `index` in [`Provider::entries`] order, `None` past the end.
+    /// A provider that holds icons should override it: this default clones every entry.
+    fn lookup(&self, index: usize) -> Option<(String, String)> {
+        self.entries()
+            .into_iter()
+            .nth(index)
+            .map(|entry| (entry.id, entry.name))
+    }
     /// The settings of mod `id`, in declaration order; empty for an unknown mod.
     fn settings(&self, id: &str) -> Vec<SettingView>;
     /// Sets `key` of mod `id`. Nothing changes when this returns a [`Fault`].

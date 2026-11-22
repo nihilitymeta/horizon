@@ -123,7 +123,10 @@ impl Game<'_> {
         let ctx = key_focus::Context {
             slider_edit,
             typing: self.edit_box_focused(),
-            rows_take_enter: self.title.as_ref().is_some_and(|t| t.list_focused()),
+            // The Mods list takes Enter for its selected row (it opens the row's Config page).
+            rows_take_enter: self.title.as_ref().is_some_and(|t| t.list_focused())
+                || (self.screen == Screen::Options
+                    && self.ui.options.page() == horizon_client::options_ui::Page::Mods),
             gui: self.gui_size(),
         };
         let act = key_focus::act(nav, focus, &targets, ctx);

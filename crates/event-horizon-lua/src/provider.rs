@@ -150,6 +150,20 @@ impl Provider for LuaProvider {
         loaded.chain(disabled).chain(refused).collect()
     }
 
+    fn lookup(&self, index: usize) -> Option<(String, String)> {
+        // The order of `entries`, without cloning any icon.
+        let loaded = self
+            .mods
+            .iter()
+            .map(|m| (m.id().to_owned(), m.described().name.clone()));
+        let disabled = self.disabled.iter().map(|(id, _)| (id.clone(), id.clone()));
+        let refused = self
+            .refused
+            .iter()
+            .map(|r| (r.name.clone(), r.name.clone()));
+        loaded.chain(disabled).chain(refused).nth(index)
+    }
+
     fn settings(&self, id: &str) -> Vec<SettingView> {
         let Ok(m) = self.loaded(id) else {
             return Vec::new();
@@ -417,6 +431,20 @@ mod tests {
                 reason: "the package is not valid".into(),
             }
         );
+    }
+
+    #[test]
+    fn lookup_gives_the_id_and_name_of_each_entry_without_its_icon() {
+        let (_root, _game, provider) = host();
+        let entries = provider.entries();
+        assert_eq!(entries.len(), 3, "a loaded, a disabled and a refused mod");
+        for (i, entry) in entries.iter().enumerate() {
+            assert_eq!(
+                provider.lookup(i),
+                Some((entry.id.clone(), entry.name.clone()))
+            );
+        }
+        assert_eq!(provider.lookup(entries.len()), None);
     }
 
     /// A PNG's signature and a little more: the provider hands the bytes on without decoding them.

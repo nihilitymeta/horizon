@@ -58,6 +58,11 @@ pub enum Action {
     /// Config: the settings page of the Lua mod at this index of the provider's entries
     /// (`mod_entries::Provider::entries`).
     ConfigLua(usize),
+    /// The panel's button of a Lua mod: turn it on or off (see [`ModsScreen::toggle_lua`]).
+    SetLua {
+        index: usize,
+        enabled: bool,
+    },
     /// Homepage, Issues or the license: this link, through a confirmation.
     Link(String),
     /// A click to copy the mod id or version.
@@ -85,6 +90,8 @@ struct Entry {
     config: bool,
     /// A Lua mod: its index in the provider's entries, which its Config opens.
     lua: Option<usize>,
+    /// A Lua mod that is on or off (not refused): the state its panel button changes.
+    toggle: Option<bool>,
     /// Why it is not running, or that it is not on; stays above the scroller.
     status: Option<Text>,
     /// Dependency-policy notices, independently scrollable below the status.
@@ -127,7 +134,7 @@ fn lua_entry(
     lua: &mod_entries::Entry,
     icons: &mut HashMap<String, Arc<[u8]>>,
 ) -> Entry {
-    let off = || Some(tr("horizon.mods.screen.off").with_color(d::GRAY));
+    let off = || Some(tr("horizon.mods.screen.off.lua").with_color(d::GRAY));
     let status = match &lua.status {
         mod_entries::Status::Refused { key, args, reason } => {
             Some(refusal_text(key, args, reason).with_color(RED))
@@ -160,6 +167,7 @@ fn lua_entry(
         status,
         config: lua.settings,
         lua: Some(index),
+        toggle: (!matches!(lua.status, mod_entries::Status::Refused { .. })).then_some(lua.enabled),
         badge: Some(tr("horizon.mods.screen.badge.lua").with_color(d::GRAY)),
         side: Some(field(
             "horizon.mods.screen.side",
@@ -167,6 +175,15 @@ fn lua_entry(
             false,
         )),
         ..Entry::default()
+    }
+}
+
+/// The Config page a row's Config button opens: a native mod's, or a Lua mod's.
+fn config_of(e: &Entry) -> Action {
+    match (e.config, e.index, e.lua) {
+        (true, Some(index), _) => Action::Config(index),
+        (true, None, Some(index)) => Action::ConfigLua(index),
+        _ => Action::None,
     }
 }
 
@@ -411,6 +428,7 @@ impl ModsScreen {
                 status,
                 note,
                 lua: None,
+                toggle: None,
                 badge: None,
                 side: None,
             });
@@ -795,6 +813,50 @@ impl ModsScreen {
         (items, content, width, pinned)
     }
 
+    /// Enter on the selected row: the Config page its Config button opens, if it has one. Typing
+    /// in the search box keeps the key.
+    pub fn enter(&self) -> Option<Action> {
+        if self.search.focused {
+            return None;
+        }
+        let action = config_of(self.current()?);
+        (action != Action::None).then_some(action)
+    }
+
+    /// Turns Lua mod `index` on or off through `provider`. On success the panel shows the new
+    /// state and the restart note; on a refusal it shows the provider's fault.
+    pub fn toggle_lua(&mut self, provider: &dyn Provider, index: usize, enabled: bool) {
+        let Some((id, _)) = provider.lookup(index) else {
+            return;
+        };
+        let result = provider.set_enabled(&id, enabled);
+        let Some(entry) = self.entries.iter_mut().find(|e| e.lua == Some(index)) else {
+            return;
+        };
+        let restart = tr("horizon.mods.screen.restart").with_color(GOLD);
+        match result {
+            Ok(()) => {
+                entry.toggle = Some(enabled);
+                entry.status = Some(if enabled {
+                    restart
+                } else {
+                    tr("horizon.mods.screen.off.lua")
+                        .with_color(d::GRAY)
+                        .append(Text::literal("\n"))
+                        .append(restart)
+                });
+            }
+            Err(fault) => {
+                let args: Vec<Text> = fault
+                    .args
+                    .iter()
+                    .map(|(_, value)| Text::literal(value.clone()))
+                    .collect();
+                entry.status = Some(Text::translate(fault.key, &args).with_color(RED));
+            }
+        }
+    }
+
     /// A left click: what it asks of the game, and whether it sounds as a button.
     pub fn click(&mut self, m: &Measure, x: f64, y: f64) -> (Action, bool) {
         self.place();
@@ -851,13 +913,15 @@ impl ModsScreen {
             }
             let link = |url: &Option<String>| url.clone().map_or(Action::None, Action::Link);
             let action = match i {
-                0 => link(&e.homepage),
-                1 => link(&e.issues),
-                _ => match (e.config, e.index, e.lua) {
-                    (true, Some(index), _) => Action::Config(index),
-                    (true, None, Some(index)) => Action::ConfigLua(index),
-                    _ => Action::None,
+                0 => match (e.toggle, e.lua) {
+                    (Some(on), Some(index)) => Action::SetLua {
+                        index,
+                        enabled: !on,
+                    },
+                    _ => link(&e.homepage),
                 },
+                1 => link(&e.issues),
+                _ => config_of(e),
             };
             return (action.clone(), action != Action::None);
         }
@@ -1120,16 +1184,27 @@ impl ModsScreen {
             );
         }
         let e = selected;
+        // A Lua mod that is on or off has its turn-off or turn-on button where Homepage is.
+        let toggle = e.and_then(|e| e.toggle);
         let enabled = [
-            e.is_some_and(|e| e.homepage.is_some()),
+            toggle.is_some() || e.is_some_and(|e| e.homepage.is_some()),
             e.is_some_and(|e| e.issues.is_some()),
             e.is_some_and(|e| e.config && (e.index.is_some() || e.lua.is_some())),
         ];
-        let labels = ["homepage", "issues", "config"];
+        let first = match toggle {
+            Some(true) => "horizon.mods.screen.turn_off",
+            Some(false) => "horizon.mods.screen.turn_on",
+            None => "horizon.mods.screen.homepage",
+        };
+        let labels = [
+            first,
+            "horizon.mods.screen.issues",
+            "horizon.mods.screen.config",
+        ];
         for ((r, active), label) in g.buttons.into_iter().zip(enabled).zip(labels) {
             let hover = d::inside(mouse, r[0], r[1], r[2], r[3]);
             crate::widgets::widget_cursor(hover, active);
-            let text = tr(&format!("horizon.mods.screen.{label}"));
+            let text = tr(label);
             crate::widgets::record(
                 &text.plain(),
                 [r[0] as f32, r[1] as f32, r[2] as f32, r[3] as f32],
@@ -1729,7 +1804,7 @@ mod tests {
             ("2.0", "Kim, Lee", "Alpha is Lua.")
         );
         assert!(alpha.status.is_none() && alpha.index.is_none() && !alpha.config);
-        let off = tr("horizon.mods.screen.off").with_color(d::GRAY);
+        let off = tr("horizon.mods.screen.off.lua").with_color(d::GRAY);
         assert_eq!(screen.entries[4].status, Some(off));
         assert_eq!(
             screen.entries[5].status,
@@ -1752,6 +1827,135 @@ mod tests {
         screen.select(3);
         let (x, y) = centre(screen.geo().buttons[2]);
         assert_eq!(screen.click(&m, x, y), (Action::None, false));
+    }
+
+    /// A provider that records each `set_enabled` call and refuses one with a fault when asked.
+    struct Switch {
+        mods: Vec<mod_entries::Entry>,
+        refuse: bool,
+        calls: std::sync::Mutex<Vec<(String, bool)>>,
+    }
+    impl Provider for Switch {
+        fn entries(&self) -> Vec<mod_entries::Entry> {
+            self.mods.clone()
+        }
+        fn settings(&self, _: &str) -> Vec<mod_entries::SettingView> {
+            Vec::new()
+        }
+        fn set(
+            &self,
+            _: &str,
+            _: &str,
+            _: mod_entries::ViewValue,
+        ) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn reset(&self, _: &str, _: &str) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn reset_all(&self, _: &str) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), mod_entries::Fault> {
+            self.calls.lock().unwrap().push((id.into(), enabled));
+            if self.refuse {
+                return Err(mod_entries::fault(
+                    mod_entries::keys::FILE,
+                    &[("mod", id), ("reason", "read only")],
+                ));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn enter_opens_the_config_of_a_lua_row_that_has_settings_and_nothing_else() {
+        let list = ModList::default();
+        let mut with_settings = lua("alpha", "Alpha", mod_entries::Status::Loaded, true);
+        with_settings.settings = true;
+        let provider = FakeLua(vec![
+            with_settings,
+            lua("beta", "Beta", mod_entries::Status::Loaded, true),
+        ]);
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        screen.select(2);
+        assert_eq!(screen.enter(), Some(Action::ConfigLua(0)));
+        screen.select(3);
+        assert_eq!(screen.enter(), None);
+        // The search box keeps the key while it has the focus.
+        screen.select(2);
+        screen.search.focused = true;
+        assert_eq!(screen.enter(), None);
+    }
+
+    #[test]
+    fn the_panel_button_turns_a_lua_mod_off_and_on_and_shows_the_restart_note() {
+        let atlas = atlas();
+        let m = Measure(&atlas.font);
+        let list = ModList::default();
+        let provider = Switch {
+            mods: vec![lua("alpha", "Alpha", mod_entries::Status::Loaded, true)],
+            refuse: false,
+            calls: Default::default(),
+        };
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        screen.select(2);
+        let (x, y) = centre(screen.geo().buttons[0]);
+        let toggle = |screen: &mut ModsScreen| {
+            let (action, _) = screen.click(&m, x, y);
+            let Action::SetLua { index, enabled } = action else {
+                panic!("expected a switch, got {action:?}");
+            };
+            screen.toggle_lua(&provider, index, enabled);
+        };
+        toggle(&mut screen);
+        let note = tr("horizon.mods.screen.restart").with_color(GOLD);
+        let off = tr("horizon.mods.screen.off.lua").with_color(d::GRAY);
+        assert_eq!(
+            screen.entries[2].status,
+            Some(off.append(Text::literal("\n")).append(note.clone()))
+        );
+        assert_eq!(screen.entries[2].toggle, Some(false));
+        toggle(&mut screen);
+        assert_eq!(screen.entries[2].status, Some(note));
+        assert_eq!(screen.entries[2].toggle, Some(true));
+        assert_eq!(
+            *provider.calls.lock().unwrap(),
+            [("alpha".to_owned(), false), ("alpha".to_owned(), true)]
+        );
+    }
+
+    #[test]
+    fn a_refused_switch_shows_the_provider_fault_and_keeps_the_state() {
+        let atlas = atlas();
+        let m = Measure(&atlas.font);
+        let list = ModList::default();
+        let provider = Switch {
+            mods: vec![lua("alpha", "Alpha", mod_entries::Status::Loaded, true)],
+            refuse: true,
+            calls: Default::default(),
+        };
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        screen.select(2);
+        let (x, y) = centre(screen.geo().buttons[0]);
+        let (action, _) = screen.click(&m, x, y);
+        assert_eq!(
+            action,
+            Action::SetLua {
+                index: 0,
+                enabled: false
+            }
+        );
+        let Action::SetLua { index, enabled } = action else {
+            unreachable!()
+        };
+        screen.toggle_lua(&provider, index, enabled);
+        let fault = Text::translate(
+            "mods.provider.file",
+            &[Text::literal("alpha"), Text::literal("read only")],
+        );
+        assert_eq!(screen.entries[2].status, Some(fault.with_color(RED)));
+        assert_eq!(screen.entries[2].toggle, Some(true));
     }
 
     /// A `w`x`h` opaque PNG, made in the test.

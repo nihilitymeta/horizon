@@ -116,7 +116,7 @@ pub(crate) fn lua_provider() -> Option<&'static dyn Provider> {
 /// Setting `j` of the Lua mod at provider entry `i`: the mod's id, and the setting as it is now.
 fn lua_setting(i: usize, j: usize) -> Option<(String, SettingView)> {
     let provider = lua_provider()?;
-    let id = provider.entries().into_iter().nth(i)?.id;
+    let (id, _) = provider.lookup(i)?;
     let setting = provider.settings(&id).into_iter().nth(j)?;
     Some((id, setting))
 }
@@ -147,9 +147,16 @@ fn lua_option(option: &str) -> Text {
         Text::literal(option)
     }
 }
-/// `#rrggbb` as `0xRRGGBB`; 0 for text that is not a colour.
+/// `#rrggbb` as `0xRRGGBB`, also from `#rrggbbaa` (the alpha is left out); 0 for text that is
+/// not a colour.
 fn lua_rgb(hex: &str) -> u32 {
-    u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0)
+    let digits = hex.strip_prefix('#').unwrap_or(hex);
+    match digits.get(..6) {
+        Some(rgb) if rgb.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            u32::from_str_radix(rgb, 16).unwrap_or(0)
+        }
+        _ => 0,
+    }
 }
 fn lua_number(value: &ViewValue) -> Option<f64> {
     match value {
@@ -2518,6 +2525,30 @@ impl OptionsUi {
                     },
                 })
     }
+    /// What the Mods screen asks for: a settings page, a link, a copy, a Lua mod turned on or off.
+    fn mods_action(&mut self, s: &mut Settings, action: crate::mods_screen::Action) -> Vec<Event> {
+        use crate::mods_screen::Action as Do;
+        let mut events = Vec::new();
+        match action {
+            Do::None => {}
+            Do::OpenFolder => events.push(Event::OpenModFolder),
+            Do::Back => events.extend(self.back(s)),
+            Do::Config(i) => {
+                self.push(Page::NativeMod(i));
+                events.push(Event::NativeSettings(i));
+            }
+            Do::ConfigLua(i) => self.push(Page::LuaMod(i)),
+            Do::SetLua { index, enabled } => {
+                if let (Some(provider), Some(screen)) = (lua_provider(), self.mods_screen.as_mut())
+                {
+                    screen.toggle_lua(provider, index, enabled);
+                }
+            }
+            Do::Link(url) => events.push(Event::OpenLink(url)),
+            Do::Copy(text) => events.push(Event::CopyText(text)),
+        }
+        events
+    }
     /// Jump straight to a page (control socket / tests).
     pub fn show(&mut self, page: Page) {
         if page != Page::Main {
@@ -2947,12 +2978,11 @@ impl OptionsUi {
         let Some(provider) = lua_provider() else {
             return Vec::new();
         };
-        let entries = provider.entries();
-        let Some(entry) = entries.get(i) else {
+        let Some((id, name)) = provider.lookup(i) else {
             return Vec::new();
         };
-        let mut rows = vec![Row::Note(entry.name.clone())];
-        for (j, view) in provider.settings(&entry.id).iter().enumerate() {
+        let mut rows = vec![Row::Note(name)];
+        for (j, view) in provider.settings(&id).iter().enumerate() {
             let label = Text::literal(view.label.clone());
             let value = lua_value(&view.kind, &view.value);
             let control = match &view.kind {
@@ -3083,7 +3113,7 @@ impl OptionsUi {
         let Some(provider) = lua_provider() else {
             return;
         };
-        let Some(id) = provider.entries().into_iter().nth(i).map(|entry| entry.id) else {
+        let Some((id, _)) = provider.lookup(i) else {
             return;
         };
         let result = provider.reset_all(&id);
@@ -3727,19 +3757,7 @@ impl OptionsUi {
             if sound {
                 events.push(Event::ButtonClick);
             }
-            use crate::mods_screen::Action as Do;
-            match action {
-                Do::None => {}
-                Do::OpenFolder => events.push(Event::OpenModFolder),
-                Do::Back => events.extend(self.back(s)),
-                Do::Config(i) => {
-                    self.push(Page::NativeMod(i));
-                    events.push(Event::NativeSettings(i));
-                }
-                Do::ConfigLua(i) => self.push(Page::LuaMod(i)),
-                Do::Link(url) => events.push(Event::OpenLink(url)),
-                Do::Copy(text) => events.push(Event::CopyText(text)),
-            }
+            events.extend(self.mods_action(s, action));
             return events;
         }
         if self.page() == Page::Packs {
@@ -4666,6 +4684,12 @@ impl OptionsUi {
         if self.page() == Page::Mods
             && let Some(p) = &mut self.mods_screen
         {
+            // Enter opens the selected row's Config page, as its Config button does.
+            if matches!(key, K::Enter | K::NumpadEnter)
+                && let Some(action) = p.enter()
+            {
+                return self.mods_action(s, action);
+            }
             let m = crate::screen_draw::Measure(&atlas.font);
             match key {
                 K::Backspace => {
@@ -8966,6 +8990,42 @@ mod lua_page_tests {
         fn set_enabled(&self, _: &str, _: bool) -> Result<(), mod_entries::Fault> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn enter_on_a_lua_row_with_settings_opens_its_config_page() {
+        install(None);
+        let atlas = super::tests::atlas();
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        // Horizon, then the Lua mod, then Minecraft: two steps down from the top of the list.
+        let screen = ui.mods_page(&s, (480.0, 240.0));
+        screen.step(1);
+        screen.step(1);
+        ui.key(&mut s, &atlas, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(ui.page(), Page::LuaMod(0));
+    }
+
+    #[test]
+    fn a_colour_with_an_alpha_is_compared_and_shown_by_its_rgb() {
+        assert_eq!(lua_rgb("#ff000080"), 0xff0000);
+        assert_eq!(lua_rgb("#f9fffe"), 0xf9fffe);
+        assert_eq!(lua_rgb("#zzzzzz"), 0);
+        assert_eq!(lua_rgb("#ff00"), 0);
+        let stored = view(
+            "tint",
+            K::Colour,
+            ViewValue::Text("#ff000080".into()),
+            ViewValue::Text("#ff000080".into()),
+        );
+        let red = view(
+            "tint",
+            K::Colour,
+            ViewValue::Text("#ff0000".into()),
+            ViewValue::Text("#ff0000".into()),
+        );
+        assert_eq!(lua_next(&stored), lua_next(&red));
     }
 
     fn view(key: &str, kind: K, value: ViewValue, default: ViewValue) -> SettingView {
