@@ -2490,6 +2490,10 @@ impl OptionsUi {
     pub fn page(&self) -> Page {
         *self.stack.last().unwrap_or(&Page::Main)
     }
+    /// A Lua text edit or a keybind wait is open: the keys go to it, not to the focus.
+    pub fn lua_edit_active(&self) -> bool {
+        self.lua_edit.is_some()
+    }
     /// Whether the screen's focus is a search box that takes the keys (an
     /// `EditBox` that `canConsumeInput`): the language list's, the settings
     /// search, or the pack screen's.
@@ -9326,6 +9330,25 @@ mod lua_page_tests {
         )));
         assert!(ui.lua_rows(0).is_empty());
         let _ = press(&mut ui, &mut s, 100.0, 100.0);
+    }
+
+    #[test]
+    fn arrows_do_not_leave_a_text_edit_and_enter_commits_it() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        assert!(ui.lua_edit_active());
+        ui.type_text(&atlas(), "x");
+        assert!(send(&mut ui, &mut s, winit::keyboard::KeyCode::ArrowDown, None).is_empty());
+        assert!(send(&mut ui, &mut s, winit::keyboard::KeyCode::ArrowUp, None).is_empty());
+        assert!(ui.lua_edit_active(), "an arrow keeps the edit open");
+        assert!(names(fake).is_empty(), "an arrow stores nothing");
+        assert!(send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None).is_empty());
+        assert!(!ui.lua_edit_active());
+        assert_eq!(names(fake), ["name"]);
+        assert!(matches!(stored(fake, "name"), ViewValue::Text(t) if t.ends_with('x')));
     }
 
     fn send(

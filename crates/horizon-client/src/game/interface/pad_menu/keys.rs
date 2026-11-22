@@ -4,10 +4,10 @@
 use super::super::event_loop::EventLoopCtl;
 use super::super::{
     Game, Screen,
-    key_focus::{self, Act},
+    key_focus::{self, Act, Nav},
 };
 use horizon_client::{
-    gamepad::Rect,
+    gamepad::{Button, Rect},
     screen_narrator::InputType,
     widgets::{self, Kind, Target},
 };
@@ -51,7 +51,8 @@ impl Game<'_> {
             || self.dialog_open()
             || (self.screen == Screen::Options
                 && (self.options_waiting_for_key()
-                    || self.ui.options.selected_pad_action.is_some()))
+                    || self.ui.options.selected_pad_action.is_some()
+                    || self.ui.options.lua_edit_active()))
     }
 
     /// `Screen.clearFocus`, which `Gui.setScreen` runs on the screen it takes
@@ -84,6 +85,13 @@ impl Game<'_> {
         let Some(nav) = key_focus::nav_of(key, self.has_shift_down()) else {
             return false;
         };
+        // The Mods list takes Up and Down for its selection (`ModsScreen::step`), not the focus.
+        if matches!(nav, Nav::Arrow(Button::DPadUp | Button::DPadDown))
+            && self.screen == Screen::Options
+            && self.ui.options.page() == horizon_client::options_ui::Page::Mods
+        {
+            return false;
+        }
         if !self.key_focus_screen() || self.key_focus_blocked() {
             return false;
         }
