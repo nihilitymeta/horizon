@@ -1399,5 +1399,11 @@
   "lua_mod.refused.unknown_power": "The power %1$s is not known.",
   "lua_mod.refused.unreadable": "It cannot be read.",
   "lua_mod.refused.wrong_type": "%1$s has the wrong type.",
-  "lua_mod.skipped.client_only_on_server": "Client-only mods are not loaded on a dedicated server."
+  "lua_mod.skipped.client_only_on_server": "Client-only mods are not loaded on a dedicated server.",
+  "mods.provider.unknown_mod": "There is no mod %1$s.",
+  "mods.provider.unknown_setting": "The mod %1$s has no setting %2$s.",
+  "mods.provider.not_editable": "The setting %2$s of %1$s cannot be changed in the game.",
+  "mods.provider.invalid_value": "The setting %2$s of %1$s does not take that value: %3$s",
+  "mods.provider.busy": "Another change to %1$s is being saved. Try again.",
+  "mods.provider.file": "The settings file of %1$s could not be written: %2$s"
 }

@@ -12,7 +12,10 @@ use crate::{
     screen_draw::{self as d, Draw, Measure, TextField},
     text::{Style, Text},
 };
-use horizon_hooks::mod_links::{self, Links};
+use horizon_hooks::{
+    mod_entries::{self, Provider},
+    mod_links::{self, Links},
+};
 use std::{cell::Cell, collections::HashMap, sync::Arc};
 
 /// `HeaderAndFooterLayout(8, 38)`: the room above and below the content.
@@ -104,6 +107,29 @@ impl Entry {
             description: crate::lang::get("horizon.mods.screen.horizon.description"),
             ..Self::default()
         }
+    }
+}
+
+/// A Lua mod's row. It has no icon, settings page or side badge yet (the Lua chunks 4b2 and 4b3
+/// add them); its refusal reason is the status, as an installed mod's problem is.
+fn lua_entry(lua: &mod_entries::Entry) -> Entry {
+    let off = || Some(tr("horizon.mods.screen.off").with_color(d::GRAY));
+    let status = match &lua.status {
+        mod_entries::Status::Refused { reason } => {
+            Some(Text::literal(reason.clone()).with_color(RED))
+        }
+        mod_entries::Status::Disabled => off(),
+        mod_entries::Status::Loaded if !lua.enabled => off(),
+        mod_entries::Status::Loaded => None,
+    };
+    Entry {
+        id: lua.id.clone(),
+        name: lua.name.clone(),
+        version: lua.version.clone(),
+        authors: lua.authors.join(", "),
+        description: lua.description.clone(),
+        status,
+        ..Entry::default()
     }
 }
 
@@ -257,7 +283,14 @@ pub struct ModsScreen {
 impl ModsScreen {
     /// `ModListScreen.init`: Minecraft, Horizon, then the installed mods.
     pub fn new(width: i32, height: i32, in_world: bool, mods: &ModList) -> Self {
-        Self::with_links(width, height, in_world, mods, mod_links::engine::all())
+        Self::with_links(
+            width,
+            height,
+            in_world,
+            mods,
+            mod_links::engine::all(),
+            mod_entries::engine::provider(),
+        )
     }
 
     fn with_links(
@@ -266,6 +299,7 @@ impl ModsScreen {
         in_world: bool,
         mods: &ModList,
         links: &[&Links],
+        lua: Option<&dyn Provider>,
     ) -> Self {
         let mut icons = HashMap::new();
         let mut entries = vec![Entry::minecraft(), Entry::horizon()];
@@ -327,6 +361,10 @@ impl ModsScreen {
                 status,
                 note,
             });
+        }
+        // The Lua mods come after the installed ones, in the provider's order.
+        if let Some(provider) = lua {
+            entries.extend(provider.entries().iter().map(lua_entry));
         }
         let mut search = TextField::new(0, 0, SIDEBAR_W - SORT_W - 4, CONTROL_H);
         search.max_length = 64;
@@ -1200,7 +1238,7 @@ mod tests {
     #[test]
     fn built_in_links_come_from_the_product_and_keep_the_first_registration() {
         let mods = ModList::default();
-        let plain = ModsScreen::with_links(427, 240, false, &mods, &[]);
+        let plain = ModsScreen::with_links(427, 240, false, &mods, &[], None);
         assert!(
             plain
                 .entries
@@ -1221,7 +1259,7 @@ mod tests {
             homepage: Some("https://other.example.org"),
             ..first
         };
-        let product = ModsScreen::with_links(427, 240, false, &mods, &[&first, &second]);
+        let product = ModsScreen::with_links(427, 240, false, &mods, &[&first, &second], None);
         let entry = &product.entries[1];
         assert_eq!(entry.license_url.as_deref(), first.license);
         assert_eq!(entry.homepage.as_deref(), first.homepage);
@@ -1331,7 +1369,7 @@ mod tests {
             homepage: Some("https://minecraft.net"),
             issues: Some("https://bugs.mojang.com"),
         };
-        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[&links]);
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[&links], None);
         let click_row = |screen: &mut ModsScreen, name: &str| {
             let g = screen.geo();
             let at = screen
@@ -1441,6 +1479,131 @@ mod tests {
         screen.step(-30);
         assert_eq!(screen.current().map(|e| e.name.as_str()), Some("Horizon"));
         assert_eq!(screen.list.amount, 0.0);
+    }
+
+    /// A provider that lists the mods it was given and changes nothing.
+    struct FakeLua(Vec<mod_entries::Entry>);
+    impl Provider for FakeLua {
+        fn entries(&self) -> Vec<mod_entries::Entry> {
+            self.0.clone()
+        }
+        fn settings(&self, _: &str) -> Vec<mod_entries::SettingView> {
+            Vec::new()
+        }
+        fn set(
+            &self,
+            _: &str,
+            _: &str,
+            _: mod_entries::ViewValue,
+        ) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn reset(&self, _: &str, _: &str) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn reset_all(&self, _: &str) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn set_enabled(&self, _: &str, _: bool) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+    }
+    fn lua(id: &str, name: &str, status: mod_entries::Status, enabled: bool) -> mod_entries::Entry {
+        mod_entries::Entry {
+            id: id.into(),
+            name: name.into(),
+            version: "2.0".into(),
+            authors: vec!["Kim".into(), "Lee".into()],
+            description: format!("{name} is Lua."),
+            side: mod_entries::Side::Both,
+            enabled,
+            status,
+            settings: false,
+        }
+    }
+
+    #[test]
+    fn lua_mods_are_rows_after_the_installed_ones_with_their_status() {
+        let atlas = atlas();
+        let m = Measure(&atlas.font);
+        let list = mods(&[installed("zoom", "Zoom", None)]);
+        let provider = FakeLua(vec![
+            lua("alpha", "Alpha", mod_entries::Status::Loaded, true),
+            lua("beta", "Beta", mod_entries::Status::Disabled, false),
+            lua(
+                "gamma",
+                "Gamma",
+                mod_entries::Status::Refused {
+                    reason: "Needs Lua 9".into(),
+                },
+                false,
+            ),
+        ]);
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        assert_eq!(
+            screen
+                .entries
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            ["minecraft", "horizon", "zoom", "alpha", "beta", "gamma"]
+        );
+        let alpha = &screen.entries[3];
+        assert_eq!(
+            (
+                alpha.version.as_str(),
+                alpha.authors.as_str(),
+                alpha.description.as_str()
+            ),
+            ("2.0", "Kim, Lee", "Alpha is Lua.")
+        );
+        assert!(alpha.status.is_none() && alpha.index.is_none() && !alpha.config);
+        let off = tr("horizon.mods.screen.off").with_color(d::GRAY);
+        assert_eq!(screen.entries[4].status, Some(off));
+        assert_eq!(
+            screen.entries[5].status,
+            Some(Text::literal("Needs Lua 9").with_color(RED))
+        );
+        // Search and sort reach the Lua rows like the others.
+        screen.search.value = "gam".into();
+        screen.refresh();
+        assert_eq!(names(&screen), ["Gamma"]);
+        screen.search.value.clear();
+        screen.descending = true;
+        screen.refresh();
+        assert_eq!(
+            names(&screen),
+            ["Zoom", "Minecraft", "Horizon", "Gamma", "Beta", "Alpha"]
+        );
+        // A Lua row has no settings page, so its Config button does nothing.
+        screen.descending = false;
+        screen.refresh();
+        screen.select(3);
+        let (x, y) = centre(screen.geo().buttons[2]);
+        assert_eq!(screen.click(&m, x, y), (Action::None, false));
+    }
+
+    #[test]
+    fn a_lua_mod_with_an_installed_id_adds_a_row_and_hides_nothing() {
+        let list = mods(&[installed("shared", "Shared", None)]);
+        let provider = FakeLua(vec![lua(
+            "shared",
+            "Shared Lua",
+            mod_entries::Status::Loaded,
+            true,
+        )]);
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        assert_eq!(screen.entries.len(), 4);
+        screen.search.value = "shared".into();
+        screen.refresh();
+        assert_eq!(names(&screen), ["Shared", "Shared Lua"]);
+    }
+
+    #[test]
+    fn without_a_provider_the_list_is_the_built_in_and_installed_entries() {
+        let list = mods(&[installed("zoom", "Zoom", None)]);
+        let screen = ModsScreen::with_links(427, 240, false, &list, &[], None);
+        assert_eq!(names(&screen), ["Horizon", "Minecraft", "Zoom"]);
     }
 
     #[test]
