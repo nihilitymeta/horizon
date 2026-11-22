@@ -8,6 +8,7 @@ mod pack_drop;
 use std::time::Instant;
 
 pub use crate::settings::Opt;
+use horizon_hooks::mod_entries::{Fault, Provider, SettingView, ViewKind, ViewValue};
 
 #[path = "options_ui_widgets.rs"]
 mod widgets;
@@ -96,6 +97,131 @@ fn mod_setting_label(setting: &crate::mod_list::NativeSetting) -> Text {
         V::Color(rgb) => Text::literal(format!("#{rgb:06X}")).with_color(*rgb),
     };
     Text::option_name_value(tr(&setting.label), value)
+}
+// A test's stand-in for the Lua mods' provider, per test thread.
+#[cfg(test)]
+thread_local! {
+    static TEST_LUA: std::cell::Cell<Option<&'static dyn Provider>> =
+        const { std::cell::Cell::new(None) };
+}
+/// The provider of the Lua mods' settings: the registered one (`mod_entries::engine`), or a
+/// test's stand-in. `None` without one, and then nothing on the Lua pages changes.
+pub(crate) fn lua_provider() -> Option<&'static dyn Provider> {
+    #[cfg(test)]
+    if let Some(provider) = TEST_LUA.with(std::cell::Cell::get) {
+        return Some(provider);
+    }
+    horizon_hooks::mod_entries::engine::provider()
+}
+/// Setting `j` of the Lua mod at provider entry `i`: the mod's id, and the setting as it is now.
+fn lua_setting(i: usize, j: usize) -> Option<(String, SettingView)> {
+    let provider = lua_provider()?;
+    let id = provider.entries().into_iter().nth(i)?.id;
+    let setting = provider.settings(&id).into_iter().nth(j)?;
+    Some((id, setting))
+}
+/// A Lua setting's value as its row says it: a choice's option (its translation when the
+/// language has one, else the text the mod gave), a colour in its own colour, a number as is.
+fn lua_value(kind: &ViewKind, value: &ViewValue) -> Text {
+    match (kind, value) {
+        (_, ViewValue::Bool(on)) => on_off(*on),
+        (ViewKind::Choice { options }, ViewValue::Int(index)) => usize::try_from(*index)
+            .ok()
+            .and_then(|index| options.get(index))
+            .map_or_else(|| Text::literal(""), |option| lua_option(option)),
+        (ViewKind::Colour, ViewValue::Text(hex)) => {
+            Text::literal(hex.clone()).with_color(lua_rgb(hex))
+        }
+        (_, ViewValue::Int(n)) => Text::literal(n.to_string()),
+        (_, ViewValue::Float(f)) => {
+            let shown = format!("{f:.2}");
+            Text::literal(shown.trim_end_matches('0').trim_end_matches('.'))
+        }
+        (_, ViewValue::Text(text)) => Text::literal(text.clone()),
+    }
+}
+/// A choice's option: its translation when the language has the key, else the text as given.
+fn lua_option(option: &str) -> Text {
+    if lang::has(option) {
+        tr(option)
+    } else {
+        Text::literal(option)
+    }
+}
+/// `#rrggbb` as `0xRRGGBB`; 0 for text that is not a colour.
+fn lua_rgb(hex: &str) -> u32 {
+    u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0)
+}
+fn lua_number(value: &ViewValue) -> Option<f64> {
+    match value {
+        ViewValue::Int(n) => Some(*n as f64),
+        ViewValue::Float(f) => Some(*f),
+        _ => None,
+    }
+}
+/// A slider's handle place, 0 to 1 (0 for a value that is not a number on a slider).
+fn lua_fraction(view: &SettingView) -> f32 {
+    match (&view.kind, lua_number(&view.value)) {
+        (ViewKind::Slider { min, max, .. }, Some(value)) if max > min => {
+            ((value - min) / (max - min)).clamp(0.0, 1.0) as f32
+        }
+        _ => 0.0,
+    }
+}
+/// The number of steps of a slider, when it has a step.
+fn lua_steps(view: &SettingView) -> Option<u32> {
+    match &view.kind {
+        ViewKind::Slider { min, max, step, .. } if *step > 0.0 => {
+            Some(((max - min) / step).round().max(1.0) as u32)
+        }
+        _ => None,
+    }
+}
+/// A slider moved to `fraction` of its track, as the provider's value: the nearest step, kept
+/// in range, and a whole number for an integer slider.
+fn lua_slid(view: &SettingView, fraction: f32) -> Option<ViewValue> {
+    let ViewKind::Slider {
+        min,
+        max,
+        step,
+        integer,
+    } = view.kind
+    else {
+        return None;
+    };
+    let raw = min + f64::from(fraction.clamp(0.0, 1.0)) * (max - min);
+    let value = if step > 0.0 {
+        (min + ((raw - min) / step).round() * step).clamp(min, max)
+    } else {
+        raw.clamp(min, max)
+    };
+    Some(if integer {
+        ViewValue::Int(value.round() as i64)
+    } else {
+        ViewValue::Float(value)
+    })
+}
+/// What a click on a Lua setting's button makes of its value: a toggle flips, a choice moves to
+/// the next option (wrapping), a colour to the next dye colour (a colour that is not one, to the
+/// first). Text, keybind and slider settings have none: they do not change on a click.
+fn lua_next(view: &SettingView) -> Option<ViewValue> {
+    match (&view.kind, &view.value) {
+        (ViewKind::Toggle, ViewValue::Bool(on)) => Some(ViewValue::Bool(!on)),
+        (ViewKind::Choice { options }, ViewValue::Int(index)) => {
+            let count = i64::try_from(options.len().max(1)).ok()?;
+            Some(ViewValue::Int((index + 1).rem_euclid(count)))
+        }
+        (ViewKind::Colour, ViewValue::Text(hex)) => {
+            let rgb = lua_rgb(hex);
+            let next = crate::mod_list::DYE_COLORS
+                .iter()
+                .position(|c| *c == rgb)
+                .map_or(0, |i| i + 1);
+            let dye = crate::mod_list::DYE_COLORS[next % crate::mod_list::DYE_COLORS.len()];
+            Some(ViewValue::Text(format!("#{dye:06x}")))
+        }
+        _ => None,
+    }
 }
 /// A music track's name as its row shows it: the file, without its folder
 /// (`minecraft:music/game/calm1` -> `calm1`; the group names the situation).
@@ -245,6 +371,7 @@ impl Opt {
             Opt::AllowCursorChanges => "options.allowCursorChanges",
             Opt::Volume(_) => "soundCategory.master",
             Opt::ModSetting(..) => "horizon.mods.settings",
+            Opt::LuaSetting(..) => "horizon.mods.settings",
             Opt::SoundDevice => "options.audioDevice",
             Opt::GuiScale => "options.guiScale",
             Opt::ViewBobbing => "options.viewBobbing",
@@ -373,6 +500,9 @@ impl Opt {
         match self {
             Opt::ModSetting(i, j) => {
                 Kind::Slider(mod_setting(s, i, j).map_or(0.0, |m| m.value.fraction()))
+            }
+            Opt::LuaSetting(i, j) => {
+                Kind::Slider(lua_setting(i, j).map_or(0.0, |(_, view)| lua_fraction(&view)))
             }
             Opt::ChatDelay => values::kind(s.file.double("chatDelay")),
             Opt::FovEffects | Opt::DarknessPulsing => {
@@ -549,6 +679,17 @@ impl Opt {
     pub fn label(self, s: &Settings) -> Text {
         if let Opt::ModSetting(i, j) = self {
             return mod_setting(s, i, j).map_or_else(|| Text::literal(""), mod_setting_label);
+        }
+        if let Opt::LuaSetting(i, j) = self {
+            return lua_setting(i, j).map_or_else(
+                || Text::literal(""),
+                |(_, view)| {
+                    Text::option_name_value(
+                        Text::literal(view.label.clone()),
+                        lua_value(&view.kind, &view.value),
+                    )
+                },
+            );
         }
         let c = self.caption();
         match self {
@@ -936,6 +1077,17 @@ impl Opt {
     }
     /// Set a slider from its 0..1 position (OptionInstance value sets).
     pub fn set_slider(self, s: &mut Settings, v: f32) {
+        if let Opt::LuaSetting(i, j) = self {
+            // The page's own path (`OptionsUi::lua_slide`) keeps a refusal to show; this one
+            // only sets the value.
+            if let Some((id, view)) = lua_setting(i, j)
+                && let Some(value) = lua_slid(&view, v)
+                && let Some(provider) = lua_provider()
+            {
+                let _ = provider.set(&id, &view.key, value);
+            }
+            return;
+        }
         if let Opt::ModSetting(i, j) = self {
             let setting = s
                 .mods
@@ -1498,6 +1650,8 @@ pub enum Page {
     ModProject,
     /// A native mod's settings page: its index in `mods.installed`.
     NativeMod(usize),
+    /// A Lua mod's settings page: its index in the provider's entries (`mod_entries`).
+    LuaMod(usize),
     /// A page a crate registered (`horizon_hooks::pages`): its index in `OptionsUi::pages`.
     Added(usize),
     /// Horizon's shader packs, either kind (`shader_pack_list`).
@@ -1564,6 +1718,13 @@ pub(crate) enum Act {
     ResetModKey(usize, usize),
     /// Setting `.1` of native mod `.0`'s page clicked: a toggle, choice or colour steps on.
     NativeSetting(usize, usize),
+    /// Setting `.1` of Lua mod `.0` (its provider entry) clicked: a toggle, choice or colour
+    /// steps on, through the provider.
+    LuaSetting(usize, usize),
+    /// Reset setting `.1` of Lua mod `.0` to its default.
+    LuaReset(usize, usize),
+    /// Reset every setting of Lua mod `.0` to its defaults.
+    LuaResetAll(usize),
     PageRow(usize, usize),
     /// Browse mods: the page of listing `.0` of `mod_browser`.
     ModProject(usize),
@@ -1809,6 +1970,8 @@ pub struct OptionsUi {
     pub mods_note: Option<String>,
     /// The Mods screen (`Page::Mods`), made when the page opens.
     pub mods_screen: Option<crate::mods_screen::ModsScreen>,
+    /// The last change a Lua mod's provider refused: its notice on the Lua page.
+    lua_fault: Option<Fault>,
     /// Horizon's `packBrowser` extra: the pack screen's Add button.
     pub pack_browser: bool,
     /// Packs: the packs found and the selection the screen opens with.
@@ -1931,6 +2094,7 @@ impl Default for OptionsUi {
             mod_project: String::new(),
             mods_note: None,
             mods_screen: None,
+            lua_fault: None,
             pack_browser: false,
             pack_infos: Vec::new(),
             pack_selection: Vec::new(),
@@ -2372,6 +2536,11 @@ impl OptionsUi {
         forward: bool,
         width: f32,
     ) -> Vec<Event> {
+        if let Opt::LuaSetting(i, j) = opt {
+            self.lua_step(i, j, forward, width);
+            self.slider_value = None;
+            return vec![Event::SliderDrag];
+        }
         let volume = |s: &Settings| match opt {
             Opt::Volume(0) => Some(s.master_volume),
             Opt::Volume(i) => Some(s.volumes[i]),
@@ -2406,6 +2575,7 @@ impl OptionsUi {
     }
     fn push(&mut self, page: Page) {
         self.relayout();
+        self.lua_fault = None;
         self.stack.push(page);
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
@@ -2490,6 +2660,7 @@ impl OptionsUi {
             Page::ModBrowser => "horizon.mods.browse.title",
             Page::ModProject => "horizon.mods.browse.project",
             Page::NativeMod(_) => "Mod Settings",
+            Page::LuaMod(_) => "horizon.mods.screen.config.title",
             Page::Added(i) => pages::title(i),
             Page::ShaderPacks => "horizon.pages.shader_packs",
             Page::ShaderOptions => "horizon.pages.shader_options",
@@ -2723,6 +2894,155 @@ impl OptionsUi {
             rows.push(Row::Buttons(widget, None));
         }
         rows
+    }
+
+    /// A Lua mod's page (Options > Mods > Config): its name, then one row per setting, then Reset
+    /// all. A slider, toggle, choice or colour is a control; text and keybind settings are read
+    /// only for now. A setting that differs from its default has a Reset beside it, and a
+    /// refused change shows its notice last.
+    fn lua_rows(&self, i: usize) -> Vec<Row> {
+        let Some(provider) = lua_provider() else {
+            return Vec::new();
+        };
+        let entries = provider.entries();
+        let Some(entry) = entries.get(i) else {
+            return Vec::new();
+        };
+        let mut rows = vec![Row::Note(entry.name.clone())];
+        for (j, view) in provider.settings(&entry.id).iter().enumerate() {
+            let label = Text::literal(view.label.clone());
+            let value = lua_value(&view.kind, &view.value);
+            let control = match &view.kind {
+                ViewKind::Text { .. } | ViewKind::Keybind => {
+                    let shown = Text::option_name_value(label, value);
+                    rows.push(Row::Buttons(
+                        inactive(button(0.0, 0.0, 310.0, shown, Act::None)),
+                        None,
+                    ));
+                    rows.push(Row::Note(
+                        tr("horizon.mods.screen.config.not_editable").plain(),
+                    ));
+                    continue;
+                }
+                ViewKind::Slider { .. } => Widget {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 150.0,
+                    h: 20.0,
+                    kind: WKind::Slider {
+                        label: Text::option_name_value(label, value),
+                        value: lua_fraction(view),
+                        opt: Opt::LuaSetting(i, j),
+                    },
+                    list: false,
+                    row: 0,
+                },
+                ViewKind::Toggle | ViewKind::Choice { .. } | ViewKind::Colour => button(
+                    0.0,
+                    0.0,
+                    150.0,
+                    Text::option_name_value(label, value),
+                    Act::LuaSetting(i, j),
+                ),
+            };
+            let reset = button(
+                0.0,
+                0.0,
+                150.0,
+                tr("horizon.mods.screen.config.reset"),
+                Act::LuaReset(i, j),
+            );
+            let reset = if view.changed { reset } else { inactive(reset) };
+            rows.push(Row::Buttons(control, Some(reset)));
+        }
+        rows.push(Row::Buttons(
+            button(
+                0.0,
+                0.0,
+                310.0,
+                tr("horizon.mods.screen.config.reset_all"),
+                Act::LuaResetAll(i),
+            ),
+            None,
+        ));
+        if let Some(fault) = &self.lua_fault {
+            let args: Vec<Text> = fault
+                .args
+                .iter()
+                .map(|(_, value)| Text::literal(value.clone()))
+                .collect();
+            rows.push(Row::Note(Text::translate(fault.key, &args).plain()));
+        }
+        rows
+    }
+    /// Keeps the provider's answer to a change: a refusal is shown, an accepted change clears it,
+    /// and the page is laid out again so its labels show the stored values.
+    fn lua_result(&mut self, result: Result<(), Fault>) {
+        self.lua_fault = result.err();
+        self.relayout();
+    }
+    /// Stores `value` as setting `key` of mod `id`, through the provider.
+    fn lua_store(&mut self, id: &str, key: &str, value: ViewValue) {
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let result = provider.set(id, key, value);
+        self.lua_result(result);
+    }
+    /// A Lua setting's button clicked: its value steps on (see `lua_next`).
+    fn lua_click(&mut self, i: usize, j: usize) {
+        if let Some((id, view)) = lua_setting(i, j)
+            && let Some(value) = lua_next(&view)
+        {
+            self.lua_store(&id, &view.key, value);
+        }
+    }
+    /// A Lua slider moved to `fraction` of its track.
+    fn lua_slide(&mut self, i: usize, j: usize, fraction: f32) {
+        if let Some((id, view)) = lua_setting(i, j)
+            && let Some(value) = lua_slid(&view, fraction)
+        {
+            self.lua_store(&id, &view.key, value);
+        }
+    }
+    /// A Lua slider stepped from the keyboard: one step on, or one tenth of the track's width
+    /// when the slider has no step.
+    fn lua_step(&mut self, i: usize, j: usize, forward: bool, width: f32) {
+        let Some((_, view)) = lua_setting(i, j) else {
+            return;
+        };
+        let position = lua_fraction(&view);
+        let direction = if forward { 1.0 } else { -1.0 };
+        let next = match lua_steps(&view) {
+            Some(steps) => {
+                let steps = steps as f32;
+                ((position * steps).round() + direction) / steps
+            }
+            None => position + direction / (width - 8.0).max(1.0),
+        };
+        self.lua_slide(i, j, next.clamp(0.0, 1.0));
+    }
+    /// Reset Lua setting `j` of mod `i` to its default, through the provider.
+    fn lua_reset(&mut self, i: usize, j: usize) {
+        let Some((id, view)) = lua_setting(i, j) else {
+            return;
+        };
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let result = provider.reset(&id, &view.key);
+        self.lua_result(result);
+    }
+    /// Reset every setting of Lua mod `i` to its defaults, through the provider.
+    fn lua_reset_all(&mut self, i: usize) {
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let Some(id) = provider.entries().into_iter().nth(i).map(|entry| entry.id) else {
+            return;
+        };
+        let result = provider.reset_all(&id);
+        self.lua_result(result);
     }
 
     fn list_rows(&self, s: &Settings) -> Vec<Row> {
@@ -3017,6 +3337,7 @@ impl OptionsUi {
             Page::ModBrowser => self.mod_browser_rows(),
             Page::ModProject => self.mod_project_rows(),
             Page::NativeMod(i) => self.native_rows(s, i),
+            Page::LuaMod(i) => self.lua_rows(i),
             Page::Added(i) => self.added_rows(i),
             _ => {
                 let _ = s;
@@ -3278,6 +3599,7 @@ impl OptionsUi {
                     self.push(Page::NativeMod(i));
                     events.push(Event::NativeSettings(i));
                 }
+                Do::ConfigLua(i) => self.push(Page::LuaMod(i)),
                 Do::Link(url) => events.push(Event::OpenLink(url)),
                 Do::Copy(text) => events.push(Event::CopyText(text)),
             }
@@ -3377,7 +3699,12 @@ impl OptionsUi {
             {
                 let v = ui::slider_value(wd.x, wd.w, x);
                 self.slider_value = Some((opt, v, Instant::now()));
-                drag_slider(opt, s, v, &mut events);
+                if let Opt::LuaSetting(i, j) = opt {
+                    self.lua_slide(i, j, v);
+                    events.push(Event::SliderDrag);
+                } else {
+                    drag_slider(opt, s, v, &mut events);
+                }
             }
             return events;
         }
@@ -3497,6 +3824,9 @@ impl OptionsUi {
                                 events.push(Event::NativeSetting(*i, *j));
                             }
                         }
+                        Act::LuaSetting(i, j) => self.lua_click(*i, *j),
+                        Act::LuaReset(i, j) => self.lua_reset(*i, *j),
+                        Act::LuaResetAll(i) => self.lua_reset_all(*i),
                         Act::ModProject(i) => {
                             if let Some(listing) = self.mod_browser.listings.get(*i) {
                                 self.mod_project = listing.id.clone();
@@ -3530,7 +3860,12 @@ impl OptionsUi {
                     self.dragging = Some(*opt);
                     let v = ui::slider_value(wd.x, wd.w, x);
                     self.slider_value = Some((*opt, v, Instant::now()));
-                    drag_slider(*opt, s, v, &mut events);
+                    if let Opt::LuaSetting(i, j) = *opt {
+                        self.lua_slide(i, j, v);
+                        events.push(Event::SliderDrag);
+                    } else {
+                        drag_slider(*opt, s, v, &mut events);
+                    }
                 }
                 WKind::LanguageRow { code, .. } => {
                     self.can_change_value = false;
@@ -3908,6 +4243,7 @@ impl OptionsUi {
             return events;
         }
         let page = self.stack.pop().unwrap_or(Page::Main);
+        self.lua_fault = None;
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
         self.dragging = None;
@@ -4548,6 +4884,9 @@ impl OptionsUi {
                                 events.push(Event::NativeSetting(i, j));
                             }
                         }
+                        Act::LuaSetting(i, j) => self.lua_click(i, j),
+                        Act::LuaReset(i, j) => self.lua_reset(i, j),
+                        Act::LuaResetAll(i) => self.lua_reset_all(i),
                         Act::ModProject(i) => {
                             if let Some(listing) = self.mod_browser.listings.get(i) {
                                 self.mod_project = listing.id.clone();
@@ -8399,3 +8738,394 @@ fn preset_from_slider(v: f32) -> usize {
 mod graphics_tests;
 #[path = "options_ui_pages.rs"]
 mod pages;
+
+#[cfg(test)]
+mod lua_page_tests {
+    use super::tests::atlas;
+    use super::*;
+    use horizon_hooks::mod_entries::{self, Entry, SettingView, Side, Status, ViewKind as K};
+    use std::sync::Mutex;
+
+    /// A provider with one Lua mod, `lua`, named "Lua", whose settings the tests read and write.
+    struct Fake {
+        settings: Mutex<Vec<SettingView>>,
+        /// A `set` of this key is refused with `mods.provider.invalid_value`.
+        refuse: Option<&'static str>,
+        /// The keys `set` was called with.
+        sets: Mutex<Vec<String>>,
+    }
+    impl Provider for Fake {
+        fn entries(&self) -> Vec<Entry> {
+            vec![Entry {
+                id: "lua".into(),
+                name: "Lua".into(),
+                version: "1".into(),
+                authors: Vec::new(),
+                description: String::new(),
+                side: Side::Both,
+                enabled: true,
+                status: Status::Loaded,
+                settings: true,
+                icon_png: None,
+            }]
+        }
+        fn settings(&self, _: &str) -> Vec<SettingView> {
+            self.settings.lock().unwrap().clone()
+        }
+        fn set(&self, _: &str, key: &str, value: ViewValue) -> Result<(), mod_entries::Fault> {
+            self.sets.lock().unwrap().push(key.into());
+            if self.refuse == Some(key) {
+                return Err(mod_entries::fault(
+                    mod_entries::keys::INVALID_VALUE,
+                    &[("mod", "lua"), ("setting", key), ("value", "no")],
+                ));
+            }
+            let mut settings = self.settings.lock().unwrap();
+            let setting = settings.iter_mut().find(|s| s.key == key).unwrap();
+            setting.changed = value != setting.default;
+            setting.value = value;
+            Ok(())
+        }
+        fn reset(&self, _: &str, key: &str) -> Result<(), mod_entries::Fault> {
+            let mut settings = self.settings.lock().unwrap();
+            let setting = settings.iter_mut().find(|s| s.key == key).unwrap();
+            setting.value = setting.default.clone();
+            setting.changed = false;
+            Ok(())
+        }
+        fn reset_all(&self, _: &str) -> Result<(), mod_entries::Fault> {
+            for setting in self.settings.lock().unwrap().iter_mut() {
+                setting.value = setting.default.clone();
+                setting.changed = false;
+            }
+            Ok(())
+        }
+        fn set_enabled(&self, _: &str, _: bool) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+    }
+
+    fn view(key: &str, kind: K, value: ViewValue, default: ViewValue) -> SettingView {
+        SettingView {
+            key: key.into(),
+            label: key.into(),
+            description: String::new(),
+            group: String::new(),
+            side: Side::Both,
+            kind,
+            changed: value != default,
+            value,
+            default,
+        }
+    }
+
+    /// The standard settings: a toggle, a choice, an integer slider 0..10, a float slider
+    /// 0..1 step 0.25, a colour and a text.
+    fn settings() -> Vec<SettingView> {
+        let choice = K::Choice {
+            options: vec!["alpha".into(), "beta".into(), "gamma".into()],
+        };
+        vec![
+            view(
+                "on",
+                K::Toggle,
+                ViewValue::Bool(true),
+                ViewValue::Bool(true),
+            ),
+            view("mode", choice, ViewValue::Int(0), ViewValue::Int(0)),
+            view(
+                "level",
+                K::Slider {
+                    min: 0.0,
+                    max: 10.0,
+                    step: 1.0,
+                    integer: true,
+                },
+                ViewValue::Int(2),
+                ViewValue::Int(2),
+            ),
+            view(
+                "ratio",
+                K::Slider {
+                    min: 0.0,
+                    max: 1.0,
+                    step: 0.25,
+                    integer: false,
+                },
+                ViewValue::Float(0.5),
+                ViewValue::Float(0.5),
+            ),
+            view(
+                "tint",
+                K::Colour,
+                ViewValue::Text("#f9fffe".into()),
+                ViewValue::Text("#f9fffe".into()),
+            ),
+            view(
+                "name",
+                K::Text { max_length: 8 },
+                ViewValue::Text("hi".into()),
+                ViewValue::Text("hi".into()),
+            ),
+        ]
+    }
+
+    /// Installs a fake provider for this test's thread and returns it.
+    fn install(refuse: Option<&'static str>) -> &'static Fake {
+        let fake: &'static Fake = Box::leak(Box::new(Fake {
+            settings: Mutex::new(settings()),
+            refuse,
+            sets: Mutex::new(Vec::new()),
+        }));
+        TEST_LUA.with(|cell| cell.set(Some(fake)));
+        fake
+    }
+
+    const SIZE: (f32, f32) = (480.0, 1200.0);
+
+    fn widgets(ui: &mut OptionsUi, s: &Settings) -> Vec<Widget> {
+        ui.layout(s, SIZE.0, SIZE.1).0
+    }
+    fn press(ui: &mut OptionsUi, s: &mut Settings, x: f32, y: f32) -> Vec<Event> {
+        ui.click(s, &atlas(), x, y, SIZE, [480, 1200], false, false)
+    }
+    fn button(widgets: &[Widget], act: &Act) -> (f32, f32, String) {
+        widgets
+            .iter()
+            .find_map(|w| match &w.kind {
+                WKind::Button { act: a, label, .. } if a == act => {
+                    Some((w.x + 2.0, w.y + 2.0, label.plain()))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no button {act:?}"))
+    }
+    /// The slider's track point at `fraction` of its length.
+    fn slider_at(widgets: &[Widget], opt: Opt, fraction: f32) -> (f32, f32) {
+        let w = widgets
+            .iter()
+            .find(|w| matches!(&w.kind, WKind::Slider { opt: o, .. } if *o == opt))
+            .expect("a slider");
+        (w.x + 4.0 + fraction * (w.w - 8.0), w.y + 2.0)
+    }
+    fn stored(fake: &Fake, key: &str) -> ViewValue {
+        fake.settings
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.key == key)
+            .unwrap()
+            .value
+            .clone()
+    }
+
+    #[test]
+    fn config_on_a_lua_row_opens_its_page_and_back_returns_to_the_list() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        // At 480x240 as the native Mods test lays it out: Horizon, Lua, Minecraft by name, so the
+        // Lua row is the second, and its Config is the third panel button.
+        let click = |ui: &mut OptionsUi, s: &mut Settings, x: f32, y: f32| {
+            ui.click(s, &atlas(), x, y, (480.0, 240.0), [480, 240], false, false)
+        };
+        click(&mut ui, &mut s, 61.0, 76.0);
+        let events = click(&mut ui, &mut s, 397.0, 192.0);
+        assert_eq!(events.first(), Some(&Event::ButtonClick));
+        assert_eq!(ui.page(), Page::LuaMod(0));
+        ui.back(&mut s);
+        assert_eq!(ui.page(), Page::Mods);
+    }
+
+    #[test]
+    fn the_page_has_a_row_per_setting_and_reset_all() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let all = widgets(&mut ui, &s);
+        for act in [
+            Act::LuaSetting(0, 0),
+            Act::LuaSetting(0, 1),
+            Act::LuaReset(0, 0),
+            Act::LuaResetAll(0),
+        ] {
+            button(&all, &act);
+        }
+        assert!(
+            all.iter().any(|w| matches!(
+                &w.kind,
+                WKind::Slider {
+                    opt: Opt::LuaSetting(0, 2),
+                    ..
+                }
+            )),
+            "the integer slider"
+        );
+        assert!(
+            all.iter().any(|w| matches!(
+                &w.kind,
+                WKind::Slider {
+                    opt: Opt::LuaSetting(0, 3),
+                    ..
+                }
+            )),
+            "the float slider"
+        );
+        // Text is read only: a click on its row changes nothing and calls no `set`.
+        let (x, y, _) = button(&all, &Act::None);
+        press(&mut ui, &mut s, x, y);
+        assert!(fake.sets.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_toggle_flips_through_the_provider_and_its_label_follows() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let before = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0)).2;
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(false));
+        assert_eq!(fake.sets.lock().unwrap().as_slice(), ["on"]);
+        let after = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0)).2;
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn a_choice_cycles_its_options_and_wraps() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1));
+        let values: Vec<_> = (0..4)
+            .map(|_| {
+                press(&mut ui, &mut s, x, y);
+                stored(fake, "mode")
+            })
+            .collect();
+        assert_eq!(
+            values,
+            [
+                ViewValue::Int(1),
+                ViewValue::Int(2),
+                ViewValue::Int(0),
+                ViewValue::Int(1)
+            ]
+        );
+    }
+
+    #[test]
+    fn an_integer_slider_takes_the_stepped_value_and_clamps_at_the_ends() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let at = |ui: &mut OptionsUi, s: &mut Settings, f: f32| {
+            let (x, y) = slider_at(&widgets(ui, s), Opt::LuaSetting(0, 2), f);
+            press(ui, s, x, y);
+        };
+        at(&mut ui, &mut s, 0.5);
+        assert_eq!(stored(fake, "level"), ViewValue::Int(5));
+        at(&mut ui, &mut s, 0.0);
+        assert_eq!(stored(fake, "level"), ViewValue::Int(0));
+        at(&mut ui, &mut s, 1.0);
+        assert_eq!(stored(fake, "level"), ViewValue::Int(10));
+    }
+
+    #[test]
+    fn a_float_slider_snaps_to_its_step() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y) = slider_at(&widgets(&mut ui, &s), Opt::LuaSetting(0, 3), 0.4);
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "ratio"), ViewValue::Float(0.5));
+    }
+
+    #[test]
+    fn a_colour_moves_to_the_next_dye_colour() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 4));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(
+            stored(fake, "tint"),
+            ViewValue::Text("#f9801d".into()),
+            "orange follows white"
+        );
+    }
+
+    #[test]
+    fn a_refused_change_keeps_the_label_and_shows_its_notice() {
+        let fake = install(Some("on"));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let before = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, before.0, before.1);
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(true));
+        let after = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        assert_eq!(before.2, after.2, "the label keeps the old value");
+        let fault = ui.lua_fault.clone().expect("the refusal is kept");
+        assert_eq!(fault.key, mod_entries::keys::INVALID_VALUE);
+        let notice = Text::translate(
+            fault.key,
+            &[
+                Text::literal("lua"),
+                Text::literal("on"),
+                Text::literal("no"),
+            ],
+        )
+        .plain();
+        assert!(
+            ui.lua_rows(0)
+                .iter()
+                .any(|row| matches!(row, Row::Note(text) if *text == notice)),
+            "the notice row is shown"
+        );
+    }
+
+    #[test]
+    fn reset_restores_one_setting_and_reset_all_restores_them_all() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, x, y);
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaReset(0, 0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(true));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1));
+        press(&mut ui, &mut s, x, y);
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaResetAll(0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "mode"), ViewValue::Int(0));
+        assert!(fake.settings.lock().unwrap().iter().all(|s| !s.changed));
+    }
+
+    #[test]
+    fn with_no_provider_the_page_has_no_settings_and_nothing_changes() {
+        TEST_LUA.with(|cell| cell.set(None));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let all = widgets(&mut ui, &s);
+        assert!(!all.iter().any(|w| matches!(
+            &w.kind,
+            WKind::Button {
+                act: Act::LuaSetting(..),
+                ..
+            }
+        )));
+        assert!(ui.lua_rows(0).is_empty());
+        let _ = press(&mut ui, &mut s, 100.0, 100.0);
+    }
+}

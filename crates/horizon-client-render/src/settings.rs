@@ -787,6 +787,9 @@ pub enum Opt {
     Volume(usize),
     /// Setting `.1` of the native mod in row `.0` of Options > Mods, a range on a slider.
     ModSetting(u16, u16),
+    /// Setting `.1` of the Lua mod in row `.0` of the provider's entries (Options > Mods > Config),
+    /// a number on a slider; its value is the provider's, not `Settings`'.
+    LuaSetting(usize, usize),
     SoundDevice,
     GuiScale,
     ViewBobbing,

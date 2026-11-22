@@ -55,6 +55,9 @@ pub enum Action {
     Back,
     /// Config: the settings page of the native mod at this index of `ModList::installed`.
     Config(usize),
+    /// Config: the settings page of the Lua mod at this index of the provider's entries
+    /// (`mod_entries::Provider::entries`).
+    ConfigLua(usize),
     /// Homepage, Issues or the license: this link, through a confirmation.
     Link(String),
     /// A click to copy the mod id or version.
@@ -80,6 +83,8 @@ struct Entry {
     index: Option<usize>,
     /// It has a settings page for Config to open.
     config: bool,
+    /// A Lua mod: its index in the provider's entries, which its Config opens.
+    lua: Option<usize>,
     /// Why it is not running, or that it is not on; stays above the scroller.
     status: Option<Text>,
     /// Dependency-policy notices, independently scrollable below the status.
@@ -153,6 +158,8 @@ fn lua_entry(
         description: lua.description.clone(),
         icon,
         status,
+        config: lua.settings,
+        lua: Some(index),
         badge: Some(tr("horizon.mods.screen.badge.lua").with_color(d::GRAY)),
         side: Some(field(
             "horizon.mods.screen.side",
@@ -332,7 +339,7 @@ impl ModsScreen {
             in_world,
             mods,
             mod_links::engine::all(),
-            mod_entries::engine::provider(),
+            crate::options_ui::lua_provider(),
         )
     }
 
@@ -403,6 +410,7 @@ impl ModsScreen {
                     .is_some_and(|page| !page.settings.is_empty()),
                 status,
                 note,
+                lua: None,
                 badge: None,
                 side: None,
             });
@@ -835,8 +843,9 @@ impl ModsScreen {
             let action = match i {
                 0 => link(&e.homepage),
                 1 => link(&e.issues),
-                _ => match (e.config, e.index) {
-                    (true, Some(index)) => Action::Config(index),
+                _ => match (e.config, e.index, e.lua) {
+                    (true, Some(index), _) => Action::Config(index),
+                    (true, None, Some(index)) => Action::ConfigLua(index),
                     _ => Action::None,
                 },
             };
@@ -1104,7 +1113,7 @@ impl ModsScreen {
         let enabled = [
             e.is_some_and(|e| e.homepage.is_some()),
             e.is_some_and(|e| e.issues.is_some()),
-            e.is_some_and(|e| e.config && e.index.is_some()),
+            e.is_some_and(|e| e.config && (e.index.is_some() || e.lua.is_some())),
         ];
         let labels = ["homepage", "issues", "config"];
         for ((r, active), label) in g.buttons.into_iter().zip(enabled).zip(labels) {
