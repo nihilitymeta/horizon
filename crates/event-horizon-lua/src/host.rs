@@ -116,11 +116,31 @@ pub struct LuaMod {
     notices: Vec<(String, String)>,
     /// The mod's settings, shared with its `horizon.setting` and with the provider API (`LuaHost`).
     settings: Arc<Settings>,
+    /// The manifest's name, authors and description, for the Mods screen (`provider.rs`).
+    described: Described,
     /// Whether the mod declared `horizon.on_setting_changed`; its handler is in the Lua registry.
     setting_changed: bool,
     lua: Lua,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
+}
+
+/// The descriptive fields of a mod's manifest, as the Mods screen shows them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Described {
+    pub(crate) name: String,
+    pub(crate) authors: Vec<String>,
+    pub(crate) description: String,
+}
+
+impl Described {
+    fn of(manifest: &crate::manifest::Manifest) -> Described {
+        Described {
+            name: manifest.name.clone(),
+            authors: manifest.authors.clone(),
+            description: manifest.description.clone(),
+        }
+    }
 }
 
 /// A per-mod turn: one thread at a time runs a mod's handlers. The same thread may enter again
@@ -208,7 +228,9 @@ impl LuaMod {
         settings_notices: Vec<(String, String)>,
     ) -> Result<LuaMod, String> {
         let scripts = package.entry_sources().map_err(|r| r.reason())?;
-        Self::from_sources(found, &scripts, settings, settings_notices)
+        let mut m = Self::from_sources(found, &scripts, settings, settings_notices)?;
+        m.described = Described::of(package.manifest());
+        Ok(m)
     }
 
     /// The settings the mod loaded, shared with its Lua state.
@@ -312,6 +334,7 @@ impl LuaMod {
             data_pack_files: declaration.data_pack_files,
             notices,
             settings,
+            described: Described::default(),
             setting_changed: declaration.setting_changed,
             lua,
             log,
@@ -372,6 +395,11 @@ impl LuaMod {
 
     pub fn version(&self) -> &str {
         &self.version
+    }
+
+    /// The manifest's name, authors and description.
+    pub(crate) fn described(&self) -> &Described {
+        &self.described
     }
 
     pub fn side(&self) -> Side {
@@ -590,6 +618,11 @@ impl LuaHost {
 
     pub fn report_lines(&self) -> &[String] {
         &self.report
+    }
+
+    /// The loaded mods, shared with the provider that the Mods screen reads (`provider.rs`).
+    pub(crate) fn shared_mods(&self) -> Arc<[LuaMod]> {
+        Arc::clone(&self.mods)
     }
 
     /// The loaded Lua mods, in load order.

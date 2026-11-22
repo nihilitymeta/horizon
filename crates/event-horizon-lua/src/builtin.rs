@@ -5,6 +5,7 @@ use crate::assets;
 use crate::discover::{self, ScannedMod};
 use crate::host::{LuaHost, LuaMod, both_side_records, collect_load_notices};
 use crate::package;
+use crate::provider::LuaProvider;
 use crate::settings::{Role, Schema, Settings};
 use mod_api::__private::native::BuiltMod;
 use mod_api::ModEntry;
@@ -57,16 +58,21 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
     // The content packs of the mods that loaded (`assets::publish`): the game selects them at its
     // startup and at each reload.
     let _previous = horizon_mod_package::runtime::set_content_packs(packs);
+    let host = LuaHost::new(mods)
+        .with_report(refused.clone())
+        .with_disabled(disabled.clone(), notices)
+        .with_skipped(skipped);
+    // The Mods screen reads the mods through this provider. The first registration wins, so a
+    // second `builtin` in the same process (tests) is refused and changes nothing.
+    let provider: &'static LuaProvider = Box::leak(Box::new(LuaProvider::new(
+        host.shared_mods(),
+        game_dir,
+        disabled,
+        &refused,
+    )));
+    let _ = horizon_hooks::mod_entries::register(provider);
     Loaded {
-        entry: ModEntry::new(
-            package::ID,
-            Box::new(
-                LuaHost::new(mods)
-                    .with_report(refused.clone())
-                    .with_disabled(disabled, notices)
-                    .with_skipped(skipped),
-            ),
-        ),
+        entry: ModEntry::new(package::ID, Box::new(host)),
         loaded,
         refused,
     }
