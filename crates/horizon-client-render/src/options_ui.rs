@@ -223,6 +223,30 @@ fn lua_next(view: &SettingView) -> Option<ViewValue> {
         _ => None,
     }
 }
+/// A Lua text or keybind setting being edited. A text setting holds its draft (the stored value
+/// at first, then what is typed) and its `max_length` in characters; a keybind waits for a key.
+#[derive(Clone, Debug, PartialEq)]
+enum LuaEdit {
+    Text {
+        i: usize,
+        j: usize,
+        draft: String,
+        max: usize,
+    },
+    Keybind {
+        i: usize,
+        j: usize,
+    },
+}
+
+/// The name a key binds to on a Lua keybind setting: its keyboard name without the
+/// `key.keyboard.` prefix, in capitals (`key.keyboard.left.shift` -> `LEFT_SHIFT`), which the
+/// settings store accepts (`[A-Za-z0-9_+ ]`).
+fn lua_key_name(key: winit::keyboard::KeyCode) -> Option<String> {
+    let name = keybinds::key_name(key)?.strip_prefix("key.keyboard.")?;
+    Some(name.replace('.', "_").to_uppercase())
+}
+
 /// A music track's name as its row shows it: the file, without its folder
 /// (`minecraft:music/game/calm1` -> `calm1`; the group names the situation).
 fn track_name(id: &str) -> &str {
@@ -1721,6 +1745,8 @@ pub(crate) enum Act {
     /// Setting `.1` of Lua mod `.0` (its provider entry) clicked: a toggle, choice or colour
     /// steps on, through the provider.
     LuaSetting(usize, usize),
+    /// Text or keybind setting `.1` of Lua mod `.0` clicked: it starts to be edited.
+    LuaEdit(usize, usize),
     /// Reset setting `.1` of Lua mod `.0` to its default.
     LuaReset(usize, usize),
     /// Reset every setting of Lua mod `.0` to its defaults.
@@ -1972,6 +1998,9 @@ pub struct OptionsUi {
     pub mods_screen: Option<crate::mods_screen::ModsScreen>,
     /// The last change a Lua mod's provider refused: its notice on the Lua page.
     lua_fault: Option<Fault>,
+    /// The Lua text or keybind setting being edited, if any: at most one, and it ends when the
+    /// page changes or a click lands elsewhere.
+    lua_edit: Option<LuaEdit>,
     /// Horizon's `packBrowser` extra: the pack screen's Add button.
     pub pack_browser: bool,
     /// Packs: the packs found and the selection the screen opens with.
@@ -2095,6 +2124,7 @@ impl Default for OptionsUi {
             mods_note: None,
             mods_screen: None,
             lua_fault: None,
+            lua_edit: None,
             pack_browser: false,
             pack_infos: Vec::new(),
             pack_selection: Vec::new(),
@@ -2576,6 +2606,7 @@ impl OptionsUi {
     fn push(&mut self, page: Page) {
         self.relayout();
         self.lua_fault = None;
+        self.lua_edit = None;
         self.stack.push(page);
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
@@ -2897,9 +2928,9 @@ impl OptionsUi {
     }
 
     /// A Lua mod's page (Options > Mods > Config): its name, then one row per setting, then Reset
-    /// all. A slider, toggle, choice or colour is a control; text and keybind settings are read
-    /// only for now. A setting that differs from its default has a Reset beside it, and a
-    /// refused change shows its notice last.
+    /// all. A slider, toggle, choice or colour is a control; a text field or a keybind is a
+    /// button that starts its edit (`lua_begin_edit`). A setting that differs from its default
+    /// has a Reset beside it, and a refused change shows its notice last.
     fn lua_rows(&self, i: usize) -> Vec<Row> {
         let Some(provider) = lua_provider() else {
             return Vec::new();
@@ -2914,15 +2945,17 @@ impl OptionsUi {
             let value = lua_value(&view.kind, &view.value);
             let control = match &view.kind {
                 ViewKind::Text { .. } | ViewKind::Keybind => {
-                    let shown = Text::option_name_value(label, value);
-                    rows.push(Row::Buttons(
-                        inactive(button(0.0, 0.0, 310.0, shown, Act::None)),
-                        None,
-                    ));
-                    rows.push(Row::Note(
-                        tr("horizon.mods.screen.config.not_editable").plain(),
-                    ));
-                    continue;
+                    let shown = match self.lua_editing(i, j) {
+                        Some(LuaEdit::Text { draft, .. }) => {
+                            Text::option_name_value(label, Text::literal(format!("{draft}|")))
+                        }
+                        Some(LuaEdit::Keybind { .. }) => Text::option_name_value(
+                            label,
+                            tr("horizon.mods.screen.config.press_key"),
+                        ),
+                        None => Text::option_name_value(label, value),
+                    };
+                    button(0.0, 0.0, 150.0, shown, Act::LuaEdit(i, j))
                 }
                 ViewKind::Slider { .. } => Widget {
                     x: 0.0,
@@ -3043,6 +3076,98 @@ impl OptionsUi {
         };
         let result = provider.reset_all(&id);
         self.lua_result(result);
+    }
+    /// The edit of Lua setting `(i, j)`, if it is the one being edited.
+    fn lua_editing(&self, i: usize, j: usize) -> Option<&LuaEdit> {
+        self.lua_edit.as_ref().filter(|edit| match edit {
+            LuaEdit::Text { i: a, j: b, .. } | LuaEdit::Keybind { i: a, j: b } => {
+                (*a, *b) == (i, j)
+            }
+        })
+    }
+    /// A text or keybind setting's button clicked: a text field opens on its stored value, a
+    /// keybind waits for a key. Other kinds have no edit.
+    fn lua_begin_edit(&mut self, i: usize, j: usize) {
+        let Some((_, view)) = lua_setting(i, j) else {
+            return;
+        };
+        self.lua_edit = match (&view.kind, &view.value) {
+            (ViewKind::Text { max_length }, ViewValue::Text(draft)) => Some(LuaEdit::Text {
+                i,
+                j,
+                draft: draft.clone(),
+                max: *max_length,
+            }),
+            (ViewKind::Keybind, _) => Some(LuaEdit::Keybind { i, j }),
+            _ => None,
+        };
+        self.relayout();
+    }
+    /// Ends the edit: with a value it is stored on the edited row through the provider, without
+    /// one it is dropped and the stored value stays.
+    fn lua_finish(&mut self, value: Option<ViewValue>) {
+        let Some(edit) = self.lua_edit.take() else {
+            return;
+        };
+        let (i, j) = match edit {
+            LuaEdit::Text { i, j, .. } | LuaEdit::Keybind { i, j } => (i, j),
+        };
+        match (value, lua_setting(i, j)) {
+            (Some(value), Some((id, view))) => self.lua_store(&id, &view.key, value),
+            _ => self.relayout(),
+        }
+    }
+    /// A click while a Lua setting is edited ends the edit: a text field commits its draft, a
+    /// keybind waiting for a key is cancelled. The click itself does nothing else.
+    fn lua_end_by_click(&mut self) {
+        let value = match &self.lua_edit {
+            Some(LuaEdit::Text { draft, .. }) => Some(ViewValue::Text(draft.clone())),
+            _ => None,
+        };
+        self.lua_finish(value);
+    }
+    /// Typed text into the edited text field, up to its `max_length` in characters.
+    fn lua_type(&mut self, text: &str) {
+        if let Some(LuaEdit::Text { draft, max, .. }) = &mut self.lua_edit {
+            for c in text.chars().filter(|c| !c.is_control()) {
+                if draft.chars().count() < *max {
+                    draft.push(c);
+                }
+            }
+            self.relayout();
+        }
+    }
+    /// A key while a Lua setting is edited. A text field: Enter commits, Escape cancels,
+    /// Backspace erases, other keys type. A keybind: the next key is bound, Escape cancels.
+    /// Returns no events: a commit answers through the provider's result.
+    fn lua_edit_key(&mut self, key: winit::keyboard::KeyCode, text: Option<&str>) -> Vec<Event> {
+        use winit::keyboard::KeyCode as K;
+        match self.lua_edit.clone() {
+            Some(LuaEdit::Keybind { .. }) => {
+                if key == K::Escape {
+                    self.lua_finish(None);
+                } else if let Some(name) = lua_key_name(key) {
+                    self.lua_finish(Some(ViewValue::Text(name)));
+                }
+            }
+            Some(LuaEdit::Text { draft, .. }) => match key {
+                K::Escape => self.lua_finish(None),
+                K::Enter | K::NumpadEnter => self.lua_finish(Some(ViewValue::Text(draft))),
+                K::Backspace => {
+                    if let Some(LuaEdit::Text { draft, .. }) = &mut self.lua_edit {
+                        draft.pop();
+                    }
+                    self.relayout();
+                }
+                _ => {
+                    if let Some(t) = text {
+                        self.lua_type(t);
+                    }
+                }
+            },
+            None => {}
+        }
+        Vec::new()
     }
 
     fn list_rows(&self, s: &Settings) -> Vec<Row> {
@@ -3644,6 +3769,10 @@ impl OptionsUi {
         self.size = size;
         self.framebuffer = framebuffer;
         let mut events = Vec::new();
+        if !drag && self.lua_edit.is_some() {
+            self.lua_end_by_click();
+            return events;
+        }
         if !drag
             && matches!(
                 self.page(),
@@ -3825,6 +3954,7 @@ impl OptionsUi {
                             }
                         }
                         Act::LuaSetting(i, j) => self.lua_click(*i, *j),
+                        Act::LuaEdit(i, j) => self.lua_begin_edit(*i, *j),
                         Act::LuaReset(i, j) => self.lua_reset(*i, *j),
                         Act::LuaResetAll(i) => self.lua_reset_all(*i),
                         Act::ModProject(i) => {
@@ -4244,6 +4374,7 @@ impl OptionsUi {
         }
         let page = self.stack.pop().unwrap_or(Page::Main);
         self.lua_fault = None;
+        self.lua_edit = None;
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
         self.dragging = None;
@@ -4309,6 +4440,10 @@ impl OptionsUi {
     /// Typed text (the language search box).
     pub fn type_text(&mut self, atlas: &HudAtlas, text: &str) {
         if self.resource_error.is_some() {
+            return;
+        }
+        if self.lua_edit.is_some() {
+            self.lua_type(text);
             return;
         }
         if self.page() == Page::Packs
@@ -4495,6 +4630,9 @@ impl OptionsUi {
                 self.resource_error = None;
             }
             return Vec::new();
+        }
+        if self.lua_edit.is_some() {
+            return self.lua_edit_key(key, text);
         }
         if self.page() == Page::Packs
             && let Some(p) = &mut self.pack_screen
@@ -4885,6 +5023,7 @@ impl OptionsUi {
                             }
                         }
                         Act::LuaSetting(i, j) => self.lua_click(i, j),
+                        Act::LuaEdit(i, j) => self.lua_begin_edit(i, j),
                         Act::LuaReset(i, j) => self.lua_reset(i, j),
                         Act::LuaResetAll(i) => self.lua_reset_all(i),
                         Act::ModProject(i) => {
@@ -8820,7 +8959,7 @@ mod lua_page_tests {
     }
 
     /// The standard settings: a toggle, a choice, an integer slider 0..10, a float slider
-    /// 0..1 step 0.25, a colour and a text.
+    /// 0..1 step 0.25, a colour, a text (`name`, 8 characters at most) and a keybind (`bind`).
     fn settings() -> Vec<SettingView> {
         let choice = K::Choice {
             options: vec!["alpha".into(), "beta".into(), "gamma".into()],
@@ -8866,6 +9005,12 @@ mod lua_page_tests {
                 K::Text { max_length: 8 },
                 ViewValue::Text("hi".into()),
                 ViewValue::Text("hi".into()),
+            ),
+            view(
+                "bind",
+                K::Keybind,
+                ViewValue::Text("F".into()),
+                ViewValue::Text("F".into()),
             ),
         ]
     }
@@ -8973,8 +9118,8 @@ mod lua_page_tests {
             )),
             "the float slider"
         );
-        // Text is read only: a click on its row changes nothing and calls no `set`.
-        let (x, y, _) = button(&all, &Act::None);
+        // A click on a text row opens its edit; no `set` is called until the edit commits.
+        let (x, y, _) = button(&all, &Act::LuaEdit(0, 5));
         press(&mut ui, &mut s, x, y);
         assert!(fake.sets.lock().unwrap().is_empty());
     }
@@ -9127,5 +9272,223 @@ mod lua_page_tests {
         )));
         assert!(ui.lua_rows(0).is_empty());
         let _ = press(&mut ui, &mut s, 100.0, 100.0);
+    }
+
+    fn send(
+        ui: &mut OptionsUi,
+        s: &mut Settings,
+        key: winit::keyboard::KeyCode,
+        text: Option<&str>,
+    ) -> Vec<Event> {
+        ui.key(s, &atlas(), key, text)
+    }
+    /// Opens the edit of setting `j` (a text or keybind row) by a click on its button.
+    fn open_edit(ui: &mut OptionsUi, s: &mut Settings, j: usize) {
+        let (x, y, _) = button(&widgets(ui, s), &Act::LuaEdit(0, j));
+        press(ui, s, x, y);
+    }
+    fn names(fake: &Fake) -> Vec<String> {
+        fake.sets.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn a_text_edit_commits_once_on_enter() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.type_text(&atlas(), "abc");
+        assert!(names(fake).is_empty(), "nothing is stored while typing");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(names(fake), ["name"]);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("abc".into()));
+        assert!(ui.lua_edit.is_none());
+        let label = button(&widgets(&mut ui, &s), &Act::LuaEdit(0, 5)).2;
+        assert!(
+            label.contains("abc"),
+            "the label shows the new value: {label}"
+        );
+    }
+
+    #[test]
+    fn typed_keys_stop_at_max_length() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(
+            &mut ui,
+            &mut s,
+            winit::keyboard::KeyCode::KeyA,
+            Some("abcdefghijk"),
+        );
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("abcdefgh".into()));
+    }
+
+    #[test]
+    fn backspace_removes_one_character() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("h".into()));
+    }
+
+    #[test]
+    fn escape_cancels_a_text_edit_and_restores_the_value() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.type_text(&atlas(), "xyz");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(names(fake).is_empty());
+        assert_eq!(stored(fake, "name"), ViewValue::Text("hi".into()));
+        assert!(ui.lua_edit.is_none());
+        assert_eq!(
+            ui.page(),
+            Page::LuaMod(0),
+            "Escape ends the edit, not the page"
+        );
+    }
+
+    #[test]
+    fn a_click_elsewhere_commits_the_text_and_focuses_nothing() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.type_text(&atlas(), "ok");
+        let focus = ui.focus.clone();
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(names(fake), ["name"], "the toggle is not clicked");
+        assert_eq!(stored(fake, "name"), ViewValue::Text("ok".into()));
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(true));
+        assert_eq!(ui.focus, focus, "the click focuses nothing new");
+        assert!(ui.lua_edit.is_none());
+    }
+
+    #[test]
+    fn a_fault_keeps_the_old_text_and_shows_its_notice() {
+        let fake = install(Some("name"));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        ui.type_text(&atlas(), "!");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("hi".into()));
+        let fault = ui.lua_fault.clone().expect("the refusal is kept");
+        assert_eq!(fault.key, mod_entries::keys::INVALID_VALUE);
+    }
+
+    #[test]
+    fn going_back_during_an_edit_commits_nothing() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.back(&mut s);
+        assert_eq!(ui.page(), Page::Main);
+        assert!(names(fake).is_empty());
+        assert!(ui.lua_edit.is_none());
+    }
+
+    #[test]
+    fn a_keybind_binds_the_next_key_by_its_store_name() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        let waiting = button(&widgets(&mut ui, &s), &Act::LuaEdit(0, 6)).2;
+        assert!(
+            !waiting.contains('F') || waiting.contains("Press"),
+            "{waiting}"
+        );
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::KeyG, None);
+        assert_eq!(names(fake), ["bind"]);
+        assert_eq!(stored(fake, "bind"), ViewValue::Text("G".into()));
+        let label = button(&widgets(&mut ui, &s), &Act::LuaEdit(0, 6)).2;
+        assert!(label.contains('G'), "{label}");
+    }
+
+    #[test]
+    fn a_keybind_takes_the_key_name_in_store_form() {
+        assert_eq!(
+            lua_key_name(winit::keyboard::KeyCode::ShiftLeft).as_deref(),
+            Some("LEFT_SHIFT")
+        );
+        assert_eq!(
+            lua_key_name(winit::keyboard::KeyCode::F5).as_deref(),
+            Some("F5")
+        );
+    }
+
+    #[test]
+    fn escape_cancels_a_keybind_and_binds_nothing() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(names(fake).is_empty());
+        assert_eq!(stored(fake, "bind"), ViewValue::Text("F".into()));
+        assert!(ui.lua_edit.is_none());
+    }
+
+    #[test]
+    fn a_refused_keybind_shows_its_notice_and_keeps_the_old_key() {
+        let fake = install(Some("bind"));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::KeyG, None);
+        assert_eq!(stored(fake, "bind"), ViewValue::Text("F".into()));
+        let fault = ui.lua_fault.clone().expect("the refusal is kept");
+        assert_eq!(fault.key, mod_entries::keys::INVALID_VALUE);
+    }
+
+    #[test]
+    fn a_scrollbar_press_does_not_start_while_a_key_is_awaited() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        let x = ui.scrollbar_x(480.0) + 2.0;
+        ui.click(
+            &mut s,
+            &atlas(),
+            x,
+            50.0,
+            (480.0, 240.0),
+            [960, 480],
+            false,
+            false,
+        );
+        assert_eq!(ui.scrollbar_drag_y, None);
+        assert!(ui.lua_edit.is_none(), "the click ends the wait");
+        assert!(names(fake).is_empty());
     }
 }
