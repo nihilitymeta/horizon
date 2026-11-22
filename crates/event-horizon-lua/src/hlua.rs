@@ -40,6 +40,8 @@ pub const MAX_SEGMENT: usize = 128;
 pub const MAX_DEPTH: usize = 16;
 /// Largest uncompressed size of one entry.
 pub const MAX_ENTRY: u64 = 8 * 1024 * 1024;
+/// Largest uncompressed size of a mod's icon, which the Mods screen reads.
+pub const MAX_ICON: u64 = 256 * 1024;
 /// Largest uncompressed size of all entries together.
 pub const MAX_TOTAL: u64 = 64 * 1024 * 1024;
 /// Largest uncompressed-to-compressed ratio, per entry and for the whole package.
@@ -477,6 +479,13 @@ impl Package {
             .collect();
         names.sort();
         names
+    }
+
+    /// The manifest's icon, read through the bounded reader at load time. `None` without an icon,
+    /// or when it is missing, not readable, or over `MAX_ICON`: the mod then has no icon.
+    pub fn read_icon(&self) -> Option<Vec<u8>> {
+        let name = self.manifest.icon.as_deref()?;
+        self.read_file(name, MAX_ICON).ok()
     }
 
     /// The bytes of one asset (`assets/...`), at most `MAX_ENTRY`.

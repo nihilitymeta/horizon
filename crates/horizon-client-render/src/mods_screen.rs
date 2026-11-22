@@ -84,6 +84,10 @@ struct Entry {
     status: Option<Text>,
     /// Dependency-policy notices, independently scrollable below the status.
     note: Option<Text>,
+    /// The kind of mod, for a Lua mod: shown in the row and in the panel.
+    badge: Option<Text>,
+    /// The side the mod runs on, as the panel's `Side:` line (a Lua mod).
+    side: Option<Text>,
 }
 impl Entry {
     fn minecraft() -> Self {
@@ -110,17 +114,36 @@ impl Entry {
     }
 }
 
-/// A Lua mod's row. It has no icon, settings page or side badge yet (the Lua chunks 4b2 and 4b3
-/// add them); its refusal reason is the status, as an installed mod's problem is.
-fn lua_entry(lua: &mod_entries::Entry) -> Entry {
+/// A Lua mod's row: its icon (decoded into `icons` under `lua/<index>/icon`), its kind and side,
+/// and its status. A refusal reads its translation with the arguments, or its reason when the
+/// language has no such key.
+fn lua_entry(
+    index: usize,
+    lua: &mod_entries::Entry,
+    icons: &mut HashMap<String, Arc<[u8]>>,
+) -> Entry {
     let off = || Some(tr("horizon.mods.screen.off").with_color(d::GRAY));
     let status = match &lua.status {
-        mod_entries::Status::Refused { reason } => {
-            Some(Text::literal(reason.clone()).with_color(RED))
+        mod_entries::Status::Refused { key, args, reason } => {
+            Some(refusal_text(key, args, reason).with_color(RED))
         }
         mod_entries::Status::Disabled => off(),
         mod_entries::Status::Loaded if !lua.enabled => off(),
         mod_entries::Status::Loaded => None,
+    };
+    let icon = lua
+        .icon_png
+        .as_deref()
+        .and_then(pack_screen::load_icon)
+        .map(|png| {
+            let key = format!("lua/{index}/icon");
+            icons.insert(key.clone(), png);
+            key
+        });
+    let side = match lua.side {
+        mod_entries::Side::Client => "client",
+        mod_entries::Side::Server => "server",
+        mod_entries::Side::Both => "both",
     };
     Entry {
         id: lua.id.clone(),
@@ -128,9 +151,29 @@ fn lua_entry(lua: &mod_entries::Entry) -> Entry {
         version: lua.version.clone(),
         authors: lua.authors.join(", "),
         description: lua.description.clone(),
+        icon,
         status,
+        badge: Some(tr("horizon.mods.screen.badge.lua").with_color(d::GRAY)),
+        side: Some(field(
+            "horizon.mods.screen.side",
+            &crate::lang::get(&format!("horizon.mods.screen.side.{side}")),
+            false,
+        )),
         ..Entry::default()
     }
+}
+
+/// A refusal's text: its translation with the arguments in order, or the English reason when the
+/// key is empty or the language has no entry for it.
+fn refusal_text(key: &str, args: &[(String, String)], reason: &str) -> Text {
+    if key.is_empty() || !crate::lang::has(key) {
+        return Text::literal(reason.to_owned());
+    }
+    let args: Vec<Text> = args
+        .iter()
+        .map(|(_, value)| Text::literal(value.clone()))
+        .collect();
+    Text::translate(key, &args)
 }
 
 /// A scroll position and the scrollbar press that holds it (`AbstractScrollArea`).
@@ -360,11 +403,19 @@ impl ModsScreen {
                     .is_some_and(|page| !page.settings.is_empty()),
                 status,
                 note,
+                badge: None,
+                side: None,
             });
         }
         // The Lua mods come after the installed ones, in the provider's order.
         if let Some(provider) = lua {
-            entries.extend(provider.entries().iter().map(lua_entry));
+            entries.extend(
+                provider
+                    .entries()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, lua)| lua_entry(index, lua, &mut icons)),
+            );
         }
         let mut search = TextField::new(0, 0, SIDEBAR_W - SORT_W - 4, CONTROL_H);
         search.max_length = 64;
@@ -669,6 +720,19 @@ impl ModsScreen {
                 kind: Kind::Lines {
                     lines: block,
                     centered: false,
+                },
+            });
+            y += 9 * rows;
+        }
+        // A Lua mod's kind and side.
+        for text in [&e.badge, &e.side].into_iter().flatten() {
+            let block = lines(text.clone());
+            let rows = block.len() as i32;
+            out.push(Placed {
+                y,
+                kind: Kind::Lines {
+                    lines: block,
+                    centered: true,
                 },
             });
             y += 9 * rows;
@@ -1154,6 +1218,14 @@ impl ModsScreen {
                 cy + 4,
                 room,
             );
+            // A Lua mod's kind, at the row's right edge when it fits beside the name.
+            if let Some(badge) = &e.badge {
+                let width = m.width(badge);
+                if width < room {
+                    let x = left + row_w - 4 - width;
+                    d::string_widget(out, m, badge, x, cy + 4, width);
+                }
+            }
             if !e.version.is_empty() {
                 let version = Text::colored(e.version.clone(), d::GRAY);
                 d::string_widget(out, m, &version, text_left, cy + 4 + 9, room);
@@ -1519,6 +1591,7 @@ mod tests {
             enabled,
             status,
             settings: false,
+            icon_png: None,
         }
     }
 
@@ -1534,6 +1607,8 @@ mod tests {
                 "gamma",
                 "Gamma",
                 mod_entries::Status::Refused {
+                    key: String::new(),
+                    args: Vec::new(),
                     reason: "Needs Lua 9".into(),
                 },
                 false,
@@ -1581,6 +1656,132 @@ mod tests {
         screen.select(3);
         let (x, y) = centre(screen.geo().buttons[2]);
         assert_eq!(screen.click(&m, x, y), (Action::None, false));
+    }
+
+    /// A `w`x`h` opaque PNG, made in the test.
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, w, h);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let pixels = vec![255u8; (w * h * 4) as usize];
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&pixels)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn a_refusal_shows_its_translation_with_the_arguments_or_its_reason_without_a_key() {
+        let refused = |key: &str, args: Vec<(String, String)>| {
+            lua(
+                "gamma",
+                "Gamma",
+                mod_entries::Status::Refused {
+                    key: key.into(),
+                    args,
+                    reason: "Needs Lua 9".into(),
+                },
+                false,
+            )
+        };
+        let list = ModList::default();
+        let provider = FakeLua(vec![
+            refused(
+                "lua_mod.refused.dependency_missing",
+                vec![
+                    ("id".into(), "Zed".into()),
+                    ("requirement".into(), "^1".into()),
+                ],
+            ),
+            refused(
+                "lua_mod.refused.no_such_key",
+                vec![("id".into(), "x".into())],
+            ),
+        ]);
+        // The row's text, in the language given: (the keyed refusal, the unknown key).
+        let shown = |language| {
+            crate::lang::scoped(language, || {
+                let screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+                (
+                    screen.entries[2].status.as_ref().map(Text::plain),
+                    screen.entries[3].status.as_ref().map(Text::plain),
+                )
+            })
+            .0
+        };
+        let english = crate::lang::Language::of(
+            "en_us",
+            [(
+                "lua_mod.refused.dependency_missing".to_owned(),
+                "It needs %1$s %2$s, which is not installed.".to_owned(),
+            )],
+        );
+        // The args fill the placeholders in order; a key the language lacks shows the reason.
+        let (translated, unknown) = shown(english);
+        assert_eq!(
+            translated.as_deref(),
+            Some("It needs Zed ^1, which is not installed.")
+        );
+        assert_eq!(unknown.as_deref(), Some("Needs Lua 9"));
+        // With no keys at all, the keyed refusal falls back to the English reason too.
+        let none = crate::lang::Language::of("en_us", Vec::<(String, String)>::new());
+        let (fallback, unknown) = shown(none);
+        assert_eq!(fallback.as_deref(), Some("Needs Lua 9"));
+        assert_eq!(unknown.as_deref(), Some("Needs Lua 9"));
+    }
+
+    #[test]
+    fn a_lua_icon_is_decoded_into_a_texture_and_a_bad_one_leaves_the_row() {
+        let list = ModList::default();
+        let mut good = lua("good", "Good", mod_entries::Status::Loaded, true);
+        good.icon_png = Some(png(128, 128));
+        let mut bad = lua("bad", "Bad", mod_entries::Status::Loaded, true);
+        bad.icon_png = Some(b"not a png".to_vec());
+        let provider = FakeLua(vec![good, bad]);
+        let screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        assert_eq!(screen.entries[2].icon.as_deref(), Some("lua/0/icon"));
+        assert!(screen.icons.contains_key("lua/0/icon"));
+        assert_eq!(screen.entries[3].icon, None);
+        assert_eq!(screen.entries.len(), 4, "the row is still listed");
+    }
+
+    #[test]
+    fn a_lua_panel_shows_its_kind_and_side_and_a_native_one_shows_no_badge() {
+        let atlas = atlas();
+        let m = Measure(&atlas.font);
+        let list = mods(&[installed("zoom", "Zoom", None)]);
+        let provider = FakeLua(vec![lua(
+            "alpha",
+            "Alpha",
+            mod_entries::Status::Loaded,
+            true,
+        )]);
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        let badge = tr("horizon.mods.screen.badge.lua").with_color(d::GRAY);
+        let side = field(
+            "horizon.mods.screen.side",
+            &crate::lang::get("horizon.mods.screen.side.both"),
+            false,
+        );
+        let shows = |screen: &ModsScreen, entry: usize, text: &Text| {
+            let (items, _, _) = screen.items(&m, &screen.entries[entry], PANEL_W);
+            items.iter().any(|placed| {
+                matches!(&placed.kind, Kind::Lines { lines, .. } if lines.iter().any(|(t, _)| t == text))
+            })
+        };
+        assert!(shows(&screen, 3, &badge), "the Lua panel names its kind");
+        assert!(shows(&screen, 3, &side), "the Lua panel names its side");
+        assert!(
+            !shows(&screen, 2, &badge),
+            "a native mod's panel has no Lua badge"
+        );
+        assert_eq!(screen.entries[2].badge, None);
+        screen.search.value = "zoom".into();
+        screen.refresh();
+        assert_eq!(names(&screen), ["Zoom"]);
     }
 
     #[test]

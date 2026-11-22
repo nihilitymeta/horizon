@@ -76,6 +76,8 @@ pub struct LuaMod {
     id: String,
     version: String,
     side: Side,
+    /// The manifest's icon (`hlua::Package::read_icon`), read at load time.
+    icon: Option<Vec<u8>>,
     hooks: Vec<String>,
     options: Vec<(String, ListenerOptions)>,
     /// The blocks and items the mod declared with `horizon.block` and `horizon.item`.
@@ -230,7 +232,13 @@ impl LuaMod {
         let scripts = package.entry_sources().map_err(|r| r.reason())?;
         let mut m = Self::from_sources(found, &scripts, settings, settings_notices)?;
         m.described = Described::of(package.manifest());
+        m.icon = package.read_icon();
         Ok(m)
+    }
+
+    /// The icon's PNG bytes, read when the mod loaded; `None` without a usable icon.
+    pub fn icon(&self) -> Option<&[u8]> {
+        self.icon.as_deref()
     }
 
     /// The settings the mod loaded, shared with its Lua state.
@@ -313,6 +321,7 @@ impl LuaMod {
             id: found.id.clone(),
             version: found.version.clone(),
             side: found.side,
+            icon: None,
             hooks: declaration.hooks,
             options: declaration.options,
             blocks: declaration.blocks,

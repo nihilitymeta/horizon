@@ -29,6 +29,26 @@ pub struct Loaded {
     pub refused: Vec<String>,
 }
 
+/// One refused folder or mod: its log line, and its translation key with the arguments by name
+/// (`key` is empty when the refusal has no key; the Mods screen then shows `text`'s reason).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefusedLine {
+    pub text: String,
+    pub key: String,
+    pub args: Vec<(String, String)>,
+}
+
+impl RefusedLine {
+    /// A refusal with no translation key: its log line only.
+    fn plain(text: String) -> RefusedLine {
+        RefusedLine {
+            text,
+            key: String::new(),
+            args: Vec::new(),
+        }
+    }
+}
+
 /// The dev paths the environment names: `EH_LUA_MODS`, a list of paths separated by the system's
 /// path separator. Empty entries are dropped; the scan refuses more than `MAX_DEV_PATHS`.
 pub fn env_dev_paths(value: Option<&OsStr>) -> Vec<PathBuf> {
@@ -47,6 +67,8 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
     let (mods, refused, disabled, notices, skipped, packs) =
         load_mods(game_dir, dev_paths, dedicated);
     let loaded = mods.len();
+    let refused_lines: Vec<String> = refused.iter().map(|r| r.text.clone()).collect();
+    let disabled_ids: Vec<String> = disabled.iter().map(|(id, _)| id.clone()).collect();
     // The both-side Lua mods are announced on `horizon:mod_list` and recorded in a world beside the
     // compiled mods. This runs before the game builds its announcement (`content_overlay`).
     let _previous = horizon_mod_package::runtime::set_declared(
@@ -59,8 +81,8 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
     // startup and at each reload.
     let _previous = horizon_mod_package::runtime::set_content_packs(packs);
     let host = LuaHost::new(mods)
-        .with_report(refused.clone())
-        .with_disabled(disabled.clone(), notices)
+        .with_report(refused_lines.clone())
+        .with_disabled(disabled_ids, notices)
         .with_skipped(skipped);
     // The Mods screen reads the mods through this provider. The first registration wins, so a
     // second `builtin` in the same process (tests) is refused and changes nothing.
@@ -74,7 +96,7 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
     Loaded {
         entry: ModEntry::new(package::ID, Box::new(host)),
         loaded,
-        refused,
+        refused: refused_lines,
     }
 }
 
@@ -115,8 +137,8 @@ fn load_mods(
     dedicated: bool,
 ) -> (
     Vec<LuaMod>,
-    Vec<String>,
-    Vec<String>,
+    Vec<RefusedLine>,
+    Vec<(String, String)>,
     Vec<String>,
     Vec<String>,
     Vec<PathBuf>,
@@ -133,7 +155,7 @@ fn load_mods(
             )
         })
         .collect();
-    let mut refused: Vec<String> = scan
+    let mut refused: Vec<RefusedLine> = scan
         .refused
         .iter()
         .map(|r| {
@@ -142,10 +164,23 @@ fn load_mods(
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            format!("{name}: {} ({})", r.fault.reason(), r.fault.key())
+            RefusedLine {
+                text: format!("{name}: {} ({})", r.fault.reason(), r.fault.key()),
+                key: r.fault.key().to_owned(),
+                args: r
+                    .fault
+                    .args()
+                    .into_iter()
+                    .map(|(name, value)| (name.to_owned(), value))
+                    .collect(),
+            }
         })
         .collect();
-    let disabled: Vec<String> = scan.disabled.iter().map(|d| d.id.clone()).collect();
+    let disabled: Vec<(String, String)> = scan
+        .disabled
+        .iter()
+        .map(|d| (d.id.clone(), d.version.clone()))
+        .collect();
     let mut mods: Vec<LuaMod> = Vec::new();
     let mut packs: Vec<PathBuf> = Vec::new();
     for scanned in &scan.loaded {
@@ -156,7 +191,10 @@ fn load_mods(
         let settings = match settings {
             Ok(settings) => Arc::new(settings),
             Err(reason) => {
-                refused.push(format!("{}: {reason}", scanned.found.id));
+                refused.push(RefusedLine::plain(format!(
+                    "{}: {reason}",
+                    scanned.found.id
+                )));
                 continue;
             }
         };
@@ -178,9 +216,15 @@ fn load_mods(
                     }
                     mods.push(m);
                 }
-                Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
+                Err(reason) => refused.push(RefusedLine::plain(format!(
+                    "{}: {reason}",
+                    scanned.found.id
+                ))),
             },
-            Err(reason) => refused.push(format!("{}: {reason}", scanned.found.id)),
+            Err(reason) => refused.push(RefusedLine::plain(format!(
+                "{}: {reason}",
+                scanned.found.id
+            ))),
         }
     }
     (mods, refused, disabled, scan.notices, skipped, packs)
@@ -193,7 +237,7 @@ mod tests {
     /// The mods and refusals of a scan with no dev paths (the loader's pair, without the notes).
     fn load_mods_pair(root: &Path) -> (Vec<LuaMod>, Vec<String>) {
         let (mods, refused, _, _, _, _) = load_mods(root, &[], false);
-        (mods, refused)
+        (mods, refused.into_iter().map(|r| r.text).collect())
     }
 
     /// Writes `<root>/lua-mods/<name>/` with a manifest for `id` and the given script.
@@ -1628,8 +1672,12 @@ mod tests {
         );
         assert_eq!(skipped.len(), 1);
         assert_eq!(refused.len(), 1, "{refused:?}");
-        assert!(refused[0].starts_with("b_needs: "));
-        assert!(refused[0].ends_with("(lua_mod.refused.dependency_disabled)"));
+        assert!(refused[0].text.starts_with("b_needs: "));
+        assert!(
+            refused[0]
+                .text
+                .ends_with("(lua_mod.refused.dependency_disabled)")
+        );
     }
 
     #[test]
@@ -1702,7 +1750,7 @@ mod tests {
             &[("assets/bad/textures/Upper.png", b"b")],
         );
         let (mods, refused, _, _, _, packs) = load_mods(root.path(), &[], false);
-        assert_eq!(refused, Vec::<String>::new());
+        assert!(refused.is_empty());
         assert_eq!(mods.len(), 2, "a refused content must not refuse the mod");
         assert_eq!(packs.len(), 1, "{packs:?}");
         assert_eq!(
@@ -1758,7 +1806,10 @@ mod tests {
         crate::enabled::write(root.path(), "off", false).unwrap();
         let (mods, _, disabled, _, skipped, packs) = load_mods(root.path(), &[], true);
         assert!(mods.is_empty());
-        assert_eq!(disabled, ["off"]);
+        assert_eq!(
+            disabled.iter().map(|d| d.0.as_str()).collect::<Vec<_>>(),
+            ["off"]
+        );
         assert_eq!(skipped.len(), 1, "{skipped:?}");
         assert!(packs.is_empty(), "{packs:?}");
     }

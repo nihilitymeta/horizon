@@ -22,6 +22,8 @@ pub struct Entry {
     pub status: Status,
     /// Whether the mod declares any setting.
     pub settings: bool,
+    /// The mod's icon as PNG bytes, when it has one that is readable and at most 256 KiB.
+    pub icon_png: Option<Vec<u8>>,
 }
 
 /// Which side of the connection a mod or a setting belongs to.
@@ -38,8 +40,11 @@ pub enum Status {
     Loaded,
     /// Installed, but the enabled file turns it off.
     Disabled,
-    /// Found, and not loaded. `reason` is the English text the log also has.
+    /// Found, and not loaded. `key` is the translation key of the refusal with its `args` in
+    /// order (empty when the refusal has no key); `reason` is the English text the log also has.
     Refused {
+        key: String,
+        args: Vec<(String, String)>,
         reason: String,
     },
 }

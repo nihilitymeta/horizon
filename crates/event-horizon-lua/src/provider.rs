@@ -16,6 +16,7 @@ use horizon_hooks::mod_entries::{
     Entry, Fault, Provider, SettingView, Side as ViewSide, Status, ViewKind, ViewValue, fault,
 };
 
+use crate::builtin::RefusedLine;
 use crate::discover::Side;
 use crate::enabled;
 use crate::host::LuaMod;
@@ -27,26 +28,43 @@ pub struct LuaProvider {
     /// The loaded mods, shared with the host (`LuaHost::shared_mods`).
     mods: Arc<[LuaMod]>,
     game_dir: PathBuf,
-    /// The installed mods the enabled file turns off.
-    disabled: Vec<String>,
-    /// The refused packages: (the name before the reason, the reason).
-    refused: Vec<(String, String)>,
+    /// The installed mods the enabled file turns off: (id, version).
+    disabled: Vec<(String, String)>,
+    /// The refused packages: the name before the reason, the reason, and the key with its args.
+    refused: Vec<Refused>,
+}
+
+/// A refused package as the list shows it.
+struct Refused {
+    name: String,
+    reason: String,
+    key: String,
+    args: Vec<(String, String)>,
 }
 
 impl LuaProvider {
-    /// `refused` are the lines `builtin` keeps, `name: reason`. A refused package is named by its file
-    /// name, which is not always a mod id, so the list shows it as the name it was found by.
+    /// `refused` are the lines `builtin` keeps, `name: reason`, with their keys. A refused package is
+    /// named by its file name, which is not always a mod id, so the list shows it as the name it was
+    /// found by.
     pub fn new(
         mods: Arc<[LuaMod]>,
         game_dir: &Path,
-        disabled: Vec<String>,
-        refused: &[String],
+        disabled: Vec<(String, String)>,
+        refused: &[RefusedLine],
     ) -> LuaProvider {
         let refused = refused
             .iter()
-            .map(|line| match line.split_once(": ") {
-                Some((name, reason)) => (name.to_owned(), reason.to_owned()),
-                None => (line.clone(), line.clone()),
+            .map(|line| {
+                let (name, reason) = match line.text.split_once(": ") {
+                    Some((name, reason)) => (name.to_owned(), reason.to_owned()),
+                    None => (line.text.clone(), line.text.clone()),
+                };
+                Refused {
+                    name,
+                    reason,
+                    key: line.key.clone(),
+                    args: line.args.clone(),
+                }
             })
             .collect();
         LuaProvider {
@@ -77,8 +95,8 @@ impl LuaProvider {
 
     fn known(&self, id: &str) -> bool {
         self.mods.iter().any(|m| m.id() == id)
-            || self.disabled.iter().any(|d| d == id)
-            || self.refused.iter().any(|(name, _)| name == id)
+            || self.disabled.iter().any(|(d, _)| d == id)
+            || self.refused.iter().any(|r| r.name == id)
     }
 }
 
@@ -96,32 +114,38 @@ impl Provider for LuaProvider {
                 enabled: true,
                 status: Status::Loaded,
                 settings: !m.settings().schema().settings().is_empty(),
+                icon_png: m.icon().map(<[u8]>::to_vec),
             }
         });
-        // The enabled file turns these off; their manifests are not read, so only the id is known.
-        let disabled = self.disabled.iter().map(|id| Entry {
+        // The enabled file turns these off; their manifests are not read, so the id and the version
+        // the scan found are known, and the name is the id.
+        let disabled = self.disabled.iter().map(|(id, version)| Entry {
             id: id.clone(),
             name: id.clone(),
-            version: String::new(),
+            version: version.clone(),
             authors: Vec::new(),
             description: String::new(),
             side: ViewSide::Both,
             enabled: false,
             status: Status::Disabled,
             settings: false,
+            icon_png: None,
         });
-        let refused = self.refused.iter().map(|(name, reason)| Entry {
-            id: name.clone(),
-            name: name.clone(),
+        let refused = self.refused.iter().map(|r| Entry {
+            id: r.name.clone(),
+            name: r.name.clone(),
             version: String::new(),
             authors: Vec::new(),
             description: String::new(),
             side: ViewSide::Both,
             enabled: true,
             status: Status::Refused {
-                reason: reason.clone(),
+                key: r.key.clone(),
+                args: r.args.clone(),
+                reason: r.reason.clone(),
             },
             settings: false,
+            icon_png: None,
         });
         loaded.chain(disabled).chain(refused).collect()
     }
@@ -295,16 +319,36 @@ mod tests {
     /// Writes a Lua mod `name` (folder) with id `id` under `root`, loads it as the loader does, with
     /// its settings read from `game_dir`.
     fn load(root: &Path, game_dir: &Path, name: &str, id: &str, settings: &str) -> LuaMod {
+        load_with(root, game_dir, name, id, settings, None)
+    }
+
+    /// `load`, and with an icon file of `icon` bytes when given, named by the manifest.
+    fn load_with(
+        root: &Path,
+        game_dir: &Path,
+        name: &str,
+        id: &str,
+        settings: &str,
+        icon: Option<&[u8]>,
+    ) -> LuaMod {
         let dir = root.join(name);
         std::fs::create_dir_all(&dir).unwrap();
+        let icon_line = if icon.is_some() {
+            "icon = \"icon.png\"\n"
+        } else {
+            ""
+        };
         std::fs::write(
             dir.join(MANIFEST),
             format!(
                 "id = \"{id}\"\nname = \"Name of {id}\"\nversion = \"1.2.0\"\nauthors = [\"Ann\"]\n\
-                 description = \"Does things\"\nlicense = \"MIT\"\nside = \"both\"\n{settings}"
+                 description = \"Does things\"\nlicense = \"MIT\"\nside = \"both\"\n{icon_line}{settings}"
             ),
         )
         .unwrap();
+        if let Some(bytes) = icon {
+            std::fs::write(dir.join("icon.png"), bytes).unwrap();
+        }
         std::fs::write(
             dir.join(discover::ENTRY),
             "horizon.on(\"server_tick\", function() end)\n",
@@ -332,8 +376,12 @@ mod tests {
         let provider = LuaProvider::new(
             mods,
             game.path(),
-            vec!["off_mod".to_owned()],
-            &["bad.hlua: the package is not valid".to_owned()],
+            vec![("off_mod".to_owned(), "0.4.0".to_owned())],
+            &[RefusedLine {
+                text: "bad.hlua: the package is not valid".into(),
+                key: "lua_mod.refused.bad_id".into(),
+                args: vec![("id".into(), "bad.hlua".into())],
+            }],
         );
         (root, game, provider)
     }
@@ -355,6 +403,7 @@ mod tests {
 
         let off = &entries[1];
         assert_eq!(off.id, "off_mod");
+        assert_eq!(off.version, "0.4.0");
         assert!(!off.enabled);
         assert_eq!(off.status, Status::Disabled);
 
@@ -363,9 +412,58 @@ mod tests {
         assert_eq!(
             bad.status,
             Status::Refused {
-                reason: "the package is not valid".into()
+                key: "lua_mod.refused.bad_id".into(),
+                args: vec![("id".into(), "bad.hlua".into())],
+                reason: "the package is not valid".into(),
             }
         );
+    }
+
+    /// A PNG's signature and a little more: the provider hands the bytes on without decoding them.
+    const ICON: &[u8] = b"\x89PNG\r\n\x1a\nicon bytes";
+
+    #[test]
+    fn a_mod_with_a_valid_icon_carries_its_bytes_and_one_without_has_none() {
+        let root = tempfile::tempdir().unwrap();
+        let game = tempfile::tempdir().unwrap();
+        let iconed = load_with(
+            root.path(),
+            game.path(),
+            "iconed",
+            "iconed_mod",
+            "",
+            Some(ICON),
+        );
+        let plain = load(root.path(), game.path(), "plain", "plain_mod", "");
+        let provider =
+            LuaProvider::new(Arc::from(vec![iconed, plain]), game.path(), Vec::new(), &[]);
+        let entries = provider.entries();
+        assert_eq!(entries[0].icon_png.as_deref(), Some(ICON));
+        assert_eq!(entries[1].icon_png, None);
+    }
+
+    #[test]
+    fn an_icon_over_256_kib_or_missing_at_load_time_is_none_and_the_mod_still_loads() {
+        let root = tempfile::tempdir().unwrap();
+        let game = tempfile::tempdir().unwrap();
+        let big = vec![0u8; 300 * 1024];
+        let heavy = load_with(
+            root.path(),
+            game.path(),
+            "heavy",
+            "heavy_mod",
+            "",
+            Some(&big),
+        );
+        assert!(heavy.icon().is_none());
+        assert_eq!(heavy.id(), "heavy_mod");
+
+        // The icon file goes missing after the package is opened: the bounded read gives none.
+        load_with(root.path(), game.path(), "gone", "gone_mod", "", Some(ICON));
+        let dir = root.path().join("gone");
+        let package = Package::open_dir(&dir).unwrap();
+        std::fs::remove_file(dir.join("icon.png")).unwrap();
+        assert_eq!(package.read_icon(), None);
     }
 
     #[test]
@@ -471,6 +569,17 @@ mod tests {
         assert!(provider.reset("alpha_mod", "nope").is_err());
         assert!(provider.reset("nobody", "on").is_err());
         assert!(provider.reset_all("nobody").is_err());
+    }
+
+    #[test]
+    fn a_refusal_keeps_its_key_and_args_for_the_screen() {
+        let (_root, _game, provider) = host();
+        let entries = provider.entries();
+        let Status::Refused { key, args, .. } = &entries[2].status else {
+            panic!("the third entry is the refused package");
+        };
+        assert_eq!(key, "lua_mod.refused.bad_id");
+        assert_eq!(args, &[("id".to_owned(), "bad.hlua".to_owned())]);
     }
 
     #[test]
