@@ -2494,23 +2494,25 @@ impl OptionsUi {
     /// `EditBox` that `canConsumeInput`): the language list's, the settings
     /// search, or the pack screen's.
     pub fn typing(&self) -> bool {
+        // A Lua text edit or a keybind waiting for its key takes the keys as typing does.
         self.resource_error.is_none()
-            && match self.page() {
-                Page::Language => true,
-                Page::Packs => self
-                    .pack_screen
-                    .as_ref()
-                    .is_some_and(|p| p.search_focused()),
-                Page::Mods => self
-                    .mods_screen
-                    .as_ref()
-                    .is_some_and(|p| p.search_focused()),
-                Page::ControllerRadialName => self.radial_name_typing(),
-                _ => match self.shell() {
-                    Some(shell) => shell.typing(),
-                    None => self.settings_search_active(),
-                },
-            }
+            && (self.lua_edit.is_some()
+                || match self.page() {
+                    Page::Language => true,
+                    Page::Packs => self
+                        .pack_screen
+                        .as_ref()
+                        .is_some_and(|p| p.search_focused()),
+                    Page::Mods => self
+                        .mods_screen
+                        .as_ref()
+                        .is_some_and(|p| p.search_focused()),
+                    Page::ControllerRadialName => self.radial_name_typing(),
+                    _ => match self.shell() {
+                        Some(shell) => shell.typing(),
+                        None => self.settings_search_active(),
+                    },
+                })
     }
     /// Jump straight to a page (control socket / tests).
     pub fn show(&mut self, page: Page) {
@@ -4674,7 +4676,19 @@ impl OptionsUi {
                     p.step(1);
                     return Vec::new();
                 }
-                _ => {}
+                // The key's text goes to the search box when it has the focus (as the
+                // Search field's branch below routes it); control characters are dropped.
+                _ => {
+                    let typed: String = text
+                        .unwrap_or("")
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .collect();
+                    if p.search_focused() && !typed.is_empty() {
+                        p.type_text(&crate::screen_draw::Measure(&atlas.font), &typed);
+                        return Vec::new();
+                    }
+                }
             }
         }
         if let Some(action) = self.selected_pad_action.take() {
@@ -9402,6 +9416,66 @@ mod lua_page_tests {
             Page::LuaMod(0),
             "Escape ends the edit, not the page"
         );
+    }
+
+    #[test]
+    fn a_lua_text_edit_or_keybind_wait_is_typing_until_it_ends() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        assert!(!ui.typing());
+        open_edit(&mut ui, &mut s, 5);
+        assert!(ui.typing(), "a text edit takes the keys");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(!ui.typing());
+        open_edit(&mut ui, &mut s, 6);
+        assert!(ui.typing(), "a keybind wait takes the keys");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(!ui.typing());
+    }
+
+    #[test]
+    fn escape_in_a_lua_text_edit_from_the_mods_list_keeps_the_config_page() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        let click = |ui: &mut OptionsUi, s: &mut Settings, x: f32, y: f32| {
+            ui.click(s, &atlas(), x, y, (480.0, 240.0), [480, 240], false, false)
+        };
+        click(&mut ui, &mut s, 61.0, 76.0);
+        click(&mut ui, &mut s, 397.0, 192.0);
+        assert_eq!(ui.page(), Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(ui.lua_edit.is_none());
+        assert_eq!(ui.page(), Page::LuaMod(0), "Escape ends the edit only");
+    }
+
+    #[test]
+    fn typed_text_and_backspace_reach_the_mods_search_box_from_the_keys() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        ui.mods_page(&s, SIZE);
+        let (x, y) = ui.mods_screen.as_ref().unwrap().search_centre();
+        press(&mut ui, &mut s, x, y);
+        for (key, text) in [
+            (winit::keyboard::KeyCode::KeyG, "g"),
+            (winit::keyboard::KeyCode::Digit4, "4"),
+            (winit::keyboard::KeyCode::Minus, "_"),
+        ] {
+            send(&mut ui, &mut s, key, Some(text));
+        }
+        let search = |ui: &OptionsUi| ui.mods_screen.as_ref().unwrap().search_text().to_owned();
+        assert_eq!(search(&ui), "g4_");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        assert_eq!(search(&ui), "g4");
+        // A key with only a control character as its text (Tab's) types nothing.
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Tab, Some("\t"));
+        assert_eq!(search(&ui), "g4");
     }
 
     #[test]

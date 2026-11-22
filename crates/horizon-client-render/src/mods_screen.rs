@@ -564,6 +564,16 @@ impl ModsScreen {
     pub fn search_focused(&self) -> bool {
         self.search.focused
     }
+    /// The search box's centre (GUI pixels) and text, for tests that click and type.
+    #[cfg(test)]
+    pub(crate) fn search_centre(&self) -> (f32, f32) {
+        let [x, y, w, h] = self.geo().search;
+        ((x + w / 2) as f32, (y + h / 2) as f32)
+    }
+    #[cfg(test)]
+    pub(crate) fn search_text(&self) -> &str {
+        &self.search.value
+    }
     /// Typed text, when the search box has the focus.
     pub fn type_text(&mut self, m: &Measure, s: &str) {
         if self.search.focused && self.search.insert_text(m, s) {
@@ -1197,6 +1207,17 @@ impl ModsScreen {
                 continue;
             }
             let e = &self.entries[i];
+            // A row for the pad, clipped to the list: a controller selects it with A.
+            let (row_top, row_bottom) = (top.max(y), (top + ROW_H).min(y + h));
+            crate::widgets::target_as(
+                [
+                    left as f32,
+                    row_top as f32,
+                    row_w as f32,
+                    (row_bottom - row_top) as f32,
+                ],
+                crate::widgets::Kind::Row,
+            );
             if self.selected == Some(i) {
                 let border = if self.list_focused { -1 } else { -8355712 };
                 d::fill(out, left, top, left + row_w, top + ROW_H, border);
@@ -1425,6 +1446,72 @@ mod tests {
         screen.type_text(&m, "x");
         assert!(names(&screen).is_empty());
         assert!(screen.current().is_none());
+    }
+
+    #[test]
+    fn the_visible_rows_are_pad_targets_and_a_target_selects_its_mod() {
+        let atlas = atlas();
+        let m = Measure(&atlas.font);
+        let installed_mods: Vec<_> = (0..12)
+            .map(|i| installed(&format!("m{i}"), &format!("Mod {i:02}"), None))
+            .collect();
+        let list = mods(&installed_mods);
+        let links = Links {
+            id: "minecraft",
+            license: None,
+            homepage: None,
+            issues: None,
+        };
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[&links], None);
+        // The row targets of the frame just drawn.
+        let rows = |screen: &ModsScreen| -> Vec<[f32; 4]> {
+            let _ = screen.draw(&m, (-1, -1), 0, 0);
+            crate::widgets::end_frame(crate::widgets::generation() + 1);
+            crate::widgets::last_targets()
+                .iter()
+                .filter(|t| matches!(t.kind, crate::widgets::Kind::Row))
+                .map(|t| t.rect)
+                .collect()
+        };
+        // The rows on screen, from the list's box and its scroll: a row out of view is not one.
+        let visible = |screen: &ModsScreen| -> Vec<[f32; 4]> {
+            let [x, y, _, h] = screen.geo().list;
+            let amount = screen.list.amount as i32;
+            (0..screen.shown.len() as i32)
+                .filter_map(|p| {
+                    let top = y + 2 - amount + p * ROW_H;
+                    let (t, b) = (top.max(y), (top + ROW_H).min(y + h));
+                    (b > t).then(|| [(x + 3) as f32, t as f32, 0.0, (b - t) as f32])
+                })
+                .collect()
+        };
+        let unscrolled = rows(&screen);
+        assert!(!unscrolled.is_empty() && unscrolled.len() < screen.shown.len());
+        let expected = visible(&screen);
+        assert_eq!(unscrolled.len(), expected.len());
+        for (got, want) in unscrolled.iter().zip(&expected) {
+            assert_eq!([got[0], got[1], got[3]], [want[0], want[1], want[3]]);
+        }
+        // Scrolled to the last mod: only the rows in view register.
+        screen.step(screen.shown.len() as i32);
+        let scrolled = rows(&screen);
+        let expected = visible(&screen);
+        assert_eq!(scrolled.len(), expected.len());
+        assert!(scrolled.len() < screen.shown.len());
+        assert!(scrolled.iter().all(|r| r[1] >= screen.geo().list[1] as f32));
+        // A pad's A on a fully visible row's target selects that mod.
+        let target = scrolled
+            .iter()
+            .find(|r| r[3] == ROW_H as f32)
+            .copied()
+            .expect("a whole row in view");
+        let (cx, cy) = (target[0] + 10.0, target[1] + target[3] / 2.0);
+        // The mod whose row the target is: its place in the list, from the scroll.
+        let [_, list_y, _, _] = screen.geo().list;
+        let place = (target[1] as i32 - (list_y + 2 - screen.list.amount as i32)) / ROW_H;
+        let want = screen.entries[screen.shown[place as usize]].name.clone();
+        screen.click(&m, f64::from(cx), f64::from(cy));
+        assert_eq!(screen.current().map(|e| e.name.clone()), Some(want));
     }
 
     #[test]
