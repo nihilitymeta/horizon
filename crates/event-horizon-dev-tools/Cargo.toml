@@ -12,6 +12,7 @@ autotests = false
 [dependencies]
 horizon-client = { path = "../horizon-client", default-features = false }
 horizon-client-core = { path = "../horizon-client-core" }
+horizon-core = { path = "../horizon-core" }
 horizon-world = { path = "../horizon-world" }
 horizon-mod-api = { path = "../horizon-mod-api" }
 horizon-mod-render = { path = "../horizon-mod-render" }

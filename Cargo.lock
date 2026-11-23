@@ -1441,6 +1441,7 @@ dependencies = [
  "horizon-client",
  "horizon-client-core",
  "horizon-client-input",
+ "horizon-core",
  "horizon-mod-api",
  "horizon-mod-package",
  "horizon-mod-render",

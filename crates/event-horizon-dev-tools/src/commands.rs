@@ -548,6 +548,8 @@ mod flows {
     /// names and which of those are mobs.
     #[derive(Default)]
     struct Fake {
+        /// Held for the test: the store is process-wide, and the inspect tests share it.
+        _store: Option<std::sync::MutexGuard<'static, ()>>,
         owner: Option<u128>,
         dimension: Option<String>,
         selected: Vec<u32>,
@@ -577,8 +579,10 @@ mod flows {
     }
 
     fn owned_by(owner: Option<u128>, selected: Vec<u32>) -> Fake {
+        let store = crate::inspect::store_guard();
         observe::reset();
         Fake {
+            _store: Some(store),
             owner,
             dimension: Some("minecraft:overworld".to_owned()),
             selected,

@@ -8,13 +8,14 @@
 
 mod commands;
 mod input;
+mod inspect;
 mod overlay;
 pub mod package;
 
 use mod_api::__private::native::BuiltMod;
 use mod_api::{
     Flow, Hooks, ModEntry, PlayerCommandEvent, RegisterCommandsEvent, RunModCommandEvent,
-    ServerHost, Side,
+    ServerHost, ServerTickEvent, ServerTickPhase, Side, WorldLifecycleEvent, WorldPhase,
 };
 use std::ffi::{OsStr, OsString};
 
@@ -85,6 +86,26 @@ impl Hooks for DevTools {
             }
         }
         Flow::Cancel
+    }
+
+    /// Once a server tick, after every level ticked, while the world runs: the windows' requests
+    /// and the watched entities' data (`inspect`).
+    fn server_tick(&self, host: &mut dyn ServerHost, event: &mut ServerTickEvent<'_>) {
+        if matches!(
+            event.phase,
+            ServerTickPhase::ServerTickEnd {
+                world_running: true
+            }
+        ) {
+            inspect::tick(host);
+        }
+    }
+
+    /// The world closed: the tools' own state starts again (the store is reset by the engine).
+    fn world_lifecycle(&self, _host: &mut dyn ServerHost, event: &mut WorldLifecycleEvent<'_>) {
+        if event.phase == WorldPhase::WorldCloseFinal {
+            inspect::world_closed();
+        }
     }
 }
 
