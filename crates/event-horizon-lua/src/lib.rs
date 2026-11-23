@@ -15,6 +15,7 @@ mod block_state_tests;
 pub mod budget;
 pub mod builtin;
 pub mod commands;
+pub mod console;
 mod data_maps;
 #[cfg(test)]
 mod data_maps_tests;
