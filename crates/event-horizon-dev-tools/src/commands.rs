@@ -12,7 +12,7 @@
 //! runner is never reached for a refused sender.
 use crate::console;
 use event_horizon_lua::console as runner;
-use event_horizon_observe::{self as observe, View};
+use event_horizon_observe::{self as observe, BlockKey, View};
 use horizon_client::{data_cmd, lang, nbt_path::NbtPath};
 use mod_api::text::TextStyle;
 use mod_api::{
@@ -59,6 +59,9 @@ pub const USAGES: &[&str] = &[
     "console clear",
     "luareload",
     "luareload <rest:text>",
+    "blockinfo",
+    "blockinfo clear",
+    "blockinfo <rest:text>",
 ];
 
 /// One of the tools' commands, as the line names it.
@@ -86,6 +89,60 @@ enum Cmd<'a> {
     },
     /// `/mobai log <targets>` and `/mobai log stop`.
     MobaiLog { stop: bool, targets: &'a str },
+    /// `/blockinfo`, `/blockinfo clear`, `/blockinfo <x> <y> <z>`.
+    Block { action: BlockAction },
+}
+
+/// What `/blockinfo` does with its line.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum BlockAction {
+    /// `/blockinfo` alone: the watched blocks.
+    List,
+    /// `/blockinfo clear`: every block window closes.
+    Clear,
+    /// `/blockinfo <x> <y> <z>`: a block window for that block, in the owner's dimension.
+    Watch([Coord; 3]),
+    /// The coordinates do not parse: the usage line.
+    Usage,
+}
+
+/// One coordinate of `/blockinfo`: a block coordinate, or one counted from the owner's block
+/// (`~` is `~0`).
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Coord {
+    Abs(i32),
+    Rel(i32),
+}
+
+/// Parses `<x> <y> <z>`, each an integer, `~` or `~n`. None for anything else.
+pub fn parse_coords(text: &str) -> Option<[Coord; 3]> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let [x, y, z] = words.as_slice() else {
+        return None;
+    };
+    Some([parse_coord(x)?, parse_coord(y)?, parse_coord(z)?])
+}
+
+/// One coordinate word: an integer, `~`, or `~` and an integer offset.
+fn parse_coord(word: &str) -> Option<Coord> {
+    match word.strip_prefix('~') {
+        Some("") => Some(Coord::Rel(0)),
+        Some(offset) => offset.parse().ok().map(Coord::Rel),
+        None => word.parse().ok().map(Coord::Abs),
+    }
+}
+
+/// The block the coordinates name: a relative one is counted from `here`, the owner's block.
+/// None when one is relative and there is no `here`, or when the sum overflows.
+pub fn resolve(coords: [Coord; 3], here: Option<[i32; 3]>) -> Option<[i32; 3]> {
+    let mut pos = [0; 3];
+    for (i, coord) in coords.into_iter().enumerate() {
+        pos[i] = match coord {
+            Coord::Abs(v) => v,
+            Coord::Rel(v) => here?[i].checked_add(v)?,
+        };
+    }
+    Some(pos)
 }
 
 /// The server's reads and the command's replies, as the commands use them. The live host
@@ -101,6 +158,8 @@ pub trait Reads {
     fn is_mob(&self, id: u32) -> bool;
     /// The name of entity `id`, when it has one.
     fn entity_name(&self, id: u32) -> Option<String>;
+    /// The block the sender stands in (its entity's block position); None for the console.
+    fn block_pos(&self) -> Option<[i32; 3]>;
     /// Runs `source` as a chunk in the console's VM, with the server's host.
     fn run_lua(&mut self, source: &str) -> LuaRun;
     /// Reloads the scripts of the dev-path Lua mod `id`, as the game's reload does.
@@ -179,6 +238,13 @@ impl Reads for Live<'_> {
     }
     fn entity_name(&self, id: u32) -> Option<String> {
         self.host.entity(id)?.name(&*self.host)
+    }
+    fn block_pos(&self) -> Option<[i32; 3]> {
+        let entity = self.sender?.entity();
+        mod_api::__private::backend_read(&*self.host, |backend| {
+            backend.entity_block_position(entity)
+        })
+        .flatten()
     }
     fn run_lua(&mut self, source: &str) -> LuaRun {
         let run = runner::console().run_chunk(&mut *self.host, "lua", source);
@@ -311,6 +377,13 @@ fn parse(line: &str) -> Option<Cmd<'_>> {
                 }),
             }
         }
+        "blockinfo" => Some(Cmd::Block {
+            action: match rest {
+                "" => BlockAction::List,
+                "clear" => BlockAction::Clear,
+                text => parse_coords(text).map_or(BlockAction::Usage, BlockAction::Watch),
+            },
+        }),
         "lua" => Some(Cmd::Lua { code: rest }),
         "luareload" => Some(Cmd::Reload { id: rest }),
         "console" => match rest {
@@ -356,6 +429,7 @@ fn run(reads: &mut dyn Reads, cmd: Cmd<'_>) {
             path,
         } => watch(reads, clear, targets, path),
         Cmd::MobaiLog { stop, targets } => mobai_log(reads, stop, targets),
+        Cmd::Block { action } => block_info(reads, action),
     }
 }
 
@@ -594,6 +668,57 @@ fn mobai_log(reads: &mut dyn Reads, stop: bool, targets: &str) {
     });
 }
 
+/// `/blockinfo`: the block windows, as `action` says. A new window is in the owner's dimension.
+fn block_info(reads: &mut dyn Reads, action: BlockAction) {
+    match action {
+        BlockAction::List => {
+            let watched = observe::blocks();
+            if watched.is_empty() {
+                reads.reply(tr("horizon.dev_tools.block.none", &[]));
+                return;
+            }
+            let names: Vec<String> = watched
+                .iter()
+                .map(|b| {
+                    format!(
+                        "{} in {}",
+                        crate::windows::block_label(b.key.pos),
+                        b.key.dimension
+                    )
+                })
+                .collect();
+            reads.reply(tr("horizon.dev_tools.block.watching", &[names.join("; ")]));
+        }
+        BlockAction::Clear => {
+            for block in observe::blocks() {
+                observe::remove_block(&block.key);
+            }
+            observe::forget_unwatched();
+            reads.reply(tr("horizon.dev_tools.block.closed", &[]));
+        }
+        BlockAction::Usage => reads.reply(tr("horizon.dev_tools.block.usage", &[])),
+        BlockAction::Watch(coords) => {
+            let Some(pos) = resolve(coords, reads.block_pos()) else {
+                reads.reply(failure("horizon.dev_tools.block.no_position"));
+                return;
+            };
+            let Some(dimension) = reads.dimension() else {
+                reads.reply(failure("horizon.dev_tools.block.no_level"));
+                return;
+            };
+            let label = crate::windows::block_label(pos);
+            observe::add_block(
+                BlockKey {
+                    dimension: dimension.clone(),
+                    pos,
+                },
+                [0, 1, 0],
+            );
+            reads.reply(tr("horizon.dev_tools.block.opened", &[label, dimension]));
+        }
+    }
+}
+
 /// A tree usage's line from `source`: a player's is served as `serve` serves it; a console's
 /// (the dedicated server or RCON) is refused, and the runner is never reached.
 fn serve_from(reads: &mut dyn Reads, source: &CommandSource, line: &str) {
@@ -745,6 +870,9 @@ mod tests {
         assert!(USAGES.contains(&"console"));
         assert!(USAGES.contains(&"console close"));
         assert!(USAGES.contains(&"console clear"));
+        assert!(USAGES.contains(&"blockinfo"));
+        assert!(USAGES.contains(&"blockinfo clear"));
+        assert!(USAGES.contains(&"blockinfo <rest:text>"));
     }
 
     #[test]
@@ -772,6 +900,93 @@ mod tests {
 }
 
 #[cfg(test)]
+mod block_lines {
+    use super::*;
+
+    #[test]
+    fn coordinates_are_integers_negatives_tildes_and_tilde_offsets() {
+        assert_eq!(
+            parse_coords("1 -2 3"),
+            Some([Coord::Abs(1), Coord::Abs(-2), Coord::Abs(3)])
+        );
+        assert_eq!(
+            parse_coords("~ ~5 ~-2"),
+            Some([Coord::Rel(0), Coord::Rel(5), Coord::Rel(-2)])
+        );
+        assert_eq!(
+            parse_coords("  ~1   64  ~ "),
+            Some([Coord::Rel(1), Coord::Abs(64), Coord::Rel(0)]),
+            "extra spaces do not matter"
+        );
+    }
+
+    #[test]
+    fn bad_coordinates_are_refused() {
+        for text in ["", "1 2", "1 2 3 4", "1 x 3", "~x 1 1", "1.5 2 3", "~~ 1 1"] {
+            assert_eq!(parse_coords(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn relative_coordinates_count_from_the_owner_block() {
+        assert_eq!(
+            resolve(
+                [Coord::Rel(0), Coord::Rel(-1), Coord::Rel(0)],
+                Some([1, 2, 3])
+            ),
+            Some([1, 1, 3])
+        );
+        assert_eq!(
+            resolve([Coord::Abs(5), Coord::Abs(6), Coord::Abs(7)], None),
+            Some([5, 6, 7]),
+            "absolute ones need no owner"
+        );
+        assert_eq!(
+            resolve([Coord::Rel(0), Coord::Abs(1), Coord::Abs(1)], None),
+            None,
+            "a relative one needs the owner's block"
+        );
+        assert_eq!(
+            resolve(
+                [Coord::Rel(1), Coord::Abs(0), Coord::Abs(0)],
+                Some([i32::MAX, 0, 0])
+            ),
+            None,
+            "an overflowing sum is refused"
+        );
+    }
+
+    #[test]
+    fn the_blockinfo_line_is_list_clear_watch_or_usage() {
+        assert_eq!(
+            parse("blockinfo"),
+            Some(Cmd::Block {
+                action: BlockAction::List
+            })
+        );
+        assert_eq!(
+            parse("blockinfo clear"),
+            Some(Cmd::Block {
+                action: BlockAction::Clear
+            })
+        );
+        assert_eq!(
+            parse("blockinfo ~ ~-1 ~"),
+            Some(Cmd::Block {
+                action: BlockAction::Watch([Coord::Rel(0), Coord::Rel(-1), Coord::Rel(0)])
+            })
+        );
+        assert_eq!(
+            parse("blockinfo 1 two 3"),
+            Some(Cmd::Block {
+                action: BlockAction::Usage
+            }),
+            "bad input is the usage, not an unknown line"
+        );
+    }
+}
+
+#[cfg(test)]
 mod flows {
     use super::*;
 
@@ -794,6 +1009,8 @@ mod flows {
         reloads: Vec<String>,
         reload_result: ReloadOutcome,
         reload_ids: Vec<String>,
+        /// The owner's block, for `~` coordinates.
+        block_pos: Option<[i32; 3]>,
     }
 
     impl Reads for Fake {
@@ -811,6 +1028,9 @@ mod flows {
         }
         fn entity_name(&self, id: u32) -> Option<String> {
             Some(format!("Zombie{id}"))
+        }
+        fn block_pos(&self) -> Option<[i32; 3]> {
+            self.block_pos
         }
         fn run_lua(&mut self, source: &str) -> LuaRun {
             self.lua_sources.push(source.to_owned());
@@ -931,6 +1151,118 @@ mod flows {
                 vec![Text::literal("0")]
             )]
         );
+    }
+
+    #[test]
+    fn the_owner_watches_a_block_in_the_owners_dimension() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "blockinfo 4 -64 9"));
+        assert_eq!(
+            observe::blocks()
+                .iter()
+                .map(|b| b.key.clone())
+                .collect::<Vec<_>>(),
+            vec![BlockKey {
+                dimension: "minecraft:overworld".to_owned(),
+                pos: [4, -64, 9],
+            }]
+        );
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate(
+                "horizon.dev_tools.block.opened",
+                vec![
+                    Text::literal("4 -64 9"),
+                    Text::literal("minecraft:overworld")
+                ]
+            )]
+        );
+    }
+
+    #[test]
+    fn a_relative_block_is_counted_from_the_owner() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        fake.block_pos = Some([10, 64, -3]);
+        assert!(serve(&mut fake, 7, "blockinfo ~ ~-1 ~5"));
+        assert_eq!(observe::blocks()[0].key.pos, [10, 63, 2]);
+    }
+
+    #[test]
+    fn a_relative_block_with_no_owner_position_says_so_and_watches_nothing() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "blockinfo ~ 1 1"));
+        assert!(observe::blocks().is_empty());
+        assert_eq!(
+            fake.replies,
+            vec![failure("horizon.dev_tools.block.no_position")]
+        );
+    }
+
+    #[test]
+    fn bad_coordinates_reply_the_usage_and_watch_nothing() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "blockinfo 1 two 3"));
+        assert!(observe::blocks().is_empty());
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate("horizon.dev_tools.block.usage", vec![])]
+        );
+    }
+
+    #[test]
+    fn blockinfo_alone_lists_the_watched_blocks_and_clear_closes_them() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "blockinfo"));
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate("horizon.dev_tools.block.none", vec![])]
+        );
+        assert!(serve(&mut fake, 7, "blockinfo 1 2 3"));
+        assert!(serve(&mut fake, 7, "blockinfo 4 5 6"));
+        fake.replies.clear();
+        assert!(serve(&mut fake, 7, "blockinfo"));
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate(
+                "horizon.dev_tools.block.watching",
+                vec![Text::literal(
+                    "1 2 3 in minecraft:overworld; 4 5 6 in minecraft:overworld"
+                )]
+            )]
+        );
+        fake.replies.clear();
+        assert!(serve(&mut fake, 7, "blockinfo clear"));
+        assert!(observe::blocks().is_empty());
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate("horizon.dev_tools.block.closed", vec![])]
+        );
+    }
+
+    #[test]
+    fn a_guest_or_a_dedicated_server_never_watches_a_block() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 8, "blockinfo 1 2 3"));
+        assert!(observe::blocks().is_empty(), "a guest is refused");
+        assert_eq!(fake.replies, vec![failure("horizon.dev_tools.owner_only")]);
+
+        fake.owner = None;
+        assert!(serve(&mut fake, 7, "blockinfo 1 2 3"));
+        assert!(
+            observe::blocks().is_empty(),
+            "a dedicated server refuses everyone"
+        );
+    }
+
+    #[test]
+    fn a_console_source_never_watches_a_block() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        let console = CommandSource::Console {
+            permission: mod_api::PermissionLevel::Admins,
+        };
+        serve_from(&mut fake, &console, "blockinfo 1 2 3");
+        assert!(observe::blocks().is_empty());
+        assert_eq!(fake.replies, vec![failure("horizon.dev_tools.owner_only")]);
     }
 
     #[test]

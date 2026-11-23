@@ -2,10 +2,10 @@
 //! store holds. Nothing is drawn until something is inspected: [`ui`] draws one window per view of
 //! each watched entity, and the `/watch` charts of each. This file holds the data view (`/inspect`):
 //! the NBT tree with its filter and its per-number watch buttons, and the stop button, plus the
-//! helpers the mob windows share. The goals, senses, nav and watch windows are in [`mob`]; the Lua
-//! console window is in [`console`]. The block windows (5c-w3) come later; their place is marked
-//! in [`ui`].
+//! helpers the mob windows share. The goals, senses, nav and watch windows are in [`mob`]; the block
+//! windows (`/blockinfo`) are in [`block`]; the Lua console window is in [`console`].
 
+mod block;
 mod console;
 mod mob;
 
@@ -21,7 +21,9 @@ use mob::{goals_window, nav_window, senses_window, watch_window};
 /// Draws the windows of everything watched: one per view of each entity, and one chart per watched
 /// path.
 pub fn ui(ctx: &egui::Context) {
-    // 5c-w3: the watched blocks' windows (`observe::blocks()`, `block_window`) come with the block readout.
+    for block in &observe::blocks() {
+        block::window(ctx, block);
+    }
     for item in &observe::snapshots() {
         for view in &item.views {
             match view {
@@ -64,7 +66,7 @@ fn pos_label(p: [f64; 3]) -> String {
 }
 
 /// A block position.
-fn block_label(p: [i32; 3]) -> String {
+pub(crate) fn block_label(p: [i32; 3]) -> String {
     format!("{} {} {}", p[0], p[1], p[2])
 }
 

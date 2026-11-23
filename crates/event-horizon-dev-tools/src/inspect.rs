@@ -5,12 +5,14 @@
 //! paths' numbers, and its AI log lines. The commands fill the store with `remember`, `add` and
 //! `add_path`; the windows read it. Nothing here runs without the mod installed.
 //!
-//! Left out, each as a chunk of its own: the inspect stick (`Request::Stick`, 5c-d3: dropped for
-//! now), the guests' remote pages and their clients' commands (5c-d2), the block readout (5c-w3).
-use event_horizon_observe::{self as observe, Request};
+//! Each watched block (`/blockinfo`) is read here too, once a tick: its facts go to the block window
+//! ([`blocks_tick`]). Left out, as a chunk of its own: the inspect stick (`Request::Stick`, 5c-d3:
+//! dropped for now), the guests' remote pages and their clients' commands (5c-d2).
+use event_horizon_observe::{self as observe, BlockKey, BlockSnapshot, Request};
 use horizon_client::{data_cmd, lang, nbt_path::NbtPath};
+use horizon_core::geometry::Direction;
 use horizon_core::nbt::{Compound, Tag};
-use mod_api::{EntityRef, ServerHost};
+use mod_api::{BlockShapeKind, EntityRef, LightLayer, ServerHost};
 use std::sync::Mutex;
 
 /// Ticks since the tools first read anything: the x axis of `/watch`.
@@ -29,6 +31,10 @@ pub trait Server {
     fn entity_name(&self, dimension: &str, id: u32) -> Option<String>;
     /// Whether entity `id` in `dimension` is a living mob that is alive.
     fn is_mob(&self, dimension: &str, id: u32) -> bool;
+    /// The facts of the block at `key`, read in its level; `face` is the clicked face's unit
+    /// vector, for the light there. None when the level is not open or the block cannot be read,
+    /// and the window keeps its last snapshot.
+    fn block(&mut self, key: &BlockKey, face: [i32; 3]) -> Option<BlockSnapshot>;
 }
 
 /// The live host, as the tick reads it.
@@ -79,6 +85,76 @@ impl Server for Live<'_> {
         };
         mob.living().alive(&*self.host) == Some(true)
     }
+
+    /// The block's facts, through the host's reads. The level is the dimension's; the state is
+    /// the block's name and properties, split from `block_state_string`. The block entity's data,
+    /// the light (block and sky, here and at the face), the biome, the power, the six strong
+    /// signals in `Direction::ALL` order, and the collision and outline boxes in world
+    /// coordinates. A read that fails gives the empty value (no entity, no biome, 0), except the
+    /// level and the state: without them there is no snapshot. Random ticks, pending ticks, tags
+    /// and the declaring mod have no read on this base; they stay empty (the window says so).
+    fn block(&mut self, key: &BlockKey, face: [i32; 3]) -> Option<BlockSnapshot> {
+        let host: &dyn ServerHost = &*self.host;
+        let level = host.level(&key.dimension)?;
+        let pos = key.pos;
+        mod_api::__private::backend_read(host, |backend| {
+            let state = backend.level_block_state(level, pos)?;
+            let (name, properties) = split_state(&host.block_state_string(state)?);
+            let light = |layer: LightLayer, at: [i32; 3]| {
+                backend
+                    .level_brightness(level, layer, at)
+                    .unwrap_or(0)
+                    .clamp(0, 15) as u8
+            };
+            let face_at = [pos[0] + face[0], pos[1] + face[1], pos[2] + face[2]];
+            let entity = host
+                .block_entity(level, pos)
+                .and_then(|e| backend.block_entity_data(e))
+                .map(Tag::Compound);
+            let shape = |kind| {
+                backend
+                    .level_block_shape(level, state, pos, kind)
+                    .unwrap_or_default()
+            };
+            Some(BlockSnapshot {
+                name,
+                properties,
+                entity,
+                light: [light(LightLayer::Block, pos), light(LightLayer::Sky, pos)],
+                face_light: [
+                    light(LightLayer::Block, face_at),
+                    light(LightLayer::Sky, face_at),
+                ],
+                biome: backend.level_biome_at(level, pos),
+                power: backend.level_best_neighbor_signal(level, pos).unwrap_or(0),
+                strong: Direction::ALL
+                    .map(|d| backend.level_direct_signal(level, pos, d).unwrap_or(0)),
+                random_ticks: false,
+                scheduled: Vec::new(),
+                tags: Vec::new(),
+                declared_by: None,
+                collision: shape(BlockShapeKind::Collision),
+                outline: shape(BlockShapeKind::Outline),
+                taken: std::time::Instant::now(),
+            })
+        })
+        .flatten()
+    }
+}
+
+/// A state string as `block_state_string` gives it, `minecraft:repeater[delay=1,facing=north]`,
+/// as its name and its properties in the order written.
+fn split_state(text: &str) -> (String, Vec<(String, String)>) {
+    let Some((name, rest)) = text.split_once('[') else {
+        return (text.to_owned(), Vec::new());
+    };
+    let properties = rest
+        .trim_end_matches(']')
+        .split(',')
+        .filter_map(|p| p.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    (name.to_owned(), properties)
 }
 
 /// Once a server tick, after every level ticked, while the world runs (the mod's `server_tick`
@@ -89,14 +165,15 @@ pub fn tick(host: &mut dyn ServerHost) {
     run(&mut Live { host });
 }
 
-/// The tick's steps, over the seam. The guests' clients' commands and pages (5c-d2) and the
-/// block readout (5c-w3) are not ported: they run here once their chunks land.
+/// The tick's steps, over the seam. The guests' clients' commands and pages (5c-d2) are not ported:
+/// they run here once their chunk lands.
 fn run(server: &mut dyn Server) {
     requests(server);
     let logging = observe::is_logging();
     if !observe::watching() && !logging {
         return;
     }
+    blocks_tick(server);
     let tick = {
         let mut t = TICKS.lock().unwrap_or_else(|e| e.into_inner());
         *t += 1;
@@ -122,6 +199,16 @@ fn run(server: &mut dyn Server) {
             && let Ok(line) = serde_json::to_string(&brain)
         {
             observe::write_log_line(id, &line);
+        }
+    }
+}
+
+/// Each watched block's facts, read through the seam once a tick. A block whose read gives none
+/// keeps its last snapshot.
+fn blocks_tick(server: &mut dyn Server) {
+    for block in observe::blocks() {
+        if let Some(snapshot) = server.block(&block.key, block.face) {
+            observe::set_block(&block.key, snapshot);
         }
     }
 }
@@ -217,6 +304,9 @@ mod tests {
         data: Vec<(u32, Compound)>,
         names: Vec<(u32, String)>,
         mobs: Vec<u32>,
+        /// The block reads the tick gives, and the snapshot each block's read gives (None: no read).
+        blocks: Vec<(BlockKey, BlockSnapshot)>,
+        block_reads: Vec<BlockKey>,
     }
 
     impl Server for Fake {
@@ -240,6 +330,41 @@ mod tests {
         }
         fn is_mob(&self, _dimension: &str, id: u32) -> bool {
             self.mobs.contains(&id)
+        }
+        fn block(&mut self, key: &BlockKey, _face: [i32; 3]) -> Option<BlockSnapshot> {
+            self.block_reads.push(key.clone());
+            self.blocks
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, snapshot)| snapshot.clone())
+        }
+    }
+
+    /// A repeater's facts, as a test's read gives them.
+    fn repeater(delay: &str) -> BlockSnapshot {
+        BlockSnapshot {
+            name: "minecraft:repeater".to_owned(),
+            properties: vec![("delay".to_owned(), delay.to_owned())],
+            entity: None,
+            light: [0, 15],
+            face_light: [0, 15],
+            biome: Some("minecraft:plains".to_owned()),
+            power: 15,
+            strong: [0, 0, 0, 0, 15, 0],
+            random_ticks: false,
+            scheduled: Vec::new(),
+            tags: Vec::new(),
+            declared_by: None,
+            collision: vec![[0.0, 0.0, 0.0, 1.0, 0.125, 1.0]],
+            outline: Vec::new(),
+            taken: std::time::Instant::now(),
+        }
+    }
+
+    fn at_origin() -> BlockKey {
+        BlockKey {
+            dimension: OVERWORLD.to_owned(),
+            pos: [0, 64, 0],
         }
     }
 
@@ -369,6 +494,80 @@ mod tests {
         std::env::set_current_dir(before).expect("back to the working folder");
         assert_eq!(log_file, None, "the window's log mark is cleared");
         assert!(!observe::is_logging(), "the stopped log's file is closed");
+    }
+
+    #[test]
+    fn a_watched_block_gets_its_snapshot_once_a_tick() {
+        let _guard = store_guard();
+        observe::reset();
+        observe::add_block(at_origin(), [0, 1, 0]);
+        let mut fake = Fake {
+            blocks: vec![(at_origin(), repeater("1"))],
+            ..Fake::default()
+        };
+        run(&mut fake);
+        let shown = observe::blocks()[0]
+            .snapshot
+            .clone()
+            .expect("the block is read after one tick");
+        assert_eq!(shown.name, "minecraft:repeater");
+        assert_eq!(shown.properties, vec![("delay".to_owned(), "1".to_owned())]);
+        assert_eq!(fake.block_reads, vec![at_origin()]);
+        observe::reset();
+    }
+
+    #[test]
+    fn a_block_whose_read_gives_nothing_keeps_its_last_snapshot() {
+        let _guard = store_guard();
+        observe::reset();
+        observe::add_block(at_origin(), [0, 1, 0]);
+        let mut fake = Fake {
+            blocks: vec![(at_origin(), repeater("1"))],
+            ..Fake::default()
+        };
+        run(&mut fake);
+        fake.blocks.clear();
+        run(&mut fake);
+        assert_eq!(
+            observe::blocks()[0]
+                .snapshot
+                .as_ref()
+                .map(|s| s.properties.clone()),
+            Some(vec![("delay".to_owned(), "1".to_owned())]),
+            "the read gave nothing, so the old snapshot stays"
+        );
+        observe::reset();
+    }
+
+    #[test]
+    fn nothing_watched_reads_no_block() {
+        let _guard = store_guard();
+        observe::reset();
+        let mut fake = Fake {
+            blocks: vec![(at_origin(), repeater("1"))],
+            ..Fake::default()
+        };
+        run(&mut fake);
+        assert!(fake.block_reads.is_empty());
+    }
+
+    #[test]
+    fn a_state_string_splits_into_its_name_and_its_properties_in_order() {
+        assert_eq!(
+            split_state("minecraft:repeater[delay=1,facing=north,powered=false]"),
+            (
+                "minecraft:repeater".to_owned(),
+                vec![
+                    ("delay".to_owned(), "1".to_owned()),
+                    ("facing".to_owned(), "north".to_owned()),
+                    ("powered".to_owned(), "false".to_owned()),
+                ]
+            )
+        );
+        assert_eq!(
+            split_state("minecraft:grass_block"),
+            ("minecraft:grass_block".to_owned(), Vec::new())
+        );
     }
 
     #[test]
