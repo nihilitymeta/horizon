@@ -674,8 +674,12 @@ pub fn set_log_file(id: u32, path: &str) {
     s.prune();
 }
 
-/// One entity's log stopped.
+/// One entity's log stopped: its window's mark goes, and its open file closes (dropped from
+/// [`LOGS`]), so no further line is written to it.
 pub fn stop_log(id: u32) {
+    LOGS.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(i, _)| *i != id);
     let mut s = state();
     if let Some(w) = s.watch.iter_mut().find(|w| w.id == id) {
         w.logged = false;
@@ -1103,6 +1107,31 @@ mod tests {
         received(Wire::Closed);
         assert!(!showing() && take_outbox().is_empty());
         reset();
+    }
+
+    #[test]
+    fn a_stopped_log_closes_its_file_and_the_others_stay_open() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let dir = std::env::temp_dir().join(format!("eh-observe-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch folder");
+        let before = std::env::current_dir().expect("a working folder");
+        std::env::set_current_dir(&dir).expect("into the scratch folder");
+        let opened = open_log("Cow", 4).and_then(|_| open_log("Pig", 6));
+        stop_log(4);
+        let still_logging = is_logging();
+        let pig_mark = snapshots()
+            .into_iter()
+            .find(|w| w.id == 6)
+            .and_then(|w| w.log_file);
+        stop_log(6);
+        let idle = !is_logging();
+        std::env::set_current_dir(before).expect("back to the working folder");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(opened.is_ok(), "{opened:?}");
+        assert!(still_logging, "pig's log stays open after cow's stops");
+        assert!(pig_mark.is_some(), "pig's window keeps its log mark");
+        assert!(idle, "no log is open once the last one stops");
     }
 
     #[test]

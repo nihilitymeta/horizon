@@ -24,4 +24,9 @@ pub trait DevInspectServerHost {
     /// None for a stale or foreign handle, or where no server level is open. Read-only.
     #[access(WorldOnly)]
     fn dev_level_dimension(&self, level: LevelRef) -> Option<String>;
+    /// Side: server.
+    /// The entity's saved data as `/data get entity` shows it (the engine's `entity_nbt`), without
+    /// `id`. None for a stale or foreign handle, and for an entity that is not saved. Read-only.
+    #[access(WorldOnly)]
+    fn dev_entity_nbt(&mut self, entity: EntityRef) -> Option<Compound>;
 }

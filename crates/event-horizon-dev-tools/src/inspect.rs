@@ -59,13 +59,11 @@ impl Server for Live<'_> {
         self.host.dev_level_dimension(level)
     }
 
-    /// Named loss: the entity's NBT (`entity_nbt`, `/data get entity`) is not on the mod surface.
-    /// The handle's `nbt` is a powered read (`EntityRef::nbt` is skipped as "needs manifest power"),
-    /// and the host method is on the hidden backend tier, so no watched entity's data is read yet.
-    /// The tick keeps every other step; the store gets no data until that read is granted
-    /// (QUESTIONS.md).
-    fn entity_data(&mut self, _dimension: &str, _id: u32) -> Option<Compound> {
-        None
+    /// The entity's saved data (`/data get entity`), through the developer tools' own read
+    /// (`dev_entity_nbt`), once the entity is found in `dimension`.
+    fn entity_data(&mut self, dimension: &str, id: u32) -> Option<Compound> {
+        let entity = self.entity_in(dimension, id)?;
+        self.host.dev_entity_nbt(entity)
     }
 
     fn entity_name(&self, dimension: &str, id: u32) -> Option<String> {
@@ -369,10 +367,8 @@ mod tests {
         run(&mut fake);
         let log_file = seen(5).log_file;
         std::env::set_current_dir(before).expect("back to the working folder");
-        // Known gap (not fixed here, the store is `event-horizon-observe`): the store's `stop_log`
-        // clears the window's log mark, but the open file stays in its list, so `is_logging()`
-        // stays true and lines keep going to it. The mark is what this asserts.
         assert_eq!(log_file, None, "the window's log mark is cleared");
+        assert!(!observe::is_logging(), "the stopped log's file is closed");
     }
 
     #[test]

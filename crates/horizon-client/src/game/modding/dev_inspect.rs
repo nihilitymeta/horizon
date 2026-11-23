@@ -1,9 +1,10 @@
-//! The developer tools' three read-only reads (`DevInspectServerHost`, the fork-owned host area):
-//! the single-player world's owner, the entities a command selector names, and a level's
-//! dimension id. They change nothing.
+//! The developer tools' four read-only reads (`DevInspectServerHost`, the fork-owned host area):
+//! the single-player world's owner, the entities a command selector names, a level's dimension
+//! id, and an entity's saved data. They change nothing.
 use super::Game;
 use horizon_client::command::{Reader, selector};
-use mod_api::LevelRef;
+use horizon_core::nbt::Compound;
+use mod_api::{EntityRef, LevelRef};
 
 impl Game<'_> {
     /// The single-player world's owner, strictly: the profile the window's own world was opened
@@ -33,6 +34,12 @@ impl Game<'_> {
         self.native_level_world(level)?;
         self.dimension_key_id(level.dimension())
     }
+
+    /// The entity's saved data, as the engine's `entity_nbt` gives it (`/data get entity`
+    /// without `id`). None for a stale or foreign handle, and for an entity that is not saved.
+    pub(super) fn dev_entity_nbt(&mut self, entity: EntityRef) -> Option<Compound> {
+        self.entity_nbt(entity)
+    }
 }
 
 #[cfg(test)]
@@ -58,6 +65,26 @@ mod tests {
         with_guests(|game| {
             assert!(game.dev_select_ids("@e[").is_empty());
             assert!(game.dev_select_ids("@e[type=minecraft:pig,tag=no_such_tag]").is_empty());
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_spawned_mobs_saved_data_is_read_and_a_stale_handle_gives_none() {
+        with_guests(|game| {
+            let kind = game.res.mob_types().get("minecraft:cow").unwrap().clone();
+            game.mobs.push(horizon_client::mobs::Mob::new(
+                41,
+                kind,
+                horizon_core::geometry::Vec3::new(0.5, 70.0, 0.5),
+                0.0,
+            ));
+            let cow = game.entity(41).unwrap();
+            let saved = game.dev_entity_nbt(cow).expect("a spawned cow is saved");
+            assert!(saved.contains_key(&"Health".into()));
+            assert!(!saved.contains_key(&"id".into()));
+            game.mobs.clear();
+            assert_eq!(game.dev_entity_nbt(cow), None);
         });
     }
 
