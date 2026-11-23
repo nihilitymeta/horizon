@@ -822,6 +822,9 @@ impl Game<'_> {
             S::CustomPayload(p) if p.channel == horizon_client::lod_net::CHANNEL => {
                 self.guest_far_terrain(conn, &p.data)
             }
+            S::CustomPayload(p) if p.channel == horizon_client::mobs::observe_wire::CHANNEL => {
+                self.guest_dev_tools(conn, &p.data)
+            }
             S::ChatCommandSigned(p) => self.guest_signed_command(conn, p),
             // ServerCommonPacketListenerImpl.handleCustomClickAction: the server only logs
             // the click, so a mod's cancel leaves nothing else to skip.

@@ -1517,6 +1517,7 @@ impl Game<'_> {
         if reason.is_none() && self.integrated.as_ref().is_some_and(|s| !s.stopped()) {
             return self.begin_closing_save(false);
         }
+        self.dev_tools_world_closed();
         self.client_logging_out();
         self.finish_perf();
         if reason.is_none() {
@@ -3264,6 +3265,10 @@ impl Game<'_> {
             // menu's `OpenScreen`.
             C::CustomPayload(p) if p.channel == horizon_protocol::menu_extra::CHANNEL => {
                 self.receive_menu_extra(&p.data);
+            }
+            // The server's page for this client's developer-tools windows.
+            C::CustomPayload(p) if p.channel == horizon_client::mobs::observe_wire::CHANNEL => {
+                self.remote_dev_tools(&p.data);
             }
             C::CustomPayload(p) if horizon_client::lan::recipes::viewer_channel(&p.channel) => {
                 self.remote_recipe_viewer(&p.channel, &p.data);
@@ -6159,6 +6164,7 @@ impl Game<'_> {
             r.session.send_far_terrain();
         }
         self.tick_chat_session();
+        self.dev_tools_client_tick();
         // Minecraft.tick sends this even when the player cannot tick yet,
         // including while waiting for chunks. Keep it outside early returns.
         if self.remote.as_ref().is_some_and(Remote::has_level) {
