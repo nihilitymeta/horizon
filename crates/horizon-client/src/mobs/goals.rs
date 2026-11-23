@@ -249,6 +249,12 @@ impl GoalSelector {
             .iter()
             .map(|g| (g.priority, g.goal.name(), g.running))
     }
+    /// `entries` with each goal's `Goal.getFlags` (MOVE 1, LOOK 2, JUMP 4, TARGET 8).
+    pub fn entries_with_flags(&self) -> impl Iterator<Item = (i32, &'static str, bool, u8)> + '_ {
+        self.goals
+            .iter()
+            .map(|g| (g.priority, g.goal.name(), g.running, g.goal.flags()))
+    }
 }
 
 // --- random positions (DefaultRandomPos / LandRandomPos / RandomPos) -------

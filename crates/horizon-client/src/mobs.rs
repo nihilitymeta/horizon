@@ -75,6 +75,8 @@ mod hit_attempt;
 mod knockback;
 pub mod nav;
 pub mod nether;
+pub mod observe;
+pub mod observe_wire;
 pub mod panda;
 pub mod parrot;
 pub mod part_goals;
