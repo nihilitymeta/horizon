@@ -3,10 +3,12 @@
 //!
 //! Chunk 5c-a is the skeleton: one empty window. Chunk 5c-c adds the commands (`commands`); chunk
 //! 5c-b2 adds the input (`input`: the key frees the pointer, and egui takes the mouse and keys
-//! while it is free). The console comes later.
+//! while it is free); 5e-c adds the Lua console window (`console`: its state, and the server tick
+//! that runs what it queues).
 #![forbid(unsafe_code)]
 
 mod commands;
+mod console;
 mod input;
 mod inspect;
 mod overlay;
@@ -90,7 +92,7 @@ impl Hooks for DevTools {
     }
 
     /// Once a server tick, after every level ticked, while the world runs: the windows' requests
-    /// and the watched entities' data (`inspect`).
+    /// and the watched entities' data (`inspect`), and the console's queued sources.
     fn server_tick(&self, host: &mut dyn ServerHost, event: &mut ServerTickEvent<'_>) {
         if matches!(
             event.phase,
@@ -99,6 +101,7 @@ impl Hooks for DevTools {
             }
         ) {
             inspect::tick(host);
+            console::tick_host(host);
         }
     }
 

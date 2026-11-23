@@ -219,14 +219,32 @@ fn holds_pointer() -> bool {
     HOLDS_POINTER.load(Ordering::Relaxed)
 }
 
+/// The pointer's change for one request: the tools take the pointer when the request asks for it
+/// (`console`) and they do not hold it yet. A request the tools already hold is nothing.
+fn pointer_change(want: bool) -> PointerChange {
+    if want && !holds_pointer() {
+        HOLDS_POINTER.store(true, Ordering::Relaxed);
+        PointerChange::Release
+    } else {
+        PointerChange::None
+    }
+}
+
+/// The pointer's change the frame asks for: the console's request, taken once.
+fn take_pointer_request() -> PointerChange {
+    pointer_change(crate::console::take_want_pointer())
+}
+
 /// Once a frame on the window thread: egui's input for the frame (events, time, screen rectangle,
 /// scale), kept for the render thread. A frame the render thread skipped keeps its events. The
-/// tools are always on while loaded, so the pointer never changes here.
+/// pointer changes only when the console asks for it (`console` opens the window: the tools take
+/// the pointer so the input can be typed in).
 fn frame(window: Option<&Window>) -> PointerChange {
     let Some(window) = window else {
         return PointerChange::None;
     };
     zoom_for(window);
+    let change = take_pointer_request();
     let mut input = with_winit(window, |s| s.take_egui_input(window));
     let mut slot = INPUT.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(previous) = slot.take() {
@@ -235,7 +253,7 @@ fn frame(window: Option<&Window>) -> PointerChange {
         input.events = events;
     }
     *slot = Some(input);
-    PointerChange::None
+    change
 }
 
 /// The frame's input, taken by the render thread in the overlay's draw. `None` when no frame came
@@ -333,6 +351,33 @@ mod tests {
             free_kind(&WindowEvent::Ime(winit::event::Ime::Enabled)),
             FreeKind::Keyboard
         );
+    }
+
+    #[test]
+    fn a_console_request_takes_the_pointer_once_and_not_again_while_held() {
+        let _console = crate::console::test_guard();
+        HOLDS_POINTER.store(false, Ordering::Relaxed);
+        crate::console::act(crate::console::Action::Open);
+        assert_eq!(take_pointer_request(), PointerChange::Release);
+        assert!(holds_pointer(), "the tools hold the pointer now");
+        assert_eq!(
+            take_pointer_request(),
+            PointerChange::None,
+            "the request is taken"
+        );
+        crate::console::act(crate::console::Action::Open);
+        assert_eq!(
+            take_pointer_request(),
+            PointerChange::None,
+            "a pointer the tools hold is not released again"
+        );
+        HOLDS_POINTER.store(false, Ordering::Relaxed);
+        *crate::console::state() = crate::console::State::default();
+    }
+
+    #[test]
+    fn with_no_request_the_pointer_does_not_change() {
+        assert_eq!(pointer_change(false), PointerChange::None);
     }
 
     #[test]

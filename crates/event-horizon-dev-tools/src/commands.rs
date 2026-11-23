@@ -2,13 +2,15 @@
 //! `/senses`, `/nav`, `/watch` and `/mobai log` are in the server's command tree and run from the
 //! mod's hooks. The bodies keep the old messages, counts and store calls, on the shared
 //! [`event_horizon_observe`] store the windows read. `/lua` runs a chunk in the console's sandboxed
-//! VM ([`event_horizon_lua::console`]); the console window comes in a later chunk.
+//! VM ([`event_horizon_lua::console`]); `/console` opens, closes or clears the console window
+//! ([`crate::console`]), whose queued chunks the server tick runs.
 //!
 //! The owner's rule: every one of these commands is the world's owner's, strictly. The sender's
 //! uuid must be the one the host names as the single-player owner; any other player (a guest of
 //! any level, an operator) is refused, and on a dedicated server (no owner) everyone is. The
 //! runner is never reached for a refused sender.
-use event_horizon_lua::console;
+use crate::console;
+use event_horizon_lua::console as runner;
 use event_horizon_observe::{self as observe, View};
 use horizon_client::{data_cmd, lang, nbt_path::NbtPath};
 use mod_api::text::TextStyle;
@@ -51,6 +53,9 @@ pub const USAGES: &[&str] = &[
     "mobai log <rest:text>",
     "lua",
     "lua <rest:text>",
+    "console",
+    "console close",
+    "console clear",
 ];
 
 /// One of the tools' commands, as the line names it.
@@ -58,6 +63,8 @@ pub const USAGES: &[&str] = &[
 enum Cmd<'a> {
     /// `/lua <code>`: a chunk for the console's VM; empty `code` replies the usage.
     Lua { code: &'a str },
+    /// `/console`, `/console close`, `/console clear`: the console window.
+    Console { action: console::Action },
     /// `/inspect` alone: what is watched.
     List,
     /// `/inspect|goals|senses|nav <targets>` and `… clear`.
@@ -147,7 +154,7 @@ impl Reads for Live<'_> {
         self.host.entity(id)?.name(&*self.host)
     }
     fn run_lua(&mut self, source: &str) -> LuaRun {
-        let run = console::console().run_chunk(&mut *self.host, "lua", source);
+        let run = runner::console().run_chunk(&mut *self.host, "lua", source);
         LuaRun {
             lines: run.lines,
             value: run.value,
@@ -261,6 +268,18 @@ fn parse(line: &str) -> Option<Cmd<'_>> {
             }
         }
         "lua" => Some(Cmd::Lua { code: rest }),
+        "console" => match rest {
+            "" => Some(Cmd::Console {
+                action: console::Action::Open,
+            }),
+            "close" => Some(Cmd::Console {
+                action: console::Action::Close,
+            }),
+            "clear" => Some(Cmd::Console {
+                action: console::Action::Clear,
+            }),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -278,6 +297,7 @@ fn first_word(s: &str) -> (&str, &str) {
 fn run(reads: &mut dyn Reads, cmd: Cmd<'_>) {
     match cmd {
         Cmd::Lua { code } => lua(reads, code),
+        Cmd::Console { action } => console::act(action),
         Cmd::List => list(reads),
         Cmd::View {
             view,
@@ -621,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    fn the_usages_register_every_command_but_the_console_and_lua() {
+    fn the_usages_register_every_command() {
         for word in ["inspect", "goals", "senses", "nav", "watch", "mobai"] {
             assert!(
                 USAGES.iter().any(|u| u.starts_with(word)),
@@ -630,6 +650,32 @@ mod tests {
         }
         assert!(USAGES.contains(&"lua"));
         assert!(USAGES.contains(&"lua <rest:text>"));
+        assert!(USAGES.contains(&"console"));
+        assert!(USAGES.contains(&"console close"));
+        assert!(USAGES.contains(&"console clear"));
+    }
+
+    #[test]
+    fn a_console_line_is_open_close_or_clear_and_nothing_else() {
+        assert_eq!(
+            parse("console"),
+            Some(Cmd::Console {
+                action: console::Action::Open
+            })
+        );
+        assert_eq!(
+            parse("console close"),
+            Some(Cmd::Console {
+                action: console::Action::Close
+            })
+        );
+        assert_eq!(
+            parse("console clear"),
+            Some(Cmd::Console {
+                action: console::Action::Clear
+            })
+        );
+        assert!(parse("console print(1)").is_none());
     }
 }
 
@@ -906,5 +952,72 @@ mod flows {
         assert_eq!(shown.chars().count(), 256);
         assert!(shown.ends_with('…'));
         assert_eq!(&shown[..255], "x".repeat(255));
+    }
+
+    /// The console window's state, held for one test: the process's state, reset before and after.
+    fn console_state() -> std::sync::MutexGuard<'static, ()> {
+        let guard = crate::console::test_guard();
+        *crate::console::state() = crate::console::State::default();
+        guard
+    }
+
+    #[test]
+    fn the_owner_opens_the_console_window_and_asks_for_the_pointer() {
+        let _console = console_state();
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "console"));
+        assert!(crate::console::state().open);
+        assert!(crate::console::state().want_pointer);
+        assert!(fake.replies.is_empty(), "opening says nothing");
+        *crate::console::state() = crate::console::State::default();
+    }
+
+    #[test]
+    fn a_guest_never_opens_the_console_and_the_window_state_is_untouched() {
+        let _console = console_state();
+        let before = crate::console::state().open;
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 8, "console clear"));
+        assert!(serve(&mut fake, 8, "console"));
+        assert_eq!(crate::console::state().open, before);
+        assert!(!crate::console::state().want_pointer);
+        assert_eq!(
+            fake.replies,
+            vec![failure("horizon.dev_tools.owner_only"); 2]
+        );
+        *crate::console::state() = crate::console::State::default();
+    }
+
+    #[test]
+    fn a_dedicated_server_and_a_console_source_never_open_the_console() {
+        let _console = console_state();
+        // One fake only: `owned_by` takes the store lock, which a test may take once.
+        let mut fake = owned_by(None, Vec::new());
+        assert!(serve(&mut fake, 7, "console"));
+        assert!(
+            !crate::console::state().open,
+            "a dedicated server refuses everyone"
+        );
+        fake.owner = Some(7);
+        let console = CommandSource::Console {
+            permission: mod_api::PermissionLevel::Admins,
+        };
+        serve_from(&mut fake, &console, "console");
+        assert!(!crate::console::state().open, "a console source is refused");
+        assert_eq!(
+            fake.replies,
+            vec![failure("horizon.dev_tools.owner_only"); 2]
+        );
+        *crate::console::state() = crate::console::State::default();
+    }
+
+    #[test]
+    fn the_owner_clears_the_console_output() {
+        let _console = console_state();
+        crate::console::state().push(crate::console::Kind::Out, "old");
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "console clear"));
+        assert!(crate::console::state().lines.is_empty());
+        *crate::console::state() = crate::console::State::default();
     }
 }

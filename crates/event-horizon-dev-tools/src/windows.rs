@@ -2,9 +2,11 @@
 //! store holds. Nothing is drawn until something is inspected: [`ui`] draws one window per view of
 //! each watched entity, and the `/watch` charts of each. This file holds the data view (`/inspect`):
 //! the NBT tree with its filter and its per-number watch buttons, and the stop button, plus the
-//! helpers the mob windows share. The goals, senses, nav and watch windows are in [`mob`]. The block
-//! windows (5c-w3) come later; their place is marked in [`ui`].
+//! helpers the mob windows share. The goals, senses, nav and watch windows are in [`mob`]; the Lua
+//! console window is in [`console`]. The block windows (5c-w3) come later; their place is marked
+//! in [`ui`].
 
+mod console;
 mod mob;
 
 use event_horizon_observe::wire::INTERVALS;
@@ -33,6 +35,7 @@ pub fn ui(ctx: &egui::Context) {
             watch_window(ctx, item, series);
         }
     }
+    console::window(ctx);
 }
 
 /// The flags of a goal row, as the goals window names them: `-` for none.
@@ -501,6 +504,7 @@ mod tests {
     #[test]
     fn nothing_is_drawn_until_something_is_inspected() {
         let _store = crate::inspect::store_guard();
+        let _console = crate::console::test_guard();
         observe::reset();
         assert!(frame().is_empty());
     }
