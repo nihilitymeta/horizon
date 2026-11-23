@@ -135,3 +135,53 @@ fn the_fingerprint_is_stable_and_does_not_depend_on_declaration_order() {
     let (_, rebuilt) = fresh(&first, &root.path().join("first"), alpha_then_bravo).unwrap();
     assert_eq!(&rebuilt, first.fingerprint());
 }
+
+/// A villager part whose one behavior `mymod:farm` has activity `activity`, with a tick handler.
+fn farm_behavior(activity: &str) -> String {
+    format!(
+        r#"horizon.entity_part("minecraft:villager", {{behaviors = {{{{name = "mymod:farm", activity = "{activity}", priority = 1, tick = function(e) end}}}}}})"#
+    )
+}
+
+#[test]
+fn a_behavior_activity_change_is_refused_by_the_fingerprint() {
+    // The fingerprint names a behavior's activity (74-b2 gave behaviors one, 5f-c2 added it to the
+    // fingerprint): a swap that moves the behavior to another activity is a declaration change.
+    let root = tempfile::tempdir().unwrap();
+    let m = load(root.path(), "mymod", &farm_behavior("work"));
+    let (fresh_state, fingerprint) = fresh(&m, root.path(), &farm_behavior("rest")).unwrap();
+    let _turn = m.turn().enter();
+    let refused = m.swap_state(fresh_state, fingerprint).unwrap_err();
+    assert!(
+        refused
+            .what
+            .iter()
+            .any(|line| line.starts_with("behaviors:") && line.contains("mymod:farm")),
+        "the behavior's change is named: {:?}",
+        refused.what
+    );
+}
+
+#[test]
+fn a_behavior_with_the_same_activity_is_accepted() {
+    let root = tempfile::tempdir().unwrap();
+    let m = load(root.path(), "mymod", &farm_behavior("work"));
+    let (fresh_state, fingerprint) = fresh(&m, root.path(), &farm_behavior("work")).unwrap();
+    assert_eq!(&fingerprint, m.fingerprint());
+    let _turn = m.turn().enter();
+    m.swap_state(fresh_state, fingerprint).unwrap();
+}
+
+#[test]
+fn two_behaviors_declared_in_either_order_have_equal_fingerprints() {
+    let root = tempfile::tempdir().unwrap();
+    let farm = r#"{name = "mymod:farm", activity = "work", priority = 1, tick = function(e) end}"#;
+    let rest = r#"{name = "mymod:rest", activity = "rest", priority = 2, start = function(e) end}"#;
+    let farm_then_rest =
+        format!(r#"horizon.entity_part("minecraft:villager", {{behaviors = {{{farm}, {rest}}}}})"#);
+    let rest_then_farm =
+        format!(r#"horizon.entity_part("minecraft:villager", {{behaviors = {{{rest}, {farm}}}}})"#);
+    let first = load(&root.path().join("first"), "mymod", &farm_then_rest);
+    let second = load(&root.path().join("second"), "mymod", &rest_then_farm);
+    assert_eq!(first.fingerprint(), second.fingerprint());
+}

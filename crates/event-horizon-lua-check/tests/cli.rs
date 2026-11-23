@@ -175,3 +175,33 @@ fn usage_errors_and_unreadable_paths_exit_two() {
     assert_eq!(run(&["check", path_str(&missing)]).0, 2);
     assert_eq!(run(&["--help"]).0, 0);
 }
+
+#[test]
+fn list_prints_a_mod_the_host_refuses_after_discovery_as_refused() {
+    // Discovery accepts this mod (its manifest and script read fine); the host refuses it when its
+    // declaration pass runs `horizon.on` with a hook name it does not know, so the line comes from
+    // the host's refusal, not from the scan.
+    let root = tempfile::tempdir().unwrap();
+    let game = root.path().join("game");
+    let lua_mods = game.join("lua-mods");
+    std::fs::create_dir_all(&lua_mods).unwrap();
+    mod_folder(&lua_mods, "good", "good_mod", GOOD);
+    mod_folder(
+        &lua_mods,
+        "host_bad",
+        "host_bad_mod",
+        "horizon.on(\"no_such_hook\", function() end)\n",
+    );
+    let (code, stdout, stderr) = run(&["--list", "--game-dir", path_str(&game)]);
+    assert_eq!(code, 0, "stderr: {stderr}\nstdout: {stdout}");
+    assert!(stdout.contains("good_mod 1.0.0 both loaded"), "{stdout}");
+    let line = stdout
+        .lines()
+        .find(|line| line.starts_with("host_bad_mod 1.0.0 both refused: "))
+        .unwrap_or_else(|| panic!("the host's refusal is listed: {stdout}"));
+    assert!(
+        line.contains("host_bad_mod: "),
+        "the host's reason text: {line}"
+    );
+    assert!(!stdout.contains("(host) refused"), "{stdout}");
+}
