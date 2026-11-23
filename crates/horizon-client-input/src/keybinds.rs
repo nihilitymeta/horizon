@@ -3,6 +3,7 @@
 //! translation of rebound physical keys back to the default keys the game
 //! logic listens for.
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{event::MouseButton, keyboard::KeyCode};
 
 /// (name, default key, category) in Options.keyMappings order.
@@ -80,7 +81,22 @@ pub const MAPPINGS: &[(&str, &str, &str)] = &[
 pub const HORIZON_MAPPINGS: &[(&str, &str, &str)] = &[
     // The emote wheel (docs/cosmetics.md), on a key vanilla leaves free.
     ("key.emote", "key.keyboard.b", "multiplayer"),
+    // Frees the mouse in the developer tools' windows (docs/dev-tools.md); listed on Key Binds
+    // only in a game that has them (`show_dev_tools_key`).
+    ("key.devTools", "key.keyboard.f8", "misc"),
 ];
+/// Whether the developer tools' windows exist in this game: `key.devTools` is listed on Key
+/// Binds only then (`listed`).
+static DEV_TOOLS_KEY_LISTED: AtomicBool = AtomicBool::new(false);
+/// Lists `key.devTools` on Key Binds (on) or hides it (off).
+pub fn show_dev_tools_key(on: bool) {
+    DEV_TOOLS_KEY_LISTED.store(on, Ordering::Relaxed);
+}
+/// Whether Key Binds lists the mapping `name`: every one except `key.devTools`, until
+/// `show_dev_tools_key(true)`.
+pub fn listed(name: &str) -> bool {
+    name != "key.devTools" || DEV_TOOLS_KEY_LISTED.load(Ordering::Relaxed)
+}
 /// Every mapping the game binds: vanilla's in `Options.keyMappings` order, then Horizon's.
 pub fn all_mappings() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> {
     MAPPINGS.iter().chain(HORIZON_MAPPINGS)
@@ -762,5 +778,28 @@ mod tests {
         let a = PhysicalKey::Unidentified(NativeKeyCode::Windows(0x6a));
         let b = PhysicalKey::Unidentified(NativeKeyCode::Windows(0x6b));
         assert_eq!((raw_key_code(a), raw_key_code(b)), (0x6a, 0x6b));
+    }
+
+    #[test]
+    fn the_dev_tools_key_is_f8_and_listed_only_with_the_dev_windows() {
+        assert_eq!(KeyBinds::default_of("key.devTools"), "key.keyboard.f8");
+        assert!(listed("key.zoom"));
+        show_dev_tools_key(false);
+        assert!(!listed("key.devTools"));
+        show_dev_tools_key(true);
+        assert!(listed("key.devTools"));
+        show_dev_tools_key(false);
+        assert!(!listed("key.devTools"));
+    }
+
+    #[test]
+    fn the_dev_tools_key_stays_out_of_options_txt() {
+        // `options.txt` holds vanilla's table only (`saved`), as the options parity harness expects.
+        assert!(
+            KeyBinds::default()
+                .saved()
+                .iter()
+                .all(|(n, _)| *n != "key.devTools")
+        );
     }
 }
