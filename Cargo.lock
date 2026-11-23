@@ -1474,6 +1474,7 @@ name = "event-horizon-observe"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "horizon-core",
  "horizon-world",
  "serde",
  "serde_json",
