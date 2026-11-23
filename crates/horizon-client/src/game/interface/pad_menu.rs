@@ -859,6 +859,15 @@ impl Game<'_> {
             self.pad.menu.slider_hold = None;
             return Ok(());
         }
+        // B while a Lua text edit or keybind wait is open is Escape: it ends the edit. Not the
+        // footer's Done pressed as a click, which would commit a text draft (options_ui `lua_end_by_click`).
+        if matches!(button, Button::East | Button::Start)
+            && !prompt
+            && self.screen == Screen::Options
+            && self.ui.options.lua_edit_active()
+        {
+            return self.options_key(KeyCode::Escape, None);
+        }
         if let Some((action, target)) = self.pad_action_target(button) {
             // The button may change a slider's value, which the pad's own position doesn't know.
             self.pad.menu.nudge = None;

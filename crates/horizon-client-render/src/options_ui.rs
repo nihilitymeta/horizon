@@ -9502,6 +9502,23 @@ mod lua_page_tests {
     }
 
     #[test]
+    fn a_click_on_done_during_a_text_edit_commits_the_draft() {
+        // The click path (a real click outside the field, and the pad's B that used to be pressed
+        // as the footer's Done) commits the typed text; B no longer takes this path.
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        ui.type_text(&atlas(), "x");
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::Done);
+        press(&mut ui, &mut s, x, y);
+        assert!(!ui.lua_edit_active());
+        assert_eq!(names(fake), ["name"], "a click outside commits the draft");
+        assert_eq!(stored(fake, "name"), ViewValue::Text("hix".into()));
+    }
+
+    #[test]
     fn a_lua_text_edit_or_keybind_wait_is_typing_until_it_ends() {
         install(None);
         let mut s = Settings::default();
