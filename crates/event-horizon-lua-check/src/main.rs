@@ -9,6 +9,7 @@
 //! Exit codes: 0 fine; 1 a finding (a refused load, a syntax or selene error, or a warning under
 //! `--strict`); 2 a usage error or a path that cannot be read.
 
+mod api_std;
 mod check;
 mod emit;
 mod finding;

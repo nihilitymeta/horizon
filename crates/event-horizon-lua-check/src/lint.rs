@@ -1,17 +1,16 @@
 //! The lint pass: each script is parsed (full_moon, Luau syntax) and linted with selene's default
-//! lints. The mod API's global, `horizon`, is declared as a name of any shape, so a call into the
-//! API is not an undefined variable. Selene's own lint levels are kept: a lint that is a warning in
-//! selene is a warning here.
+//! lints. The mod API's globals come from its type definitions (`api_std`): `horizon` has the API's
+//! members as fields, so a misspelt member is an `incorrect_standard_library_use` error. Selene's own
+//! lint levels are kept: a lint that is a warning in selene is a warning here.
 
 use full_moon::ast::Ast;
 use selene_lib::lints::Severity;
-use selene_lib::standard_library::{Field, FieldKind, StandardLibrary};
+use selene_lib::standard_library::StandardLibrary;
 use selene_lib::{Checker, CheckerConfig};
 
+use crate::api_std;
+use crate::emit::TYPES;
 use crate::finding::{Finding, Level, line_col};
-
-/// The global names the Lua mod API declares (`declare horizon: HorizonApi` in `horizon.d.luau`).
-const API_GLOBALS: &[&str] = &["horizon"];
 
 pub struct Linter {
     checker: Checker<serde_json::Value>,
@@ -21,12 +20,7 @@ impl Linter {
     pub fn new() -> Result<Linter, String> {
         let mut std =
             StandardLibrary::from_name("luau").ok_or("selene has no Luau standard library")?;
-        let mut api = StandardLibrary::default();
-        for name in API_GLOBALS {
-            api.globals
-                .insert((*name).to_owned(), Field::from_field_kind(FieldKind::Any));
-        }
-        std.extend(api);
+        std.extend(api_std::from_types(TYPES));
         let checker = Checker::new(CheckerConfig::default(), std)
             .map_err(|error| format!("selene's configuration: {error}"))?;
         Ok(Linter { checker })
@@ -95,6 +89,44 @@ mod tests {
             lint_text("horizon.on(\"server_tick\", function() end)\nhorizon.log(\"hi\")\n")
                 .iter()
                 .all(|f| !f.text.contains("undefined_variable"))
+        );
+    }
+
+    #[test]
+    fn a_misspelt_member_of_the_mod_api_is_an_error_naming_it() {
+        let found = lint_text("horizon.on_ticks(\"server_tick\", function() end)\n");
+        let misspelt: Vec<&Finding> = found
+            .iter()
+            .filter(|f| f.text.contains("on_ticks"))
+            .collect();
+        assert_eq!(misspelt.len(), 1, "{found:?}");
+        assert_eq!(misspelt[0].level, Level::Error);
+        assert_eq!((misspelt[0].line, misspelt[0].column), (1, 1));
+    }
+
+    #[test]
+    fn the_real_members_of_the_mod_api_are_not_reported() {
+        let found = lint_text(
+            "local function f()\n\thorizon.log(\"hi\")\n\tlocal _s = horizon.setting(\"k\")\n\tlocal _b = horizon.block\n\tlocal _n = horizon.none\nend\nhorizon.on(\"server_tick\", f)\n",
+        );
+        assert!(
+            found.iter().all(|f| !f.text.contains("standard_library")),
+            "{found:?}"
+        );
+        assert!(
+            found.iter().all(|f| !f.text.contains("undefined_variable")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn an_undefined_plain_global_is_an_error() {
+        let found = lint_text("foo()\n");
+        assert!(
+            found
+                .iter()
+                .any(|f| f.level == Level::Error && f.text.contains("undefined_variable")),
+            "{found:?}"
         );
     }
 

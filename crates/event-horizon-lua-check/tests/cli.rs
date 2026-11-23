@@ -108,6 +108,30 @@ fn an_unformatted_script_would_reformat_and_is_left_on_disk() {
 }
 
 #[test]
+fn a_misspelt_api_member_fails_and_names_the_file_line_and_member() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = mod_folder(
+        root.path(),
+        "misspelt",
+        "misspelt_mod",
+        "horizon.on_ticks(\"server_tick\", function() end)\n",
+    );
+    let (code, stdout, _) = run(&["check", path_str(&dir)]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("main.luau:1:1: error"), "{stdout}");
+    assert!(stdout.contains("horizon.on_ticks"), "{stdout}");
+}
+
+#[test]
+fn an_undefined_plain_global_fails() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = mod_folder(root.path(), "undef", "undef_mod", "foo()\n");
+    let (code, stdout, _) = run(&["check", path_str(&dir)]);
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("undefined_variable"), "{stdout}");
+}
+
+#[test]
 fn list_prints_loaded_refused_and_disabled_mods() {
     let root = tempfile::tempdir().unwrap();
     let game = root.path().join("game");
