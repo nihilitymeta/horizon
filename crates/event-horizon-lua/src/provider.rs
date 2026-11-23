@@ -689,4 +689,71 @@ mod tests {
             "a refusal changes nothing"
         );
     }
+
+    /// The provider's read calls with 50 mods whose icons are the largest the reader keeps
+    /// (`MAX_ICON`): `entries` clones every icon, `lookup` and `settings` clone none. Prints the
+    /// averages (`--nocapture`) and asserts generous bounds.
+    #[test]
+    fn provider_reads_with_fifty_max_size_icons_are_timed() {
+        const REPS: u32 = 200;
+        let root = tempfile::tempdir().unwrap();
+        let game = tempfile::tempdir().unwrap();
+        let mut icon = ICON.to_vec();
+        icon.resize(crate::hlua::MAX_ICON as usize, 0x5a);
+        let mods: Vec<LuaMod> = (0..50)
+            .map(|i| {
+                load_with(
+                    root.path(),
+                    game.path(),
+                    &format!("m{i:02}"),
+                    &format!("mod_{i:02}"),
+                    "",
+                    Some(&icon),
+                )
+            })
+            .collect();
+        let provider = LuaProvider::new(Arc::from(mods), game.path(), Vec::new(), &[]);
+        let entries = provider.entries();
+        assert_eq!(entries.len(), 50);
+        assert!(
+            entries
+                .iter()
+                .all(|e| e.icon_png.as_ref().map(Vec::len) == Some(icon.len()))
+        );
+
+        let start = std::time::Instant::now();
+        for _ in 0..REPS {
+            std::hint::black_box(provider.entries());
+        }
+        let entries_ms = start.elapsed().as_secs_f64() * 1000.0 / f64::from(REPS);
+
+        let start = std::time::Instant::now();
+        for _ in 0..REPS {
+            for i in 0..50 {
+                std::hint::black_box(provider.lookup(i));
+            }
+        }
+        let lookup_us = start.elapsed().as_secs_f64() * 1e6 / f64::from(REPS * 50);
+
+        let ids: Vec<String> = entries.iter().map(|e| e.id.clone()).collect();
+        let start = std::time::Instant::now();
+        for _ in 0..REPS {
+            for id in &ids {
+                std::hint::black_box(provider.settings(id));
+            }
+        }
+        let settings_us = start.elapsed().as_secs_f64() * 1e6 / f64::from(REPS * 50);
+
+        eprintln!(
+            "provider (50 mods, {} byte icons, debug): entries() {entries_ms:.3} ms per call; \
+             lookup(i) {lookup_us:.2} us per call; settings(id) {settings_us:.2} us per call",
+            icon.len()
+        );
+        assert!(entries_ms < 100.0, "entries() takes {entries_ms:.2} ms");
+        assert!(lookup_us < 100.0, "lookup() takes {lookup_us:.2} us");
+        assert!(
+            entries_ms * 1000.0 >= 20.0 * lookup_us,
+            "lookup ({lookup_us:.2} us) is not 20x faster than entries ({entries_ms:.3} ms)"
+        );
+    }
 }

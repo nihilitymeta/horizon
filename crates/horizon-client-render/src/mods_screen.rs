@@ -2326,4 +2326,180 @@ mod tests {
         let (frame, list) = (background_at(px - 2).unwrap(), background_at(lx).unwrap());
         assert!(frame < list, "frame at {frame}, list at {list}");
     }
+
+    /// `n` Lua mods named `Lua 00`, `Lua 01`..., each with `icon` as its PNG when given.
+    fn lua_mods(n: usize, icon: Option<&[u8]>) -> FakeLua {
+        FakeLua(
+            (0..n)
+                .map(|i| {
+                    let mut entry = lua(
+                        &format!("lua{i:02}"),
+                        &format!("Lua {i:02}"),
+                        mod_entries::Status::Loaded,
+                        true,
+                    );
+                    entry.icon_png = icon.map(<[u8]>::to_vec);
+                    entry
+                })
+                .collect(),
+        )
+    }
+
+    /// A `side`x`side` RGBA PNG of pseudo-random pixels, which deflate cannot shrink: its encoded
+    /// size is about `side * side * 4` bytes, so 255 gives just under `hlua::MAX_ICON`.
+    fn noise_png(side: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, side, side);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut seed = 0x2545_f491_u32;
+        let pixels: Vec<u8> = (0..side * side * 4)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as u8
+            })
+            .collect();
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&pixels)
+            .unwrap();
+        out
+    }
+
+    /// What one screen with `n` Lua mods costs, in milliseconds (averages over `FRAMES` calls).
+    struct Timings {
+        construct: f64,
+        layout: f64,
+        first_frame: f64,
+        frame: f64,
+        filtered_frame: f64,
+        step: f64,
+        icon_binding: f64,
+    }
+
+    const FRAMES: u32 = 200;
+
+    fn ms(since: std::time::Instant, calls: u32) -> f64 {
+        since.elapsed().as_secs_f64() * 1000.0 / f64::from(calls)
+    }
+
+    /// Builds a 427x240 Mods screen with `n` Lua mods (each with `icon`), and times it. The search
+    /// filter `Lua 04` keeps one of them; the list is walked 50 steps.
+    fn time_screen(label: &str, n: usize, icon: Option<&[u8]>) -> Timings {
+        let atlas = atlas();
+        let m = Measure(&atlas.font);
+        let list = ModList::default();
+        let provider = lua_mods(n, icon);
+
+        let start = std::time::Instant::now();
+        let mut screen = ModsScreen::with_links(427, 240, false, &list, &[], Some(&provider));
+        let construct = ms(start, 1);
+
+        let start = std::time::Instant::now();
+        for _ in 0..FRAMES {
+            screen.resize(427, 240);
+        }
+        let layout = ms(start, FRAMES);
+
+        let start = std::time::Instant::now();
+        let first = std::hint::black_box(screen.draw(&m, (0, 0), 0, 0));
+        let first_frame = ms(start, 1);
+        drop(first);
+
+        let mut patches = Vec::new();
+        let mut icon_binding = std::time::Duration::ZERO;
+        let start = std::time::Instant::now();
+        for _ in 0..FRAMES {
+            let mut draws = std::hint::black_box(screen.draw(&m, (0, 0), 0, 0));
+            patches.clear();
+            let bind = std::time::Instant::now();
+            screen.bind_icons(&mut draws, &atlas, &mut patches);
+            icon_binding += bind.elapsed();
+            std::hint::black_box(&draws);
+        }
+        let frame = ms(start, FRAMES) - icon_binding.as_secs_f64() * 1000.0 / f64::from(FRAMES);
+        let icon_binding = icon_binding.as_secs_f64() * 1000.0 / f64::from(FRAMES);
+
+        screen.search.value = "Lua 04".into();
+        screen.refresh();
+        let start = std::time::Instant::now();
+        for _ in 0..FRAMES {
+            std::hint::black_box(screen.draw(&m, (0, 0), 0, 0));
+        }
+        let filtered_frame = ms(start, FRAMES);
+        screen.search.value.clear();
+        screen.refresh();
+
+        let start = std::time::Instant::now();
+        for _ in 0..50 {
+            screen.step(1);
+        }
+        let step = ms(start, 50);
+
+        let t = Timings {
+            construct,
+            layout,
+            first_frame,
+            frame,
+            filtered_frame,
+            step,
+            icon_binding,
+        };
+        eprintln!(
+            "mods_screen {label:<24} construct {:8.2} ms  layout {:7.4} ms  first frame {:7.3} ms  \
+             frame {:7.3} ms (icon binding {:6.3} ms)  filtered frame {:7.3} ms  step {:7.4} ms",
+            t.construct, t.layout, t.first_frame, t.frame, t.icon_binding, t.filtered_frame, t.step
+        );
+        t
+    }
+
+    #[test]
+    fn mods_screen_timings_with_128_pixel_icons() {
+        let icon = png(128, 128);
+        let five = time_screen("5 mods, 128px icons", 5, Some(&icon));
+        let fifty = time_screen("50 mods, 128px icons", 50, Some(&icon));
+        assert!(
+            fifty.construct < 2000.0,
+            "construction {:.1} ms",
+            fifty.construct
+        );
+        assert!(
+            fifty.frame < 25.0,
+            "a 50-mod frame averages {:.2} ms (5 mods: {:.3} ms)",
+            fifty.frame,
+            five.frame
+        );
+    }
+
+    #[test]
+    fn mods_screen_timings_with_the_largest_icons() {
+        // `event_horizon_lua::hlua::MAX_ICON`, which this crate does not depend on.
+        const MAX_ICON: usize = 256 * 1024;
+        let icon = noise_png(255);
+        assert!(
+            icon.len() <= MAX_ICON,
+            "{} bytes is over MAX_ICON",
+            icon.len()
+        );
+        eprintln!(
+            "mods_screen: largest icon is a 255x255 RGBA noise PNG of {} bytes (MAX_ICON {MAX_ICON})",
+            icon.len()
+        );
+        let five = time_screen("5 mods, max icons", 5, Some(&icon));
+        let fifty = time_screen("50 mods, max icons", 50, Some(&icon));
+        assert!(
+            fifty.construct < 2000.0,
+            "construction {:.1} ms",
+            fifty.construct
+        );
+        assert!(
+            fifty.frame < 25.0,
+            "a 50-mod frame averages {:.2} ms (5 mods: {:.3} ms)",
+            fifty.frame,
+            five.frame
+        );
+    }
 }
