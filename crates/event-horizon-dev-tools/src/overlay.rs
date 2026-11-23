@@ -2,7 +2,6 @@
 //! callbacks. Its input is the frame's input from [`crate::input`] (the pointer and the keys the
 //! tools take), or the screen's size and the time when there is none.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
@@ -13,6 +12,9 @@ use mod_render::render::{WorldDrawn, on_world_drawn};
 struct Overlay {
     painter: Option<Painter>,
     started: Option<Instant>,
+    /// The world (its count of closes, `observe::resets`) the server was last told this client
+    /// shows the windows for (`Wire::Hello`).
+    greeted: Option<u64>,
 }
 
 impl Overlay {
@@ -20,12 +22,16 @@ impl Overlay {
         Self {
             painter: None,
             started: None,
+            greeted: None,
         }
     }
 }
 
-/// Whether the server has been told this client shows the windows (`Wire::Hello`), once.
-static HELLO_SENT: AtomicBool = AtomicBool::new(false);
+/// Whether the server must hear `Wire::Hello` again: it has not heard one for this world yet
+/// (`greeted` is `None` or another world's count).
+fn should_greet(greeted: Option<u64>, now: u64) -> bool {
+    greeted != Some(now)
+}
 
 /// The egui wgpu renderer, made on the first frame for that frame's colour format.
 struct Painter {
@@ -51,11 +57,13 @@ fn draw(world: &mut WorldDrawn<'_>) {
     if w == 0 || h == 0 {
         return;
     }
-    if !HELLO_SENT.swap(true, Ordering::Relaxed) {
-        event_horizon_observe::send_to_server(event_horizon_observe::wire::Wire::Hello);
-    }
     let mut state = overlay();
     let state = &mut *state;
+    let closes = event_horizon_observe::resets();
+    if should_greet(state.greeted, closes) {
+        event_horizon_observe::send_to_server(event_horizon_observe::wire::Wire::Hello);
+        state.greeted = Some(closes);
+    }
     let ctx = crate::input::ctx().clone();
     let started = *state.started.get_or_insert_with(Instant::now);
     let painter = match &mut state.painter {
@@ -129,5 +137,21 @@ mod tests {
         let overlay = Overlay::new();
         assert!(overlay.painter.is_none());
         assert!(overlay.started.is_none());
+        assert!(overlay.greeted.is_none());
+    }
+
+    #[test]
+    fn the_server_hears_hello_once_per_world() {
+        assert!(should_greet(None, 0), "the first draw greets");
+        assert!(
+            !should_greet(Some(0), 0),
+            "the same world is not greeted again"
+        );
+        assert!(should_greet(Some(0), 1), "a new world is greeted");
+        assert!(!should_greet(Some(1), 1));
+        assert!(
+            should_greet(Some(1), 2),
+            "every world close starts a new one"
+        );
     }
 }

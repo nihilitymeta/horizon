@@ -81,6 +81,11 @@ pub fn state() -> MutexGuard<'static, State> {
     STATE.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Whether the window is open (`console` opened it and no `console close` has run since).
+pub(crate) fn is_open() -> bool {
+    state().open
+}
+
 /// Takes the pointer request the opening left: true once after `console`, then false.
 pub fn take_want_pointer() -> bool {
     std::mem::take(&mut state().want_pointer)

@@ -9,7 +9,7 @@ use horizon_core::nbt::Tag;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 /// A window of the tools, by the command that opens it.
@@ -512,6 +512,8 @@ struct Observed {
 static WATCHING: AtomicBool = AtomicBool::new(false);
 /// Whether any watch has a window (a view or a path): the tools' pointer follows it.
 static SHOWING: AtomicBool = AtomicBool::new(false);
+/// How many times [`reset`] has run: a client greets a world once per count (`Wire::Hello`).
+static RESETS: AtomicU64 = AtomicU64::new(0);
 static STATE: Mutex<Observed> = Mutex::new(Observed {
     watch: Vec::new(),
     snapshots: Vec::new(),
@@ -702,6 +704,7 @@ pub fn clear_logs() {
 /// path, log mark and stored snapshot goes, so an entity of the next world
 /// that happens to have the same id is not shown under the old one's window.
 pub fn reset() {
+    RESETS.fetch_add(1, Ordering::Relaxed);
     REQUESTS.lock().unwrap_or_else(|e| e.into_inner()).clear();
     WATCH.lock().unwrap_or_else(|e| e.into_inner()).clear();
     LOGS.lock().unwrap_or_else(|e| e.into_inner()).clear();
@@ -719,6 +722,11 @@ pub fn reset() {
     s.series.clear();
     s.blocks.clear();
     s.prune();
+}
+
+/// How many world closes ([`reset`]) this process has seen. It only grows.
+pub fn resets() -> u64 {
+    RESETS.load(Ordering::Relaxed)
 }
 
 /// Whether any window is wanted: a view or a path of some entity.
@@ -1248,5 +1256,21 @@ mod tests {
         // Closing stops them all: how many there were.
         assert_eq!(stop_logs(), 1);
         assert!(!is_logging());
+    }
+
+    #[test]
+    fn resets_counts_each_world_close_and_nothing_else() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let before = resets();
+        add(&[3], View::Data);
+        add_path(&[3], "Health");
+        push_server_command(7, Wire::Hello);
+        send_to_server(Wire::Hello);
+        clear(None);
+        assert_eq!(resets(), before, "only reset counts");
+        reset();
+        assert_eq!(resets(), before + 1);
+        reset();
+        assert_eq!(resets(), before + 2);
     }
 }

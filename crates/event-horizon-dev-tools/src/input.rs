@@ -25,6 +25,8 @@ pub const SCALE_ENV: &str = "HORIZON_DEV_TOOLS_SCALE";
 
 /// Whether the tools hold the pointer: freed by their key, so nothing in the game grabs it.
 static HOLDS_POINTER: AtomicBool = AtomicBool::new(false);
+/// Whether the tools' windows were showing last frame (the console or an entity window).
+static HAD_WINDOWS: AtomicBool = AtomicBool::new(false);
 /// The egui context, shared by the window thread (input) and the render thread (drawing).
 static CTX: OnceLock<egui::Context> = OnceLock::new();
 /// The frame's input, built on the window thread and taken by the render thread.
@@ -235,16 +237,44 @@ fn take_pointer_request() -> PointerChange {
     pointer_change(crate::console::take_want_pointer())
 }
 
+/// Whether the tools give the pointer back this frame: they hold it, their windows were showing
+/// last frame and none shows now (the last one closed, as the old adapter did).
+fn hand_back(holds: bool, had: bool, windows: bool) -> bool {
+    holds && had && !windows
+}
+
+/// The pointer's change for one frame: the request wins (a console open takes the pointer), else
+/// the hand-back when the last window closed. Records whether windows show now, for the next
+/// frame.
+fn pointer_step(request: PointerChange, windows: bool) -> PointerChange {
+    let had = HAD_WINDOWS.swap(windows, Ordering::Relaxed);
+    if request != PointerChange::None {
+        return request;
+    }
+    if hand_back(holds_pointer(), had, windows) {
+        HOLDS_POINTER.store(false, Ordering::Relaxed);
+        return PointerChange::Grab;
+    }
+    PointerChange::None
+}
+
 /// Once a frame on the window thread: egui's input for the frame (events, time, screen rectangle,
 /// scale), kept for the render thread. A frame the render thread skipped keeps its events. The
-/// pointer changes only when the console asks for it (`console` opens the window: the tools take
-/// the pointer so the input can be typed in).
+/// pointer changes when the console asks for it (`console` opens the window: the tools take the
+/// pointer so the input can be typed in), or when the tools' last window closes while they hold
+/// it (the pointer goes back to the game).
 fn frame(window: Option<&Window>) -> PointerChange {
     let Some(window) = window else {
         return PointerChange::None;
     };
     zoom_for(window);
-    let change = take_pointer_request();
+    let windows = event_horizon_observe::showing() || crate::console::is_open();
+    let change = pointer_step(take_pointer_request(), windows);
+    if change == PointerChange::Grab {
+        with_winit(window, |s| {
+            s.egui_input_mut().events.push(egui::Event::PointerGone);
+        });
+    }
     let mut input = with_winit(window, |s| s.take_egui_input(window));
     let mut slot = INPUT.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(previous) = slot.take() {
@@ -378,6 +408,94 @@ mod tests {
     #[test]
     fn with_no_request_the_pointer_does_not_change() {
         assert_eq!(pointer_change(false), PointerChange::None);
+    }
+
+    #[test]
+    fn the_tools_hand_the_pointer_back_only_when_their_last_window_closed() {
+        for holds in [false, true] {
+            for had in [false, true] {
+                for windows in [false, true] {
+                    assert_eq!(
+                        hand_back(holds, had, windows),
+                        holds && had && !windows,
+                        "holds {holds}, had {had}, windows {windows}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Resets the statics the frame step reads, so the tests do not see each other.
+    fn fresh_step_state(holds: bool) {
+        HOLDS_POINTER.store(holds, Ordering::Relaxed);
+        HAD_WINDOWS.store(false, Ordering::Relaxed);
+        *crate::console::state() = crate::console::State::default();
+    }
+
+    #[test]
+    fn closing_the_console_gives_the_pointer_back_once() {
+        let _console = crate::console::test_guard();
+        fresh_step_state(false);
+        // `console` opens the window: the tools take the pointer once.
+        crate::console::act(crate::console::Action::Open);
+        let windows = crate::console::is_open();
+        assert_eq!(
+            pointer_step(take_pointer_request(), windows),
+            PointerChange::Release
+        );
+        assert!(holds_pointer());
+        // The console stays open: nothing changes.
+        assert_eq!(pointer_step(PointerChange::None, true), PointerChange::None);
+        assert!(holds_pointer());
+        // `console close`: the last window is gone, so the pointer goes back to the game.
+        crate::console::act(crate::console::Action::Close);
+        let windows = crate::console::is_open();
+        assert_eq!(
+            pointer_step(take_pointer_request(), windows),
+            PointerChange::Grab
+        );
+        assert!(!holds_pointer(), "the hold is dropped");
+        assert_eq!(
+            pointer_step(PointerChange::None, false),
+            PointerChange::None
+        );
+        fresh_step_state(false);
+    }
+
+    #[test]
+    fn an_entity_window_closing_while_the_tools_hold_the_pointer_hands_it_back() {
+        let _console = crate::console::test_guard();
+        // F8 freed the pointer with a window open: the hold is the tools'.
+        fresh_step_state(true);
+        HAD_WINDOWS.store(true, Ordering::Relaxed);
+        // A window still open: nothing changes.
+        assert_eq!(pointer_step(PointerChange::None, true), PointerChange::None);
+        assert!(holds_pointer());
+        // The last window closes: the pointer is the game's again, once.
+        assert_eq!(
+            pointer_step(PointerChange::None, false),
+            PointerChange::Grab
+        );
+        assert!(!holds_pointer());
+        assert_eq!(
+            pointer_step(PointerChange::None, false),
+            PointerChange::None
+        );
+        fresh_step_state(false);
+    }
+
+    #[test]
+    fn no_window_ever_shown_changes_nothing_without_a_hold() {
+        let _console = crate::console::test_guard();
+        // The pointer was never held (the game's), and an entity window came and went.
+        fresh_step_state(false);
+        assert_eq!(pointer_step(PointerChange::None, true), PointerChange::None);
+        assert_eq!(
+            pointer_step(PointerChange::None, false),
+            PointerChange::None
+        );
+        assert!(!holds_pointer());
+        fresh_step_state(false);
     }
 
     #[test]
