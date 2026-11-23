@@ -17,6 +17,7 @@ horizon-world = { path = "../horizon-world" }
 horizon-mod-api = { path = "../horizon-mod-api" }
 horizon-mod-render = { path = "../horizon-mod-render" }
 event-horizon-observe = { path = "../event-horizon-observe" }
+event-horizon-lua = { path = "../event-horizon-lua" }
 horizon-client-input = { path = "../horizon-client-input" }
 serde_json = "1.0.151"
 log = "0.4"

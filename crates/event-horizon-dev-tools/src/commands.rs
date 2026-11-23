@@ -1,18 +1,25 @@
 //! The developer tools' commands (docs/dev-tools.md) as a built-in mod's: `/inspect`, `/goals`,
 //! `/senses`, `/nav`, `/watch` and `/mobai log` are in the server's command tree and run from the
 //! mod's hooks. The bodies keep the old messages, counts and store calls, on the shared
-//! [`event_horizon_observe`] store the windows read. `/lua` and the console come in a later chunk:
-//! they are not in [`USAGES`] and not in [`Cmd`].
+//! [`event_horizon_observe`] store the windows read. `/lua` runs a chunk in the console's sandboxed
+//! VM ([`event_horizon_lua::console`]); the console window comes in a later chunk.
 //!
 //! The owner's rule: every one of these commands is the world's owner's, strictly. The sender's
 //! uuid must be the one the host names as the single-player owner; any other player (a guest of
-//! any level, an operator) is refused, and on a dedicated server (no owner) everyone is.
+//! any level, an operator) is refused, and on a dedicated server (no owner) everyone is. The
+//! runner is never reached for a refused sender.
+use event_horizon_lua::console;
 use event_horizon_observe::{self as observe, View};
 use horizon_client::{data_cmd, lang, nbt_path::NbtPath};
 use mod_api::text::TextStyle;
 use mod_api::{
     CommandArgumentValue, CommandInvocation, CommandSource, PlayerRef, ServerHost, Text,
 };
+
+/// The most printed lines a `/lua` reply shows: the last ones, then a line that counts the rest.
+const LUA_LINES: usize = 20;
+/// The longest line a reply shows, in characters; a longer one is cut and ends in an ellipsis.
+const LUA_LINE_CHARS: usize = 256;
 
 /// A translated line: the language file's `key`, its arguments as plain text.
 fn tr(key: &str, args: &[String]) -> Text {
@@ -42,11 +49,15 @@ pub const USAGES: &[&str] = &[
     "nav <rest:text>",
     "watch <rest:text>",
     "mobai log <rest:text>",
+    "lua",
+    "lua <rest:text>",
 ];
 
 /// One of the tools' commands, as the line names it.
 #[derive(Debug, PartialEq)]
 enum Cmd<'a> {
+    /// `/lua <code>`: a chunk for the console's VM; empty `code` replies the usage.
+    Lua { code: &'a str },
     /// `/inspect` alone: what is watched.
     List,
     /// `/inspect|goals|senses|nav <targets>` and `… clear`.
@@ -78,21 +89,32 @@ pub trait Reads {
     fn is_mob(&self, id: u32) -> bool;
     /// The name of entity `id`, when it has one.
     fn entity_name(&self, id: u32) -> Option<String>;
+    /// Runs `source` as a chunk in the console's VM, with the server's host.
+    fn run_lua(&mut self, source: &str) -> LuaRun;
     /// A line of feedback to the sender.
     fn reply(&mut self, line: Text);
+}
+
+/// What a `/lua` chunk gave back: the lines it printed, its returned value and its error, as text.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LuaRun {
+    pub lines: Vec<String>,
+    pub value: Option<String>,
+    pub error: Option<String>,
 }
 
 /// The live server's reads for one sender: the host, and the replies collected for the hook to
 /// deliver (as command feedback, or as the chat lines of `player_command`).
 pub struct Live<'a> {
     host: &'a mut dyn ServerHost,
-    sender: PlayerRef,
+    /// The player who sent the command; None for the console, which has no level of its own.
+    sender: Option<PlayerRef>,
     /// The replies in order.
     pub replies: Vec<Text>,
 }
 
 impl<'a> Live<'a> {
-    pub fn new(host: &'a mut dyn ServerHost, sender: PlayerRef) -> Self {
+    pub fn new(host: &'a mut dyn ServerHost, sender: Option<PlayerRef>) -> Self {
         Self {
             host,
             sender,
@@ -106,7 +128,7 @@ impl Reads for Live<'_> {
         self.host.dev_server_owner()
     }
     fn dimension(&self) -> Option<String> {
-        let level = self.sender.level(&*self.host)?;
+        let level = self.sender?.level(&*self.host)?;
         self.host.dev_level_dimension(level)
     }
     fn select_ids(&mut self, selector: &str) -> Vec<u32> {
@@ -123,6 +145,14 @@ impl Reads for Live<'_> {
     }
     fn entity_name(&self, id: u32) -> Option<String> {
         self.host.entity(id)?.name(&*self.host)
+    }
+    fn run_lua(&mut self, source: &str) -> LuaRun {
+        let run = console::console().run_chunk(&mut *self.host, "lua", source);
+        LuaRun {
+            lines: run.lines,
+            value: run.value,
+            error: run.error,
+        }
     }
     fn reply(&mut self, line: Text) {
         self.replies.push(line);
@@ -230,6 +260,7 @@ fn parse(line: &str) -> Option<Cmd<'_>> {
                 }),
             }
         }
+        "lua" => Some(Cmd::Lua { code: rest }),
         _ => None,
     }
 }
@@ -246,6 +277,7 @@ fn first_word(s: &str) -> (&str, &str) {
 /// Runs the command the line named.
 fn run(reads: &mut dyn Reads, cmd: Cmd<'_>) {
     match cmd {
+        Cmd::Lua { code } => lua(reads, code),
         Cmd::List => list(reads),
         Cmd::View {
             view,
@@ -279,6 +311,43 @@ fn counted(key: &str, n: usize, args: &[String]) -> Text {
     } else {
         tr(key, args)
     }
+}
+
+/// `/lua <code>`: runs the chunk, then replies what it printed (the last [`LUA_LINES`], and a line
+/// that counts the rest), its value as `= <value>`, and its error in red.
+fn lua(reads: &mut dyn Reads, code: &str) {
+    if code.is_empty() {
+        reads.reply(tr("horizon.dev_tools.lua.usage", &[]));
+        return;
+    }
+    let run = reads.run_lua(code);
+    if run.lines.is_empty() && run.value.is_none() && run.error.is_none() {
+        reads.reply(tr("horizon.dev_tools.lua.done", &[]));
+        return;
+    }
+    let skipped = run.lines.len().saturating_sub(LUA_LINES);
+    for line in &run.lines[skipped..] {
+        reads.reply(Text::literal(cut(line)));
+    }
+    if skipped > 0 {
+        reads.reply(tr("horizon.dev_tools.lua.more", &[skipped.to_string()]));
+    }
+    if let Some(value) = &run.value {
+        reads.reply(Text::literal(cut(&format!("= {value}"))));
+    }
+    if let Some(error) = &run.error {
+        reads.reply(red(Text::literal(cut(error))));
+    }
+}
+
+/// `line` cut to [`LUA_LINE_CHARS`] characters: the first ones and an ellipsis when it is longer.
+fn cut(line: &str) -> String {
+    if line.chars().count() <= LUA_LINE_CHARS {
+        return line.to_owned();
+    }
+    let mut cut: String = line.chars().take(LUA_LINE_CHARS - 1).collect();
+    cut.push('…');
+    cut
 }
 
 /// The ids the selector names, as the owner's command finds them. None when it names nothing.
@@ -413,18 +482,29 @@ fn mobai_log(reads: &mut dyn Reads, stop: bool, targets: &str) {
     });
 }
 
+/// A tree usage's line from `source`: a player's is served as `serve` serves it; a console's
+/// (the dedicated server or RCON) is refused, and the runner is never reached.
+fn serve_from(reads: &mut dyn Reads, source: &CommandSource, line: &str) {
+    match source {
+        CommandSource::Player { player, .. } => {
+            serve(reads, player.uuid(), line);
+        }
+        _ => reads.reply(failure("horizon.dev_tools.owner_only")),
+    }
+}
+
 /// The hook side: a command a tree usage ran, from its sender. The owner's rule is in `serve`.
 pub fn run_tree_command(
     host: &mut dyn ServerHost,
     source: &CommandSource,
     invocation: &CommandInvocation,
 ) -> Vec<Text> {
-    let CommandSource::Player { player, .. } = source else {
-        return vec![failure("horizon.dev_tools.owner_only")];
+    let sender = match source {
+        CommandSource::Player { player, .. } => Some(*player),
+        _ => None,
     };
-    let player = *player;
-    let mut live = Live::new(host, player);
-    serve(&mut live, player.uuid(), &invocation_line(invocation));
+    let mut live = Live::new(host, sender);
+    serve_from(&mut live, source, &invocation_line(invocation));
     live.replies
 }
 
@@ -435,7 +515,7 @@ pub fn player_command(host: &mut dyn ServerHost, sender: u128, line: &str) -> Op
         return None;
     }
     let player = host.player(sender)?;
-    let mut live = Live::new(host, player);
+    let mut live = Live::new(host, Some(player));
     if !serve(&mut live, sender, line) {
         return None;
     }
@@ -484,11 +564,23 @@ mod tests {
             "mobai logs",
             "watch",
             "goals",
-            "lua",
-            "lua print(1)",
+            "luau",
         ] {
             assert!(parse(line).is_none(), "{line}");
         }
+    }
+
+    #[test]
+    fn a_lua_line_is_its_code_and_keeps_the_code_as_typed() {
+        assert_eq!(parse("lua print(1)"), Some(Cmd::Lua { code: "print(1)" }));
+        assert_eq!(
+            parse("lua print(\"a\");  print(\"b\")"),
+            Some(Cmd::Lua {
+                code: "print(\"a\");  print(\"b\")"
+            }),
+            "the code keeps its inner spacing"
+        );
+        assert_eq!(parse("lua"), Some(Cmd::Lua { code: "" }));
     }
 
     #[test]
@@ -536,7 +628,8 @@ mod tests {
                 "{word} is registered"
             );
         }
-        assert!(USAGES.iter().all(|u| !u.starts_with("lua")));
+        assert!(USAGES.contains(&"lua"));
+        assert!(USAGES.contains(&"lua <rest:text>"));
     }
 }
 
@@ -555,6 +648,10 @@ mod flows {
         selected: Vec<u32>,
         mobs: Vec<u32>,
         replies: Vec<Text>,
+        /// What the runner gives back for any chunk.
+        lua_run: LuaRun,
+        /// The chunks the runner was called with, in order.
+        lua_sources: Vec<String>,
     }
 
     impl Reads for Fake {
@@ -573,8 +670,27 @@ mod flows {
         fn entity_name(&self, id: u32) -> Option<String> {
             Some(format!("Zombie{id}"))
         }
+        fn run_lua(&mut self, source: &str) -> LuaRun {
+            self.lua_sources.push(source.to_owned());
+            self.lua_run.clone()
+        }
         fn reply(&mut self, line: Text) {
             self.replies.push(line);
+        }
+    }
+
+    /// The text of a reply, as the chat shows it: a literal's content, with its colour if any.
+    fn plain(line: &Text) -> &str {
+        match &line.content {
+            mod_api::text::TextContent::Literal(text) => text,
+            other => panic!("a reply is plain text, not {other:?}"),
+        }
+    }
+
+    fn printed(lines: &[&str]) -> LuaRun {
+        LuaRun {
+            lines: lines.iter().map(|l| (*l).to_owned()).collect(),
+            ..LuaRun::default()
         }
     }
 
@@ -673,5 +789,122 @@ mod flows {
         let mut fake = owned_by(Some(7), vec![3]);
         assert!(!serve(&mut fake, 7, "give @s apple"));
         assert!(fake.replies.is_empty());
+    }
+
+    #[test]
+    fn the_owner_runs_a_lua_chunk_once_and_a_guest_never_reaches_the_runner() {
+        // One fake: `owned_by` holds the process-wide store lock, so a second one would deadlock.
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "lua print(1+1)"));
+        assert_eq!(fake.lua_sources, vec!["print(1+1)".to_owned()]);
+
+        assert!(serve(&mut fake, 8, "lua print(1+1)"));
+        assert_eq!(
+            fake.lua_sources.len(),
+            1,
+            "the guest's chunk never reaches the runner"
+        );
+        assert_eq!(
+            fake.replies.last(),
+            Some(&failure("horizon.dev_tools.owner_only"))
+        );
+    }
+
+    #[test]
+    fn a_dedicated_server_never_runs_a_lua_chunk() {
+        let mut fake = owned_by(None, Vec::new());
+        assert!(serve(&mut fake, 7, "lua print(1)"));
+        assert!(fake.lua_sources.is_empty());
+        assert_eq!(fake.replies, vec![failure("horizon.dev_tools.owner_only")]);
+    }
+
+    #[test]
+    fn a_console_source_never_runs_a_lua_chunk() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        let console = CommandSource::Console {
+            permission: mod_api::PermissionLevel::Admins,
+        };
+        serve_from(&mut fake, &console, "lua print(1)");
+        assert!(
+            fake.lua_sources.is_empty(),
+            "the console is refused, as before"
+        );
+        assert_eq!(fake.replies, vec![failure("horizon.dev_tools.owner_only")]);
+    }
+
+    #[test]
+    fn lua_alone_replies_the_usage_and_runs_nothing() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "lua"));
+        assert!(fake.lua_sources.is_empty());
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate("horizon.dev_tools.lua.usage", vec![])]
+        );
+    }
+
+    #[test]
+    fn three_printed_lines_and_a_value_make_four_replies() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        fake.lua_run = LuaRun {
+            value: Some("2".to_owned()),
+            ..printed(&["a", "b", "c"])
+        };
+        serve(&mut fake, 7, "lua print('a')");
+        let shown: Vec<&str> = fake.replies.iter().map(plain).collect();
+        assert_eq!(shown, vec!["a", "b", "c", "= 2"]);
+    }
+
+    #[test]
+    fn twenty_five_printed_lines_show_the_last_twenty_and_count_five_more() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        let lines: Vec<String> = (1..=25).map(|n| format!("line {n}")).collect();
+        fake.lua_run = LuaRun {
+            lines: lines.clone(),
+            ..LuaRun::default()
+        };
+        serve(&mut fake, 7, "lua loop()");
+        assert_eq!(fake.replies.len(), 21);
+        assert_eq!(plain(&fake.replies[0]), "line 6");
+        assert_eq!(plain(&fake.replies[19]), "line 25");
+        assert_eq!(
+            fake.replies[20],
+            Text::translate("horizon.dev_tools.lua.more", vec![Text::literal("5")])
+        );
+    }
+
+    #[test]
+    fn an_error_is_one_red_line() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        fake.lua_run = LuaRun {
+            error: Some("lua:1: boom".to_owned()),
+            ..LuaRun::default()
+        };
+        serve(&mut fake, 7, "lua error(\"boom\")");
+        assert_eq!(fake.replies.len(), 1);
+        assert_eq!(plain(&fake.replies[0]), "lua:1: boom");
+        assert_eq!(fake.replies[0].style.color.as_deref(), Some("red"));
+    }
+
+    #[test]
+    fn a_chunk_that_prints_nothing_and_returns_nil_says_ran() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        serve(&mut fake, 7, "lua local x = 1");
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate("horizon.dev_tools.lua.done", vec![])]
+        );
+    }
+
+    #[test]
+    fn a_300_character_line_is_cut_to_256_and_ends_in_an_ellipsis() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        let long = "x".repeat(300);
+        fake.lua_run = printed(&[long.as_str()]);
+        serve(&mut fake, 7, "lua print(string.rep('x', 300))");
+        let shown = plain(&fake.replies[0]);
+        assert_eq!(shown.chars().count(), 256);
+        assert!(shown.ends_with('…'));
+        assert_eq!(&shown[..255], "x".repeat(255));
     }
 }

@@ -1437,6 +1437,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "event-horizon-lua",
  "event-horizon-observe",
  "horizon-client",
  "horizon-client-core",
