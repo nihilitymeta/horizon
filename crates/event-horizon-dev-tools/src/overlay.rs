@@ -8,9 +8,6 @@ use std::time::Instant;
 
 use mod_render::render::{WorldDrawn, on_world_drawn};
 
-/// The lang key of the window's title (`en_us`).
-pub const TITLE_KEY: &str = "horizon.dev_tools.title";
-
 /// What the overlay keeps between frames. Empty until the first frame it draws.
 #[derive(Default)]
 struct Overlay {
@@ -80,7 +77,7 @@ fn draw(world: &mut WorldDrawn<'_>) {
         time: Some(started.elapsed().as_secs_f64()),
         ..Default::default()
     });
-    let output = ctx.run_ui(input, |ui| window(ui.ctx()));
+    let output = ctx.run_ui(input, |ui| crate::windows::ui(ui.ctx()));
     let screen = egui_wgpu::ScreenDescriptor {
         size_in_pixels: [w, h],
         pixels_per_point: output.pixels_per_point,
@@ -123,17 +120,6 @@ fn draw(world: &mut WorldDrawn<'_>) {
     }
 }
 
-/// The one window: titled by [`TITLE_KEY`], with one label naming the mod that drew it.
-fn window(ctx: &egui::Context) {
-    egui::Window::new(horizon_client_core::lang::get(TITLE_KEY)).show(ctx, |ui| {
-        ui.label(format!(
-            "{} {}",
-            crate::package::ID,
-            crate::package::VERSION
-        ));
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,17 +129,5 @@ mod tests {
         let overlay = Overlay::new();
         assert!(overlay.painter.is_none());
         assert!(overlay.started.is_none());
-    }
-
-    #[test]
-    fn the_title_key_is_in_en_us() {
-        let en_us: serde_json::Map<String, serde_json::Value> = serde_json::from_str(include_str!(
-            "../../horizon-client/assets/horizon/lang/en_us.json"
-        ))
-        .unwrap();
-        assert_eq!(
-            en_us.get(TITLE_KEY).and_then(|v| v.as_str()),
-            Some("Developer Tools")
-        );
     }
 }

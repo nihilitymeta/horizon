@@ -11,6 +11,7 @@ mod input;
 mod inspect;
 mod overlay;
 pub mod package;
+mod windows;
 
 use mod_api::__private::native::BuiltMod;
 use mod_api::{
