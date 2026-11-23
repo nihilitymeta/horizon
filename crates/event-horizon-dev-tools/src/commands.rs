@@ -3,7 +3,8 @@
 //! mod's hooks. The bodies keep the old messages, counts and store calls, on the shared
 //! [`event_horizon_observe`] store the windows read. `/lua` runs a chunk in the console's sandboxed
 //! VM ([`event_horizon_lua::console`]); `/console` opens, closes or clears the console window
-//! ([`crate::console`]), whose queued chunks the server tick runs.
+//! ([`crate::console`]), whose queued chunks the server tick runs. `/luareload <id>` reloads a dev-path
+//! Lua mod's scripts ([`event_horizon_lua::reload`]); `/luareload` alone lists the ids that reload.
 //!
 //! The owner's rule: every one of these commands is the world's owner's, strictly. The sender's
 //! uuid must be the one the host names as the single-player owner; any other player (a guest of
@@ -56,6 +57,8 @@ pub const USAGES: &[&str] = &[
     "console",
     "console close",
     "console clear",
+    "luareload",
+    "luareload <rest:text>",
 ];
 
 /// One of the tools' commands, as the line names it.
@@ -65,6 +68,8 @@ enum Cmd<'a> {
     Lua { code: &'a str },
     /// `/console`, `/console close`, `/console clear`: the console window.
     Console { action: console::Action },
+    /// `/luareload <id>`: reloads a dev mod's scripts; empty `id` lists the reloadable ids.
+    Reload { id: &'a str },
     /// `/inspect` alone: what is watched.
     List,
     /// `/inspect|goals|senses|nav <targets>` and `… clear`.
@@ -98,6 +103,10 @@ pub trait Reads {
     fn entity_name(&self, id: u32) -> Option<String>;
     /// Runs `source` as a chunk in the console's VM, with the server's host.
     fn run_lua(&mut self, source: &str) -> LuaRun;
+    /// Reloads the scripts of the dev-path Lua mod `id`, as the game's reload does.
+    fn reload(&mut self, id: &str) -> ReloadOutcome;
+    /// The ids the game's `reload` may reload (the dev-path mods), in load order.
+    fn reloadable(&self) -> Vec<String>;
     /// A line of feedback to the sender.
     fn reply(&mut self, line: Text);
 }
@@ -108,6 +117,24 @@ pub struct LuaRun {
     pub lines: Vec<String>,
     pub value: Option<String>,
     pub error: Option<String>,
+}
+
+/// What a `/luareload` gave back, in the tools' own terms: the live host maps the Lua crate's result.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum ReloadOutcome {
+    /// The mod's scripts were swapped; `scripts` is how many the new state was built from.
+    Reloaded { id: String, scripts: usize },
+    /// No loaded Lua mod has the id.
+    #[default]
+    NotLoaded,
+    /// The mod was not started from a dev path.
+    NotADevMod,
+    /// Another thread held the mod's turn for too long.
+    Busy,
+    /// The new scripts could not be read or failed to run or declare; the text is the error.
+    Failed(String),
+    /// The fresh declaration differs; the names of what changed.
+    Refused(Vec<String>),
 }
 
 /// The live server's reads for one sender: the host, and the replies collected for the hook to
@@ -160,6 +187,23 @@ impl Reads for Live<'_> {
             value: run.value,
             error: run.error,
         }
+    }
+    fn reload(&mut self, id: &str) -> ReloadOutcome {
+        use event_horizon_lua::reload::ReloadError as E;
+        match event_horizon_lua::reload::reload(id) {
+            Ok(done) => ReloadOutcome::Reloaded {
+                id: done.id,
+                scripts: done.scripts,
+            },
+            Err(E::NotLoaded) => ReloadOutcome::NotLoaded,
+            Err(E::NotADevMod) => ReloadOutcome::NotADevMod,
+            Err(E::Busy) => ReloadOutcome::Busy,
+            Err(E::Declaration(what)) => ReloadOutcome::Refused(what),
+            Err(other) => ReloadOutcome::Failed(other.to_string()),
+        }
+    }
+    fn reloadable(&self) -> Vec<String> {
+        event_horizon_lua::reload::reloadable()
     }
     fn reply(&mut self, line: Text) {
         self.replies.push(line);
@@ -268,6 +312,7 @@ fn parse(line: &str) -> Option<Cmd<'_>> {
             }
         }
         "lua" => Some(Cmd::Lua { code: rest }),
+        "luareload" => Some(Cmd::Reload { id: rest }),
         "console" => match rest {
             "" => Some(Cmd::Console {
                 action: console::Action::Open,
@@ -297,6 +342,7 @@ fn first_word(s: &str) -> (&str, &str) {
 fn run(reads: &mut dyn Reads, cmd: Cmd<'_>) {
     match cmd {
         Cmd::Lua { code } => lua(reads, code),
+        Cmd::Reload { id } => reload(reads, id),
         Cmd::Console { action } => console::act(action),
         Cmd::List => list(reads),
         Cmd::View {
@@ -357,6 +403,52 @@ fn lua(reads: &mut dyn Reads, code: &str) {
     }
     if let Some(error) = &run.error {
         reads.reply(red(Text::literal(cut(error))));
+    }
+}
+
+/// `/luareload`: the ids that reload when `id` is empty, else the reload of `id`, replied as its outcome.
+fn reload(reads: &mut dyn Reads, id: &str) {
+    if id.is_empty() {
+        let ids = reads.reloadable();
+        let line = if ids.is_empty() {
+            tr("horizon.dev_tools.reload.none", &[])
+        } else {
+            tr("horizon.dev_tools.reload.list", &[ids.join(", ")])
+        };
+        reads.reply(line);
+        return;
+    }
+    let outcome = reads.reload(id);
+    for line in reload_replies(id, &outcome) {
+        reads.reply(line);
+    }
+}
+
+/// The reply lines of a reload's outcome for `id`: the success line, or the red lines that say why
+/// the scripts were not swapped.
+pub fn reload_replies(id: &str, outcome: &ReloadOutcome) -> Vec<Text> {
+    let id = id.to_owned();
+    match outcome {
+        ReloadOutcome::Reloaded { scripts, .. } => vec![tr(
+            "horizon.dev_tools.reload.done",
+            &[id, scripts.to_string()],
+        )],
+        ReloadOutcome::NotLoaded => vec![red(tr("horizon.dev_tools.reload.not_loaded", &[id]))],
+        ReloadOutcome::NotADevMod => vec![red(tr("horizon.dev_tools.reload.not_dev", &[id]))],
+        ReloadOutcome::Busy => vec![red(tr("horizon.dev_tools.reload.busy", &[id]))],
+        ReloadOutcome::Failed(why) => {
+            vec![red(tr(
+                "horizon.dev_tools.reload.failed",
+                &[id, why.clone()],
+            ))]
+        }
+        ReloadOutcome::Refused(what) => vec![
+            red(tr(
+                "horizon.dev_tools.reload.refused",
+                &[id, what.join("; ")],
+            )),
+            red(tr("horizon.dev_tools.reload.restart", &[])),
+        ],
     }
 }
 
@@ -698,6 +790,10 @@ mod flows {
         lua_run: LuaRun,
         /// The chunks the runner was called with, in order.
         lua_sources: Vec<String>,
+        /// The ids `reload` was called with, in order; what it answers; the ids it lists.
+        reloads: Vec<String>,
+        reload_result: ReloadOutcome,
+        reload_ids: Vec<String>,
     }
 
     impl Reads for Fake {
@@ -719,6 +815,13 @@ mod flows {
         fn run_lua(&mut self, source: &str) -> LuaRun {
             self.lua_sources.push(source.to_owned());
             self.lua_run.clone()
+        }
+        fn reload(&mut self, id: &str) -> ReloadOutcome {
+            self.reloads.push(id.to_owned());
+            self.reload_result.clone()
+        }
+        fn reloadable(&self) -> Vec<String> {
+            self.reload_ids.clone()
         }
         fn reply(&mut self, line: Text) {
             self.replies.push(line);
@@ -853,6 +956,132 @@ mod flows {
         assert_eq!(
             fake.replies.last(),
             Some(&failure("horizon.dev_tools.owner_only"))
+        );
+    }
+
+    #[test]
+    fn the_owner_reloads_by_id_and_a_guest_never_reaches_the_reloader() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        fake.reload_result = ReloadOutcome::Reloaded {
+            id: "mod_a".to_owned(),
+            scripts: 2,
+        };
+        assert!(serve(&mut fake, 7, "luareload mod_a"));
+        assert_eq!(fake.reloads, ["mod_a"]);
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate(
+                "horizon.dev_tools.reload.done",
+                vec![Text::literal("mod_a"), Text::literal("2")]
+            )]
+        );
+
+        assert!(serve(&mut fake, 8, "luareload mod_a"));
+        assert_eq!(fake.reloads.len(), 1, "the guest's reload never runs");
+        assert_eq!(
+            fake.replies.last(),
+            Some(&failure("horizon.dev_tools.owner_only"))
+        );
+    }
+
+    #[test]
+    fn a_dedicated_server_and_a_console_source_never_reload() {
+        // One fake: `owned_by` holds the process-wide store lock, so a second one would deadlock.
+        let mut fake = owned_by(None, Vec::new());
+        assert!(serve(&mut fake, 7, "luareload mod_a"));
+        assert!(fake.reloads.is_empty());
+        assert_eq!(fake.replies, vec![failure("horizon.dev_tools.owner_only")]);
+
+        fake.owner = Some(7);
+        fake.replies.clear();
+        let console = CommandSource::Console {
+            permission: mod_api::PermissionLevel::Admins,
+        };
+        serve_from(&mut fake, &console, "luareload mod_a");
+        assert!(fake.reloads.is_empty(), "the console is refused, as before");
+    }
+
+    #[test]
+    fn reload_alone_lists_the_reloadable_ids_or_says_there_are_none() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "luareload"));
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate("horizon.dev_tools.reload.none", vec![])]
+        );
+        assert!(fake.reloads.is_empty());
+
+        fake.replies.clear();
+        fake.reload_ids = vec!["mod_a".to_owned(), "mod_b".to_owned()];
+        assert!(serve(&mut fake, 7, "luareload"));
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate(
+                "horizon.dev_tools.reload.list",
+                vec![Text::literal("mod_a, mod_b")]
+            )]
+        );
+        assert!(fake.reloads.is_empty());
+    }
+
+    #[test]
+    fn each_reload_outcome_has_its_reply_and_the_failures_are_red() {
+        let done = reload_replies(
+            "mod_a",
+            &ReloadOutcome::Reloaded {
+                id: "mod_a".to_owned(),
+                scripts: 1,
+            },
+        );
+        assert_eq!(
+            done,
+            vec![Text::translate(
+                "horizon.dev_tools.reload.done",
+                vec![Text::literal("mod_a"), Text::literal("1")]
+            )]
+        );
+        assert_eq!(done[0].style.color, None, "a success is not red");
+
+        let cases = [
+            (
+                ReloadOutcome::NotLoaded,
+                "horizon.dev_tools.reload.not_loaded",
+            ),
+            (
+                ReloadOutcome::NotADevMod,
+                "horizon.dev_tools.reload.not_dev",
+            ),
+            (ReloadOutcome::Busy, "horizon.dev_tools.reload.busy"),
+            (
+                ReloadOutcome::Failed("boom".to_owned()),
+                "horizon.dev_tools.reload.failed",
+            ),
+        ];
+        for (outcome, key) in cases {
+            let lines = reload_replies("mod_a", &outcome);
+            assert_eq!(lines.len(), 1, "{key}");
+            assert_eq!(lines[0].style.color.as_deref(), Some("red"), "{key}");
+            assert!(
+                matches!(&lines[0].content, mod_api::text::TextContent::Translatable { key: k, .. } if k == key),
+                "{key}: {:?}",
+                lines[0].content
+            );
+        }
+
+        let refused = reload_replies(
+            "mod_a",
+            &ReloadOutcome::Refused(vec!["commands: added `mod_a hello`".to_owned()]),
+        );
+        assert_eq!(refused.len(), 2);
+        assert!(
+            refused
+                .iter()
+                .all(|l| l.style.color.as_deref() == Some("red"))
+        );
+        assert_eq!(
+            refused[1].content,
+            Text::translate("horizon.dev_tools.reload.restart", vec![]).content,
+            "the restart line says what to do"
         );
     }
 

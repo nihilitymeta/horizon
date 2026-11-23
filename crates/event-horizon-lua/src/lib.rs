@@ -55,6 +55,9 @@ pub mod package;
 pub mod provider;
 pub mod quarantine;
 pub mod ratelimit;
+pub mod reload;
+#[cfg(test)]
+mod reload_tests;
 mod setting_api;
 #[cfg(test)]
 mod setting_api_tests;

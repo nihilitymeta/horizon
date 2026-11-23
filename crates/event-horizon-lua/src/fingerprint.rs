@@ -31,7 +31,8 @@ pub(crate) struct Fingerprint {
     menu_parts: Vec<String>,
     block_entity_types: Vec<String>,
     fluids: Vec<String>,
-    /// `entity name priority [hook, hook]` for each goal and behavior (behaviors add their duration).
+    /// `entity name priority flags [hook, hook]` for each goal, and `entity name activity priority duration
+    /// [hook, hook]` for each behavior (the flags and the activity are their `Debug` names).
     goals: Vec<String>,
     behaviors: Vec<String>,
     client_commands: Vec<String>,
@@ -48,7 +49,6 @@ pub(crate) struct Fingerprint {
 
 /// A swap that was refused: the names of what the fresh state declares differently, as the
 /// messages say them (`blocks: added `mod:thing``).
-#[cfg_attr(not(test), allow(dead_code))] // 5f-c2 is the first production caller
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SwapRefused {
     pub(crate) what: Vec<String>,
@@ -132,10 +132,11 @@ impl Fingerprint {
                     .iter()
                     .map(|g| {
                         format!(
-                            "{} {} priority {} [{}]",
+                            "{} {} priority {} flags {:?} [{}]",
                             g.entity,
                             g.name,
                             g.priority,
+                            g.flags,
                             joined(&g.hooks)
                         )
                     })
@@ -146,9 +147,10 @@ impl Fingerprint {
                     .iter()
                     .map(|b| {
                         format!(
-                            "{} {} priority {} duration {}..{} [{}]",
+                            "{} {} {:?} priority {} duration {}..{} [{}]",
                             b.entity,
                             b.name,
+                            b.activity,
                             b.priority,
                             b.min_duration,
                             b.max_duration,
@@ -194,7 +196,6 @@ impl Fingerprint {
 
     /// The differences from `fresh` (the fingerprint of the state a swap would install), one line
     /// each. Empty when the two are equal.
-    #[cfg_attr(not(test), allow(dead_code))] // used by swap_state, see there
     pub(crate) fn differences(&self, fresh: &Fingerprint) -> Vec<String> {
         let mut out = Vec::new();
         if self.id != fresh.id {

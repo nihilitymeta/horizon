@@ -124,8 +124,9 @@ pub struct LuaMod {
     /// Whether the mod declared `horizon.on_setting_changed`; its handler is in the Lua registry.
     setting_changed: bool,
     /// What the declaration pass declared; a swap of `lua` must declare the same (`swap_state`).
-    #[cfg_attr(not(test), allow(dead_code))] // read by swap_state, which 5f-c2 calls first
     fingerprint: Fingerprint,
+    /// Whether the mod was started from a dev path (`EH_LUA_MODS`): only those reload (`reload.rs`).
+    dev: bool,
     /// The state the mod runs in. A swap replaces it under the write lock (`swap_state`); `lua()`
     /// hands out a handle to the state as it is then.
     lua: RwLock<Lua>,
@@ -200,6 +201,40 @@ impl Turn {
     }
 }
 
+impl Turn {
+    /// `enter`, but gives up once `wait` has passed while another thread still holds the turn: None
+    /// then. The same thread entering again never waits, as with `enter`.
+    pub(crate) fn enter_timeout(&self, wait: Duration) -> Option<TurnGuard<'_>> {
+        let me = thread::current().id();
+        let deadline = Instant::now() + wait;
+        let mut holder = self.holder.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            match *holder {
+                None => {
+                    *holder = Some((me, 1));
+                    break;
+                }
+                Some((who, depth)) if who == me => {
+                    *holder = Some((me, depth + 1));
+                    break;
+                }
+                Some(_) => {
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        return None;
+                    }
+                    holder = self
+                        .free
+                        .wait_timeout(holder, left)
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .0;
+                }
+            }
+        }
+        Some(TurnGuard { turn: self })
+    }
+}
+
 impl Drop for TurnGuard<'_> {
     fn drop(&mut self) {
         let mut holder = self
@@ -240,6 +275,16 @@ impl LuaMod {
         m.described = Described::of(package.manifest());
         m.icon = package.read_icon();
         Ok(m)
+    }
+
+    /// Records that the mod was started from a dev path (the loader calls this for each scanned mod).
+    pub(crate) fn set_dev(&mut self, dev: bool) {
+        self.dev = dev;
+    }
+
+    /// Whether the mod was started from a dev path, so `reload` may re-read its folder.
+    pub(crate) fn is_dev(&self) -> bool {
+        self.dev
     }
 
     /// The icon's PNG bytes, read when the mod loaded; `None` without a usable icon.
@@ -322,6 +367,7 @@ impl LuaMod {
             described: Described::default(),
             setting_changed: declaration.setting_changed,
             fingerprint: built.fingerprint,
+            dev: false,
             lua: RwLock::new(built.lua),
             log,
             turn: Turn::default(),
@@ -331,7 +377,6 @@ impl LuaMod {
     /// A fresh state for this mod, built from `scripts` the way `from_sources` builds the first one
     /// (the same declaration pass, the same runtime table), with this mod's log and settings, and
     /// its fingerprint. The result is the input of `swap_state`.
-    #[cfg_attr(not(test), allow(dead_code))] // 5f-c2 (the reload entry) is the first production caller
     pub(crate) fn rebuild_state(
         &self,
         found: &Discovered,
@@ -352,7 +397,6 @@ impl LuaMod {
     ///
     /// `fresh` must come from `state::new_state` and the declaration pass `from_sources` runs, which
     /// `rebuild_state` does; a state built any other way is the caller's bug.
-    #[cfg_attr(not(test), allow(dead_code))] // 5f-c2 (the reload entry) is the first production caller
     pub(crate) fn swap_state(
         &self,
         fresh: Lua,

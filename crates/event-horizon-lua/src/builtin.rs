@@ -84,6 +84,8 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
         .with_report(refused_lines.clone())
         .with_disabled(disabled_ids, notices)
         .with_skipped(skipped);
+    // What `reload` re-reads the dev mods through: the same scan the load made (first call wins).
+    crate::reload::publish(host.shared_mods(), game_dir, dev_paths, dedicated);
     // The Mods screen reads the mods through this provider. The first registration wins, so a
     // second `builtin` in the same process (tests) is refused and changes nothing.
     let provider: &'static LuaProvider = Box::leak(Box::new(LuaProvider::new(
@@ -131,7 +133,7 @@ fn grant_namespace(m: &LuaMod) -> Result<(), String> {
 /// `discover::SKIPPED_CLIENT_ONLY`. A mod whose content is refused still loads: its notice is kept
 /// with the mod (`LuaMod::push_notice`), and it contributes no pack.
 #[allow(clippy::type_complexity)]
-fn load_mods(
+pub(crate) fn load_mods(
     game_dir: &Path,
     dev_paths: &[PathBuf],
     dedicated: bool,
@@ -199,28 +201,31 @@ fn load_mods(
             }
         };
         match LuaMod::load_package(&scanned.found, &scanned.package, settings, settings_notices) {
-            Ok(mut m) => match grant_namespace(&m) {
-                Ok(()) => {
-                    match assets::publish(game_dir, &scanned.package) {
-                        Ok(Some(pack)) => packs.push(pack),
-                        Ok(None) => {}
-                        Err(error) => m.push_notice(
-                            &scanned.found.id,
-                            format!(
-                                "{}: its assets, data and lang are not loaded: {} ({})",
-                                scanned.found.id,
-                                error.reason(),
-                                assets::KEY
+            Ok(mut m) => {
+                m.set_dev(scanned.dev);
+                match grant_namespace(&m) {
+                    Ok(()) => {
+                        match assets::publish(game_dir, &scanned.package) {
+                            Ok(Some(pack)) => packs.push(pack),
+                            Ok(None) => {}
+                            Err(error) => m.push_notice(
+                                &scanned.found.id,
+                                format!(
+                                    "{}: its assets, data and lang are not loaded: {} ({})",
+                                    scanned.found.id,
+                                    error.reason(),
+                                    assets::KEY
+                                ),
                             ),
-                        ),
+                        }
+                        mods.push(m);
                     }
-                    mods.push(m);
+                    Err(reason) => refused.push(RefusedLine::plain(format!(
+                        "{}: {reason}",
+                        scanned.found.id
+                    ))),
                 }
-                Err(reason) => refused.push(RefusedLine::plain(format!(
-                    "{}: {reason}",
-                    scanned.found.id
-                ))),
-            },
+            }
             Err(reason) => refused.push(RefusedLine::plain(format!(
                 "{}: {reason}",
                 scanned.found.id
