@@ -1,11 +1,13 @@
 //! Event Horizon's developer tools, as a built-in mod: an egui window drawn over the world, on
 //! with `HORIZON_DEV_TOOLS=1` or `--dev-tools`. Off, nothing here is registered or loaded.
 //!
-//! Chunk 5c-a is the skeleton: one empty window. Chunk 5c-c adds the commands (`commands`); input
-//! and the console come later.
+//! Chunk 5c-a is the skeleton: one empty window. Chunk 5c-c adds the commands (`commands`); chunk
+//! 5c-b2 adds the input (`input`: the key frees the pointer, and egui takes the mouse and keys
+//! while it is free). The console comes later.
 #![forbid(unsafe_code)]
 
 mod commands;
+mod input;
 mod overlay;
 pub mod package;
 
@@ -37,6 +39,8 @@ pub fn requested(env: Option<&OsStr>, args: impl IntoIterator<Item = OsString>) 
 /// when [`requested`] said yes: the callback is never added otherwise.
 pub fn mods() -> Vec<ModEntry> {
     overlay::install();
+    input::install();
+    horizon_client_input::keybinds::show_dev_tools_key(true);
     vec![ModEntry::new(package::ID, Box::new(DevTools))]
 }
 

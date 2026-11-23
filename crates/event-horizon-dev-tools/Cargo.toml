@@ -16,11 +16,14 @@ horizon-world = { path = "../horizon-world" }
 horizon-mod-api = { path = "../horizon-mod-api" }
 horizon-mod-render = { path = "../horizon-mod-render" }
 event-horizon-observe = { path = "../event-horizon-observe" }
+horizon-client-input = { path = "../horizon-client-input" }
 serde_json = "1.0.151"
 log = "0.4"
+winit = "0.30.13"
 # The windows draw with egui over the world: HORIZON_DEV_TOOLS=1.
 egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
 egui-wgpu = { version = "0.37", default-features = false }
+egui-winit = { version = "0.37", default-features = false }
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
 
 [dev-dependencies]

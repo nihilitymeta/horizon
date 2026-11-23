@@ -1,6 +1,8 @@
 //! The developer tools' overlay: one egui window drawn over the world, in the `world_drawn`
-//! callbacks. Its input is the screen's size and the time only: no pointer and no keys yet.
+//! callbacks. Its input is the frame's input from [`crate::input`] (the pointer and the keys the
+//! tools take), or the screen's size and the time when there is none.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
@@ -12,7 +14,6 @@ pub const TITLE_KEY: &str = "horizon.dev_tools.title";
 /// What the overlay keeps between frames. Empty until the first frame it draws.
 #[derive(Default)]
 struct Overlay {
-    ctx: Option<egui::Context>,
     painter: Option<Painter>,
     started: Option<Instant>,
 }
@@ -20,12 +21,14 @@ struct Overlay {
 impl Overlay {
     const fn new() -> Self {
         Self {
-            ctx: None,
             painter: None,
             started: None,
         }
     }
 }
+
+/// Whether the server has been told this client shows the windows (`Wire::Hello`), once.
+static HELLO_SENT: AtomicBool = AtomicBool::new(false);
 
 /// The egui wgpu renderer, made on the first frame for that frame's colour format.
 struct Painter {
@@ -51,9 +54,12 @@ fn draw(world: &mut WorldDrawn<'_>) {
     if w == 0 || h == 0 {
         return;
     }
+    if !HELLO_SENT.swap(true, Ordering::Relaxed) {
+        event_horizon_observe::send_to_server(event_horizon_observe::wire::Wire::Hello);
+    }
     let mut state = overlay();
     let state = &mut *state;
-    let ctx = state.ctx.get_or_insert_with(egui::Context::default).clone();
+    let ctx = crate::input::ctx().clone();
     let started = *state.started.get_or_insert_with(Instant::now);
     let painter = match &mut state.painter {
         Some(p) if p.format == world.color_format => p,
@@ -66,14 +72,14 @@ fn draw(world: &mut WorldDrawn<'_>) {
             format: world.color_format,
         }),
     };
-    let input = egui::RawInput {
+    let input = crate::input::take_input().unwrap_or_else(|| egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
             egui::vec2(w as f32, h as f32),
         )),
         time: Some(started.elapsed().as_secs_f64()),
         ..Default::default()
-    };
+    });
     let output = ctx.run_ui(input, |ui| window(ui.ctx()));
     let screen = egui_wgpu::ScreenDescriptor {
         size_in_pixels: [w, h],
@@ -135,7 +141,6 @@ mod tests {
     #[test]
     fn the_overlay_starts_empty() {
         let overlay = Overlay::new();
-        assert!(overlay.ctx.is_none());
         assert!(overlay.painter.is_none());
         assert!(overlay.started.is_none());
     }
