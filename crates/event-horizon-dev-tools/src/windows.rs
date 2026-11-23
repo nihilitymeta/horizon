@@ -1,8 +1,11 @@
 //! The windows' half of the developer tools (docs/dev-tools.md): the egui windows that draw what the
 //! store holds. Nothing is drawn until something is inspected: [`ui`] draws one window per view of
-//! each watched entity. This chunk is the data view (`/inspect`): the NBT tree with its filter and
-//! its per-number watch buttons, and the stop button. The goals, senses and nav windows (5c-w2),
-//! and the watch and block windows (5c-w3), come later; their places are marked in [`ui`].
+//! each watched entity, and the `/watch` charts of each. This file holds the data view (`/inspect`):
+//! the NBT tree with its filter and its per-number watch buttons, and the stop button, plus the
+//! helpers the mob windows share. The goals, senses, nav and watch windows are in [`mob`]. The block
+//! windows (5c-w3) come later; their place is marked in [`ui`].
+
+mod mob;
 
 use event_horizon_observe::wire::INTERVALS;
 use event_horizon_observe::{self as observe, BrainSnapshot, Inspected, View};
@@ -11,28 +14,38 @@ use horizon_client_core::snbt::java_hash_order;
 use horizon_core::nbt::{Compound, Tag};
 use horizon_world::snbt_text::to_snbt;
 
-/// Draws the windows of everything watched: one per view of each entity.
+use mob::{goals_window, nav_window, senses_window, watch_window};
+
+/// Draws the windows of everything watched: one per view of each entity, and one chart per watched
+/// path.
 pub fn ui(ctx: &egui::Context) {
     // 5c-w3: the watched blocks' windows (`observe::blocks()`, `block_window`) come with the block readout.
     for item in &observe::snapshots() {
         for view in &item.views {
             match view {
                 View::Data => inspect_window(ctx, item),
-                // 5c-w2: the goals, senses and nav windows (`goals_window`, `senses_window`, `nav_window`).
-                View::Goals | View::Senses | View::Nav => {}
+                View::Goals => goals_window(ctx, item),
+                View::Senses => senses_window(ctx, item),
+                View::Nav => nav_window(ctx, item),
             }
         }
-        // 5c-w3: one chart window per watched path (`watch_window`) comes with `/watch`.
+        for series in &item.series {
+            watch_window(ctx, item, series);
+        }
     }
 }
 
-/// The flags of a goal row as the goals window names them. The goals window (5c-w2) is the user.
-#[allow(dead_code)] // used by the goals window (5c-w2)
+/// The flags of a goal row, as the goals window names them: `-` for none.
 fn flags_label(flags: u8) -> String {
     let mut names = Vec::new();
-    for (bit, name) in [(1, "move"), (2, "look"), (4, "jump"), (8, "target")] {
+    for (bit, key) in [
+        (1, "horizon.dev_tools.flag.move"),
+        (2, "horizon.dev_tools.flag.look"),
+        (4, "horizon.dev_tools.flag.jump"),
+        (8, "horizon.dev_tools.flag.target"),
+    ] {
         if flags & bit != 0 {
-            names.push(name);
+            names.push(lang::get(key));
         }
     }
     if names.is_empty() {
@@ -42,14 +55,12 @@ fn flags_label(flags: u8) -> String {
     }
 }
 
-/// A position, two decimals a number. The senses and nav windows (5c-w2) are the users.
-#[allow(dead_code)] // used by the senses and nav windows (5c-w2)
+/// A position, two decimals a number.
 fn pos_label(p: [f64; 3]) -> String {
     format!("{:.2} {:.2} {:.2}", p[0], p[1], p[2])
 }
 
-/// A block position. Later windows (5c-w2, 5c-w3) are the users.
-#[allow(dead_code)] // used by the nav and block windows (5c-w2, 5c-w3)
+/// A block position.
 fn block_label(p: [i32; 3]) -> String {
     format!("{} {} {}", p[0], p[1], p[2])
 }
@@ -251,9 +262,7 @@ fn stop_entity(ui: &mut egui::Ui, id: u32, view: View) {
     }
 }
 
-/// The top line of the mob windows: stop button and the usual warnings. The goals, senses and nav
-/// windows (5c-w2) are the users.
-#[allow(dead_code)] // used by the goals, senses and nav windows (5c-w2)
+/// The top line of the mob windows: stop button and the usual warnings.
 fn mob_header<'a>(ui: &mut egui::Ui, item: &'a Inspected, view: View) -> Option<&'a BrainSnapshot> {
     ui.horizontal(|ui| stop_entity(ui, item.id, view));
     match &item.brain {
@@ -437,9 +446,22 @@ mod tests {
     fn a_position_and_its_flags_read_as_the_goal_windows_show_them() {
         assert_eq!(pos_label([1.0, -2.5, 3.75]), "1.00 -2.50 3.75");
         assert_eq!(block_label([4, -64, 9]), "4 -64 9");
-        assert_eq!(flags_label(0), "-");
-        assert_eq!(flags_label(1 | 4), "move jump");
-        assert_eq!(flags_label(1 | 2 | 4 | 8), "move look jump target");
+        // The flag names are translated: read them in the bundled English, not the raw keys.
+        let (names, _) = lang::scoped(lang::Language::load(&[], "en_us"), || {
+            (
+                flags_label(0),
+                flags_label(1 | 4),
+                flags_label(1 | 2 | 4 | 8),
+            )
+        });
+        assert_eq!(
+            names,
+            (
+                "-".to_owned(),
+                "move jump".to_owned(),
+                "move look jump target".to_owned()
+            )
+        );
     }
 
     #[test]
@@ -462,7 +484,7 @@ mod tests {
     }
 
     /// One frame of `ui`, on a screen of 800 by 600 points, with the store as the test left it.
-    fn frame() -> Vec<egui::epaint::ClippedShape> {
+    pub(super) fn frame() -> Vec<egui::epaint::ClippedShape> {
         let raw = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
