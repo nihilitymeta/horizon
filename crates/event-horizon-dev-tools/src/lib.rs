@@ -1,14 +1,19 @@
 //! Event Horizon's developer tools, as a built-in mod: an egui window drawn over the world, on
 //! with `HORIZON_DEV_TOOLS=1` or `--dev-tools`. Off, nothing here is registered or loaded.
 //!
-//! Chunk 5c-a is the skeleton: one empty window. Input, commands and the console come later.
+//! Chunk 5c-a is the skeleton: one empty window. Chunk 5c-c adds the commands (`commands`); input
+//! and the console come later.
 #![forbid(unsafe_code)]
 
+mod commands;
 mod overlay;
 pub mod package;
 
 use mod_api::__private::native::BuiltMod;
-use mod_api::{Hooks, ModEntry, Side};
+use mod_api::{
+    Flow, Hooks, ModEntry, PlayerCommandEvent, RegisterCommandsEvent, RunModCommandEvent,
+    ServerHost, Side,
+};
 use std::ffi::{OsStr, OsString};
 
 /// The environment variable that turns the tools on, with the value `1`.
@@ -35,12 +40,49 @@ pub fn mods() -> Vec<ModEntry> {
     vec![ModEntry::new(package::ID, Box::new(DevTools))]
 }
 
-/// The developer tools' hooks: none yet, the window is drawn by its callback.
+/// The developer tools' hooks: their commands. The window is drawn by its callback.
 #[derive(Default)]
 struct DevTools;
 
 #[mod_api::horizon_mod]
-impl Hooks for DevTools {}
+impl Hooks for DevTools {
+    fn register_commands(&self, _: &mut dyn ServerHost, event: &mut RegisterCommandsEvent<'_>) {
+        event.commands.extend(
+            commands::USAGES
+                .iter()
+                .map(|usage| mod_api::Command::new(usage)),
+        );
+    }
+
+    /// The window's own player's commands, before the tree: the owner's only. Any other player's
+    /// command goes on to the tree, which refuses it.
+    fn player_command(
+        &self,
+        host: &mut dyn ServerHost,
+        event: &mut PlayerCommandEvent<'_>,
+    ) -> Flow {
+        match commands::player_command(host, event.player, event.command) {
+            Some(replies) => {
+                event.replies.extend(replies);
+                Flow::Cancel
+            }
+            None => Flow::Continue,
+        }
+    }
+
+    fn run_mod_command(
+        &self,
+        host: &mut dyn ServerHost,
+        event: &mut RunModCommandEvent<'_>,
+    ) -> Flow {
+        for line in commands::run_tree_command(host, event.source, event.command) {
+            if let Err(e) = host.commands().feedback(line) {
+                log::warn!("a developer tools reply was refused: {e:?}");
+            }
+        }
+        Flow::Cancel
+    }
+}
 
 #[cfg(test)]
 mod tests {

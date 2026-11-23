@@ -1,0 +1,673 @@
+//! The developer tools' commands (docs/dev-tools.md) as a built-in mod's: `/inspect`, `/goals`,
+//! `/senses`, `/nav`, `/watch` and `/mobai log` are in the server's command tree and run from the
+//! mod's hooks. The bodies keep the old messages, counts and store calls, on the shared
+//! [`event_horizon_observe`] store the windows read. `/lua` and the console come in a later chunk:
+//! they are not in [`USAGES`] and not in [`Cmd`].
+//!
+//! The owner's rule: every one of these commands is the world's owner's, strictly. The sender's
+//! uuid must be the one the host names as the single-player owner; any other player (a guest of
+//! any level, an operator) is refused, and on a dedicated server (no owner) everyone is.
+use event_horizon_observe::{self as observe, View};
+use horizon_client::{data_cmd, lang, nbt_path::NbtPath};
+use mod_api::text::TextStyle;
+use mod_api::{
+    CommandArgumentValue, CommandInvocation, CommandSource, PlayerRef, ServerHost, Text,
+};
+
+/// A translated line: the language file's `key`, its arguments as plain text.
+fn tr(key: &str, args: &[String]) -> Text {
+    Text::translate(key, args.iter().map(Text::literal).collect())
+}
+
+/// `line` in red, as a command's failure is.
+fn red(line: Text) -> Text {
+    let mut style = TextStyle::default();
+    style.color = Some("red".to_owned());
+    line.with_style(style)
+}
+
+/// The red line that says a command failed, from its language key.
+fn failure(key: &str) -> Text {
+    red(tr(key, &[]))
+}
+
+/// The usages the tools register in the server's tree. Every player may run them: the owner's
+/// rule is in the handlers, not in the tree. The argument `rest` is the line's remainder, which
+/// the handlers read the way the old console line was read (`parse`).
+pub const USAGES: &[&str] = &[
+    "inspect",
+    "inspect <rest:text>",
+    "goals <rest:text>",
+    "senses <rest:text>",
+    "nav <rest:text>",
+    "watch <rest:text>",
+    "mobai log <rest:text>",
+];
+
+/// One of the tools' commands, as the line names it.
+#[derive(Debug, PartialEq)]
+enum Cmd<'a> {
+    /// `/inspect` alone: what is watched.
+    List,
+    /// `/inspect|goals|senses|nav <targets>` and `… clear`.
+    View {
+        view: View,
+        clear: bool,
+        targets: &'a str,
+    },
+    /// `/watch <targets> <path>` and `/watch clear`.
+    Watch {
+        clear: bool,
+        targets: &'a str,
+        path: &'a str,
+    },
+    /// `/mobai log <targets>` and `/mobai log stop`.
+    MobaiLog { stop: bool, targets: &'a str },
+}
+
+/// The server's reads and the command's replies, as the commands use them. The live host
+/// implements it ([`Live`]); the tests implement it with fakes.
+pub trait Reads {
+    /// The single-player owner's uuid (`dev_server_owner`); None on a dedicated server.
+    fn owner(&self) -> Option<u128>;
+    /// The dimension id of the level the sender is in, when it is known.
+    fn dimension(&self) -> Option<String>;
+    /// The network entity ids a selector names, as the server's command source finds them.
+    fn select_ids(&mut self, selector: &str) -> Vec<u32>;
+    /// Whether entity `id` is a living mob that is alive.
+    fn is_mob(&self, id: u32) -> bool;
+    /// The name of entity `id`, when it has one.
+    fn entity_name(&self, id: u32) -> Option<String>;
+    /// A line of feedback to the sender.
+    fn reply(&mut self, line: Text);
+}
+
+/// The live server's reads for one sender: the host, and the replies collected for the hook to
+/// deliver (as command feedback, or as the chat lines of `player_command`).
+pub struct Live<'a> {
+    host: &'a mut dyn ServerHost,
+    sender: PlayerRef,
+    /// The replies in order.
+    pub replies: Vec<Text>,
+}
+
+impl<'a> Live<'a> {
+    pub fn new(host: &'a mut dyn ServerHost, sender: PlayerRef) -> Self {
+        Self {
+            host,
+            sender,
+            replies: Vec::new(),
+        }
+    }
+}
+
+impl Reads for Live<'_> {
+    fn owner(&self) -> Option<u128> {
+        self.host.dev_server_owner()
+    }
+    fn dimension(&self) -> Option<String> {
+        let level = self.sender.level(&*self.host)?;
+        self.host.dev_level_dimension(level)
+    }
+    fn select_ids(&mut self, selector: &str) -> Vec<u32> {
+        self.host.dev_select_ids(selector)
+    }
+    fn is_mob(&self, id: u32) -> bool {
+        let Some(entity) = self.host.entity(id) else {
+            return false;
+        };
+        let Some(mob) = self.host.mob(entity) else {
+            return false;
+        };
+        mob.living().alive(&*self.host) == Some(true)
+    }
+    fn entity_name(&self, id: u32) -> Option<String> {
+        self.host.entity(id)?.name(&*self.host)
+    }
+    fn reply(&mut self, line: Text) {
+        self.replies.push(line);
+    }
+}
+
+/// Whether `sender` is the world's owner: the only player the tools' commands serve. None (a
+/// dedicated server, or a world no single player owns) serves nobody.
+pub fn is_owner(owner: Option<u128>, sender: u128) -> bool {
+    owner == Some(sender)
+}
+
+/// The command line a tree usage's words and remainder make, as the chat line reads it.
+pub fn join_line(literals: &[String], rest: Option<&str>) -> String {
+    let mut line = literals.join(" ");
+    if let Some(rest) = rest.filter(|r| !r.is_empty()) {
+        line.push(' ');
+        line.push_str(rest);
+    }
+    line
+}
+
+/// The line a tree invocation was typed as.
+pub fn invocation_line(invocation: &CommandInvocation) -> String {
+    let rest = match invocation.argument("rest") {
+        Some(CommandArgumentValue::String(rest)) => Some(rest.as_str()),
+        _ => None,
+    };
+    join_line(&invocation.literals, rest)
+}
+
+/// Serves `line` from `sender`: the owner's command runs, anyone else is refused with the owner's
+/// reply. Returns false when `line` is not one of the tools' commands (nothing is said then).
+pub fn serve(reads: &mut dyn Reads, sender: u128, line: &str) -> bool {
+    let Some(cmd) = parse(line) else {
+        return false;
+    };
+    if is_owner(reads.owner(), sender) {
+        run(reads, cmd);
+    } else {
+        reads.reply(failure("horizon.dev_tools.owner_only"));
+    }
+    true
+}
+
+/// The command the line names, as the tree's words: the name, then what follows it. None for a
+/// line that is not one of the tools' commands.
+fn parse(line: &str) -> Option<Cmd<'_>> {
+    let (name, rest) = first_word(line.trim());
+    match name {
+        "inspect" | "goals" | "senses" | "nav" => {
+            let view = match name {
+                "inspect" => View::Data,
+                "goals" => View::Goals,
+                "senses" => View::Senses,
+                _ => View::Nav,
+            };
+            match rest {
+                // `/inspect` alone lists what is watched.
+                "" if name == "inspect" => Some(Cmd::List),
+                "" => None,
+                "clear" => Some(Cmd::View {
+                    view,
+                    clear: true,
+                    targets: "",
+                }),
+                targets => Some(Cmd::View {
+                    view,
+                    clear: false,
+                    targets,
+                }),
+            }
+        }
+        "watch" => match rest {
+            "" => None,
+            "clear" => Some(Cmd::Watch {
+                clear: true,
+                targets: "",
+                path: "",
+            }),
+            rest => {
+                // The path is the last word, the targets the rest.
+                let (targets, path) = rest.rsplit_once(char::is_whitespace)?;
+                Some(Cmd::Watch {
+                    clear: false,
+                    targets: targets.trim(),
+                    path: path.trim(),
+                })
+            }
+        },
+        "mobai" => {
+            let (word, rest) = first_word(rest);
+            if word != "log" {
+                return None;
+            }
+            match rest {
+                "" => None,
+                "stop" => Some(Cmd::MobaiLog {
+                    stop: true,
+                    targets: "",
+                }),
+                targets => Some(Cmd::MobaiLog {
+                    stop: false,
+                    targets,
+                }),
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The first word of `s` and what follows it.
+fn first_word(s: &str) -> (&str, &str) {
+    let s = s.trim_start();
+    match s.find(char::is_whitespace) {
+        Some(i) => (&s[..i], s[i..].trim_start()),
+        None => (s, ""),
+    }
+}
+
+/// Runs the command the line named.
+fn run(reads: &mut dyn Reads, cmd: Cmd<'_>) {
+    match cmd {
+        Cmd::List => list(reads),
+        Cmd::View {
+            view,
+            clear,
+            targets,
+        } => open_view(reads, view, clear, targets),
+        Cmd::Watch {
+            clear,
+            targets,
+            path,
+        } => watch(reads, clear, targets, path),
+        Cmd::MobaiLog { stop, targets } => mobai_log(reads, stop, targets),
+    }
+}
+
+/// The window's name, as the messages name it.
+fn view_name(view: View) -> &'static str {
+    match view {
+        View::Data => "inspect",
+        View::Goals => "goals",
+        View::Senses => "senses",
+        View::Nav => "nav",
+    }
+}
+
+/// `key` with `args`, or `key.one` when `n` is one: the two forms of a counted line, as the
+/// language file gives them.
+fn counted(key: &str, n: usize, args: &[String]) -> Text {
+    if n == 1 {
+        tr(&format!("{key}.one"), args)
+    } else {
+        tr(key, args)
+    }
+}
+
+/// The ids the selector names, as the owner's command finds them. None when it names nothing.
+fn target_ids(reads: &mut dyn Reads, selector: &str) -> Option<Vec<u32>> {
+    let ids = reads.select_ids(selector);
+    (!ids.is_empty()).then_some(ids)
+}
+
+/// The store's entries for `ids`, each with the sender's dimension.
+fn entries(ids: &[u32], dimension: &Option<String>) -> Vec<(u32, Option<String>)> {
+    ids.iter().map(|&id| (id, dimension.clone())).collect()
+}
+
+/// `/inspect|goals|senses|nav <targets>`: open that window for them; `… clear` closes it everywhere.
+fn open_view(reads: &mut dyn Reads, view: View, clear: bool, targets: &str) {
+    let name = view_name(view);
+    if clear {
+        observe::clear(Some(view));
+        observe::forget_unwatched();
+        reads.reply(tr("horizon.dev_tools.closed", &[name.to_owned()]));
+        return;
+    }
+    let Some(ids) = target_ids(reads, targets) else {
+        reads.reply(failure("argument.entity.notfound.entity"));
+        return;
+    };
+    let dimension = reads.dimension();
+    observe::remember(&entries(&ids, &dimension));
+    observe::add(&ids, view);
+    reads.reply(counted(
+        "horizon.dev_tools.opened",
+        ids.len(),
+        &[name.to_owned(), ids.len().to_string()],
+    ));
+}
+
+/// `/inspect` alone: what is watched, and how to use the tools.
+fn list(reads: &mut dyn Reads) {
+    let watched = observe::snapshots();
+    if watched.is_empty() {
+        reads.reply(tr("horizon.dev_tools.watching_nothing", &[]));
+        return;
+    }
+    let names: Vec<String> = watched
+        .iter()
+        .map(|w| {
+            let name = w
+                .data
+                .as_ref()
+                .map_or_else(|| lang::get("horizon.dev_tools.entity"), |d| d.name.clone());
+            let views: Vec<&str> = w
+                .views
+                .iter()
+                .map(|v| view_name(*v))
+                .chain(w.series.iter().map(|s| s.path.as_str()))
+                .collect();
+            format!("{name} #{} [{}]", w.id, views.join(", "))
+        })
+        .collect();
+    reads.reply(tr("horizon.dev_tools.watching", &[names.join("; ")]));
+}
+
+/// `/watch <targets> <path>`: a numeric NBT path over time; `/watch clear`.
+fn watch(reads: &mut dyn Reads, clear: bool, targets: &str, path: &str) {
+    if clear {
+        observe::clear_paths();
+        observe::forget_unwatched();
+        reads.reply(tr("horizon.dev_tools.closed", &["watch".to_owned()]));
+        return;
+    }
+    if let Err(e) = NbtPath::parse(path) {
+        let message = data_cmd::path_error(e).message.plain();
+        reads.reply(red(Text::literal(message)));
+        return;
+    }
+    let Some(ids) = target_ids(reads, targets) else {
+        reads.reply(failure("argument.entity.notfound.entity"));
+        return;
+    };
+    let dimension = reads.dimension();
+    observe::remember(&entries(&ids, &dimension));
+    observe::add_path(&ids, path);
+    reads.reply(counted(
+        "horizon.dev_tools.watch",
+        ids.len(),
+        &[path.to_owned(), ids.len().to_string()],
+    ));
+}
+
+/// `/mobai log <targets>`: each tick, the mob's AI snapshot as a JSON line in `dev-tools/logs/`;
+/// `/mobai log stop` closes the files.
+fn mobai_log(reads: &mut dyn Reads, stop: bool, targets: &str) {
+    if stop {
+        let n = observe::stop_logs();
+        observe::forget_unwatched();
+        reads.reply(counted(
+            "horizon.dev_tools.logs_closed",
+            n,
+            &[n.to_string()],
+        ));
+        return;
+    }
+    let dimension = reads.dimension();
+    let mobs: Vec<u32> = reads
+        .select_ids(targets)
+        .into_iter()
+        .filter(|&id| reads.is_mob(id))
+        .collect();
+    if mobs.is_empty() {
+        reads.reply(failure("argument.entity.notfound.entity"));
+        return;
+    }
+    let mut opened = Vec::new();
+    for &id in &mobs {
+        let name = reads
+            .entity_name(id)
+            .unwrap_or_else(|| lang::get("horizon.dev_tools.entity"));
+        match observe::open_log(&name, id) {
+            Ok(Some(path)) => opened.push(path),
+            Ok(None) => {}
+            Err(e) => {
+                reads.reply(red(Text::literal(e)));
+                return;
+            }
+        }
+    }
+    observe::remember(&entries(&mobs, &dimension));
+    reads.reply(if opened.is_empty() {
+        tr("horizon.dev_tools.already_logging", &[])
+    } else {
+        tr("horizon.dev_tools.logging_to", &[opened.join(", ")])
+    });
+}
+
+/// The hook side: a command a tree usage ran, from its sender. The owner's rule is in `serve`.
+pub fn run_tree_command(
+    host: &mut dyn ServerHost,
+    source: &CommandSource,
+    invocation: &CommandInvocation,
+) -> Vec<Text> {
+    let CommandSource::Player { player, .. } = source else {
+        return vec![failure("horizon.dev_tools.owner_only")];
+    };
+    let player = *player;
+    let mut live = Live::new(host, player);
+    serve(&mut live, player.uuid(), &invocation_line(invocation));
+    live.replies
+}
+
+/// The hook side: a player's chat command. Only the owner's own commands are served here; any
+/// other command goes on to the tree, which refuses a guest.
+pub fn player_command(host: &mut dyn ServerHost, sender: u128, line: &str) -> Option<Vec<Text>> {
+    if !is_owner(host.dev_server_owner(), sender) {
+        return None;
+    }
+    let player = host.player(sender)?;
+    let mut live = Live::new(host, player);
+    if !serve(&mut live, sender, line) {
+        return None;
+    }
+    Some(live.replies)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_lines_of_the_tree_are_the_tools_commands() {
+        assert_eq!(parse("inspect"), Some(Cmd::List));
+        assert!(matches!(
+            parse("inspect clear"),
+            Some(Cmd::View { clear: true, .. })
+        ));
+        assert!(matches!(
+            parse("inspect @e[type=zombie]"),
+            Some(Cmd::View { clear: false, .. })
+        ));
+        assert!(matches!(
+            parse("goals @e[type=cow]"),
+            Some(Cmd::View {
+                view: View::Goals,
+                ..
+            })
+        ));
+        assert!(matches!(
+            parse("mobai log stop"),
+            Some(Cmd::MobaiLog { stop: true, .. })
+        ));
+        assert!(matches!(
+            parse("mobai log @e"),
+            Some(Cmd::MobaiLog { stop: false, .. })
+        ));
+    }
+
+    #[test]
+    fn the_lines_of_other_commands_are_not_ours() {
+        for line in [
+            "",
+            "give",
+            "inspectx",
+            "mobai",
+            "mobai logs",
+            "watch",
+            "goals",
+            "lua",
+            "lua print(1)",
+        ] {
+            assert!(parse(line).is_none(), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_watch_line_ends_with_its_path() {
+        assert_eq!(
+            parse("watch @e[type=zombie] Health"),
+            Some(Cmd::Watch {
+                clear: false,
+                targets: "@e[type=zombie]",
+                path: "Health",
+            })
+        );
+    }
+
+    #[test]
+    fn the_tree_usage_is_its_words_and_its_remainder() {
+        assert_eq!(join_line(&["inspect".to_owned()], None), "inspect");
+        assert_eq!(
+            join_line(
+                &["mobai".to_owned(), "log".to_owned()],
+                Some("@e[type=zombie]")
+            ),
+            "mobai log @e[type=zombie]"
+        );
+        assert_eq!(
+            join_line(&["inspect".to_owned()], Some("")),
+            "inspect",
+            "an empty remainder adds nothing"
+        );
+    }
+
+    #[test]
+    fn only_the_owner_is_the_owner() {
+        assert!(is_owner(Some(7), 7));
+        assert!(!is_owner(Some(7), 8), "a guest or an operator is refused");
+        assert!(!is_owner(None, 7), "a dedicated server refuses everyone");
+        assert!(!is_owner(None, 0));
+    }
+
+    #[test]
+    fn the_usages_register_every_command_but_the_console_and_lua() {
+        for word in ["inspect", "goals", "senses", "nav", "watch", "mobai"] {
+            assert!(
+                USAGES.iter().any(|u| u.starts_with(word)),
+                "{word} is registered"
+            );
+        }
+        assert!(USAGES.iter().all(|u| !u.starts_with("lua")));
+    }
+}
+
+#[cfg(test)]
+mod flows {
+    use super::*;
+
+    /// The server's reads as a test sets them: the owner, the level's dimension, what a selector
+    /// names and which of those are mobs.
+    #[derive(Default)]
+    struct Fake {
+        owner: Option<u128>,
+        dimension: Option<String>,
+        selected: Vec<u32>,
+        mobs: Vec<u32>,
+        replies: Vec<Text>,
+    }
+
+    impl Reads for Fake {
+        fn owner(&self) -> Option<u128> {
+            self.owner
+        }
+        fn dimension(&self) -> Option<String> {
+            self.dimension.clone()
+        }
+        fn select_ids(&mut self, _selector: &str) -> Vec<u32> {
+            self.selected.clone()
+        }
+        fn is_mob(&self, id: u32) -> bool {
+            self.mobs.contains(&id)
+        }
+        fn entity_name(&self, id: u32) -> Option<String> {
+            Some(format!("Zombie{id}"))
+        }
+        fn reply(&mut self, line: Text) {
+            self.replies.push(line);
+        }
+    }
+
+    fn owned_by(owner: Option<u128>, selected: Vec<u32>) -> Fake {
+        observe::reset();
+        Fake {
+            owner,
+            dimension: Some("minecraft:overworld".to_owned()),
+            selected,
+            ..Fake::default()
+        }
+    }
+
+    #[test]
+    fn the_owner_watches_a_path_and_the_store_holds_it() {
+        let mut fake = owned_by(Some(7), vec![3, 4]);
+        assert!(serve(&mut fake, 7, "watch @e[type=zombie] Health"));
+        assert_eq!(observe::paths_of(3), vec!["Health".to_owned()]);
+        assert_eq!(observe::paths_of(4), vec!["Health".to_owned()]);
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate(
+                "horizon.dev_tools.watch",
+                vec![Text::literal("Health"), Text::literal("2")]
+            )]
+        );
+    }
+
+    #[test]
+    fn the_owner_opens_one_window_and_the_one_entity_line_is_its_reply() {
+        let mut fake = owned_by(Some(7), vec![5]);
+        assert!(serve(&mut fake, 7, "inspect @e[limit=1]"));
+        assert!(observe::watched().contains(&5));
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate(
+                "horizon.dev_tools.opened.one",
+                vec![Text::literal("inspect"), Text::literal("1")]
+            )]
+        );
+    }
+
+    #[test]
+    fn a_guest_or_an_operator_is_refused_and_the_store_is_untouched() {
+        let mut fake = owned_by(Some(7), vec![3]);
+        assert!(serve(&mut fake, 8, "watch @e Health"));
+        assert!(observe::watched().is_empty());
+        assert!(observe::paths_of(3).is_empty());
+        assert_eq!(fake.replies, vec![failure("horizon.dev_tools.owner_only")]);
+    }
+
+    #[test]
+    fn a_dedicated_server_refuses_everyone() {
+        let mut fake = owned_by(None, vec![3]);
+        assert!(serve(&mut fake, 7, "inspect @e"));
+        assert!(observe::watched().is_empty());
+        assert_eq!(fake.replies, vec![failure("horizon.dev_tools.owner_only")]);
+    }
+
+    #[test]
+    fn a_selector_naming_nothing_says_so_and_watches_nothing() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "goals @e[type=nothing]"));
+        assert!(observe::watched().is_empty());
+        assert_eq!(
+            fake.replies,
+            vec![failure("argument.entity.notfound.entity")]
+        );
+    }
+
+    #[test]
+    fn a_bad_nbt_path_is_refused_in_red_and_watches_nothing() {
+        let mut fake = owned_by(Some(7), vec![3]);
+        assert!(serve(&mut fake, 7, "watch @e Health["));
+        assert!(observe::watched().is_empty());
+        assert_eq!(fake.replies.len(), 1);
+    }
+
+    #[test]
+    fn stopping_no_logs_says_how_many_it_closed() {
+        let mut fake = owned_by(Some(7), Vec::new());
+        assert!(serve(&mut fake, 7, "mobai log stop"));
+        assert_eq!(
+            fake.replies,
+            vec![Text::translate(
+                "horizon.dev_tools.logs_closed",
+                vec![Text::literal("0")]
+            )]
+        );
+    }
+
+    #[test]
+    fn a_line_of_another_command_is_not_served() {
+        let mut fake = owned_by(Some(7), vec![3]);
+        assert!(!serve(&mut fake, 7, "give @s apple"));
+        assert!(fake.replies.is_empty());
+    }
+}
