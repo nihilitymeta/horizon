@@ -29,6 +29,7 @@ pub mod enabled;
 mod enabled_tests;
 #[cfg(test)]
 mod entity_tests;
+mod fingerprint;
 #[cfg(test)]
 mod fluid_tests;
 pub mod generated;
@@ -62,3 +63,5 @@ pub mod settings;
 mod settings_tests;
 pub mod stacks;
 pub mod state;
+#[cfg(test)]
+mod swap_tests;

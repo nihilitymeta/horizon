@@ -131,7 +131,7 @@ pub(crate) fn run_turn<A>(
     body: impl FnOnce(&mut Vec<A>) -> Result<(), String>,
 ) -> bool {
     let (opened, expired) =
-        budget::within_with_expiry(handler.module.lua(), limit, message, || body(actions));
+        budget::within_with_expiry(&handler.module.lua(), limit, message, || body(actions));
     if opened.is_err() {
         failed.set(true);
     }

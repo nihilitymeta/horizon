@@ -144,7 +144,7 @@ fn a_read_outside_a_turn_raises() {
     );
     let host = LuaHost::new(vec![m]);
     fire_read(&host);
-    let env = environment(host.mods()[0].lua()).unwrap();
+    let env = environment(&host.mods()[0].lua()).unwrap();
     let kept: mlua::Function = env.get("keep").unwrap();
     let err = kept
         .call::<mlua::Value>(("minecraft:item", "minecraft:apple", "dm_outside:emc"))

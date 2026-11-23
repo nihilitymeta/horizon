@@ -12,7 +12,7 @@ use std::io::Read;
 #[cfg(test)]
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
@@ -22,12 +22,13 @@ use mlua::{Error, Function, Lua, Table, Value};
 use crate::budget;
 use crate::declare::{
     self, BehaviorRecord, BlockEntityTypeRecord, BlockRecord, ClientCommandRecord, CommandRecord,
-    FluidRecord, GoalRecord, ItemRecord, ListenerOptions, PartKind, PartRecord,
+    Declaration, FluidRecord, GoalRecord, ItemRecord, ListenerOptions, PartKind, PartRecord,
 };
 #[cfg(test)]
 use crate::discover::ENTRY;
 use crate::discover::{Discovered, Side};
 use crate::dispatch::{self, new_event};
+use crate::fingerprint::{Fingerprint, SwapRefused};
 use crate::generated::hooks::{hook_id, is_emitted};
 use crate::hlua::Package;
 use crate::ratelimit::{RateLimit, Verdict};
@@ -122,7 +123,12 @@ pub struct LuaMod {
     described: Described,
     /// Whether the mod declared `horizon.on_setting_changed`; its handler is in the Lua registry.
     setting_changed: bool,
-    lua: Lua,
+    /// What the declaration pass declared; a swap of `lua` must declare the same (`swap_state`).
+    #[cfg_attr(not(test), allow(dead_code))] // read by swap_state, which 5f-c2 calls first
+    fingerprint: Fingerprint,
+    /// The state the mod runs in. A swap replaces it under the write lock (`swap_state`); `lua()`
+    /// hands out a handle to the state as it is then.
+    lua: RwLock<Lua>,
     log: Arc<Mutex<Vec<String>>>,
     turn: Turn,
 }
@@ -283,39 +289,9 @@ impl LuaMod {
         settings: Arc<Settings>,
         settings_notices: Vec<(String, String)>,
     ) -> Result<LuaMod, String> {
-        let lua = state::new_state().map_err(|e| e.to_string())?;
-        let chunks: Vec<(String, &str)> = scripts
-            .iter()
-            .map(|(entry, source)| {
-                (
-                    format!("@{}", found.dir.join(entry).display()),
-                    source.as_str(),
-                )
-            })
-            .collect();
-        let refs: Vec<(&str, &str)> = chunks
-            .iter()
-            .map(|(name, source)| (name.as_str(), *source))
-            .collect();
-        let (declaration, notices) = collect_load_notices(|| {
-            declare::declare_scripts_settings(
-                &lua,
-                &found.id,
-                &refs,
-                &|n| is_emitted(n),
-                declare::DECLARE_BUDGET,
-                &settings,
-            )
-        });
-        let declaration = declaration?;
-        let notices: Vec<(String, String)> = settings_notices.into_iter().chain(notices).collect();
-
         let log = Arc::new(Mutex::new(Vec::new()));
-        let runtime = runtime_table(&lua, &found.id, Arc::clone(&log), Arc::clone(&settings))
-            .map_err(|e| e.to_string())?;
-        declare::environment(&lua)
-            .and_then(|env| env.raw_set("horizon", runtime))
-            .map_err(|e| e.to_string())?;
+        let built = build_state(found, scripts, &settings, &log, settings_notices)?;
+        let declaration = built.declaration;
 
         Ok(LuaMod {
             id: found.id.clone(),
@@ -341,14 +317,59 @@ impl LuaMod {
             configs: declaration.configs,
             data_map_types: declaration.data_map_types,
             data_pack_files: declaration.data_pack_files,
-            notices,
+            notices: built.notices,
             settings,
             described: Described::default(),
             setting_changed: declaration.setting_changed,
-            lua,
+            fingerprint: built.fingerprint,
+            lua: RwLock::new(built.lua),
             log,
             turn: Turn::default(),
         })
+    }
+
+    /// A fresh state for this mod, built from `scripts` the way `from_sources` builds the first one
+    /// (the same declaration pass, the same runtime table), with this mod's log and settings, and
+    /// its fingerprint. The result is the input of `swap_state`.
+    #[cfg_attr(not(test), allow(dead_code))] // 5f-c2 (the reload entry) is the first production caller
+    pub(crate) fn rebuild_state(
+        &self,
+        found: &Discovered,
+        scripts: &[(String, String)],
+    ) -> Result<(Lua, Fingerprint), String> {
+        let built = build_state(found, scripts, &self.settings, &self.log, Vec::new())?;
+        Ok((built.lua, built.fingerprint))
+    }
+
+    /// Swaps the mod's state for `fresh`, when `fresh_fingerprint` (of the state `fresh` was built as)
+    /// equals the fingerprint of what the mod declared at load. Otherwise the old state stays and the
+    /// refusal names what differs.
+    ///
+    /// The caller holds the mod's turn across the call (`turn().enter()`); that is the only thing
+    /// that keeps a handler from running on the old state halfway through a swap, so the swap does
+    /// not take it itself. The old state is dropped here unless a handle to it is still held: its
+    /// timers and registry values (`horizon.after`, handlers kept in the registry) go with it.
+    ///
+    /// `fresh` must come from `state::new_state` and the declaration pass `from_sources` runs, which
+    /// `rebuild_state` does; a state built any other way is the caller's bug.
+    #[cfg_attr(not(test), allow(dead_code))] // 5f-c2 (the reload entry) is the first production caller
+    pub(crate) fn swap_state(
+        &self,
+        fresh: Lua,
+        fresh_fingerprint: Fingerprint,
+    ) -> Result<(), SwapRefused> {
+        debug_assert!(self.turn.held_here(), "swap_state needs the mod's turn");
+        if self.fingerprint != fresh_fingerprint {
+            return Err(SwapRefused {
+                what: self.fingerprint.differences(&fresh_fingerprint),
+            });
+        }
+        let old = std::mem::replace(
+            &mut *self.lua.write().unwrap_or_else(PoisonError::into_inner),
+            fresh,
+        );
+        drop(old);
+        Ok(())
     }
 
     /// The blocks this mod declared, in declaration order.
@@ -392,9 +413,19 @@ impl LuaMod {
         &self.id
     }
 
-    /// The mod's sandboxed state. Callers hold `turn()` while they use it.
-    pub(crate) fn lua(&self) -> &Lua {
-        &self.lua
+    /// The mod's sandboxed state, as a handle: `mlua::Lua` is shared, so this is the same state.
+    /// Callers hold `turn()` while they use it.
+    pub(crate) fn lua(&self) -> Lua {
+        self.lua
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The fingerprint of what the mod declared at load.
+    #[cfg(test)]
+    pub(crate) fn fingerprint(&self) -> &Fingerprint {
+        &self.fingerprint
     }
 
     /// The turn that serialises the threads calling into this mod's state.
@@ -1338,6 +1369,68 @@ pub(crate) fn call_handler_value(
 /// The `horizon` table a mod's handlers see: `log`, and `none` (the sentinel that answers None on an
 /// `Option` output). Any other field errors, and `on` only refuses, because hooks are declared while
 /// the mod loads.
+/// A mod's declared state: its Lua state with the runtime table installed, what its declaration
+/// pass gave, the warnings of the load and the fingerprint of the declaration.
+struct Built {
+    lua: Lua,
+    declaration: Declaration,
+    notices: Vec<(String, String)>,
+    fingerprint: Fingerprint,
+}
+
+/// Declares a mod from its scripts (each as (name in its package, source), in manifest order) in a
+/// new state, then installs the runtime `horizon` table over the declaring one. `log` and `settings`
+/// are the mod's own, so a state built later for the same mod writes to the same log. Used by
+/// `LuaMod::from_sources` for the first state and by `LuaMod::rebuild_state` for a swap.
+fn build_state(
+    found: &Discovered,
+    scripts: &[(String, String)],
+    settings: &Arc<Settings>,
+    log: &Arc<Mutex<Vec<String>>>,
+    settings_notices: Vec<(String, String)>,
+) -> Result<Built, String> {
+    let lua = state::new_state().map_err(|e| e.to_string())?;
+    let chunks: Vec<(String, &str)> = scripts
+        .iter()
+        .map(|(entry, source)| {
+            (
+                format!("@{}", found.dir.join(entry).display()),
+                source.as_str(),
+            )
+        })
+        .collect();
+    let refs: Vec<(&str, &str)> = chunks
+        .iter()
+        .map(|(name, source)| (name.as_str(), *source))
+        .collect();
+    let (declaration, notices) = collect_load_notices(|| {
+        declare::declare_scripts_settings(
+            &lua,
+            &found.id,
+            &refs,
+            &|n| is_emitted(n),
+            declare::DECLARE_BUDGET,
+            settings,
+        )
+    });
+    let declaration = declaration?;
+    let notices: Vec<(String, String)> = settings_notices.into_iter().chain(notices).collect();
+
+    let runtime = runtime_table(&lua, &found.id, Arc::clone(log), Arc::clone(settings))
+        .map_err(|e| e.to_string())?;
+    declare::environment(&lua)
+        .and_then(|env| env.raw_set("horizon", runtime))
+        .map_err(|e| e.to_string())?;
+
+    let fingerprint = Fingerprint::of(&found.id, &found.version, &declaration, settings.schema());
+    Ok(Built {
+        lua,
+        declaration,
+        notices,
+        fingerprint,
+    })
+}
+
 fn runtime_table(
     lua: &Lua,
     id: &str,
@@ -2215,7 +2308,7 @@ pub(crate) mod tests {
             );
         });
         assert!(started.elapsed() < Duration::from_secs(10));
-        let env = declare::environment(&host.mods[0].lua).unwrap();
+        let env = declare::environment(&host.mods[0].lua()).unwrap();
         let others: i64 = env.get("n").unwrap();
         assert_eq!(others, 50, "every other call must have run");
     }

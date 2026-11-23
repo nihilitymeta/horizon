@@ -396,7 +396,7 @@ pub(crate) fn run_hosted(
     event: &mlua::Table,
 ) -> bool {
     let void = Void::default();
-    let outcome = scoped(m.lua(), host, &void, |lua| {
+    let outcome = scoped(&m.lua(), host, &void, |lua| {
         let mut failed = false;
         for handler in handlers {
             if let Err(err) = crate::host::call_handler(lua, handler, event) {
@@ -1025,7 +1025,7 @@ mod tests {
         let lua = host.mods()[0].lua();
         let err = lua
             .load("return kept:position()")
-            .set_environment(declare::environment(lua).unwrap())
+            .set_environment(declare::environment(&lua).unwrap())
             .eval::<Value>()
             .unwrap_err();
         assert!(err.to_string().contains(OUTSIDE), "{err}");
@@ -1476,7 +1476,7 @@ mod tests {
         let lua = host.mods()[0].lua();
         let err = lua
             .load("return kept:position()")
-            .set_environment(declare::environment(lua).unwrap())
+            .set_environment(declare::environment(&lua).unwrap())
             .eval::<Value>()
             .unwrap_err();
         assert!(err.to_string().contains(OUTSIDE), "{err}");
@@ -1894,7 +1894,7 @@ mod tests {
         let lua = host.mods()[0].lua();
         let err = lua
             .load("return kept:position()")
-            .set_environment(declare::environment(lua).unwrap())
+            .set_environment(declare::environment(&lua).unwrap())
             .eval::<Value>()
             .unwrap_err();
         assert!(err.to_string().contains(OUTSIDE), "{err}");

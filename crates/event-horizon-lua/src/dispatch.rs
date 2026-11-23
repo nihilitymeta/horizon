@@ -451,7 +451,7 @@ impl LuaHost {
                 continue;
             }
             let _turn = m.turn().enter();
-            let handlers = match declare::handlers(m.lua(), hook) {
+            let handlers = match declare::handlers(&m.lua(), hook) {
                 Ok(handlers) => handlers,
                 Err(err) => {
                     warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
@@ -461,7 +461,7 @@ impl LuaHost {
             if handlers.is_empty() {
                 continue;
             }
-            let event = match contained(m.id(), hook, || build(m.lua())) {
+            let event = match contained(m.id(), hook, || build(&m.lua())) {
                 Some(Ok(event)) => event,
                 Some(Err(err)) => {
                     warn_build_failure(m.id(), hook, &err);
@@ -471,7 +471,7 @@ impl LuaHost {
             };
             for handler in &handlers {
                 match contained(m.id(), hook, || {
-                    call_handler(m.lua(), handler, event.table())
+                    call_handler(&m.lua(), handler, event.table())
                 }) {
                     Some(Err(err)) => {
                         warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
@@ -658,7 +658,7 @@ pub(crate) fn turns_in_reporting(
                 continue;
             }
             let _turn = m.turn().enter();
-            let handlers = match declare::handlers(m.lua(), key) {
+            let handlers = match declare::handlers(&m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
                     failed_turn.set(true);
@@ -669,7 +669,7 @@ pub(crate) fn turns_in_reporting(
             if handlers.is_empty() {
                 continue;
             }
-            let event = match contained(m.id(), hook, || build(m.lua(), &host)) {
+            let event = match contained(m.id(), hook, || build(&m.lua(), &host)) {
                 Some(Ok(event)) => event,
                 Some(Err(err)) => {
                     failed_turn.set(true);
@@ -782,7 +782,7 @@ pub(crate) fn replace_in_reporting(
                 continue;
             }
             let _turn = m.turn().enter();
-            let handlers = match declare::handlers(m.lua(), key) {
+            let handlers = match declare::handlers(&m.lua(), key) {
                 Ok(handlers) => handlers,
                 Err(err) => {
                     failed_turn.set(true);
@@ -793,7 +793,7 @@ pub(crate) fn replace_in_reporting(
             if handlers.is_empty() {
                 continue;
             }
-            let event = match contained(m.id(), hook, || build(m.lua(), &host)) {
+            let event = match contained(m.id(), hook, || build(&m.lua(), &host)) {
                 Some(Ok(event)) => event,
                 Some(Err(err)) => {
                     failed_turn.set(true);
@@ -806,7 +806,7 @@ pub(crate) fn replace_in_reporting(
                 }
             };
             let void = Void::default();
-            let (found, failed) = match scoped(m.lua(), &mut host, &void, |lua| {
+            let (found, failed) = match scoped(&m.lua(), &mut host, &void, |lua| {
                 let mut found: Option<Value> = None;
                 let mut failed = false;
                 for handler in &handlers {

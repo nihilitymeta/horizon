@@ -96,7 +96,7 @@ pub(crate) fn deliver_with(
     let void = Void::default();
     let mut host = TurnHost::None;
     let outcome = contained(m.id(), HOOK, || {
-        scoped(lua, &mut host, &void, |lua| {
+        scoped(&lua, &mut host, &void, |lua| {
             build(lua, change).and_then(|event| {
                 budget::within_with(
                     lua,
