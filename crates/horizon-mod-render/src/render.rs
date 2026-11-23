@@ -2,6 +2,8 @@
 //! renderer calls at fixed places of a frame, which a mod's mixins replace, declared with the
 //! hooks in `hooks/`.
 
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
 use glam::{DVec3, Mat4};
 use mod_api::LevelRef;
 mod generated {
@@ -21,9 +23,53 @@ macro_rules! replaced {
     };
 }
 
-/// Whether a mixin replaced the raw world draw function.
+/// A list of values kept in the order they were added. Its lock is taken only to add or copy
+/// out, never while a value runs, and a poisoned lock is read as it is.
+struct Registry<F> {
+    items: Mutex<Vec<F>>,
+}
+
+impl<F: Copy> Registry<F> {
+    const fn new() -> Self {
+        Self {
+            items: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn push(&self, item: F) {
+        self.lock().push(item);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.lock().is_empty()
+    }
+
+    fn snapshot(&self) -> Vec<F> {
+        self.lock().clone()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Vec<F>> {
+        self.items.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// A callback [`on_world_drawn`] adds, run by [`world_drawn`].
+type WorldDrawnCallback = fn(&mut WorldDrawn<'_>);
+
+static WORLD_DRAWN_CALLBACKS: Registry<WorldDrawnCallback> = Registry::new();
+
+/// Adds `callback` to the ones [`world_drawn`] runs, after those added before it. Built-in mods
+/// call this (a built-in mod cannot use a `[[native.mixin]]` replacement of [`world_drawn`]);
+/// it may be called at any time, before or during the game. Callbacks run on the render thread,
+/// inside the frame, with the frame's encoder: keep each one quick and do not block in it.
+pub fn on_world_drawn(callback: fn(&mut WorldDrawn<'_>)) {
+    WORLD_DRAWN_CALLBACKS.push(callback);
+}
+
+/// Whether a mixin replaced the raw world draw function, or a callback is registered with
+/// [`on_world_drawn`] (the renderer asks this before it keeps the depth and draws the hand).
 pub fn world_drawn_hooked() -> bool {
-    replaced!(world_drawn)
+    replaced!(world_drawn) || !WORLD_DRAWN_CALLBACKS.is_empty()
 }
 
 /// What a mod can draw with once the world is drawn: after the sky, terrain, entities,
@@ -136,7 +182,9 @@ pub struct RenderNeeds {
 #[inline(never)]
 #[horizon_mod_api_macros::replaceable]
 pub fn world_drawn(world: &mut WorldDrawn<'_>) {
-    let _ = world;
+    for callback in WORLD_DRAWN_CALLBACKS.snapshot() {
+        callback(world);
+    }
 }
 
 /// The first-person hand is drawn (see [`HandDrawn`]), on every frame [`world_drawn`]
@@ -447,4 +495,49 @@ pub fn install() {
         },
         world_drawn_hooked,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_one(log: &mut Vec<u32>) {
+        log.push(1);
+    }
+
+    fn push_two(log: &mut Vec<u32>) {
+        log.push(2);
+    }
+
+    fn push_three(log: &mut Vec<u32>) {
+        log.push(3);
+    }
+
+    #[test]
+    fn empty_registry_is_empty_and_one_push_is_not() {
+        let registry: Registry<fn(&mut Vec<u32>)> = Registry::new();
+        assert!(registry.is_empty());
+        registry.push(push_one);
+        assert!(!registry.is_empty());
+    }
+
+    #[test]
+    fn snapshot_runs_in_registration_order_and_appends() {
+        let registry: Registry<fn(&mut Vec<u32>)> = Registry::new();
+        registry.push(push_two);
+        registry.push(push_three);
+        registry.push(push_one);
+        let mut log = Vec::new();
+        for callback in registry.snapshot() {
+            callback(&mut log);
+        }
+        assert_eq!(log, [2, 3, 1]);
+    }
+
+    #[test]
+    fn registering_a_callback_makes_the_world_draw_hooked() {
+        assert!(!world_drawn_hooked());
+        on_world_drawn(|_| {});
+        assert!(world_drawn_hooked());
+    }
 }
