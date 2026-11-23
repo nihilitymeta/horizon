@@ -1420,9 +1420,12 @@ dependencies = [
  "horizon-client",
  "horizon-client-core",
  "horizon-mod-api",
+ "horizon-mod-package",
+ "horizon-mod-render",
  "horizon-world",
  "log",
  "serde_json",
+ "tempfile",
  "wgpu",
 ]
 

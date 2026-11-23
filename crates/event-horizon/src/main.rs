@@ -5,6 +5,12 @@
 /// Identifies the executable as the game for launcher imports, as `horizon-official` does.
 static GAME_IDENTITY: [u8; horizon_game::GAME_IDENTITY.len()] = horizon_game::GAME_IDENTITY;
 
+/// The built-in mods with the developer tools on: the Lua host, then the tools.
+const BUILT_WITH_DEV_TOOLS: &[mod_api::__private::native::BuiltMod] = &[
+    event_horizon_lua::builtin::BUILT[0],
+    event_horizon_dev_tools::BUILT[0],
+];
+
 fn main() {
     horizon_guest_stack::prepare_main();
     std::hint::black_box(&GAME_IDENTITY);
@@ -23,10 +29,17 @@ fn main() {
         &dev_paths,
         dedicated,
     );
-    horizon_mod_host::main_with(
-        vec![lua.entry],
-        &[],
-        event_horizon_lua::builtin::BUILT,
-        startup,
-    );
+    // The developer tools join the game only when asked for (`HORIZON_DEV_TOOLS=1` or
+    // `--dev-tools`): then their mod and its package are listed, and otherwise neither is.
+    let mut mods = vec![lua.entry];
+    let built = if event_horizon_dev_tools::requested(
+        std::env::var_os(event_horizon_dev_tools::ENV).as_deref(),
+        std::env::args_os(),
+    ) {
+        mods.extend(event_horizon_dev_tools::mods());
+        BUILT_WITH_DEV_TOOLS
+    } else {
+        event_horizon_lua::builtin::BUILT
+    };
+    horizon_mod_host::main_with(mods, &[], built, startup);
 }

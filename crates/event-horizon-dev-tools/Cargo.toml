@@ -14,6 +14,7 @@ horizon-client = { path = "../horizon-client", default-features = false }
 horizon-client-core = { path = "../horizon-client-core" }
 horizon-world = { path = "../horizon-world" }
 horizon-mod-api = { path = "../horizon-mod-api" }
+horizon-mod-render = { path = "../horizon-mod-render" }
 event-horizon-observe = { path = "../event-horizon-observe" }
 serde_json = "1.0.151"
 log = "0.4"
@@ -21,6 +22,10 @@ log = "0.4"
 egui = { version = "0.37", default-features = false, features = ["default_fonts"] }
 egui-wgpu = { version = "0.37", default-features = false }
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "metal", "wgsl", "naga-ir"] }
+
+[dev-dependencies]
+horizon-mod-package = { path = "../horizon-mod-package", default-features = false }
+tempfile = "3.27.0"
 
 [lints]
 workspace = true
