@@ -67,6 +67,17 @@ impl Game<'_> {
         // For mods (`render.frame-stats`, `native_frame_rate`).
         let now = self.extras_now();
         self.extras.fps.record(now, elapsed.as_secs_f32() * 1000.0);
+        // A built-in mod that holds the pointer may hand it back to the game, or take it again.
+        use horizon_client_input::window_tap::PointerChange;
+        match horizon_client_input::window_tap::frame(self.window.as_deref()) {
+            PointerChange::None => {}
+            PointerChange::Release => self.capture(false),
+            PointerChange::Grab => {
+                if self.screen == Screen::Playing && self.title.is_none() {
+                    self.capture(true);
+                }
+            }
+        }
         let (world_partial_tick, partial_tick) = self.frame_partial_ticks();
         self.extras.frame_partial_ticks = Some((world_partial_tick, partial_tick));
         self.native_render_frame_pre(elapsed, world_partial_tick, partial_tick);

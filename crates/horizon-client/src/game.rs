@@ -9029,6 +9029,34 @@ impl Game<'_> {
         {
             return;
         }
+        // A built-in mod that holds the pointer sees each window event first
+        // (docs/dev-tools.md): while it holds the pointer, the mouse and a
+        // text field's keyboard are its own, and its key frees the pointer and
+        // takes it back.
+        {
+            use horizon_client_input::window_tap::{Tap, TapContext, window_event};
+            let (tap, playing) = {
+                let playing = self.screen == Screen::Playing && self.title.is_none();
+                let cx = TapContext {
+                    window: self.window.as_deref(),
+                    playing,
+                    devtools_key: self.settings.keys.get("key.devTools"),
+                };
+                (window_event(&event, &cx), playing)
+            };
+            match tap {
+                Tap::Pass => {}
+                Tap::Consumed => return,
+                Tap::Toggled { free } => {
+                    if free {
+                        self.capture(false);
+                    } else if playing {
+                        self.capture(true);
+                    }
+                    return;
+                }
+            }
+        }
         // A character that comes with no key (Windows' Alt codes, `Alt` + digits on the numeric
         // keypad: a `WM_CHAR` after the Alt is released) reaches winit as a key event with no
         // physical key. GLFW's char callback types it in the focused text field (`charTyped`),

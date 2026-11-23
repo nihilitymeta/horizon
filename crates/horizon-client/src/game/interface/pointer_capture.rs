@@ -146,6 +146,9 @@ impl Game<'_> {
         if self.lan_acting.is_some() {
             return;
         }
+        // A built-in mod that holds the pointer keeps it: nothing grabs it
+        // until the mod gives it back (docs/dev-tools.md).
+        let capture = capture && !horizon_client_input::window_tap::holds_pointer();
         // MouseHandler.grabMouse never captures an inactive window, and vanilla
         // grabs only on `setScreen(null)`: the pack prompt and server dialogs
         // are screens over the world that keep the pointer.

@@ -20,3 +20,4 @@ pub mod mouse;
 pub mod radial;
 pub mod snap;
 pub mod window;
+pub mod window_tap;
