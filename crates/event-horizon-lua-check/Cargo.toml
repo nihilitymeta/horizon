@@ -1,0 +1,35 @@
+[package]
+name = "event-horizon-lua-check"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Event Horizon's Lua mod checker: loads a mod headless, lints its scripts with selene, checks their format with StyLua, lists the Lua mods a game folder finds, and writes the Luau type definitions"
+autobins = false
+autoexamples = false
+autotests = false
+
+[[bin]]
+name = "event-horizon-lua-check"
+path = "src/main.rs"
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+
+[dependencies]
+event-horizon-lua = { path = "../event-horizon-lua" }
+# Pinned: the lint and format libraries are the ones the plan approved (rewrite-plan 5f).
+selene-lib = { version = "=0.31.0", default-features = false, features = ["roblox"] }
+stylua = { version = "=2.6.0", default-features = false, features = ["luau"] }
+# The same full_moon major selene-lib 0.31.0 parses with (2.2.0), so its syntax tree is the one
+# selene's checks take. Already in the lock through selene-lib.
+full_moon = { version = "=2.2.0", features = ["roblox"] }
+serde_json = "1"
+toml = "1.1.6"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

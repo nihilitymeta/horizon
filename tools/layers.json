@@ -96,6 +96,7 @@
     "event-horizon-lua": "platform",
     "event-horizon-lua-convert": "platform",
     "event-horizon-lua-gen": "tool",
+    "event-horizon-lua-check": "tool",
     "event-horizon-dev-tools": "tool",
     "event-horizon-observe": "engine",
     "event-horizon-debug": "tool",

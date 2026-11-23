@@ -80,6 +80,7 @@ members = [
     "crates/event-horizon-lua",
     "crates/event-horizon-lua-convert",
     "crates/event-horizon-lua-gen",
+    "crates/event-horizon-lua-check",
     "crates/event-horizon-dev-tools",
     "crates/event-horizon-observe",
     "crates/event-horizon-debug",
