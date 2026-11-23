@@ -27,11 +27,13 @@ pub const ENV: &str = "HORIZON_DEV_TOOLS";
 /// The launch argument that turns the tools on, as a launcher passes it.
 pub const FLAG: &str = "--dev-tools";
 
-/// The built-in mod the loader must find a package for, when the tools are on.
+/// The built-in mod the loader must find a package for, when the tools are on. Its side is
+/// `Server`: every hook is server-side, so a guest without the tools may join a host that has
+/// them (the mod list keeps a server-only mod to the server; see `mod_list::encode`).
 pub const BUILT: &[BuiltMod] = &[BuiltMod {
     id: package::ID,
     version: package::VERSION,
-    side: Side::Both,
+    side: Side::Server,
 }];
 
 /// Whether the environment's `HORIZON_DEV_TOOLS` is `1`, or the launch arguments name `--dev-tools`.
@@ -140,5 +142,13 @@ mod tests {
         assert_eq!(BUILT.len(), 1);
         assert_eq!(BUILT[0].id, package::ID);
         assert_eq!(BUILT[0].version, package::VERSION);
+    }
+
+    /// A guest without the tools may join a host with them: the tools are server-side, so the
+    /// mod is not one both halves must have (`Side::Both` refused such a guest).
+    #[test]
+    fn a_guest_without_the_tools_may_join_a_host_with_them() {
+        assert_eq!(BUILT[0].side, Side::Server);
+        assert_eq!(package::SIDE, "server");
     }
 }

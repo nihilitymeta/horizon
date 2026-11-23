@@ -9,7 +9,8 @@ use std::path::Path;
 /// The mod id: the game accepts only lowercase letters, digits and underscores (`valid_mod_id`).
 pub const ID: &str = "event_horizon_dev_tools";
 pub const VERSION: &str = "0.1.0";
-pub const SIDE: &str = "both";
+/// Server-only: the tools' hooks all run on the server, so a guest need not have them.
+pub const SIDE: &str = "server";
 
 /// The text of `horizon-mod.toml`.
 pub fn manifest_text() -> String {
@@ -55,6 +56,14 @@ mod tests {
         assert_eq!(read.manifest.id, ID);
         assert_eq!(read.manifest.version, VERSION);
         assert_eq!(read.manifest.name, "Event Horizon Developer Tools");
+    }
+
+    /// The manifest says the same side as `BUILT`, or the loader refuses the package.
+    #[test]
+    fn the_manifest_side_is_the_built_side() {
+        let manifest = manifest_text();
+        assert!(manifest.contains("side = 'server'\n"), "{manifest}");
+        assert_eq!(crate::BUILT[0].side, mod_api::Side::Server);
     }
 
     #[test]

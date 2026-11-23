@@ -26,10 +26,20 @@ pub struct ModRecord {
 /// The code mods this process loaded, once the game's start said which.
 static LOADED: RwLock<Option<Vec<ModRecord>>> = RwLock::new(None);
 
+/// Developer aids: built-in mods that are tools, not part of a world. A world never records them as
+/// required and never reports them missing.
+pub const DEV_AIDS: &[&str] = &["event_horizon_dev_tools"];
+
+/// Whether `id` is a developer aid (`DEV_AIDS`).
+fn dev_aid(id: &str) -> bool {
+    DEV_AIDS.contains(&id)
+}
+
 /// The code mods loaded now, in load order, each with its version (`""` when unknown): what
 /// every `level.dat` written from here on records. The game's start says it once. Returns the
 /// list it replaced: the list is the whole process's, so a test that sets one puts that back.
 pub fn set_loaded(mods: Option<Vec<ModRecord>>) -> Option<Vec<ModRecord>> {
+    let mods = mods.map(|mods| mods.into_iter().filter(|m| !dev_aid(&m.id)).collect());
     std::mem::replace(
         &mut *LOADED.write().unwrap_or_else(|e| e.into_inner()),
         mods,
@@ -47,7 +57,14 @@ fn saved_code(data: &Tag) -> Option<Vec<ModRecord>> {
     let Some(Tag::List(mods)) = data.get("fml").and_then(|fml| fml.get("LoadingModList")) else {
         return None;
     };
-    Some(records(mods))
+    // A world saved with a developer aid (before the aids were left out of the record) does not
+    // require it.
+    Some(
+        records(mods)
+            .into_iter()
+            .filter(|m| !dev_aid(&m.id))
+            .collect(),
+    )
 }
 
 /// The code mods, then the content mods, a level.dat's root lists; `None` without either list.
@@ -352,12 +369,12 @@ pub fn missing(root: &Tag, loaded: &Loaded) -> Vec<MissingMod> {
         }
     }
     for record in &saved_content {
-        if record.id != "minecraft" && !loaded.has_mod(&record.id) {
+        if record.id != "minecraft" && !dev_aid(&record.id) && !loaded.has_mod(&record.id) {
             entry(&mut missing, &record.id, &record.version).content = true;
         }
     }
     for namespace in saved.block_namespaces.iter().flatten() {
-        if namespace == "minecraft" || loaded.namespaces.contains(namespace) {
+        if namespace == "minecraft" || dev_aid(namespace) || loaded.namespaces.contains(namespace) {
             continue;
         }
         let version = saved_code
@@ -605,6 +622,42 @@ mod tests {
             None
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A world saved with the developer tools (before they left the record) opens without them
+    /// and no missing-mods entry: the tools are a developer aid, not a requirement.
+    #[test]
+    fn a_saved_developer_aid_is_never_reported_missing() {
+        let root = |id: &str| {
+            Tag::compound([(
+                "fml",
+                Tag::compound([(
+                    "LoadingModList",
+                    Tag::List(vec![Tag::compound([
+                        ("ModId", Tag::String(id.into())),
+                        ("ModVersion", Tag::String("0.1.0".into())),
+                    ])]),
+                )]),
+            )])
+        };
+        let nothing_loaded = Loaded::default();
+        assert!(missing(&root(DEV_AIDS[0]), &nothing_loaded).is_empty());
+        let other = missing(&root("some_other_mod"), &nothing_loaded);
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].id, "some_other_mod");
+        assert!(other[0].code);
+    }
+
+    /// The loaded list stores the mods a world may require, never a developer aid.
+    #[test]
+    fn set_loaded_leaves_the_developer_aids_out_of_the_record() {
+        let previous = set_loaded(Some(vec![
+            record(DEV_AIDS[0], "0.1.0"),
+            record("some_other_mod", "1.0.0"),
+        ]));
+        let stored = loaded();
+        set_loaded(previous);
+        assert_eq!(stored, Some(vec![record("some_other_mod", "1.0.0")]));
     }
 
     /// `ModMismatchEvent`: a saved mod with another version, or no longer loaded, and nothing

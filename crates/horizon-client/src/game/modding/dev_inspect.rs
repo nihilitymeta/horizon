@@ -9,7 +9,8 @@ use mod_api::{EntityRef, LevelRef};
 impl Game<'_> {
     /// The single-player world's owner, strictly: the profile the window's own world was opened
     /// for (`IntegratedServer`'s owner, kept on the hub as `singleplayer_owner`). None where no
-    /// single player owns the world: a dedicated server, a client, and a LAN host's world.
+    /// single player owns the world: a dedicated server, a client, and a world no integrated
+    /// server runs. A world opened to LAN from single player has its owner (`lan open`).
     pub(super) fn dev_server_owner(&self) -> Option<u128> {
         self.lan.as_ref()?.hub.singleplayer_owner
     }
