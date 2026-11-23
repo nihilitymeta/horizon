@@ -597,7 +597,7 @@ impl Game<'_> {
         }
     }
     /// EntitySelector.findEntities.
-    pub(super) fn select(&mut self, s: &Selector) -> Vec<Target> {
+    pub(in crate::game) fn select(&mut self, s: &Selector) -> Vec<Target> {
         if let Some(name) = &s.player_name {
             return self.player_named(name).into_iter().collect();
         }
