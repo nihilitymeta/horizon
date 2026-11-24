@@ -50,6 +50,8 @@ pub struct Input<'a> {
     pub families: &'a [String],
     /// The bound handle members, in family and name order.
     pub members: &'a [&'a MemberIr],
+    /// The gated writes that bound, `(Family::name, power)`: each gets a note naming its power.
+    pub gated: &'a [(String, String)],
     /// The plain types: a typed mention of one names its Luau type, which is written with the file.
     pub plain: &'a Plain,
 }
@@ -267,9 +269,20 @@ fn part_table(name: &str, shapes: &[EventShape], mapper: &mut Mapper<'_>) -> Str
 
 /// One handle family's type: a method per bound member, the receiver first. A host argument is
 /// left out: the host is the turn's, not the mod's.
-fn family_type(family: &str, members: &[&MemberIr], mapper: &mut Mapper<'_>) -> String {
+fn family_type(
+    family: &str,
+    members: &[&MemberIr],
+    gated: &[(String, String)],
+    mapper: &mut Mapper<'_>,
+) -> String {
     let mut text = format!("export type {family} = {{\n");
     for member in members {
+        let op = format!("{family}::{}", member.name);
+        if let Some((_, power)) = gated.iter().find(|(gated_op, _)| *gated_op == op) {
+            text.push_str(&format!(
+                "\t-- needs the \"{power}\" power (granted by the owner in lua-mods/enabled.toml)\n"
+            ));
+        }
         let skip = usize::from(member.params.first().is_some_and(|first| {
             matches!(
                 first
@@ -477,7 +490,7 @@ fn emit_with(input: &Input<'_>, references: &[&str]) -> Result<Emitted, String> 
             .collect();
         let mut members = members;
         members.sort_by(|a, b| a.name.cmp(&b.name));
-        text.push_str(&family_type(family, &members, &mut mapper));
+        text.push_str(&family_type(family, &members, input.gated, &mut mapper));
     }
     // A plain type a mention names is written once; its own fields may name more, so this runs
     // until no new type is named.
@@ -657,6 +670,7 @@ mod tests {
                 parts: [&[], &[], &[], &[], &[], &[]],
                 families: &[],
                 members: &[],
+                gated: &[],
                 plain: &plain,
             },
             &[],
@@ -683,6 +697,7 @@ mod tests {
             parts: [&[], &[], &[], &[], &[], &[]],
             families: &[],
             members: &[],
+            gated: &[],
             plain: &plain,
         });
         assert!(result.is_err_and(|error| error.contains("the static part names BlockHit")));
@@ -758,9 +773,30 @@ mod tests {
         )
         .expect("a signature");
         assert_eq!(
-            family_type("PlayerRef", &[&read, &write], &mut m),
+            family_type("PlayerRef", &[&read, &write], &[], &mut m),
             "export type PlayerRef = {\n\
              \tname: (PlayerRef) -> string?,\n\
+             \tset_name: (PlayerRef, string) -> (),\n\
+             }\n\n"
+        );
+    }
+
+    /// A gated write's method carries a note naming the power the owner grants it by.
+    #[test]
+    fn a_gated_method_is_noted_with_its_power() {
+        let families = ["PlayerRef".to_owned()];
+        let mut m = mapper(&families);
+        let write = parse_signature(
+            "PlayerRef",
+            "set_name",
+            "fn set_name(self, _: &mut dyn ServerHost, _: &str) -> ()",
+        )
+        .expect("a signature");
+        let gated = [("PlayerRef::set_name".to_owned(), "world".to_owned())];
+        assert_eq!(
+            family_type("PlayerRef", &[&write], &gated, &mut m),
+            "export type PlayerRef = {\n\
+             \t-- needs the \"world\" power (granted by the owner in lua-mods/enabled.toml)\n\
              \tset_name: (PlayerRef, string) -> (),\n\
              }\n\n"
         );

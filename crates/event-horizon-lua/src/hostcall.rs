@@ -704,7 +704,7 @@ mod tests {
     use std::time::Duration;
 
     use mod_api::__private::game::{BackendMutRefOf, BackendRefOf};
-    use mod_api::prelude::{EntitiesBackend, EntitiesBackendMut, LevelsBackend};
+    use mod_api::prelude::{EntitiesBackend, EntitiesBackendMut, LevelsBackend, LevelsBackendMut};
     use mod_api::{
         Backend, BackendMut, BackendMutRef, BackendRef, BlockState, ChunkRef, ClientHost,
         DimensionKey, DisplayRef, DragonRef, EntityRef, FishingHookRef, Host, ItemEntityRef,
@@ -731,7 +731,7 @@ mod tests {
     /// generated `impl_*_areas!` give every area its defaults, and only the entity's backend is
     /// written here, as the game writes it.
     macro_rules! host_double {
-        ($ty:ty) => {
+        ($ty:ty $(, $skip:ident)*) => {
             impl Host for $ty {
                 fn backend(&self) -> Option<BackendRef<'_>> {
                     Some(BackendRefOf::of(self))
@@ -747,7 +747,7 @@ mod tests {
             }
             impl BackendMut for $ty {}
             mod_api::impl_server_host_areas!($ty);
-            mod_api::impl_backend_mut_areas!($ty, except(entities));
+            mod_api::impl_backend_mut_areas!($ty, except(entities $(, $skip)*));
             impl ClientHost for $ty {}
             mod_api::impl_client_host_areas!($ty);
         };
@@ -784,7 +784,7 @@ mod tests {
         }
     }
 
-    host_double!(Fake);
+    host_double!(Fake, levels);
 
     impl EntitiesBackend for Fake {
         fn entity_position(&self, entity: EntityRef) -> Option<[f64; 3]> {
@@ -821,6 +821,17 @@ mod tests {
     /// The test world's overworld, as a handle value.
     fn level() -> LevelRef {
         LevelRef::new(WorldEpoch::new(1), DimensionKey::OVERWORLD)
+    }
+
+    impl LevelsBackendMut for Fake {
+        fn level_set_weather(&mut self, _: LevelRef, _: i32, _: i32, _: bool, _: bool) -> bool {
+            self.writes += 1;
+            true
+        }
+        fn level_award_experience(&mut self, _: LevelRef, _: f64, _: f64, _: f64, _: u32) -> bool {
+            self.writes += 1;
+            true
+        }
     }
 
     impl EntitiesBackendMut for Fake {
@@ -2712,5 +2723,111 @@ mod tests {
         assert_eq!(void.powers, [Power::World]);
         let bare = gated(root.path(), "pw_void_bare", &[Power::World], &[]);
         assert!(Void::for_mod(&bare).powers.is_empty());
+    }
+
+    /// Mod `id` whose handler on `HOOK` runs `call` under pcall, with `lv` the entity's level, and logs
+    /// `ok err`. It holds the powers the scan gives it: `requested` by its manifest, `granted` by the file.
+    fn gated_level(
+        root: &Path,
+        id: &str,
+        call: &str,
+        requested: &[Power],
+        granted: &[Power],
+    ) -> LuaMod {
+        let source = format!(
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               local lv = event.entity:level()\n\
+               local ok, err = pcall(function() {call} end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)"
+        );
+        let mut m = load(root, id, &source);
+        m.set_powers(crate::powers::effective(requested, granted));
+        m
+    }
+
+    /// The refusal of `method`, which needs `power`, for mod `id`, as its handler's pcall logs it.
+    fn assert_refused_method(line: &str, id: &str, method: &str, power: &str) {
+        let message = format!(
+            "horizon: {method} needs the \"{power}\" power; the owner has not granted it to {id}"
+        );
+        assert!(
+            line.starts_with("false runtime error: ") && line.contains(&message),
+            "{line}"
+        );
+    }
+
+    /// One write of each first-wave power, through the real Lua handle: requested and granted, it reaches
+    /// the host once; requested but not granted, or not requested, it is refused and the host is not called.
+    #[test]
+    fn a_gated_write_reaches_the_host_only_with_its_power_requested_and_granted() {
+        let root = tempfile::tempdir().unwrap();
+        for (method, call, power) in [
+            (
+                "set_weather",
+                "lv:set_weather(0, 6000, true, false)",
+                Power::World,
+            ),
+            (
+                "award_experience",
+                "lv:award_experience(1.0, 2.0, 3.0, 5)",
+                Power::Spawn,
+            ),
+        ] {
+            let id = format!("pw_{method}_both");
+            let (lines, fake) = run_gated(gated_level(root.path(), &id, call, &[power], &[power]));
+            assert_eq!(lines, ["true nil"], "{method}");
+            assert_eq!(
+                fake.writes, 1,
+                "{method}: the granted call reaches the host"
+            );
+            for (case, requested, granted) in [
+                ("none", vec![], vec![]),
+                ("inert", vec![], vec![power]),
+                ("not_granted", vec![power], vec![]),
+            ] {
+                let id = format!("pw_{method}_{case}");
+                let (lines, fake) =
+                    run_gated(gated_level(root.path(), &id, call, &requested, &granted));
+                assert_eq!(lines.len(), 1, "{id}");
+                assert_refused_method(&lines[0], &id, method, power.name());
+                assert_eq!(fake.writes, 0, "{id}: the host is not called");
+            }
+        }
+    }
+
+    /// Every gated write of the table, called through the real dispatcher by a mod with no powers, is
+    /// refused for its own power, and the host is not called for any of them.
+    #[test]
+    fn every_gated_write_is_refused_through_the_dispatcher_without_its_power() {
+        let root = tempfile::tempdir().unwrap();
+        let bare = gated_level(root.path(), "pw_every_bare", "", &[], &[]);
+        let void = Void::for_mod(&bare);
+        let lua = Lua::new();
+        let mut fake = Fake::at([0.0; 3]);
+        let mut host = TurnHost::Server(&mut fake);
+        let refusals = scoped(&lua, &mut host, &void, |lua| {
+            let this = lua.create_userdata(Token(me())).unwrap();
+            let mut out = Vec::new();
+            for &(op, power) in crate::powers::table() {
+                let err = host_call(lua, op, this.clone(), MultiValue::new())
+                    .expect_err(op)
+                    .to_string();
+                out.push((op, power.name(), err));
+            }
+            out
+        })
+        .unwrap();
+        assert_eq!(refusals.len(), 23);
+        for (op, power, err) in refusals {
+            let method = op.rsplit("::").next().unwrap_or(op);
+            assert!(
+                err.contains(&format!(
+                    "horizon: {method} needs the \"{power}\" power; the owner has not granted it to pw_every_bare"
+                )),
+                "{op}: {err}"
+            );
+        }
+        assert_eq!(fake.writes, 0);
     }
 }

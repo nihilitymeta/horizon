@@ -2,7 +2,7 @@
 //! the Lua host's generated hook table (`DIR/hooks.rs`), its `Hooks` methods (`DIR/hooks_impl.rs`)
 //! and the `ToLuaValue` impls of the surface's plain types (`PATH`, the convert crate's
 //! `generated_types.rs`), and the handle families' methods (`DIR/handles.rs`) with their coverage
-//! (`DIR/handles_coverage.txt`). `--families A,B` picks the handle families (default: every `*Ref` owner of
+//! (`DIR/handles_coverage.txt`), and the gated writes' ops and powers (`DIR/powers.rs`). `--families A,B` picks the handle families (default: every `*Ref` owner of
 //! the surface; a family that binds no member is not generated and is listed in the coverage).
 //!
 //! Exit codes: 0 on success (with `--check`, when every file matches what would be written), 1 when
@@ -349,6 +349,13 @@ fn plan_pass(
     if superset_bound != handles.bound {
         return Err("narrowing the converters changed the bound handle members".to_owned());
     }
+    emit_handles::check_gated(
+        emit_handles::GATED_WRITES,
+        members,
+        families,
+        &types.plain,
+        &handles,
+    )?;
     Ok(Plan {
         families: families.iter().map(|family| (*family).to_owned()).collect(),
         handles,
@@ -558,6 +565,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
         ],
         families: &families,
         members: &bound_members,
+        gated: &handles_out.gated,
         plain: &types.plain,
     })
     .map_err(|error| format!("horizon.d.luau: {error}"))?;
@@ -572,6 +580,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
     let table_path = args.out.join("hooks.rs");
     let methods_path = args.out.join("hooks_impl.rs");
     let handles_path = args.out.join("handles.rs");
+    let powers_path = args.out.join("powers.rs");
     let coverage_path = args.out.join("handles_coverage.txt");
     let hook_coverage_path = args.out.join("hooks_coverage.txt");
     let parts_path = args.out.join("parts.rs");
@@ -587,6 +596,7 @@ fn run(args: Args) -> Result<ExitCode, String> {
             (&methods_path, &methods.text),
             (&args.types, &types.text),
             (&handles_path, &handles_out.text),
+            (&powers_path, &handles_out.powers),
             (&coverage_path, &handles_out.coverage),
             (&hook_coverage_path, &hook_coverage),
             (&parts_path, &parts.text),
@@ -633,6 +643,8 @@ fn run(args: Args) -> Result<ExitCode, String> {
         .map_err(|error| format!("cannot write {}: {error}", args.types.display()))?;
     std::fs::write(&handles_path, &handles_out.text)
         .map_err(|error| format!("cannot write {}: {error}", handles_path.display()))?;
+    std::fs::write(&powers_path, &handles_out.powers)
+        .map_err(|error| format!("cannot write {}: {error}", powers_path.display()))?;
     std::fs::write(&coverage_path, &handles_out.coverage)
         .map_err(|error| format!("cannot write {}: {error}", coverage_path.display()))?;
     std::fs::write(&hook_coverage_path, &hook_coverage)

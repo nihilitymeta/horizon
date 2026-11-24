@@ -304,18 +304,13 @@ mod tests {
         let text = include_str!("generated/handles.rs");
         let denied = [
             "EntityRef::run_command",
-            "EntityRef::teleport_to_level",
             "EntityRef::merge_nbt",
             "LevelRef::spawn_mob",
             "LevelRef::explode",
             "LevelRef::set_game_rule",
             "EntityRef::remove",
-            "EntityRef::discard",
-            "LevelRef::strike_lightning",
-            "LevelRef::set_world_border_size",
             "PlayerRef::disconnect",
             "PlayerRef::set_game_mode",
-            "LevelRef::invalidate_capabilities",
             "PlayerRef::award_stat",
             "PlayerRef::reset_stat",
         ];
@@ -337,33 +332,75 @@ mod tests {
         );
     }
 
+    /// The bound writes, split as the snapshot file splits them: the ungated ones (`bound, cost 10`)
+    /// against its first section, and the gated ones (`bound, cost 10, gated: <power>`) against its
+    /// `# gated writes (power)` section, as `Family::name power`. A write whose power changes shows up
+    /// on both sides.
     #[test]
     fn the_bound_writes_are_the_reviewed_snapshot() {
         let coverage = include_str!("generated/handles_coverage.txt");
         let reviewed_text = include_str!("reviewed_writes.txt");
-        let generated: std::collections::BTreeSet<&str> = coverage
-            .lines()
-            .filter_map(|line| {
-                line.trim_start()
-                    .strip_prefix("handle:")?
-                    .strip_suffix(" bound, cost 10")
-            })
-            .collect();
-        let reviewed: std::collections::BTreeSet<&str> = reviewed_text
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .collect();
+        let mut ungated: std::collections::BTreeSet<String> = Default::default();
+        let mut gated: std::collections::BTreeSet<String> = Default::default();
+        for line in coverage.lines() {
+            let Some(rest) = line.trim_start().strip_prefix("handle:") else {
+                continue;
+            };
+            if let Some(op) = rest.strip_suffix(" bound, cost 10") {
+                ungated.insert(op.to_owned());
+            } else if let Some((op, power)) = rest.split_once(" bound, cost 10, gated: ") {
+                gated.insert(format!("{op} {power}"));
+            }
+        }
+        let mut reviewed_ungated: std::collections::BTreeSet<String> = Default::default();
+        let mut reviewed_gated: std::collections::BTreeSet<String> = Default::default();
+        let mut in_gated = false;
+        for line in reviewed_text.lines().map(str::trim) {
+            if line == "# gated writes (power)" {
+                in_gated = true;
+            } else if line.is_empty() || line.starts_with('#') {
+                continue;
+            } else if in_gated {
+                reviewed_gated.insert(line.to_owned());
+            } else {
+                reviewed_ungated.insert(line.to_owned());
+            }
+        }
         assert!(
-            !generated.is_empty(),
+            !ungated.is_empty() && !gated.is_empty(),
             "no bound writes found in the coverage"
         );
-        let new: Vec<&str> = generated.difference(&reviewed).copied().collect();
-        let removed: Vec<&str> = reviewed.difference(&generated).copied().collect();
+        let new_ungated: Vec<&String> = ungated.difference(&reviewed_ungated).collect();
+        let removed_ungated: Vec<&String> = reviewed_ungated.difference(&ungated).collect();
+        let new_gated: Vec<&String> = gated.difference(&reviewed_gated).collect();
+        let removed_gated: Vec<&String> = reviewed_gated.difference(&gated).collect();
         assert!(
-            new.is_empty() && removed.is_empty(),
-            "the bound writes differ from reviewed_writes.txt\n  new (bound, not reviewed): {new:?}\n  removed (reviewed, no longer bound): {removed:?}\nreview each new write against the powerful-name rules, then update the snapshot (crates/event-horizon-lua/src/reviewed_writes.txt)"
+            new_ungated.is_empty()
+                && removed_ungated.is_empty()
+                && new_gated.is_empty()
+                && removed_gated.is_empty(),
+            "the bound writes differ from reviewed_writes.txt\n  new (bound, not reviewed): {new_ungated:?}\n  removed (reviewed, no longer bound): {removed_ungated:?}\n  new gated (bound with a power, not reviewed): {new_gated:?}\n  removed or re-powered gated (reviewed, no longer bound with that power): {removed_gated:?}\nreview each new write against the powerful-name rules (or the gated allowlist), then update the snapshot (crates/event-horizon-lua/src/reviewed_writes.txt)"
         );
+    }
+
+    /// The gated writes are the first wave, each with its power, and no other write is gated.
+    #[test]
+    fn the_gated_writes_in_the_coverage_are_the_first_wave_of_the_table() {
+        let coverage = include_str!("generated/handles_coverage.txt");
+        let gated_lines = coverage
+            .lines()
+            .filter(|line| line.starts_with("  handle:") && line.contains(", gated: "))
+            .count();
+        assert_eq!(gated_lines, crate::powers::table().len());
+        for &(op, power) in crate::powers::table() {
+            assert!(
+                coverage.contains(&format!(
+                    "handle:{op} bound, cost 10, gated: {}",
+                    power.name()
+                )),
+                "{op} is listed as gated with its power"
+            );
+        }
     }
 
     #[test]

@@ -1,6 +1,8 @@
 # Reviewed bound writes (issue 74): every handle write the generator binds, as Family::name.
-# Source: generated/handles_coverage.txt lines 'handle:Family::name bound, cost 10'.
-# A new or removed write fails the test writes_snapshot_matches_the_generated_coverage.
+# Source: generated/handles_coverage.txt lines 'handle:Family::name bound, cost 10' (the first section).
+# The second section lists the gated writes (issue 74, P2) as 'Family::name power': the lines
+# 'handle:Family::name bound, cost 10, gated: <power>'. A new, removed or re-powered write fails the
+# test the_bound_writes_are_the_reviewed_snapshot.
 # To update: review each new write against the powerful-name rules in
 # crates/event-horizon-lua-gen/src/emit_handles.rs (POWERFUL_NAME_PARTS), then copy its line here.
 # Denied writes (PlayerRef::set_nickname, ...) must never appear here.
@@ -184,3 +186,28 @@ ProjectileRef::set_pickup
 ProjectileRef::set_pierce_level
 RaidRef::set_omen_level
 RaidRef::stop
+
+# gated writes (power)
+BossBarRef::remove world
+BossBarRef::remove_player world
+EntityRef::discard world
+EntityRef::remove_tag world
+EntityRef::teleport_to_level world
+LevelRef::award_experience spawn
+LevelRef::block_random_tick world
+LevelRef::invalidate_capabilities world
+LevelRef::remove_block world
+LevelRef::request_save world
+LevelRef::set_clock_time world
+LevelRef::set_respawn_data spawn
+LevelRef::set_weather world
+LevelRef::set_weather_levels world
+LevelRef::set_world_border_center world
+LevelRef::set_world_border_damage world
+LevelRef::set_world_border_size world
+LevelRef::set_world_border_warning world
+LevelRef::strike_lightning world
+LivingRef::random_teleport world
+MobRef::remove_goal world
+MobRef::remove_target_goal world
+PlayerRef::respawn spawn

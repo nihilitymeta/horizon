@@ -32,8 +32,8 @@ BossBarRef: 23 members
   handle:BossBarRef::overlay bound, cost 1
   handle:BossBarRef::play_boss_music bound, cost 1
   handle:BossBarRef::players bound, cost 100
-  handle:BossBarRef::remove skipped: powerful (needs manifest power): name contains `remove`
-  handle:BossBarRef::remove_player skipped: powerful (needs manifest power): name contains `remove`
+  handle:BossBarRef::remove bound, cost 10, gated: world
+  handle:BossBarRef::remove_player bound, cost 10, gated: world
   handle:BossBarRef::set_color bound, cost 10
   handle:BossBarRef::set_create_world_fog bound, cost 10
   handle:BossBarRef::set_darken_screen bound, cost 10
@@ -132,7 +132,7 @@ EntityRef: 114 members
   handle:EntityRef::detach_leash bound, cost 10
   handle:EntityRef::dimensions bound, cost 1
   handle:EntityRef::direction bound, cost 1
-  handle:EntityRef::discard skipped: powerful (needs manifest power): name contains `discard`
+  handle:EntityRef::discard bound, cost 10, gated: world
   handle:EntityRef::dismount_location bound, cost 1
   handle:EntityRef::distance_to_sqr bound, cost 1
   handle:EntityRef::eject_passengers bound, cost 10
@@ -189,7 +189,7 @@ EntityRef: 114 members
   handle:EntityRef::position bound, cost 1
   handle:EntityRef::push bound, cost 10
   handle:EntityRef::remove skipped: powerful (needs manifest power): name contains `remove`
-  handle:EntityRef::remove_tag skipped: powerful (needs manifest power): name contains `remove`
+  handle:EntityRef::remove_tag bound, cost 10, gated: world
   handle:EntityRef::reset_fall_distance bound, cost 10
   handle:EntityRef::root_vehicle bound, cost 1
   handle:EntityRef::rotation bound, cost 1
@@ -223,7 +223,7 @@ EntityRef: 114 members
   handle:EntityRef::stop_riding bound, cost 10
   handle:EntityRef::tags bound, cost 100
   handle:EntityRef::teleport_to bound, cost 10
-  handle:EntityRef::teleport_to_level skipped: powerful (needs manifest power): name contains `teleport_to_level`
+  handle:EntityRef::teleport_to_level bound, cost 10, gated: world
   handle:EntityRef::tick_count bound, cost 1
   handle:EntityRef::ticks_frozen bound, cost 1
   handle:EntityRef::up_vector bound, cost 1
@@ -255,7 +255,7 @@ ItemEntityRef: 12 members
 LevelRef: 145 members
   handle:LevelRef::add_water_ticket skipped: powerful (needs manifest power): name contains `ticket`
   handle:LevelRef::all_entities bound, cost 100
-  handle:LevelRef::award_experience skipped: powerful (needs manifest power): name contains `award_experience`
+  handle:LevelRef::award_experience bound, cost 10, gated: spawn
   handle:LevelRef::best_neighbor_signal bound, cost 1
   handle:LevelRef::biome_at bound, cost 1
   handle:LevelRef::biome_effects bound, cost 1
@@ -269,7 +269,7 @@ LevelRef: 145 members
   handle:LevelRef::block_face_sturdy bound, cost 1
   handle:LevelRef::block_floor_height bound, cost 1
   handle:LevelRef::block_property bound, cost 1
-  handle:LevelRef::block_random_tick skipped: powerful (needs manifest power): name contains `random`
+  handle:LevelRef::block_random_tick bound, cost 10, gated: world
   handle:LevelRef::block_shape bound, cost 100
   handle:LevelRef::block_state bound, cost 1
   handle:LevelRef::block_tick bound, cost 10
@@ -332,7 +332,7 @@ LevelRef: 145 members
   handle:LevelRef::in_place bound, cost 1
   handle:LevelRef::in_spawnable_bounds bound, cost 1
   handle:LevelRef::in_world_bounds bound, cost 1
-  handle:LevelRef::invalidate_capabilities skipped: powerful (needs manifest power): name contains `capabilit`
+  handle:LevelRef::invalidate_capabilities bound, cost 10, gated: world
   handle:LevelRef::is_loaded bound, cost 1
   handle:LevelRef::is_raining bound, cost 1
   handle:LevelRef::is_raining_at bound, cost 1
@@ -360,9 +360,9 @@ LevelRef: 145 members
   handle:LevelRef::recipe_for skipped: unconvertible arg: &RecipeInput
   handle:LevelRef::register_passage skipped: powerful (needs manifest power): name contains `passage`
   handle:LevelRef::relight_chunks skipped: powerful (needs manifest power): name contains `relight`
-  handle:LevelRef::remove_block skipped: powerful (needs manifest power): name contains `remove`
+  handle:LevelRef::remove_block bound, cost 10, gated: world
   handle:LevelRef::remove_passage skipped: powerful (needs manifest power): name contains `passage`
-  handle:LevelRef::request_save skipped: powerful (needs manifest power): name contains `save`
+  handle:LevelRef::request_save bound, cost 10, gated: world
   handle:LevelRef::respawn_data bound, cost 1
   handle:LevelRef::roll_loot skipped: powerful (needs manifest power): argument `Option<&item::item_stack::ItemStack>`
   handle:LevelRef::sea_level bound, cost 1
@@ -373,19 +373,19 @@ LevelRef: 145 members
   handle:LevelRef::set_block skipped: unconvertible arg: BlockUpdateFlags
   handle:LevelRef::set_break_progress bound, cost 10
   handle:LevelRef::set_client_break_progress skipped: client write: &mut dyn ClientHost
-  handle:LevelRef::set_clock_time skipped: powerful (needs manifest power): name contains `clock`
+  handle:LevelRef::set_clock_time bound, cost 10, gated: world
   handle:LevelRef::set_game_rule skipped: powerful (needs manifest power): name contains `game_rule`
   handle:LevelRef::set_map_data skipped: powerful (needs manifest power): name contains `map_data`
   handle:LevelRef::set_random skipped: powerful (needs manifest power): name contains `random`
-  handle:LevelRef::set_respawn_data skipped: powerful (needs manifest power): name contains `spawn`
+  handle:LevelRef::set_respawn_data bound, cost 10, gated: spawn
   handle:LevelRef::set_spawn_flags skipped: powerful (needs manifest power): name contains `spawn`
   handle:LevelRef::set_spawn_limits skipped: powerful (needs manifest power): name contains `spawn`
-  handle:LevelRef::set_weather skipped: powerful (needs manifest power): name contains `weather`
-  handle:LevelRef::set_weather_levels skipped: powerful (needs manifest power): name contains `weather`
-  handle:LevelRef::set_world_border_center skipped: powerful (needs manifest power): name contains `world_border`
-  handle:LevelRef::set_world_border_damage skipped: powerful (needs manifest power): name contains `world_border`
-  handle:LevelRef::set_world_border_size skipped: powerful (needs manifest power): name contains `world_border`
-  handle:LevelRef::set_world_border_warning skipped: powerful (needs manifest power): name contains `world_border`
+  handle:LevelRef::set_weather bound, cost 10, gated: world
+  handle:LevelRef::set_weather_levels bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_center bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_damage bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_size bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_warning bound, cost 10, gated: world
   handle:LevelRef::should_tick_blocks_at bound, cost 1
   handle:LevelRef::signal bound, cost 1
   handle:LevelRef::spawn_flags bound, cost 1
@@ -393,7 +393,7 @@ LevelRef: 145 members
   handle:LevelRef::spawn_item_with_motion skipped: powerful (needs manifest power): name contains `spawn`
   handle:LevelRef::spawn_limits bound, cost 1
   handle:LevelRef::spawn_mob skipped: powerful (needs manifest power): name contains `spawn`
-  handle:LevelRef::strike_lightning skipped: powerful (needs manifest power): name contains `lightning`
+  handle:LevelRef::strike_lightning bound, cost 10, gated: world
   handle:LevelRef::update_neighbors skipped: unconvertible arg: NeighbourUpdate
   handle:LevelRef::weather skipped: unconvertible return: Option<(f32, f32)>
   handle:LevelRef::with_random skipped: generics: <T>
@@ -443,7 +443,7 @@ LivingRef: 73 members
   handle:LivingRef::max_health bound, cost 1
   handle:LivingRef::owner bound, cost 1
   handle:LivingRef::potion_affected skipped: unconvertible arg: EffectKey
-  handle:LivingRef::random_teleport skipped: powerful (needs manifest power): name contains `random`
+  handle:LivingRef::random_teleport bound, cost 10, gated: world
   handle:LivingRef::release_using_item bound, cost 10
   handle:LivingRef::remove_all_effects skipped: powerful (needs manifest power): name contains `remove`
   handle:LivingRef::remove_attribute_modifier skipped: powerful (needs manifest power): name contains `remove`
@@ -561,8 +561,8 @@ MobRef: 54 members
   handle:MobRef::pathfinding_malus bound, cost 1
   handle:MobRef::persistence_required bound, cost 1
   handle:MobRef::raid bound, cost 1
-  handle:MobRef::remove_goal skipped: powerful (needs manifest power): name contains `remove`
-  handle:MobRef::remove_target_goal skipped: powerful (needs manifest power): name contains `remove`
+  handle:MobRef::remove_goal bound, cost 10, gated: world
+  handle:MobRef::remove_target_goal bound, cost 10, gated: world
   handle:MobRef::requires_custom_persistence bound, cost 1
   handle:MobRef::restrict_center bound, cost 1
   handle:MobRef::restrict_radius bound, cost 1
@@ -670,7 +670,7 @@ PlayerRef: 112 members
   handle:PlayerRef::request_recipe_book_settings skipped: client write: &mut dyn ClientHost
   handle:PlayerRef::reset_recipes skipped: unconvertible arg: &[&str]
   handle:PlayerRef::reset_stat skipped: powerful (needs manifest power): name contains `reset_stat`
-  handle:PlayerRef::respawn skipped: powerful (needs manifest power): name contains `spawn`
+  handle:PlayerRef::respawn bound, cost 10, gated: spawn
   handle:PlayerRef::respawn_config skipped: unconvertible return: Option<Option<PlayerRespawnConfig>>
   handle:PlayerRef::sees bound, cost 1
   handle:PlayerRef::selected_slot bound, cost 1
@@ -768,11 +768,13 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 524 of 724; heavy 28
+summary: bound 547 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 86
+  skipped, powerful (needs manifest power): 63
   skipped, unconvertible arg: 52
   skipped, unconvertible return: 39
+  gated: spawn 3
+  gated: world 20
 heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

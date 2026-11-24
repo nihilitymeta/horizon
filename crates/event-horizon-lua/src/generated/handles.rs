@@ -82,6 +82,12 @@ impl crate::handles::Family for mod_api::BossBarRef {
         methods.add_function("players", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "BossBarRef::players", this, args)
         });
+        methods.add_function("remove", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "BossBarRef::remove", this, args)
+        });
+        methods.add_function("remove_player", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "BossBarRef::remove_player", this, args)
+        });
         methods.add_function("set_color", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "BossBarRef::set_color", this, args)
         });
@@ -364,6 +370,9 @@ impl crate::handles::Family for mod_api::EntityRef {
         methods.add_function("direction", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::direction", this, args)
         });
+        methods.add_function("discard", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "EntityRef::discard", this, args)
+        });
         methods.add_function("dismount_location", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::dismount_location", this, args)
         });
@@ -517,6 +526,9 @@ impl crate::handles::Family for mod_api::EntityRef {
         methods.add_function("push", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::push", this, args)
         });
+        methods.add_function("remove_tag", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "EntityRef::remove_tag", this, args)
+        });
         methods.add_function("reset_fall_distance", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::reset_fall_distance", this, args)
         });
@@ -600,6 +612,9 @@ impl crate::handles::Family for mod_api::EntityRef {
         });
         methods.add_function("teleport_to", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::teleport_to", this, args)
+        });
+        methods.add_function("teleport_to_level", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "EntityRef::teleport_to_level", this, args)
         });
         methods.add_function("tick_count", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::tick_count", this, args)
@@ -694,6 +709,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("all_entities", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::all_entities", this, args)
         });
+        methods.add_function("award_experience", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::award_experience", this, args)
+        });
         methods.add_function("best_neighbor_signal", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::best_neighbor_signal", this, args)
         });
@@ -717,6 +735,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         });
         methods.add_function("block_property", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::block_property", this, args)
+        });
+        methods.add_function("block_random_tick", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::block_random_tick", this, args)
         });
         methods.add_function("block_shape", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::block_shape", this, args)
@@ -832,6 +853,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("in_world_bounds", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::in_world_bounds", this, args)
         });
+        methods.add_function("invalidate_capabilities", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::invalidate_capabilities", this, args)
+        });
         methods.add_function("is_loaded", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::is_loaded", this, args)
         });
@@ -880,6 +904,12 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("ray_trace_entities", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::ray_trace_entities", this, args)
         });
+        methods.add_function("remove_block", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::remove_block", this, args)
+        });
+        methods.add_function("request_save", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::request_save", this, args)
+        });
         methods.add_function("respawn_data", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::respawn_data", this, args)
         });
@@ -898,6 +928,30 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("set_break_progress", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::set_break_progress", this, args)
         });
+        methods.add_function("set_clock_time", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_clock_time", this, args)
+        });
+        methods.add_function("set_respawn_data", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_respawn_data", this, args)
+        });
+        methods.add_function("set_weather", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_weather", this, args)
+        });
+        methods.add_function("set_weather_levels", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_weather_levels", this, args)
+        });
+        methods.add_function("set_world_border_center", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_world_border_center", this, args)
+        });
+        methods.add_function("set_world_border_damage", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_world_border_damage", this, args)
+        });
+        methods.add_function("set_world_border_size", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_world_border_size", this, args)
+        });
+        methods.add_function("set_world_border_warning", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_world_border_warning", this, args)
+        });
         methods.add_function("should_tick_blocks_at", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::should_tick_blocks_at", this, args)
         });
@@ -909,6 +963,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         });
         methods.add_function("spawn_limits", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::spawn_limits", this, args)
+        });
+        methods.add_function("strike_lightning", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::strike_lightning", this, args)
         });
         methods.add_function("world_border", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::world_border", this, args)
@@ -1017,6 +1074,9 @@ impl crate::handles::Family for mod_api::LivingRef {
         });
         methods.add_function("owner", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LivingRef::owner", this, args)
+        });
+        methods.add_function("random_teleport", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LivingRef::random_teleport", this, args)
         });
         methods.add_function("release_using_item", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LivingRef::release_using_item", this, args)
@@ -1297,6 +1357,12 @@ impl crate::handles::Family for mod_api::MobRef {
         methods.add_function("raid", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "MobRef::raid", this, args)
         });
+        methods.add_function("remove_goal", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "MobRef::remove_goal", this, args)
+        });
+        methods.add_function("remove_target_goal", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "MobRef::remove_target_goal", this, args)
+        });
         methods.add_function("requires_custom_persistence", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "MobRef::requires_custom_persistence", this, args)
         });
@@ -1536,6 +1602,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         });
         methods.add_function("previous_game_mode", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::previous_game_mode", this, args)
+        });
+        methods.add_function("respawn", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::respawn", this, args)
         });
         methods.add_function("sees", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::sees", this, args)
@@ -1918,6 +1987,23 @@ fn boss_bar_ref_players(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_
     let read = crate::handles::read_of(host)?;
     let out = this.players(read);
     crate::handles::family_opt_list_out(lua, out)
+}
+
+fn boss_bar_ref_remove(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    crate::handles::Args::new("BossBarRef::remove", args, 0)?;
+    let this: mod_api::BossBarRef = crate::handles::receiver(this, "BossBarRef::remove")?;
+    let out = this.remove(server);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn boss_bar_ref_remove_player(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("BossBarRef::remove_player", args, 1)?;
+    let this: mod_api::BossBarRef = crate::handles::receiver(this, "BossBarRef::remove_player")?;
+    let a0: mod_api::PlayerRef = args.handle(0)?;
+    let out = this.remove_player(server, a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
 fn boss_bar_ref_set_color(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
@@ -2605,6 +2691,14 @@ fn entity_ref_direction(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out.map(|value| value.to_string()), lua)
 }
 
+fn entity_ref_discard(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    crate::handles::Args::new("EntityRef::discard", args, 0)?;
+    let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::discard")?;
+    let out = this.discard(server);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn entity_ref_dismount_location(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("EntityRef::dismount_location", args, 1)?;
     let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::dismount_location")?;
@@ -3032,6 +3126,15 @@ fn entity_ref_push(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, th
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn entity_ref_remove_tag(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("EntityRef::remove_tag", args, 1)?;
+    let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::remove_tag")?;
+    let a0: String = args.get(0)?;
+    let out = this.remove_tag(server, &a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn entity_ref_reset_fall_distance(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let server = crate::handles::server_of(host)?;
     crate::handles::Args::new("EntityRef::reset_fall_distance", args, 0)?;
@@ -3280,6 +3383,17 @@ fn entity_ref_teleport_to(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn entity_ref_teleport_to_level(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("EntityRef::teleport_to_level", args, 3)?;
+    let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::teleport_to_level")?;
+    let a0: String = args.get(0)?;
+    let a1: [f64; 3] = args.get(1)?;
+    let a2: Option<[f32; 2]> = args.get(2)?;
+    let out = this.teleport_to_level(server, &a0, a1, a2);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn entity_ref_tick_count(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     crate::handles::Args::new("EntityRef::tick_count", args, 0)?;
     let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::tick_count")?;
@@ -3456,6 +3570,18 @@ fn level_ref_all_entities(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<
     crate::handles::family_opt_list_out(lua, out)
 }
 
+fn level_ref_award_experience(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::award_experience", args, 4)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::award_experience")?;
+    let a0: f64 = args.get(0)?;
+    let a1: f64 = args.get(1)?;
+    let a2: f64 = args.get(2)?;
+    let a3: u32 = args.get(3)?;
+    let out = this.award_experience(server, a0, a1, a2, a3);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn level_ref_best_neighbor_signal(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("LevelRef::best_neighbor_signal", args, 1)?;
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::best_neighbor_signal")?;
@@ -3530,6 +3656,15 @@ fn level_ref_block_property(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHos
     let a1: String = args.get(1)?;
     let out = this.block_property(read, a0, &a1);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out.map(|value| value.to_string()), lua)
+}
+
+fn level_ref_block_random_tick(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::block_random_tick", args, 1)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::block_random_tick")?;
+    let a0: [i32; 3] = args.get(0)?;
+    let out = this.block_random_tick(server, a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
 fn level_ref_block_shape(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
@@ -3874,6 +4009,15 @@ fn level_ref_in_world_bounds(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHo
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn level_ref_invalidate_capabilities(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::invalidate_capabilities", args, 1)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::invalidate_capabilities")?;
+    let a0: [i32; 3] = args.get(0)?;
+    let out = this.invalidate_capabilities(server, a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn level_ref_is_loaded(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("LevelRef::is_loaded", args, 1)?;
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::is_loaded")?;
@@ -4023,6 +4167,24 @@ fn level_ref_ray_trace_entities(lua: &mlua::Lua, host: &mut crate::hostcall::Tur
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn level_ref_remove_block(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::remove_block", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::remove_block")?;
+    let a0: [i32; 3] = args.get(0)?;
+    let a1: bool = args.get(1)?;
+    let out = this.remove_block(server, a0, a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_request_save(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    crate::handles::Args::new("LevelRef::request_save", args, 0)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::request_save")?;
+    let out = this.request_save(server);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn level_ref_respawn_data(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     crate::handles::Args::new("LevelRef::respawn_data", args, 0)?;
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::respawn_data")?;
@@ -4077,6 +4239,87 @@ fn level_ref_set_break_progress(lua: &mlua::Lua, host: &mut crate::hostcall::Tur
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn level_ref_set_clock_time(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_clock_time", args, 1)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_clock_time")?;
+    let a0: i64 = args.get(0)?;
+    let out = this.set_clock_time(server, a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_respawn_data(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_respawn_data", args, 3)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_respawn_data")?;
+    let a0: [i32; 3] = args.get(0)?;
+    let a1: f32 = args.get(1)?;
+    let a2: f32 = args.get(2)?;
+    let out = this.set_respawn_data(server, a0, a1, a2);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_weather(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_weather", args, 4)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_weather")?;
+    let a0: i32 = args.get(0)?;
+    let a1: i32 = args.get(1)?;
+    let a2: bool = args.get(2)?;
+    let a3: bool = args.get(3)?;
+    let out = this.set_weather(server, a0, a1, a2, a3);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_weather_levels(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_weather_levels", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_weather_levels")?;
+    let a0: f32 = args.get(0)?;
+    let a1: f32 = args.get(1)?;
+    let out = this.set_weather_levels(server, a0, a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_world_border_center(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_world_border_center", args, 1)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_world_border_center")?;
+    let a0: [f64; 2] = args.get(0)?;
+    let out = this.set_world_border_center(server, a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_world_border_damage(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_world_border_damage", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_world_border_damage")?;
+    let a0: f64 = args.get(0)?;
+    let a1: f64 = args.get(1)?;
+    let out = this.set_world_border_damage(server, a0, a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_world_border_size(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_world_border_size", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_world_border_size")?;
+    let a0: f64 = args.get(0)?;
+    let a1: i64 = args.get(1)?;
+    let out = this.set_world_border_size(server, a0, a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_world_border_warning(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_world_border_warning", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_world_border_warning")?;
+    let a0: i32 = args.get(0)?;
+    let a1: i32 = args.get(1)?;
+    let out = this.set_world_border_warning(server, a0, a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn level_ref_should_tick_blocks_at(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("LevelRef::should_tick_blocks_at", args, 1)?;
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::should_tick_blocks_at")?;
@@ -4109,6 +4352,16 @@ fn level_ref_spawn_limits(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::spawn_limits")?;
     let read = crate::handles::read_of(host)?;
     let out = this.spawn_limits(read);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_strike_lightning(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::strike_lightning", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::strike_lightning")?;
+    let a0: [f64; 3] = args.get(0)?;
+    let a1: bool = args.get(1)?;
+    let out = this.strike_lightning(server, a0, a1);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -4378,6 +4631,16 @@ fn living_ref_owner(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, t
     let this: mod_api::LivingRef = crate::handles::receiver(this, "LivingRef::owner")?;
     let read = crate::handles::read_of(host)?;
     let out = this.owner(read);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn living_ref_random_teleport(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LivingRef::random_teleport", args, 2)?;
+    let this: mod_api::LivingRef = crate::handles::receiver(this, "LivingRef::random_teleport")?;
+    let a0: [f64; 3] = args.get(0)?;
+    let a1: Option<String> = args.get(1)?;
+    let out = this.random_teleport(server, a0, a1.as_deref());
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -5061,6 +5324,24 @@ fn mob_ref_raid(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this:
     crate::handles::family_opt_out(lua, out)
 }
 
+fn mob_ref_remove_goal(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("MobRef::remove_goal", args, 1)?;
+    let this: mod_api::MobRef = crate::handles::receiver(this, "MobRef::remove_goal")?;
+    let a0: String = args.get(0)?;
+    let out = this.remove_goal(server, &a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn mob_ref_remove_target_goal(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("MobRef::remove_target_goal", args, 1)?;
+    let this: mod_api::MobRef = crate::handles::receiver(this, "MobRef::remove_target_goal")?;
+    let a0: String = args.get(0)?;
+    let out = this.remove_target_goal(server, &a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn mob_ref_requires_custom_persistence(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     crate::handles::Args::new("MobRef::requires_custom_persistence", args, 0)?;
     let this: mod_api::MobRef = crate::handles::receiver(this, "MobRef::requires_custom_persistence")?;
@@ -5694,6 +5975,14 @@ fn player_ref_previous_game_mode(lua: &mlua::Lua, host: &mut crate::hostcall::Tu
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn player_ref_respawn(_lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    crate::handles::Args::new("PlayerRef::respawn", args, 0)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::respawn")?;
+    crate::handles::ok_or_raise(this.respawn(server))?;
+    Ok(mlua::Value::Nil)
+}
+
 fn player_ref_sees(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("PlayerRef::sees", args, 1)?;
     let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::sees")?;
@@ -6232,6 +6521,8 @@ pub fn cost(op: &str) -> Option<u32> {
         "BossBarRef::overlay" => 1,
         "BossBarRef::play_boss_music" => 1,
         "BossBarRef::players" => 100,
+        "BossBarRef::remove" => 10,
+        "BossBarRef::remove_player" => 10,
         "BossBarRef::set_color" => 10,
         "BossBarRef::set_create_world_fog" => 10,
         "BossBarRef::set_darken_screen" => 10,
@@ -6314,6 +6605,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "EntityRef::detach_leash" => 10,
         "EntityRef::dimensions" => 1,
         "EntityRef::direction" => 1,
+        "EntityRef::discard" => 10,
         "EntityRef::dismount_location" => 1,
         "EntityRef::distance_to_sqr" => 1,
         "EntityRef::eject_passengers" => 10,
@@ -6365,6 +6657,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "EntityRef::pose" => 1,
         "EntityRef::position" => 1,
         "EntityRef::push" => 10,
+        "EntityRef::remove_tag" => 10,
         "EntityRef::reset_fall_distance" => 10,
         "EntityRef::root_vehicle" => 1,
         "EntityRef::rotation" => 1,
@@ -6393,6 +6686,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "EntityRef::stop_riding" => 10,
         "EntityRef::tags" => 100,
         "EntityRef::teleport_to" => 10,
+        "EntityRef::teleport_to_level" => 10,
         "EntityRef::tick_count" => 1,
         "EntityRef::ticks_frozen" => 1,
         "EntityRef::up_vector" => 1,
@@ -6415,6 +6709,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "ItemEntityRef::set_target" => 10,
         "ItemEntityRef::target" => 1,
         "LevelRef::all_entities" => 100,
+        "LevelRef::award_experience" => 10,
         "LevelRef::best_neighbor_signal" => 1,
         "LevelRef::biome_at" => 1,
         "LevelRef::biome_effects" => 1,
@@ -6423,6 +6718,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::block_face_sturdy" => 1,
         "LevelRef::block_floor_height" => 1,
         "LevelRef::block_property" => 1,
+        "LevelRef::block_random_tick" => 10,
         "LevelRef::block_shape" => 100,
         "LevelRef::block_state" => 1,
         "LevelRef::block_tick" => 10,
@@ -6461,6 +6757,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::in_place" => 1,
         "LevelRef::in_spawnable_bounds" => 1,
         "LevelRef::in_world_bounds" => 1,
+        "LevelRef::invalidate_capabilities" => 10,
         "LevelRef::is_loaded" => 1,
         "LevelRef::is_raining" => 1,
         "LevelRef::is_raining_at" => 1,
@@ -6477,16 +6774,27 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::raid_at" => 1,
         "LevelRef::raids" => 100,
         "LevelRef::ray_trace_entities" => 100,
+        "LevelRef::remove_block" => 10,
+        "LevelRef::request_save" => 10,
         "LevelRef::respawn_data" => 1,
         "LevelRef::sea_level" => 1,
         "LevelRef::seed" => 1,
         "LevelRef::send_block_updated" => 10,
         "LevelRef::set_biome" => 10,
         "LevelRef::set_break_progress" => 10,
+        "LevelRef::set_clock_time" => 10,
+        "LevelRef::set_respawn_data" => 10,
+        "LevelRef::set_weather" => 10,
+        "LevelRef::set_weather_levels" => 10,
+        "LevelRef::set_world_border_center" => 10,
+        "LevelRef::set_world_border_damage" => 10,
+        "LevelRef::set_world_border_size" => 10,
+        "LevelRef::set_world_border_warning" => 10,
         "LevelRef::should_tick_blocks_at" => 1,
         "LevelRef::signal" => 1,
         "LevelRef::spawn_flags" => 1,
         "LevelRef::spawn_limits" => 1,
+        "LevelRef::strike_lightning" => 10,
         "LevelRef::world_border" => 1,
         "LivingRef::absorption" => 1,
         "LivingRef::alive" => 1,
@@ -6520,6 +6828,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LivingRef::last_attacker" => 1,
         "LivingRef::max_health" => 1,
         "LivingRef::owner" => 1,
+        "LivingRef::random_teleport" => 10,
         "LivingRef::release_using_item" => 10,
         "LivingRef::set_absorption" => 10,
         "LivingRef::set_arrow_count" => 10,
@@ -6601,6 +6910,8 @@ pub fn cost(op: &str) -> Option<u32> {
         "MobRef::pathfinding_malus" => 1,
         "MobRef::persistence_required" => 1,
         "MobRef::raid" => 1,
+        "MobRef::remove_goal" => 10,
+        "MobRef::remove_target_goal" => 10,
         "MobRef::requires_custom_persistence" => 1,
         "MobRef::restrict_center" => 1,
         "MobRef::restrict_radius" => 1,
@@ -6675,6 +6986,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::place_block" => 10,
         "PlayerRef::play_sound" => 10,
         "PlayerRef::previous_game_mode" => 1,
+        "PlayerRef::respawn" => 10,
         "PlayerRef::sees" => 1,
         "PlayerRef::selected_slot" => 1,
         "PlayerRef::set_exhaustion" => 10,
@@ -6770,6 +7082,8 @@ pub fn run(
         "BossBarRef::overlay" => boss_bar_ref_overlay(lua, host, this, args),
         "BossBarRef::play_boss_music" => boss_bar_ref_play_boss_music(lua, host, this, args),
         "BossBarRef::players" => boss_bar_ref_players(lua, host, this, args),
+        "BossBarRef::remove" => boss_bar_ref_remove(lua, host, this, args),
+        "BossBarRef::remove_player" => boss_bar_ref_remove_player(lua, host, this, args),
         "BossBarRef::set_color" => boss_bar_ref_set_color(lua, host, this, args),
         "BossBarRef::set_create_world_fog" => boss_bar_ref_set_create_world_fog(lua, host, this, args),
         "BossBarRef::set_darken_screen" => boss_bar_ref_set_darken_screen(lua, host, this, args),
@@ -6852,6 +7166,7 @@ pub fn run(
         "EntityRef::detach_leash" => entity_ref_detach_leash(lua, host, this, args),
         "EntityRef::dimensions" => entity_ref_dimensions(lua, host, this, args),
         "EntityRef::direction" => entity_ref_direction(lua, host, this, args),
+        "EntityRef::discard" => entity_ref_discard(lua, host, this, args),
         "EntityRef::dismount_location" => entity_ref_dismount_location(lua, host, this, args),
         "EntityRef::distance_to_sqr" => entity_ref_distance_to_sqr(lua, host, this, args),
         "EntityRef::eject_passengers" => entity_ref_eject_passengers(lua, host, this, args),
@@ -6903,6 +7218,7 @@ pub fn run(
         "EntityRef::pose" => entity_ref_pose(lua, host, this, args),
         "EntityRef::position" => entity_ref_position(lua, host, this, args),
         "EntityRef::push" => entity_ref_push(lua, host, this, args),
+        "EntityRef::remove_tag" => entity_ref_remove_tag(lua, host, this, args),
         "EntityRef::reset_fall_distance" => entity_ref_reset_fall_distance(lua, host, this, args),
         "EntityRef::root_vehicle" => entity_ref_root_vehicle(lua, host, this, args),
         "EntityRef::rotation" => entity_ref_rotation(lua, host, this, args),
@@ -6931,6 +7247,7 @@ pub fn run(
         "EntityRef::stop_riding" => entity_ref_stop_riding(lua, host, this, args),
         "EntityRef::tags" => entity_ref_tags(lua, host, this, args),
         "EntityRef::teleport_to" => entity_ref_teleport_to(lua, host, this, args),
+        "EntityRef::teleport_to_level" => entity_ref_teleport_to_level(lua, host, this, args),
         "EntityRef::tick_count" => entity_ref_tick_count(lua, host, this, args),
         "EntityRef::ticks_frozen" => entity_ref_ticks_frozen(lua, host, this, args),
         "EntityRef::up_vector" => entity_ref_up_vector(lua, host, this, args),
@@ -6953,6 +7270,7 @@ pub fn run(
         "ItemEntityRef::set_target" => item_entity_ref_set_target(lua, host, this, args),
         "ItemEntityRef::target" => item_entity_ref_target(lua, host, this, args),
         "LevelRef::all_entities" => level_ref_all_entities(lua, host, this, args),
+        "LevelRef::award_experience" => level_ref_award_experience(lua, host, this, args),
         "LevelRef::best_neighbor_signal" => level_ref_best_neighbor_signal(lua, host, this, args),
         "LevelRef::biome_at" => level_ref_biome_at(lua, host, this, args),
         "LevelRef::biome_effects" => level_ref_biome_effects(lua, host, this, args),
@@ -6961,6 +7279,7 @@ pub fn run(
         "LevelRef::block_face_sturdy" => level_ref_block_face_sturdy(lua, host, this, args),
         "LevelRef::block_floor_height" => level_ref_block_floor_height(lua, host, this, args),
         "LevelRef::block_property" => level_ref_block_property(lua, host, this, args),
+        "LevelRef::block_random_tick" => level_ref_block_random_tick(lua, host, this, args),
         "LevelRef::block_shape" => level_ref_block_shape(lua, host, this, args),
         "LevelRef::block_state" => level_ref_block_state(lua, host, this, args),
         "LevelRef::block_tick" => level_ref_block_tick(lua, host, this, args),
@@ -6999,6 +7318,7 @@ pub fn run(
         "LevelRef::in_place" => level_ref_in_place(lua, host, this, args),
         "LevelRef::in_spawnable_bounds" => level_ref_in_spawnable_bounds(lua, host, this, args),
         "LevelRef::in_world_bounds" => level_ref_in_world_bounds(lua, host, this, args),
+        "LevelRef::invalidate_capabilities" => level_ref_invalidate_capabilities(lua, host, this, args),
         "LevelRef::is_loaded" => level_ref_is_loaded(lua, host, this, args),
         "LevelRef::is_raining" => level_ref_is_raining(lua, host, this, args),
         "LevelRef::is_raining_at" => level_ref_is_raining_at(lua, host, this, args),
@@ -7015,16 +7335,27 @@ pub fn run(
         "LevelRef::raid_at" => level_ref_raid_at(lua, host, this, args),
         "LevelRef::raids" => level_ref_raids(lua, host, this, args),
         "LevelRef::ray_trace_entities" => level_ref_ray_trace_entities(lua, host, this, args),
+        "LevelRef::remove_block" => level_ref_remove_block(lua, host, this, args),
+        "LevelRef::request_save" => level_ref_request_save(lua, host, this, args),
         "LevelRef::respawn_data" => level_ref_respawn_data(lua, host, this, args),
         "LevelRef::sea_level" => level_ref_sea_level(lua, host, this, args),
         "LevelRef::seed" => level_ref_seed(lua, host, this, args),
         "LevelRef::send_block_updated" => level_ref_send_block_updated(lua, host, this, args),
         "LevelRef::set_biome" => level_ref_set_biome(lua, host, this, args),
         "LevelRef::set_break_progress" => level_ref_set_break_progress(lua, host, this, args),
+        "LevelRef::set_clock_time" => level_ref_set_clock_time(lua, host, this, args),
+        "LevelRef::set_respawn_data" => level_ref_set_respawn_data(lua, host, this, args),
+        "LevelRef::set_weather" => level_ref_set_weather(lua, host, this, args),
+        "LevelRef::set_weather_levels" => level_ref_set_weather_levels(lua, host, this, args),
+        "LevelRef::set_world_border_center" => level_ref_set_world_border_center(lua, host, this, args),
+        "LevelRef::set_world_border_damage" => level_ref_set_world_border_damage(lua, host, this, args),
+        "LevelRef::set_world_border_size" => level_ref_set_world_border_size(lua, host, this, args),
+        "LevelRef::set_world_border_warning" => level_ref_set_world_border_warning(lua, host, this, args),
         "LevelRef::should_tick_blocks_at" => level_ref_should_tick_blocks_at(lua, host, this, args),
         "LevelRef::signal" => level_ref_signal(lua, host, this, args),
         "LevelRef::spawn_flags" => level_ref_spawn_flags(lua, host, this, args),
         "LevelRef::spawn_limits" => level_ref_spawn_limits(lua, host, this, args),
+        "LevelRef::strike_lightning" => level_ref_strike_lightning(lua, host, this, args),
         "LevelRef::world_border" => level_ref_world_border(lua, host, this, args),
         "LivingRef::absorption" => living_ref_absorption(lua, host, this, args),
         "LivingRef::alive" => living_ref_alive(lua, host, this, args),
@@ -7058,6 +7389,7 @@ pub fn run(
         "LivingRef::last_attacker" => living_ref_last_attacker(lua, host, this, args),
         "LivingRef::max_health" => living_ref_max_health(lua, host, this, args),
         "LivingRef::owner" => living_ref_owner(lua, host, this, args),
+        "LivingRef::random_teleport" => living_ref_random_teleport(lua, host, this, args),
         "LivingRef::release_using_item" => living_ref_release_using_item(lua, host, this, args),
         "LivingRef::set_absorption" => living_ref_set_absorption(lua, host, this, args),
         "LivingRef::set_arrow_count" => living_ref_set_arrow_count(lua, host, this, args),
@@ -7139,6 +7471,8 @@ pub fn run(
         "MobRef::pathfinding_malus" => mob_ref_pathfinding_malus(lua, host, this, args),
         "MobRef::persistence_required" => mob_ref_persistence_required(lua, host, this, args),
         "MobRef::raid" => mob_ref_raid(lua, host, this, args),
+        "MobRef::remove_goal" => mob_ref_remove_goal(lua, host, this, args),
+        "MobRef::remove_target_goal" => mob_ref_remove_target_goal(lua, host, this, args),
         "MobRef::requires_custom_persistence" => mob_ref_requires_custom_persistence(lua, host, this, args),
         "MobRef::restrict_center" => mob_ref_restrict_center(lua, host, this, args),
         "MobRef::restrict_radius" => mob_ref_restrict_radius(lua, host, this, args),
@@ -7213,6 +7547,7 @@ pub fn run(
         "PlayerRef::place_block" => player_ref_place_block(lua, host, this, args),
         "PlayerRef::play_sound" => player_ref_play_sound(lua, host, this, args),
         "PlayerRef::previous_game_mode" => player_ref_previous_game_mode(lua, host, this, args),
+        "PlayerRef::respawn" => player_ref_respawn(lua, host, this, args),
         "PlayerRef::sees" => player_ref_sees(lua, host, this, args),
         "PlayerRef::selected_slot" => player_ref_selected_slot(lua, host, this, args),
         "PlayerRef::set_exhaustion" => player_ref_set_exhaustion(lua, host, this, args),

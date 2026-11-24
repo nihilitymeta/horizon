@@ -163,6 +163,57 @@ fn is_server_write(member: &MemberIr) -> bool {
             == "&mut dyn ServerHost"
     })
 }
+/// The first wave of gated writes (issue 74, P2): `(Family::name, power)`. Each is a server write that
+/// [`powerful`] would deny, bound behind its manifest power (`powers.rs` checks it at the call). Exactly
+/// these: [`check_gated`] fails the generator when a listed write does not bind, and when a write a rule
+/// denies binds without being listed.
+pub const GATED_WRITES: &[(&str, &str)] = &[
+    ("BossBarRef::remove", "world"),
+    ("BossBarRef::remove_player", "world"),
+    ("EntityRef::discard", "world"),
+    ("EntityRef::remove_tag", "world"),
+    ("EntityRef::teleport_to_level", "world"),
+    ("LevelRef::block_random_tick", "world"),
+    ("LevelRef::invalidate_capabilities", "world"),
+    ("LevelRef::remove_block", "world"),
+    ("LevelRef::request_save", "world"),
+    ("LevelRef::set_clock_time", "world"),
+    ("LevelRef::set_weather", "world"),
+    ("LevelRef::set_weather_levels", "world"),
+    ("LevelRef::set_world_border_center", "world"),
+    ("LevelRef::set_world_border_damage", "world"),
+    ("LevelRef::set_world_border_size", "world"),
+    ("LevelRef::set_world_border_warning", "world"),
+    ("LevelRef::strike_lightning", "world"),
+    ("LivingRef::random_teleport", "world"),
+    ("MobRef::remove_goal", "world"),
+    ("MobRef::remove_target_goal", "world"),
+    ("LevelRef::award_experience", "spawn"),
+    ("LevelRef::set_respawn_data", "spawn"),
+    ("PlayerRef::respawn", "spawn"),
+];
+
+/// The manifest names a gated write may need: the names `Power::from_name` gives, without the
+/// reserved `network` and `files`, each with the `Power` variant the generated table names.
+const GATEABLE_POWERS: &[(&str, &str)] = &[
+    ("commands", "Commands"),
+    ("nbt", "Nbt"),
+    ("spawn", "Spawn"),
+    ("registration", "Registration"),
+    ("explosions", "Explosions"),
+    ("world", "World"),
+    ("game_rules", "GameRules"),
+    ("transactions", "Transactions"),
+];
+
+/// The power a gated write of `allowlist` needs, or `None` when `op` (`Family::name`) is not listed.
+fn power_in<'a>(allowlist: &[(&str, &'a str)], op: &str) -> Option<&'a str> {
+    allowlist
+        .iter()
+        .find(|(name, _)| *name == op)
+        .map(|(_, power)| *power)
+}
+
 /// The arrays a Lua value converts into (`vector.rs`), by element type and length.
 const FROM_LUA_ARRAYS: &[(&str, usize)] = &[
     ("i32", 2),
@@ -261,6 +312,8 @@ struct Bound {
     /// The result is an integer: an id accessor with one of these shows in `tostring`.
     int_ret: bool,
     cost: u32,
+    /// The power a gated write needs ([`GATED_WRITES`]); `None` for every other member.
+    gated: Option<&'static str>,
 }
 
 /// The generator's output for the families asked for.
@@ -270,6 +323,10 @@ pub struct Emitted {
     pub text: String,
     /// The coverage listing, `handles_coverage.txt`.
     pub coverage: String,
+    /// The file `powers.rs`: the gated writes' rows, from the same bound members as `handles.rs`.
+    pub powers: String,
+    /// The gated writes that bound, `(Family::name, power)`, in op order.
+    pub gated: Vec<(String, String)>,
     /// The bound members' ids, in family then name order.
     pub bound: Vec<String>,
     /// The heavy members' ids (a subset of `bound`).
@@ -410,7 +467,18 @@ pub fn emit_listing(
         for member in &family_members {
             match classify(member, family, families, plain) {
                 Ok(bound) => {
-                    let _ = writeln!(coverage, "  {} bound, cost {}", bound.id, bound.cost);
+                    match bound.gated {
+                        Some(power) => {
+                            let _ = writeln!(
+                                coverage,
+                                "  {} bound, cost {}, gated: {power}",
+                                bound.id, bound.cost
+                            );
+                        }
+                        None => {
+                            let _ = writeln!(coverage, "  {} bound, cost {}", bound.id, bound.cost);
+                        }
+                    }
                     bound_here.push(bound);
                 }
                 Err(reason) => {
@@ -471,15 +539,113 @@ pub fn emit_listing(
     for (category, count) in &by_category {
         let _ = writeln!(coverage, "  skipped, {category}: {count}");
     }
+    let mut gated_by_power: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut gated: Vec<(String, String)> = Vec::new();
+    for b in bound_all.iter().filter(|b| b.gated.is_some()) {
+        let power = b.gated.unwrap_or_default();
+        *gated_by_power.entry(power).or_default() += 1;
+        gated.push((b.op.clone(), power.to_owned()));
+    }
+    gated.sort();
+    for (power, count) in &gated_by_power {
+        let _ = writeln!(coverage, "  gated: {power} {count}");
+    }
     let _ = writeln!(coverage, "heavy (cost {HEAVY}): {}", heavy.join(", "));
     Emitted {
         text,
         coverage,
+        powers: powers_text(&gated, hash),
+        gated,
         bound,
         heavy,
         per_family,
         skipped,
     }
+}
+
+/// The file `powers.rs`: each gated write's op and the power it needs, sorted by op. The op is the
+/// string the generated method passes to `host_call`, so the gate and the call name the same op.
+fn powers_text(gated: &[(String, String)], hash: &str) -> String {
+    let mut out = format!(
+        "// @generated by event-horizon-lua-gen from surface {hash}: do not edit.\n\
+         // The gated writes (issue 74, P2): each op and the power a mod must hold to call it. Written from\n\
+         // the same bound members as handles.rs (emit_handles.rs GATED_WRITES).\n\n\
+         /// The gated host operations: `(\"Family::method\", power)`, sorted by op.\n\
+         pub const GATED: &[(&str, crate::manifest::Power)] = &[\n"
+    );
+    for (op, power) in gated {
+        let variant = GATEABLE_POWERS
+            .iter()
+            .find(|(name, _)| name == power)
+            .map_or("", |(_, variant)| *variant);
+        let _ = writeln!(out, "    (\"{op}\", crate::manifest::Power::{variant}),");
+    }
+    out.push_str("];\n");
+    out
+}
+
+/// The hard checks of a gated allowlist against an emitted surface (the generator's `main` runs
+/// them on every pass; a failure stops the generator and names the write). Each listed write whose
+/// family is generated must be a member, a `&mut dyn ServerHost` write, name a gateable power, and
+/// bind. And the bound writes a rule denies must be exactly the listed ones: nothing denied binds
+/// without its entry, and no entry goes unbound.
+pub fn check_gated(
+    allowlist: &[(&str, &str)],
+    members: &[MemberIr],
+    families: &[&str],
+    plain: &Plain,
+    emitted: &Emitted,
+) -> Result<(), String> {
+    for (op, power) in allowlist {
+        let Some((family, name)) = op.split_once("::") else {
+            return Err(format!("gated write `{op}` is not `Family::name`"));
+        };
+        if !families.contains(&family) {
+            continue;
+        }
+        let Some(member) = members
+            .iter()
+            .find(|m| !m.from_trait && m.owner == family && m.name == name)
+        else {
+            return Err(format!("gated write `{op}` is not a member of the surface"));
+        };
+        if !is_server_write(member) {
+            return Err(format!(
+                "gated write `{op}` is not a `&mut dyn ServerHost` write"
+            ));
+        }
+        if !GATEABLE_POWERS.iter().any(|(name, _)| name == power) {
+            return Err(format!(
+                "gated write `{op}` names power `{power}`, which is not a gateable power"
+            ));
+        }
+        if let Err(reason) = classify(member, family, families, plain) {
+            return Err(format!(
+                "gated write `{op}` cannot be bound, so it is not generated: {reason}"
+            ));
+        }
+    }
+    for member in members {
+        let family = member.owner.as_str();
+        if member.from_trait || !families.contains(&family) {
+            continue;
+        }
+        let op = format!("{family}::{}", member.name);
+        if powerful(member).is_some()
+            && emitted.bound.contains(&member.id)
+            && power_in(allowlist, &op).is_none()
+        {
+            return Err(format!(
+                "`{op}` is bound although a rule denies it, and it is not in the gated allowlist"
+            ));
+        }
+    }
+    for (op, _) in &emitted.gated {
+        if power_in(allowlist, op).is_none() {
+            return Err(format!("`{op}` is gated but not in the allowlist"));
+        }
+    }
+    Ok(())
 }
 
 /// The members of one family, sorted by name (handles only: a trait's method is not a member).
@@ -505,7 +671,9 @@ fn classify(
     if !member.generics.is_empty() {
         return Err(format!("generics: {}", member.generics));
     }
-    if let Some(reason) = powerful(member) {
+    let op = format!("{family}::{}", member.name);
+    let gated = power_in(GATED_WRITES, &op);
+    if let (Some(reason), None) = (powerful(member), gated) {
         return Err(reason);
     }
     if matches!(member.receiver, Receiver::None | Receiver::RefMut) {
@@ -559,7 +727,8 @@ fn classify(
         || matches!(ret, Ret::ListFamily | Ret::OptListFamily);
     Ok(Bound {
         id: member.id.clone(),
-        op: format!("{family}::{}", member.name),
+        op,
+        gated,
         name: member.name.clone(),
         host,
         write,
@@ -1326,13 +1495,11 @@ mod tests {
     fn the_powerful_table_denies_the_names_the_design_lists() {
         let cases = [
             "fn run_command(self, _: &mut dyn ServerHost, _: &str) -> bool",
-            "fn teleport_to_level(self, _: &mut dyn ServerHost, _: &str) -> bool",
             "fn merge_nbt(self, _: &mut dyn ServerHost) -> bool",
             "fn spawn_mob(self, _: &mut dyn ServerHost) -> bool",
             "fn explode(self, _: &mut dyn ServerHost) -> bool",
             "fn set_game_rule(self, _: &mut dyn ServerHost) -> bool",
             "fn remove(self, _: &mut dyn ServerHost) -> bool",
-            "fn discard(self, _: &mut dyn ServerHost) -> bool",
             "fn strike_lightning(self, _: &mut dyn ServerHost) -> bool",
             "fn set_world_border_size(self, _: &mut dyn ServerHost) -> bool",
             "fn disconnect(self, _: &mut dyn ServerHost) -> bool",
@@ -1350,6 +1517,176 @@ mod tests {
                 "{signature}: {reason}"
             );
         }
+    }
+
+    /// The `EntityRef` members of [`GATED_WRITES`] bind behind their power; the same name on a family
+    /// the list does not name stays denied.
+    #[test]
+    fn a_listed_write_binds_with_its_power_and_an_unlisted_one_stays_denied() {
+        for (signature, power) in [
+            ("fn discard(self, _: &mut dyn ServerHost) -> bool", "world"),
+            (
+                "fn teleport_to_level(self, _: &mut dyn ServerHost, _: &str) -> bool",
+                "world",
+            ),
+        ] {
+            let bound = one(signature).unwrap_or_else(|reason| panic!("{signature}: {reason}"));
+            assert_eq!(bound.gated, Some(power), "{signature}");
+            assert_eq!(bound.cost, WRITE, "{signature}");
+        }
+        assert!(
+            powerful_reason("fn remove(self, _: &mut dyn ServerHost) -> bool")
+                .contains("name contains `remove`")
+        );
+        let plain_write =
+            one("fn set_velocity(self, _: &mut dyn ServerHost, _: [f64; 3]) -> bool").unwrap();
+        assert_eq!(plain_write.gated, None);
+        let level = members(&[(
+            "LevelRef",
+            "discard",
+            "fn discard(self, _: &mut dyn ServerHost) -> bool",
+        )])
+        .remove(0);
+        assert!(
+            classify(&level, "LevelRef", &["LevelRef"], &plain()).is_err(),
+            "LevelRef::discard is not listed"
+        );
+    }
+
+    /// Emits the members of `signatures` (`(owner, name, signature)`) for the families given.
+    fn emit_members(
+        signatures: &[(&str, &str, &str)],
+        families: &[&str],
+    ) -> (Emitted, Vec<MemberIr>) {
+        let surface = members(signatures);
+        let emitted = emit_listing(&surface, families, &[], &plain(), "ab");
+        (emitted, surface)
+    }
+
+    #[test]
+    fn a_gated_write_emits_its_op_and_its_power_row_from_the_same_member() {
+        let (emitted, _) = emit_members(
+            &[(
+                "EntityRef",
+                "discard",
+                "fn discard(self, _: &mut dyn ServerHost) -> bool",
+            )],
+            &["EntityRef"],
+        );
+        assert_eq!(
+            emitted.gated,
+            [("EntityRef::discard".to_owned(), "world".to_owned())]
+        );
+        assert!(
+            emitted
+                .coverage
+                .contains("  handle:EntityRef::discard bound, cost 10, gated: world\n"),
+            "{}",
+            emitted.coverage
+        );
+        assert!(
+            emitted.coverage.contains("  gated: world 1\n"),
+            "{}",
+            emitted.coverage
+        );
+        assert!(
+            emitted
+                .powers
+                .contains("    (\"EntityRef::discard\", crate::manifest::Power::World),\n"),
+            "{}",
+            emitted.powers
+        );
+        // The op the row names is the string the generated method passes to `host_call`.
+        for (op, _) in &emitted.gated {
+            assert!(
+                emitted.text.contains(&format!(
+                    "crate::hostcall::host_call(lua, \"{op}\", this, args)"
+                )),
+                "{op} is not called by its method"
+            );
+        }
+    }
+
+    #[test]
+    fn the_gated_check_passes_for_a_complete_allowlist_and_fails_for_each_hard_error() {
+        let discard = [(
+            "EntityRef",
+            "discard",
+            "fn discard(self, _: &mut dyn ServerHost) -> bool",
+        )];
+        let (emitted, surface) = emit_members(&discard, &["EntityRef"]);
+        let plain = plain();
+        let families = ["EntityRef"];
+        assert!(
+            check_gated(
+                &[("EntityRef::discard", "world")],
+                &surface,
+                &families,
+                &plain,
+                &emitted
+            )
+            .is_ok()
+        );
+        let missing = check_gated(
+            &[("EntityRef::nope", "world")],
+            &surface,
+            &families,
+            &plain,
+            &emitted,
+        )
+        .expect_err("missing");
+        assert!(
+            missing.contains("`EntityRef::nope` is not a member"),
+            "{missing}"
+        );
+        let read = [(
+            "EntityRef",
+            "position",
+            "fn position(self, _: &dyn Host) -> Option<[f64; 3]>",
+        )];
+        let (read_emitted, read_surface) = emit_members(&read, &["EntityRef"]);
+        let not_write = check_gated(
+            &[("EntityRef::position", "world")],
+            &read_surface,
+            &families,
+            &plain,
+            &read_emitted,
+        )
+        .expect_err("a read");
+        assert!(
+            not_write.contains("is not a `&mut dyn ServerHost` write"),
+            "{not_write}"
+        );
+        let bad_power = check_gated(
+            &[("EntityRef::discard", "network")],
+            &surface,
+            &families,
+            &plain,
+            &emitted,
+        )
+        .expect_err("reserved power");
+        assert!(bad_power.contains("names power `network`"), "{bad_power}");
+        let denied = [(
+            "EntityRef",
+            "merge_nbt",
+            "fn merge_nbt(self, _: &mut dyn ServerHost) -> bool",
+        )];
+        let (denied_emitted, denied_surface) = emit_members(&denied, &["EntityRef"]);
+        let unbound = check_gated(
+            &[("EntityRef::merge_nbt", "nbt")],
+            &denied_surface,
+            &families,
+            &plain,
+            &denied_emitted,
+        )
+        .expect_err("unbound");
+        assert!(unbound.contains("cannot be bound"), "{unbound}");
+        let unlisted =
+            check_gated(&[], &surface, &families, &plain, &emitted).expect_err("unlisted");
+        assert!(
+            unlisted.contains("is bound although a rule denies it"),
+            "{unlisted}"
+        );
     }
 
     #[test]

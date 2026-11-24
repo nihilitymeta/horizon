@@ -11,8 +11,8 @@
 //!   `Void` carries that set, see `hostcall.rs`). Otherwise the call is refused as a plain Lua error,
 //!   which `pcall` can catch: the turn is not voided, the refusal costs one budget unit, the host is
 //!   not called, and the warning is written once per mod and power, never with the arguments.
-//! - The gated table is EMPTY in this version: nothing is gated and no new host call becomes callable.
-//!   `table()` is the hand-written hook the generator's table will replace.
+//! - The gated table is generated (`generated/powers.rs`, from `GATED_WRITES` in the generator): the first
+//!   wave is the `world` and `spawn` writes listed there. Every other write stays denied.
 //! - Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are NOT gated, and stay
 //!   that way.
 
@@ -21,9 +21,10 @@ use mlua::Error;
 use crate::host::warn_once;
 use crate::manifest::Power;
 
-/// The gated host operations: `("Family::method", power)`. Empty in this version.
-fn table() -> &'static [(&'static str, Power)] {
-    &[]
+/// The gated host operations: `("Family::method", power)`, generated from the same members as the
+/// handle methods (`generated/powers.rs`).
+pub(crate) fn table() -> &'static [(&'static str, Power)] {
+    crate::generated::powers::GATED
 }
 
 /// The translation key of a power's label; its description is the same key with `.description`
@@ -148,14 +149,72 @@ mod tests {
         Power::Files,
     ];
 
+    /// The first wave, written out by hand (not read from the generator): each op and its power.
+    const FIRST_WAVE: [(&str, Power); 23] = [
+        ("BossBarRef::remove", Power::World),
+        ("BossBarRef::remove_player", Power::World),
+        ("EntityRef::discard", Power::World),
+        ("EntityRef::remove_tag", Power::World),
+        ("EntityRef::teleport_to_level", Power::World),
+        ("LevelRef::block_random_tick", Power::World),
+        ("LevelRef::invalidate_capabilities", Power::World),
+        ("LevelRef::remove_block", Power::World),
+        ("LevelRef::request_save", Power::World),
+        ("LevelRef::set_clock_time", Power::World),
+        ("LevelRef::set_weather", Power::World),
+        ("LevelRef::set_weather_levels", Power::World),
+        ("LevelRef::set_world_border_center", Power::World),
+        ("LevelRef::set_world_border_damage", Power::World),
+        ("LevelRef::set_world_border_size", Power::World),
+        ("LevelRef::set_world_border_warning", Power::World),
+        ("LevelRef::strike_lightning", Power::World),
+        ("LivingRef::random_teleport", Power::World),
+        ("MobRef::remove_goal", Power::World),
+        ("MobRef::remove_target_goal", Power::World),
+        ("LevelRef::award_experience", Power::Spawn),
+        ("LevelRef::set_respawn_data", Power::Spawn),
+        ("PlayerRef::respawn", Power::Spawn),
+    ];
+
     #[test]
-    fn the_production_table_gates_nothing() {
+    fn the_generated_table_gates_exactly_the_first_wave() {
+        assert_eq!(table().len(), FIRST_WAVE.len());
+        for (op, power) in FIRST_WAVE {
+            assert_eq!(required(op), Some(power), "{op}");
+        }
         for op in [
             "EntityRef::set_glowing",
             "LevelRef::explode",
             "PlayerRef::disconnect",
+            "EntityRef::remove",
+            "EntityRef::merge_nbt",
+            "PlayerRef::set_nickname",
+            "EntityRef::run_command",
+            "PlayerRef::give_stack",
+            "LevelRef::add_water_ticket",
+            "LevelRef::explosion_resistance",
         ] {
-            assert_eq!(required(op), None, "{op}");
+            assert_eq!(required(op), None, "{op} stays denied");
+        }
+    }
+
+    /// Each row names a write the generated handles call under the same op string, and the generated
+    /// dispatcher binds it (`cost` is its table): the gate and the call cannot name different ops.
+    #[test]
+    fn every_gated_row_is_a_bound_write_that_calls_its_op() {
+        let text = include_str!("generated/handles.rs");
+        for &(op, _) in table() {
+            assert_eq!(
+                crate::generated::handles::cost(op),
+                Some(10),
+                "{op} is bound as a write"
+            );
+            assert!(
+                text.contains(&format!(
+                    "crate::hostcall::host_call(lua, \"{op}\", this, args)"
+                )),
+                "{op} is called by its method"
+            );
         }
     }
 

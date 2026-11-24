@@ -3745,6 +3745,10 @@ export type BossBarRef = {
 	overlay: (BossBarRef) -> BossBarOverlay?,
 	play_boss_music: (BossBarRef) -> boolean?,
 	players: (BossBarRef) -> {PlayerRef}?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	remove: (BossBarRef) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	remove_player: (BossBarRef, PlayerRef) -> boolean,
 	set_color: (BossBarRef, BossBarColor) -> boolean,
 	set_create_world_fog: (BossBarRef, boolean) -> boolean,
 	set_darken_screen: (BossBarRef, boolean) -> boolean,
@@ -3839,6 +3843,8 @@ export type EntityRef = {
 	detach_leash: (EntityRef, boolean) -> boolean,
 	dimensions: (EntityRef) -> { x: number, y: number }?,
 	direction: (EntityRef) -> string?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	discard: (EntityRef) -> boolean,
 	dismount_location: (EntityRef, LivingRef) -> { x: number, y: number, z: number }?,
 	distance_to_sqr: (EntityRef, { x: number, y: number, z: number }) -> number?,
 	eject_passengers: (EntityRef) -> boolean,
@@ -3890,6 +3896,8 @@ export type EntityRef = {
 	pose: (EntityRef) -> string?,
 	position: (EntityRef) -> { x: number, y: number, z: number }?,
 	push: (EntityRef, { x: number, y: number, z: number }) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	remove_tag: (EntityRef, string) -> boolean,
 	reset_fall_distance: (EntityRef) -> boolean,
 	root_vehicle: (EntityRef) -> EntityRef?,
 	rotation: (EntityRef) -> { x: number, y: number }?,
@@ -3918,6 +3926,8 @@ export type EntityRef = {
 	stop_riding: (EntityRef) -> boolean,
 	tags: (EntityRef) -> {string}?,
 	teleport_to: (EntityRef, { x: number, y: number, z: number }, { x: number, y: number }?) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	teleport_to_level: (EntityRef, string, { x: number, y: number, z: number }, { x: number, y: number }?) -> boolean,
 	tick_count: (EntityRef) -> number?,
 	ticks_frozen: (EntityRef) -> number?,
 	up_vector: (EntityRef) -> { x: number, y: number, z: number }?,
@@ -3949,6 +3959,8 @@ export type ItemEntityRef = {
 
 export type LevelRef = {
 	all_entities: (LevelRef) -> {EntityRef}?,
+	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
+	award_experience: (LevelRef, number, number, number, number) -> boolean,
 	best_neighbor_signal: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	biome_at: (LevelRef, { x: number, y: number, z: number }) -> string?,
 	biome_effects: (LevelRef, string) -> BiomeEffects?,
@@ -3957,6 +3969,8 @@ export type LevelRef = {
 	block_face_sturdy: (LevelRef, { x: number, y: number, z: number }, BlockFace, SupportType) -> boolean?,
 	block_floor_height: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	block_property: (LevelRef, { x: number, y: number, z: number }, string) -> string?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	block_random_tick: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	block_shape: (LevelRef, BlockStateSpec, { x: number, y: number, z: number }, BlockShapeKind) -> {{number}}?,
 	block_state: (LevelRef, { x: number, y: number, z: number }) -> BlockStateSpec?,
 	block_tick: (LevelRef, { x: number, y: number, z: number }) -> boolean,
@@ -3995,6 +4009,8 @@ export type LevelRef = {
 	in_place: (LevelRef) -> boolean,
 	in_spawnable_bounds: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
 	in_world_bounds: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	invalidate_capabilities: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	is_loaded: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	is_raining: (LevelRef) -> boolean?,
 	is_raining_at: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
@@ -4011,16 +4027,38 @@ export type LevelRef = {
 	raid_at: (LevelRef, { x: number, y: number, z: number }) -> RaidRef?,
 	raids: (LevelRef) -> {RaidRef}?,
 	ray_trace_entities: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }, number, EntityRef?) -> {EntityRayHit}?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	remove_block: (LevelRef, { x: number, y: number, z: number }, boolean) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	request_save: (LevelRef) -> boolean,
 	respawn_data: (LevelRef) -> RespawnData?,
 	sea_level: (LevelRef) -> number?,
 	seed: (LevelRef) -> number?,
 	send_block_updated: (LevelRef, { x: number, y: number, z: number }) -> boolean,
 	set_biome: (LevelRef, { x: number, y: number, z: number }, string) -> boolean,
 	set_break_progress: (LevelRef, number, { x: number, y: number, z: number }, number) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	set_clock_time: (LevelRef, number) -> boolean,
+	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
+	set_respawn_data: (LevelRef, { x: number, y: number, z: number }, number, number) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	set_weather: (LevelRef, number, number, boolean, boolean) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	set_weather_levels: (LevelRef, number, number) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	set_world_border_center: (LevelRef, { x: number, y: number }) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	set_world_border_damage: (LevelRef, number, number) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	set_world_border_size: (LevelRef, number, number) -> boolean,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	set_world_border_warning: (LevelRef, number, number) -> boolean,
 	should_tick_blocks_at: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
 	signal: (LevelRef, { x: number, y: number, z: number }, Direction) -> number?,
 	spawn_flags: (LevelRef) -> SpawnFlags?,
 	spawn_limits: (LevelRef) -> SpawnLimits?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	strike_lightning: (LevelRef, { x: number, y: number, z: number }, boolean) -> boolean,
 	world_border: (LevelRef) -> {number}?,
 }
 
@@ -4057,6 +4095,8 @@ export type LivingRef = {
 	last_attacker: (LivingRef) -> EntityRef?,
 	max_health: (LivingRef) -> number?,
 	owner: (LivingRef) -> string?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	random_teleport: (LivingRef, { x: number, y: number, z: number }, string?) -> boolean,
 	release_using_item: (LivingRef) -> boolean,
 	set_absorption: (LivingRef, number) -> boolean,
 	set_arrow_count: (LivingRef, number) -> boolean,
@@ -4150,6 +4190,10 @@ export type MobRef = {
 	pathfinding_malus: (MobRef, PathType) -> number?,
 	persistence_required: (MobRef) -> boolean?,
 	raid: (MobRef) -> RaidRef?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	remove_goal: (MobRef, string) -> number?,
+	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
+	remove_target_goal: (MobRef, string) -> number?,
 	requires_custom_persistence: (MobRef) -> boolean?,
 	restrict_center: (MobRef) -> { x: number, y: number, z: number }?,
 	restrict_radius: (MobRef) -> number?,
@@ -4230,6 +4274,8 @@ export type PlayerRef = {
 	place_block: (PlayerRef, LevelRef, { x: number, y: number, z: number }, BlockStateSpec, boolean) -> (),
 	play_sound: (PlayerRef, string, SoundSource, number, number) -> boolean,
 	previous_game_mode: (PlayerRef) -> GameMode??,
+	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
+	respawn: (PlayerRef) -> (),
 	sees: (PlayerRef, PlayerRef) -> boolean,
 	selected_slot: (PlayerRef) -> number?,
 	set_exhaustion: (PlayerRef, number) -> boolean,
