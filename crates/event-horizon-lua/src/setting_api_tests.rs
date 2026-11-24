@@ -349,7 +349,7 @@ fn a_load_notice_of_the_settings_file_is_logged_once_through_report() {
     write_file(game.path(), "setting_probe_k", "level = \"high\"\n");
     let m = load(game.path(), "setting_probe_k", "local x = 1").expect("loads");
     let host = LuaHost::new(vec![m]);
-    let text = "settings.toml: level has the wrong type; its default is used";
+    let text = "setting_probe_k: settings.toml: level has the wrong type; its default is used";
     assert!(captured_with_prefix(text).is_empty());
     host.report();
     host.report();

@@ -684,7 +684,7 @@ impl Settings {
                 Ok(None) => {}
                 Err(problem) => warn_once(
                     mod_id,
-                    &format!("settings.toml {problem}; the defaults are used"),
+                    &format!("{mod_id}: settings.toml {problem}; the defaults are used"),
                 ),
                 Ok(Some(table)) => {
                     let unknown = table.keys().filter(|key| schema.get(key).is_none()).count();
@@ -692,7 +692,7 @@ impl Settings {
                         warn_once(
                             mod_id,
                             &format!(
-                                "settings.toml has {unknown} keys no setting declares; they are ignored"
+                                "{mod_id}: settings.toml has {unknown} keys no setting declares; they are ignored"
                             ),
                         );
                     }
@@ -710,7 +710,7 @@ impl Settings {
                             Err(reason) => warn_once(
                                 mod_id,
                                 &format!(
-                                    "settings.toml: {} {reason}; its default is used",
+                                    "{mod_id}: settings.toml: {} {reason}; its default is used",
                                     setting.key
                                 ),
                             ),
@@ -719,7 +719,10 @@ impl Settings {
                 }
             }
         } else {
-            warn_once(mod_id, "settings are not read: the mod id is not valid");
+            warn_once(
+                mod_id,
+                &format!("{mod_id}: settings are not read: the mod id is not valid"),
+            );
         }
         Settings {
             mod_id: mod_id.to_owned(),
@@ -804,11 +807,15 @@ impl Settings {
     /// removes the key. Nothing is written when the file cannot be read as TOML or would be too big.
     fn commit(&self, edits: &[(String, Option<Value>)]) -> Result<Vec<Change>, SettingError> {
         let _guard = WRITE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-        let dir = ensure_dir(&self.game_dir, &self.mod_id).map_err(SettingError::File)?;
+        let dir = ensure_dir(&self.game_dir, &self.mod_id)
+            .map_err(|e| SettingError::File(format!("{}: {e}", self.mod_id)))?;
         let target = dir.join(FILE);
         let mut table = read_table(&target)
             .map_err(|problem| {
-                SettingError::File(format!("settings.toml {problem}; it is not written"))
+                SettingError::File(format!(
+                    "{}: settings.toml {problem}; it is not written",
+                    self.mod_id
+                ))
             })?
             .unwrap_or_default();
         let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
@@ -836,13 +843,15 @@ impl Settings {
             });
         }
         let text = toml::to_string(&table)
-            .map_err(|e| SettingError::File(format!("settings.toml: {e}")))?;
+            .map_err(|e| SettingError::File(format!("{}: settings.toml: {e}", self.mod_id)))?;
         if text.len() as u64 > MAX_FILE {
-            return Err(SettingError::File(
-                "settings.toml would be over 64 KiB; it is not written".into(),
-            ));
+            return Err(SettingError::File(format!(
+                "{}: settings.toml would be over 64 KiB; it is not written",
+                self.mod_id
+            )));
         }
-        write_atomic(&dir, &target, text.as_bytes()).map_err(SettingError::File)?;
+        write_atomic(&dir, &target, text.as_bytes())
+            .map_err(|e| SettingError::File(format!("{}: {e}", self.mod_id)))?;
         for (key, new) in edits {
             if self.schema.get(key).is_none() {
                 continue;

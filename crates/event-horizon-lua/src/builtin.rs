@@ -10,7 +10,7 @@ use crate::settings::{Role, Schema, Settings};
 use mod_api::__private::native::BuiltMod;
 use mod_api::ModEntry;
 use mod_api::Side;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -57,6 +57,37 @@ pub fn env_dev_paths(value: Option<&OsStr>) -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .filter(|p| !p.as_os_str().is_empty())
+        .collect()
+}
+
+/// The dev paths the command line names, in order: each `--lua-mod PATH` and `--lua-mod=PATH`.
+/// `args` are the arguments after the program name. The game's parser takes the flag without its
+/// value (`horizon_mod_package`'s launch arguments), so it is read here, from the raw arguments.
+pub fn flag_dev_paths(args: impl IntoIterator<Item = OsString>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        if arg == "--lua-mod" {
+            if let Some(value) = args.next() {
+                out.push(PathBuf::from(value));
+            }
+        } else if let Some(value) = arg.to_str().and_then(|s| s.strip_prefix("--lua-mod=")) {
+            out.push(PathBuf::from(value));
+        }
+    }
+    out.retain(|p| !p.as_os_str().is_empty());
+    out
+}
+
+/// The dev paths of a start: the command line's (`flag_dev_paths`) first, then `EH_LUA_MODS`'s,
+/// with a path that names the same folder or file as an earlier one dropped. The scan still
+/// refuses more than `MAX_DEV_PATHS` of them.
+pub fn dev_paths(flags: Vec<PathBuf>, env: Option<&OsStr>) -> Vec<PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    flags
+        .into_iter()
+        .chain(env_dev_paths(env))
+        .filter(|p| seen.insert(std::fs::canonicalize(p).unwrap_or_else(|_| p.clone())))
         .collect()
 }
 
@@ -238,6 +269,42 @@ pub(crate) fn load_mods(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn args(list: &[&str]) -> Vec<OsString> {
+        list.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn lua_mod_flags_are_read_in_order_in_both_forms() {
+        let got = flag_dev_paths(args(&[
+            "--lua-mod",
+            "/mods/a",
+            "--creative",
+            "--lua-mod=/mods/b",
+        ]));
+        assert_eq!(got, [PathBuf::from("/mods/a"), PathBuf::from("/mods/b")]);
+        // An empty `=` value is dropped; a spaced flag with no value gives nothing (the game's
+        // parser refuses that start before this runs).
+        assert!(flag_dev_paths(args(&["--lua-mod=", "--creative"])).is_empty());
+        assert!(flag_dev_paths(args(&["--lua-mod"])).is_empty());
+    }
+
+    #[test]
+    fn flags_come_before_the_environment_and_duplicates_go() {
+        let dir = tempfile::tempdir().unwrap();
+        let one = dir.path().join("one");
+        let two = dir.path().join("two");
+        std::fs::create_dir_all(&one).unwrap();
+        std::fs::create_dir_all(&two).unwrap();
+        // The same folder by a second spelling, and the env var's copy of `one`.
+        let again = dir.path().join("one").join("..").join("one");
+        let env = std::env::join_paths([&two, &again, &one]).unwrap();
+        let got = dev_paths(
+            vec![one.clone(), PathBuf::from("/no/such/dev"), one.clone()],
+            Some(env.as_os_str()),
+        );
+        assert_eq!(got, [one, PathBuf::from("/no/such/dev"), two]);
+    }
 
     /// The mods and refusals of a scan with no dev paths (the loader's pair, without the notes).
     fn load_mods_pair(root: &Path) -> (Vec<LuaMod>, Vec<String>) {

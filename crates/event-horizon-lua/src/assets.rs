@@ -18,6 +18,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 
@@ -40,6 +42,15 @@ pub const MAX_FILE: u64 = 8 * 1024 * 1024;
 pub const MAX_TOTAL: u64 = 64 * 1024 * 1024;
 /// Most stale packs of one mod removed by one publication.
 pub const MAX_REMOVALS: usize = 8;
+/// Most stale temp folders removed by one publication.
+pub const MAX_TEMP_REMOVALS: usize = 8;
+/// How old a temp folder must be before a publication may remove it: a younger one may be another
+/// game's extraction in progress.
+pub const TEMP_AGE: Duration = Duration::from_secs(10 * 60);
+/// Names tried for one temp folder before the publication gives up.
+const TEMP_TRIES: usize = 16;
+/// Counts the temp folders of this process, so two publications in one process never share a name.
+static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
 /// Longest mod id: the pack id is `lua_` and the id, and an id is at most 64 bytes.
 const MAX_PACK_ID: usize = 64;
 /// Hex characters of the content hash in a pack's folder name.
@@ -293,16 +304,25 @@ pub(crate) fn publish_with(
         return Ok(None);
     };
     let root = cache_root(game_dir)?;
+    let mod_id = &package.manifest().id;
+    let failed = remove_stale_temps(&root, &plan, SystemTime::now());
+    if !failed.is_empty() {
+        crate::host::warn_once(
+            mod_id,
+            &format!(
+                "{mod_id}: {} stale temp folders of its cache could not be removed; the first: {}",
+                failed.len(),
+                failed[0]
+            ),
+        );
+    }
     let target = root.join(&plan.target_name);
     if std::fs::symlink_metadata(&target).is_ok() {
         verify(&target, &plan)?;
         remove_stale(&root, &plan);
         return Ok(Some(target));
     }
-    let temp = root.join(format!(".tmp-{}-{}", plan.target_name, std::process::id()));
-    if let Err(error) = std::fs::create_dir(&temp) {
-        return Err(AssetError::Io(format!("{}: {error}", temp.display())));
-    }
+    let temp = create_temp(&root, &plan)?;
     if let Err(error) = write_pack(&temp, &plan, fail_at) {
         let _ = std::fs::remove_dir_all(&temp);
         return Err(error);
@@ -319,6 +339,101 @@ pub(crate) fn publish_with(
     }
     remove_stale(&root, &plan);
     Ok(Some(target))
+}
+
+/// A fresh, empty temp folder beside the target: `.tmp-<pack>-<hash>-<pid>-<nanos>-<seq>`. The
+/// process id, the clock and this process's counter make the name unique, and a name that is taken
+/// is tried again, up to `TEMP_TRIES` times.
+fn create_temp(root: &Path, plan: &Plan) -> Result<PathBuf, AssetError> {
+    for _ in 0..TEMP_TRIES {
+        let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let temp = root.join(format!(
+            ".tmp-{}-{}-{nanos}-{seq}",
+            plan.target_name,
+            std::process::id()
+        ));
+        match std::fs::create_dir(&temp) {
+            Ok(()) => return Ok(temp),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(AssetError::Io(format!("{}: {error}", temp.display()))),
+        }
+    }
+    Err(AssetError::Io(format!(
+        "{}: no free temp folder name in {TEMP_TRIES} tries",
+        root.display()
+    )))
+}
+
+/// Whether `name` is a temp folder of this pack in exactly the format `create_temp` writes: the
+/// prefix `.tmp-<pack id>-`, 16 hex characters, then three decimal numbers joined by dashes.
+fn is_temp_name(name: &str, pack_id: &str) -> bool {
+    let Some(rest) = name
+        .strip_prefix(".tmp-")
+        .and_then(|r| r.strip_prefix(pack_id))
+    else {
+        return false;
+    };
+    let Some(rest) = rest.strip_prefix('-') else {
+        return false;
+    };
+    let Some((hash, tail)) = rest.split_at_checked(HASH_LEN) else {
+        return false;
+    };
+    let Some(tail) = tail.strip_prefix('-') else {
+        return false;
+    };
+    hash.bytes()
+        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        && matches!(
+            tail.split('-').collect::<Vec<_>>()[..],
+            [a, b, c] if [a, b, c].iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        )
+}
+
+/// Removes the temp folders of this pack that an earlier run left behind (a crash, or a kill during
+/// an extraction): real folders named by `is_temp_name` and at least `TEMP_AGE` old at `now`. A
+/// symlink, a younger folder or any other name is left alone. At most `MAX_TEMP_REMOVALS` are
+/// tried. Returns one line per folder that could not be removed.
+fn remove_stale_temps(root: &Path, plan: &Plan, now: SystemTime) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut failed = Vec::new();
+    let mut tried = 0;
+    for entry in entries.flatten() {
+        if tried >= MAX_TEMP_REMOVALS {
+            break;
+        }
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !is_temp_name(name, &plan.pack_id) {
+            continue;
+        }
+        let path = entry.path();
+        // A symlink is not a real folder, so it is neither followed nor removed.
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !meta.is_dir() {
+            continue;
+        }
+        let old = meta
+            .modified()
+            .ok()
+            .and_then(|at| now.duration_since(at).ok())
+            .is_some_and(|age| age >= TEMP_AGE);
+        if !old {
+            continue;
+        }
+        tried += 1;
+        if let Err(error) = std::fs::remove_dir_all(&path) {
+            failed.push(format!("{name}: {error}"));
+        }
+    }
+    failed
 }
 
 /// `<game_dir>/.horizon-cache/lua-mods`, created when missing. Each folder on the way must be a

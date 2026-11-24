@@ -17,10 +17,11 @@ fn main() {
     horizon_mod_host::exit_if_compile_child();
     let startup = horizon_client::entry::prepare();
     std::hint::black_box(&horizon_mod_package::holder::CAPABILITY);
-    // Dev mods come from EH_LUA_MODS only: the game's own argument parser reads the command line
-    // itself, so a `--lua-mod` flag cannot be taken out here (see the report of chunk 3b).
-    let dev_paths =
-        event_horizon_lua::builtin::env_dev_paths(std::env::var_os("EH_LUA_MODS").as_deref());
+    // Dev mods: `--lua-mod PATH` (repeatable) on the command line, then `EH_LUA_MODS`.
+    let dev_paths = event_horizon_lua::builtin::dev_paths(
+        event_horizon_lua::builtin::flag_dev_paths(std::env::args_os().skip(1)),
+        std::env::var_os("EH_LUA_MODS").as_deref(),
+    );
     // A dedicated server is the server installation: a client-only Lua mod is not loaded there.
     let dedicated =
         startup.launch().installation_side() == horizon_mod_package::manifest::Side::Server;

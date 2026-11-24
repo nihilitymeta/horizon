@@ -157,6 +157,12 @@ impl LaunchArguments {
                 | "--pregen" => {
                     rest.push(Argument::Switch(arg));
                 }
+                // Event Horizon's Lua dev mods: the game takes no such option, so it is not passed
+                // on; the Lua host reads the flag from the command line itself.
+                "--lua-mod" => {
+                    args.next().ok_or_else(|| MissingValue(arg.clone()))?;
+                }
+                _ if arg.starts_with("--lua-mod=") => {}
                 _ => {
                     let value = args.next().ok_or_else(|| MissingValue(arg.clone()))?;
                     match arg.as_str() {
@@ -319,5 +325,27 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.to_string(), "missing value after --dev-mod");
+    }
+
+    #[test]
+    fn lua_mod_is_taken_here_and_never_reaches_the_game() {
+        let parse = |args: &[&str]| {
+            LaunchArguments::parse(
+                args.iter().map(|a| a.to_string()),
+                Path::new("/start"),
+                Path::new("/default"),
+                None,
+            )
+        };
+        // Both forms are consumed; a spaced value does not swallow the next option.
+        let parsed = parse(&["--lua-mod", "/mods/a", "--lua-mod=/mods/b", "--creative"]).unwrap();
+        assert_eq!(parsed.rest, [Argument::Switch("--creative".into())]);
+        assert!(parsed.context.dev_mods.is_empty());
+        // The spaced form takes its value even when that value looks like an option.
+        let parsed = parse(&["--lua-mod", "--creative"]).unwrap();
+        assert!(parsed.rest.is_empty());
+        // A flag with no value is refused as the other value options are.
+        let error = parse(&["--lua-mod"]).unwrap_err();
+        assert_eq!(error.to_string(), "missing value after --lua-mod");
     }
 }

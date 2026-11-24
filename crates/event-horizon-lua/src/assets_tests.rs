@@ -602,3 +602,165 @@ fn the_key_has_an_english_entry_with_its_argument() {
         .expect("no en_us entry");
     assert!(english.contains("%1$s"), "{english}");
 }
+
+/// The folder name of a pack's target for `dir`, as `publish` would create it.
+fn target_name_of(dir: &Path) -> String {
+    assets::plan(&open(dir)).unwrap().unwrap().target_name
+}
+
+/// Makes a folder of the cache with one file in it, last changed `age` ago.
+fn old_folder(root: &Path, name: &str, age: Duration) -> PathBuf {
+    let dir = root.join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("left-over"), b"partial").unwrap();
+    let at = SystemTime::now() - age;
+    std::fs::File::open(&dir).unwrap().set_modified(at).unwrap();
+    dir
+}
+
+const AN_HOUR: Duration = Duration::from_secs(60 * 60);
+const A_MINUTE: Duration = Duration::from_secs(60);
+
+#[test]
+fn an_old_temp_folder_of_this_pack_is_removed_by_a_publish() {
+    let work = tempfile::tempdir().unwrap();
+    let game = tempfile::tempdir().unwrap();
+    let dir = folder_mod(work.path(), LUA_MANIFEST, &sample());
+    let root = lua_root(game.path());
+    std::fs::create_dir_all(&root).unwrap();
+    let temp = old_folder(
+        &root,
+        &format!(".tmp-{}-4242-1700000000000000000-7", target_name_of(&dir)),
+        AN_HOUR,
+    );
+    assert!(publish(game.path(), &open(&dir)).unwrap().is_some());
+    assert!(!temp.exists(), "the old temp folder stayed");
+}
+
+#[test]
+fn a_young_temp_folder_stays_because_another_game_may_be_extracting() {
+    let work = tempfile::tempdir().unwrap();
+    let game = tempfile::tempdir().unwrap();
+    let dir = folder_mod(work.path(), LUA_MANIFEST, &sample());
+    let root = lua_root(game.path());
+    std::fs::create_dir_all(&root).unwrap();
+    let temp = old_folder(
+        &root,
+        &format!(".tmp-{}-4242-1700000000000000000-8", target_name_of(&dir)),
+        A_MINUTE,
+    );
+    assert!(publish(game.path(), &open(&dir)).unwrap().is_some());
+    assert!(temp.is_dir(), "a young temp folder was removed");
+}
+
+#[test]
+fn a_folder_that_does_not_match_the_temp_format_stays() {
+    let work = tempfile::tempdir().unwrap();
+    let game = tempfile::tempdir().unwrap();
+    let dir = folder_mod(work.path(), LUA_MANIFEST, &sample());
+    let root = lua_root(game.path());
+    std::fs::create_dir_all(&root).unwrap();
+    let target = target_name_of(&dir);
+    let other_mod_hash = "0123456789abcdef";
+    let kept = [
+        // Too few numbers, an upper-case hash, a short or non-hex hash, another mod's pack,
+        // no leading dot, a non-number part, and a name that is only a prefix.
+        format!(".tmp-{target}-4242-1700000000000000000"),
+        ".tmp-lua_alpha-ABCDEF0123456789-1-2-3".to_string(),
+        ".tmp-lua_alpha-zz-1-2-3".to_string(),
+        format!(".tmp-lua_beta-{other_mod_hash}-1-2-3"),
+        format!("tmp-{target}-1-2-3"),
+        format!(".tmp-{target}-1-2-x"),
+        format!(".tmp-{target}-1-2-3-4"),
+        format!(".tmp-{target}"),
+    ];
+    let mut dirs = Vec::new();
+    for name in &kept {
+        dirs.push(old_folder(&root, name, AN_HOUR));
+    }
+    assert!(publish(game.path(), &open(&dir)).unwrap().is_some());
+    for (name, dir) in kept.iter().zip(&dirs) {
+        assert!(dir.is_dir(), "{name} was removed");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_named_like_a_temp_folder_is_neither_followed_nor_removed() {
+    let work = tempfile::tempdir().unwrap();
+    let game = tempfile::tempdir().unwrap();
+    let dir = folder_mod(work.path(), LUA_MANIFEST, &sample());
+    let root = lua_root(game.path());
+    std::fs::create_dir_all(&root).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("precious"), b"keep").unwrap();
+    let at = SystemTime::now() - AN_HOUR;
+    std::fs::File::open(outside.path())
+        .unwrap()
+        .set_modified(at)
+        .unwrap();
+    let link = root.join(format!(".tmp-{}-4242-1-2", target_name_of(&dir)));
+    std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+    assert!(publish(game.path(), &open(&dir)).unwrap().is_some());
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the symlink was removed"
+    );
+    assert_eq!(
+        std::fs::read(outside.path().join("precious")).unwrap(),
+        b"keep"
+    );
+}
+
+#[test]
+fn at_most_eight_temp_folders_are_removed_per_publish() {
+    let work = tempfile::tempdir().unwrap();
+    let game = tempfile::tempdir().unwrap();
+    let dir = folder_mod(work.path(), LUA_MANIFEST, &sample());
+    let root = lua_root(game.path());
+    std::fs::create_dir_all(&root).unwrap();
+    let target = target_name_of(&dir);
+    for seq in 0..10 {
+        old_folder(&root, &format!(".tmp-{target}-4242-1-{seq}"), AN_HOUR);
+    }
+    assert!(publish(game.path(), &open(&dir)).unwrap().is_some());
+    let left = std::fs::read_dir(&root)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(".tmp-"))
+        .count();
+    assert_eq!(left, 10 - assets::MAX_TEMP_REMOVALS);
+}
+
+#[test]
+fn a_leftover_with_the_same_pid_as_the_old_format_does_not_block_publishing() {
+    let work = tempfile::tempdir().unwrap();
+    let game = tempfile::tempdir().unwrap();
+    let dir = folder_mod(work.path(), LUA_MANIFEST, &sample());
+    let root = lua_root(game.path());
+    std::fs::create_dir_all(&root).unwrap();
+    // The name an earlier version wrote: `.tmp-<pack>-<hash>-<pid>`, with this process's pid.
+    let leftover = format!(".tmp-{}-{}", target_name_of(&dir), std::process::id());
+    std::fs::create_dir(root.join(&leftover)).unwrap();
+    let published = publish(game.path(), &open(&dir)).unwrap().unwrap();
+    assert!(published.is_dir());
+    assert!(
+        packs_of(game.path(), "")
+            .iter()
+            .any(|n| n == &target_name_of(&dir))
+    );
+}
+
+#[test]
+fn an_interrupted_extraction_leaves_no_temp_folder_behind() {
+    let work = tempfile::tempdir().unwrap();
+    let game = tempfile::tempdir().unwrap();
+    let dir = folder_mod(work.path(), LUA_MANIFEST, &sample());
+    let error = publish_with(game.path(), &open(&dir), Some(2)).unwrap_err();
+    assert!(matches!(error, AssetError::Io(_)), "{error:?}");
+    assert!(packs_of(game.path(), ".tmp-").is_empty());
+    assert!(packs_of(game.path(), "lua_alpha").is_empty());
+}

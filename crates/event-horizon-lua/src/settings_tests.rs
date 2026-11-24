@@ -442,6 +442,28 @@ fn a_symlinked_file_is_ignored_and_not_read() {
     assert_eq!(notices.len(), 1, "{notices:?}");
 }
 
+#[test]
+fn every_settings_warning_names_its_mod() {
+    // One file per kind of warning: unreadable TOML, an unknown key, a wrong value, an oversized file.
+    let cases = [
+        ("volume = = 5 ][", "not valid TOML"),
+        ("zzz = 1\nvolume = 5\n", "no setting declares"),
+        ("on = \"yes\"\n", "wrong type"),
+    ];
+    for (text, what) in cases {
+        let root = game_with("m", Some(text));
+        let (_, notices) = load_notices(root.path(), "m", Role::ServerRuns);
+        assert!(!notices.is_empty(), "{text:?}: no notice");
+        for notice in &notices {
+            assert!(notice.starts_with("m: settings.toml"), "{what}: {notice}");
+        }
+    }
+    let root = game_with("Bad Id", None);
+    let (_, notices) = load_notices(root.path(), "Bad Id", Role::ServerRuns);
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(notices[0].starts_with("Bad Id: "), "{notices:?}");
+}
+
 // --- set, reset, reset_all -------------------------------------------------------------------
 
 fn fresh(text: Option<&str>) -> (tempfile::TempDir, Settings) {
