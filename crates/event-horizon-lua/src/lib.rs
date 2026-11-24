@@ -52,6 +52,7 @@ mod manifest_tests;
 mod menu_tests;
 mod mob_turn;
 pub mod package;
+pub mod powers;
 pub mod provider;
 pub mod quarantine;
 pub mod ratelimit;

@@ -109,6 +109,22 @@ impl Power {
     pub fn from_name(name: &str) -> Option<Power> {
         POWERS.iter().find(|(n, _)| *n == name).map(|(_, p)| *p)
     }
+
+    /// The manifest name of this power.
+    pub fn name(self) -> &'static str {
+        POWERS
+            .iter()
+            .find(|(_, p)| *p == self)
+            .map_or("", |(n, _)| n)
+    }
+
+    /// The position of this power in the table of names: the order grants are kept in.
+    pub fn rank(self) -> usize {
+        POWERS
+            .iter()
+            .position(|(_, p)| *p == self)
+            .unwrap_or(usize::MAX)
+    }
 }
 
 /// A mod this one depends on. `optional` dependencies may be missing.

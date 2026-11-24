@@ -31,6 +31,7 @@ use crate::dispatch::{self, new_event};
 use crate::fingerprint::{Fingerprint, SwapRefused};
 use crate::generated::hooks::{hook_id, is_emitted};
 use crate::hlua::Package;
+use crate::manifest::Power;
 use crate::ratelimit::{RateLimit, Verdict};
 use crate::setting_api;
 use crate::settings::{Change, SettingError, Settings, Value as SettingValue};
@@ -127,6 +128,9 @@ pub struct LuaMod {
     fingerprint: Fingerprint,
     /// Whether the mod was started from a dev path (`EH_LUA_MODS`): only those reload (`reload.rs`).
     dev: bool,
+    /// The powers in effect for the mod: requested by its manifest and granted by the enabled-state file
+    /// (`powers.rs`). Set once at load (`set_powers`); empty until then, so a mod has none by default.
+    powers: Vec<Power>,
     /// The state the mod runs in. A swap replaces it under the write lock (`swap_state`); `lua()`
     /// hands out a handle to the state as it is then.
     lua: RwLock<Lua>,
@@ -282,6 +286,16 @@ impl LuaMod {
         self.dev = dev;
     }
 
+    /// Records the powers in effect for the mod, as the scan computed them (`discover::ScannedMod`).
+    pub(crate) fn set_powers(&mut self, powers: Vec<Power>) {
+        self.powers = powers;
+    }
+
+    /// The powers in effect for the mod: each host call that needs one is allowed only if it is here.
+    pub fn powers(&self) -> &[Power] {
+        &self.powers
+    }
+
     /// Whether the mod was started from a dev path, so `reload` may re-read its folder.
     pub(crate) fn is_dev(&self) -> bool {
         self.dev
@@ -368,6 +382,7 @@ impl LuaMod {
             setting_changed: declaration.setting_changed,
             fingerprint: built.fingerprint,
             dev: false,
+            powers: Vec::new(),
             lua: RwLock::new(built.lua),
             log,
             turn: Turn::default(),

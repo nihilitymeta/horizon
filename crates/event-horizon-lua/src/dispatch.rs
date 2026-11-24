@@ -805,7 +805,7 @@ pub(crate) fn replace_in_reporting(
                     continue;
                 }
             };
-            let void = Void::default();
+            let void = Void::for_mod(m);
             let (found, failed) = match scoped(&m.lua(), &mut host, &void, |lua| {
                 let mut found: Option<Value> = None;
                 let mut failed = false;

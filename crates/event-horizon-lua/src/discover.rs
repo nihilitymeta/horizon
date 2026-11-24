@@ -19,6 +19,8 @@ pub use crate::manifest::{MANIFEST, MAX_MANIFEST, Side};
 use crate::enabled;
 use crate::hlua::{Package, Refusal};
 use crate::load_order::{self, Dep, Entry, Presence};
+use crate::manifest::Power;
+use crate::powers;
 
 /// The folder under the game folder that holds the Lua mods.
 pub const DIR: &str = "lua-mods";
@@ -169,12 +171,18 @@ pub struct Refused {
 }
 
 /// A package that loads: its id, version and side, the package itself (read through `Package`),
-/// whether it is a dev mod, and its position in the load order.
+/// whether it is a dev mod, and its position in the load order. Its powers are the manifest's
+/// `requested` list, the `granted` list the enabled-state file gives its id, and `powers`, the
+/// effective set (`powers::effective`: requested and granted, minus the reserved ones). Only
+/// `powers` is applied; `requested` and `granted` are kept for the Mods screen.
 pub struct ScannedMod {
     pub found: Discovered,
     pub dev: bool,
     pub package: Package,
     pub index: usize,
+    pub requested: Vec<Power>,
+    pub granted: Vec<Power>,
+    pub powers: Vec<Power>,
 }
 
 /// What a scan found. `loaded` is in load order. `disabled` lists the installed mods the enabled
@@ -358,11 +366,17 @@ pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan 
     }
     for (index, i) in plan.order.into_iter().enumerate() {
         if let Some(item) = slots[entry_kept[i]].take() {
+            let requested = item.package.manifest().powers.clone();
+            let granted = states.granted(&item.found.id);
+            let powers = powers::effective(&requested, &granted);
             out.loaded.push(ScannedMod {
                 found: item.found,
                 dev: item.dev,
                 package: item.package,
                 index,
+                requested,
+                granted,
+                powers,
             });
         }
     }

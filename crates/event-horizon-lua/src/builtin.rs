@@ -234,6 +234,7 @@ pub(crate) fn load_mods(
         match LuaMod::load_package(&scanned.found, &scanned.package, settings, settings_notices) {
             Ok(mut m) => {
                 m.set_dev(scanned.dev);
+                m.set_powers(scanned.powers.clone());
                 match grant_namespace(&m) {
                     Ok(()) => {
                         match assets::publish(game_dir, &scanned.package) {

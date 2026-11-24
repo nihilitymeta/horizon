@@ -790,3 +790,112 @@ fn a_fault_names_its_arguments_and_its_text() {
     );
     assert_eq!(fault.key(), "lua_mod.refused.dependency_version");
 }
+
+/// The files of a valid mod with `id` that asks for `powers` (their TOML list items).
+fn powered_files(id: &str, powers: &str) -> Vec<(String, String)> {
+    vec![
+        (
+            MANIFEST.to_string(),
+            format!("id = \"{id}\"\nversion = \"1.0.0\"\nside = \"both\"\npowers = [{powers}]\n"),
+        ),
+        (ENTRY.to_string(), "return {}\n".to_string()),
+    ]
+}
+
+#[test]
+fn a_mod_holds_only_the_powers_it_requests_and_the_file_grants() {
+    use crate::enabled::grant;
+    use crate::manifest::Power;
+
+    let root = tempfile::tempdir().unwrap();
+    write_folder(
+        &root.path().join(DIR).join("a"),
+        &powered_files("pw_a", "\"world\", \"spawn\", \"network\", \"files\""),
+    );
+    write_folder(
+        &root.path().join(DIR).join("b"),
+        &powered_files("pw_b", "\"world\""),
+    );
+    write_folder(
+        &root.path().join(DIR).join("c"),
+        &powered_files("pw_c", "\"commands\""),
+    );
+    write_folder(
+        &root.path().join(DIR).join("d"),
+        &powered_files("pw_d", "\"world\""),
+    );
+    // The grants: a gets more than it asks for and reserved powers; b is granted a power it did not
+    // ask for; c has none; d is disabled and granted world.
+    grant(root.path(), "pw_a", Power::Nbt, true).unwrap();
+    grant(root.path(), "pw_a", Power::Spawn, true).unwrap();
+    grant(root.path(), "pw_a", Power::World, true).unwrap();
+    grant(root.path(), "pw_a", Power::Network, true).unwrap();
+    grant(root.path(), "pw_a", Power::Files, true).unwrap();
+    grant(root.path(), "pw_b", Power::Spawn, true).unwrap();
+    grant(root.path(), "pw_d", Power::World, true).unwrap();
+    grant(root.path(), "pw_not_installed", Power::World, true).unwrap();
+    crate::enabled::write(root.path(), "pw_d", false).unwrap();
+
+    let scan = run_scan(root.path(), &[]);
+    let mods: std::collections::BTreeMap<&str, &ScannedMod> = scan
+        .loaded
+        .iter()
+        .map(|m| (m.found.id.as_str(), m))
+        .collect();
+    assert_eq!(mods.len(), 3, "d is disabled, not loaded");
+    assert_eq!(scan.disabled.len(), 1);
+
+    let a = mods["pw_a"];
+    assert_eq!(
+        a.requested,
+        [Power::World, Power::Spawn, Power::Network, Power::Files]
+    );
+    assert_eq!(
+        a.granted,
+        [
+            Power::Nbt,
+            Power::Spawn,
+            Power::World,
+            Power::Network,
+            Power::Files
+        ]
+    );
+    assert_eq!(
+        a.powers,
+        [Power::Spawn, Power::World],
+        "requested and granted, no reserved power"
+    );
+
+    let b = mods["pw_b"];
+    assert_eq!(b.requested, [Power::World]);
+    assert_eq!(b.granted, [Power::Spawn]);
+    assert!(b.powers.is_empty(), "granted but not requested is inert");
+
+    let c = mods["pw_c"];
+    assert_eq!(c.requested, [Power::Commands]);
+    assert!(c.granted.is_empty());
+    assert!(c.powers.is_empty(), "default: none");
+}
+
+#[test]
+fn a_dev_mod_takes_its_grants_from_the_file_by_id() {
+    use crate::enabled::grant;
+    use crate::manifest::Power;
+
+    let root = tempfile::tempdir().unwrap();
+    let dev = write_folder(
+        &root.path().join("dev_src"),
+        &powered_files("pw_dev", "\"world\""),
+    );
+    let scan = run_scan(root.path(), std::slice::from_ref(&dev));
+    assert_eq!(scan.loaded.len(), 1);
+    assert!(
+        scan.loaded[0].powers.is_empty(),
+        "no grant, no power, even for a dev mod"
+    );
+
+    grant(root.path(), "pw_dev", Power::World, true).unwrap();
+    let scan = run_scan(root.path(), &[dev]);
+    assert!(scan.loaded[0].dev);
+    assert_eq!(scan.loaded[0].powers, [Power::World]);
+}

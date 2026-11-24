@@ -6,7 +6,13 @@
 //! Entries that are not a boolean for a valid id are ignored the same way, with one notice for the
 //! file. An id that names no installed mod is simply ignored.
 //!
-//! `write` changes one entry. It writes a temporary file beside the file with `create_new`, syncs it,
+//! A `[grants]` table, `id = ["power", ...]`, holds the powers the owner granted to each mod (see
+//! `powers.rs`). It is an allow list and fails closed: a file, or an entry, that does not read gives
+//! no grant. Unknown power names and wrong types are ignored, a list of more than 16 names is refused
+//! as a whole, and at most 64 mods may hold grants; each problem is counted in the same one notice.
+//! A `[grants]` that is not a table ignores the grants only: the `[mods]` states still apply.
+//!
+//! `write` changes one entry of `[mods]`, and `grant` one power of `[grants]`. It writes a temporary file beside the file with `create_new`, syncs it,
 //! and renames it over the file, so a reader sees the old text or the new text, never a part. A
 //! symlinked file is never written through. Writers in this process are serialised by a mutex, so
 //! two changes at once keep both.
@@ -20,7 +26,7 @@ use std::sync::PoisonError;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::discover::DIR;
-use crate::manifest::valid_id;
+use crate::manifest::{Power, valid_id};
 
 /// The file's name, under the `lua-mods` folder.
 pub const FILE: &str = "enabled.toml";
@@ -28,12 +34,20 @@ pub const FILE: &str = "enabled.toml";
 pub const MAX_ENABLED: u64 = 64 * 1024;
 /// The table that holds the entries.
 const TABLE: &str = "mods";
+/// The table that holds the grants: `id = ["power", ...]`.
+const GRANTS: &str = "grants";
+/// The most mods that may hold grants in one file; the rest are ignored (and counted).
+pub const MAX_GRANT_MODS: usize = 64;
+/// The most powers one mod may be granted in the file; a longer list is refused as a whole.
+pub const MAX_GRANTS_PER_MOD: usize = 16;
 
-/// What the file said. `states` holds only the valid boolean entries; `notice` is set when anything
-/// was ignored, for one warning in the log.
+/// What the file said. `states` holds only the valid boolean entries; `grants` only the valid grants,
+/// each list in `Power::rank` order without repeats; `notice` is set when anything was ignored, for one
+/// warning in the log.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Enabled {
     pub states: HashMap<String, bool>,
+    pub grants: HashMap<String, Vec<Power>>,
     pub notice: Option<String>,
 }
 
@@ -43,9 +57,15 @@ impl Enabled {
         self.states.get(id).copied().unwrap_or(true)
     }
 
+    /// The powers the file grants to the mod `id`: none unless the file names some.
+    pub fn granted(&self, id: &str) -> Vec<Power> {
+        self.grants.get(id).cloned().unwrap_or_default()
+    }
+
     fn ignored(what: &str) -> Enabled {
         Enabled {
             states: HashMap::new(),
+            grants: HashMap::new(),
             notice: Some(format!("enabled.toml {what}; every mod is enabled")),
         }
     }
@@ -85,8 +105,16 @@ pub fn read(game_dir: &Path) -> Enabled {
 /// The entries of a parsed file: the valid booleans, and one count of what was ignored.
 fn parse(table: &toml::Table) -> Enabled {
     let mut states = HashMap::new();
+    let mut grants = HashMap::new();
     let mut ignored = 0usize;
     for (key, value) in table {
+        if key == GRANTS {
+            match value {
+                toml::Value::Table(mods) => ignored += parse_grants(mods, &mut grants),
+                _ => ignored += 1,
+            }
+            continue;
+        }
         if key != TABLE {
             ignored += 1;
             continue;
@@ -106,7 +134,40 @@ fn parse(table: &toml::Table) -> Enabled {
     let notice = (ignored > 0).then(|| {
         format!("enabled.toml has {ignored} entries that are not valid; they are ignored")
     });
-    Enabled { states, notice }
+    Enabled {
+        states,
+        grants,
+        notice,
+    }
+}
+
+/// The valid grants of a `[grants]` table, into `out`; returns how many entries were ignored. A mod
+/// whose list has more than `MAX_GRANTS_PER_MOD` names is refused as a whole; unknown names are dropped.
+fn parse_grants(mods: &toml::Table, out: &mut HashMap<String, Vec<Power>>) -> usize {
+    let mut ignored = 0;
+    for (id, value) in mods {
+        let toml::Value::Array(names) = value else {
+            ignored += 1;
+            continue;
+        };
+        if !valid_id(id) || names.len() > MAX_GRANTS_PER_MOD || out.len() >= MAX_GRANT_MODS {
+            ignored += 1;
+            continue;
+        }
+        let mut powers: Vec<Power> = Vec::new();
+        for name in names {
+            match name.as_str().and_then(Power::from_name) {
+                Some(power) if !powers.contains(&power) => powers.push(power),
+                Some(_) => {}
+                None => ignored += 1,
+            }
+        }
+        if !powers.is_empty() {
+            powers.sort_by_key(|p| p.rank());
+            out.insert(id.clone(), powers);
+        }
+    }
+    ignored
 }
 
 /// Serialises the writers of `enabled.toml` in this process.
@@ -123,6 +184,74 @@ pub fn write(game_dir: &Path, id: &str, enabled: bool) -> Result<(), String> {
     if !valid_id(id) {
         return Err(format!("{id:?} is not a valid mod id"));
     }
+    edit(game_dir, |table| {
+        let mods = table_mut(table, TABLE)?;
+        mods.insert(id.to_owned(), toml::Value::Boolean(enabled));
+        Ok(())
+    })
+}
+
+/// Grants (`granted`) or revokes `power` for mod `id` in `<game_dir>/lua-mods/enabled.toml`, keeping
+/// every other entry. A mod left with no power loses its key. Refused as `write` is, and also when a
+/// new mod would be the 65th to hold grants.
+pub fn grant(game_dir: &Path, id: &str, power: Power, granted: bool) -> Result<(), String> {
+    if !valid_id(id) {
+        return Err(format!("{id:?} is not a valid mod id"));
+    }
+    edit(game_dir, |table| {
+        let grants = table_mut(table, GRANTS)?;
+        let mut powers: Vec<Power> = match grants.get(id) {
+            Some(toml::Value::Array(names)) => names
+                .iter()
+                .filter_map(|name| name.as_str().and_then(Power::from_name))
+                .collect(),
+            _ => Vec::new(),
+        };
+        if granted {
+            if !powers.contains(&power) {
+                if powers.is_empty() && grants.len() >= MAX_GRANT_MODS {
+                    return Err(format!(
+                        "enabled.toml already grants powers to {MAX_GRANT_MODS} mods"
+                    ));
+                }
+                powers.push(power);
+            }
+        } else {
+            powers.retain(|p| *p != power);
+        }
+        powers.sort_by_key(|p| p.rank());
+        if powers.is_empty() {
+            grants.remove(id);
+        } else {
+            let names = powers
+                .iter()
+                .map(|p| toml::Value::String(p.name().to_owned()))
+                .collect();
+            grants.insert(id.to_owned(), toml::Value::Array(names));
+        }
+        if grants.is_empty() {
+            table.remove(GRANTS);
+        }
+        Ok(())
+    })
+}
+
+/// The table `key` of `table`, made if absent. An entry of another type is refused.
+fn table_mut<'a>(table: &'a mut toml::Table, key: &str) -> Result<&'a mut toml::Table, String> {
+    match table
+        .entry(key.to_owned())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+    {
+        toml::Value::Table(inner) => Ok(inner),
+        _ => Err(format!("enabled.toml has a [{key}] that is not a table")),
+    }
+}
+
+/// Reads the file under the write lock, lets `change` edit its table, and writes the result atomically.
+fn edit(
+    game_dir: &Path,
+    change: impl FnOnce(&mut toml::Table) -> Result<(), String>,
+) -> Result<(), String> {
     let _guard = WRITE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let dir = game_dir.join(DIR);
     match std::fs::symlink_metadata(&dir) {
@@ -134,13 +263,7 @@ pub fn write(game_dir: &Path, id: &str, enabled: bool) -> Result<(), String> {
     }
     let target = dir.join(FILE);
     let mut table = current(&target)?;
-    let mods = table
-        .entry(TABLE)
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let toml::Value::Table(mods) = mods else {
-        return Err("enabled.toml has a [mods] that is not a table".into());
-    };
-    mods.insert(id.to_owned(), toml::Value::Boolean(enabled));
+    change(&mut table)?;
     let text = toml::to_string(&table).map_err(|e| format!("enabled.toml: {e}"))?;
     if text.len() as u64 > MAX_ENABLED {
         return Err("enabled.toml would be over 64 KiB".into());

@@ -38,6 +38,7 @@ use mlua::{AnyUserData, Error, Lua, MultiValue, Table, Value};
 use mod_api::{BlockClick, ClientHost, Host, HostSide, ServerHost};
 
 use crate::host::{Escaped, LuaMod, warn_once};
+use crate::manifest::Power;
 
 /// A right click as a Lua handler reads it (`click` in `use_without_item` and `use_item_on`): its
 /// side, dimension, block position, hit, hand, player, the held stack (`stack`, already converted by
@@ -256,15 +257,33 @@ pub(crate) fn note_skipped(id: &str, hook: &str) {
 
 /// What a turn's scope saw: its budget ran out, or a host call panicked (the message of the first).
 /// Either voids the turn, and the scope refuses every later host call of it.
-#[derive(Default)]
+///
+/// It also carries who the turn is for: the mod's id and its effective powers (`powers.rs`), which
+/// the scope checks before a gated host call. Every mod turn is opened with [`Void::for_mod`].
+#[cfg_attr(test, derive(Default))]
 pub(crate) struct Void {
     spent: Cell<bool>,
     panic: RefCell<Option<String>>,
     /// Synced attachment writes this turn has made or tried (see `attachments::MAX_SYNC_WRITES`).
     synced: Cell<u32>,
+    /// The mod whose turn this is, named in a refusal.
+    owner: String,
+    /// The powers the mod holds in effect; a gated call needs its power here.
+    powers: Vec<Power>,
 }
 
 impl Void {
+    /// The scope of one turn of `m`: nothing spent, nothing panicked, its id and its effective powers.
+    pub(crate) fn for_mod(m: &LuaMod) -> Void {
+        Void {
+            spent: Cell::new(false),
+            panic: RefCell::new(None),
+            synced: Cell::new(0),
+            owner: m.id().to_owned(),
+            powers: m.powers().to_vec(),
+        }
+    }
+
     /// Counts one synced attachment write in this turn: false, and nothing counted, once the turn has
     /// `attachments::MAX_SYNC_WRITES` of them.
     pub(crate) fn take_synced_write(&self) -> bool {
@@ -319,6 +338,19 @@ pub(crate) fn scoped<R>(
                     return Err(Error::runtime(SPENT));
                 }
                 let cost = op_cost(&op)?;
+                // A gated call the mod does not hold the power for is refused before the host sees it. The
+                // refusal is a plain error (the turn is not voided) and costs one unit, not the call's cost;
+                // it still needs that one unit left in the turn's budget.
+                if let Some(power) =
+                    crate::powers::required(&op).filter(|p| !void.powers.contains(p))
+                {
+                    if spent + 1 > TURN_BUDGET {
+                        void.spent.set(true);
+                        return Err(Error::runtime(SPENT));
+                    }
+                    spent += 1;
+                    return Err(crate::powers::refuse(&op, &void.owner, power));
+                }
                 if spent + cost > TURN_BUDGET {
                     void.spent.set(true);
                     return Err(Error::runtime(SPENT));
@@ -395,7 +427,7 @@ pub(crate) fn run_hosted(
     handlers: &[mlua::Function],
     event: &mlua::Table,
 ) -> bool {
-    let void = Void::default();
+    let void = Void::for_mod(m);
     let outcome = scoped(&m.lua(), host, &void, |lua| {
         let mut failed = false;
         for handler in handlers {
@@ -2537,5 +2569,148 @@ mod tests {
                 "{side:?}: the side is not known yet, so the pre-check stays true"
             );
         }
+    }
+
+    /// The gated table of these tests: `set_glowing` needs the world power.
+    fn gate_glowing() -> crate::powers::TestGate {
+        crate::powers::gate_for_test(vec![("EntityRef::set_glowing", Power::World)])
+    }
+
+    /// Mod `id` whose handler on `HOOK` runs `set_glowing(true)` under pcall and logs `ok err`, with the
+    /// powers the scan gives it: `requested` by its manifest, `granted` by the file.
+    fn gated(root: &Path, id: &str, requested: &[Power], granted: &[Power]) -> LuaMod {
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
+               local e = event.entity\n\
+               local ok, err = pcall(function() e:set_glowing(true) end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)";
+        let mut m = load(root, id, source);
+        m.set_powers(crate::powers::effective(requested, granted));
+        m
+    }
+
+    /// Fires `m` once with a fake server host; returns the mod's log lines and the host.
+    fn run_gated(m: LuaMod) -> (Vec<String>, Fake) {
+        let host = LuaHost::new(vec![m]);
+        let mut fake = Fake::at([0.0; 3]);
+        fire_real(&host, TurnHost::Server(&mut fake), 0);
+        (host.mods()[0].log_lines(), fake)
+    }
+
+    /// The refusal text of `set_glowing` for mod `id`, as the handler's pcall logs it: the Lua error
+    /// carries a stack traceback after the message, so the check is that the message is there.
+    fn assert_refused(line: &str, id: &str) {
+        let message = format!(
+            "horizon: set_glowing needs the \"world\" power; the owner has not granted it to {id}"
+        );
+        assert!(
+            line.starts_with("false runtime error: ") && line.contains(&message),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn a_gated_call_needs_the_power_both_requested_and_granted() {
+        let _gate = gate_glowing();
+        let root = tempfile::tempdir().unwrap();
+        // No request and no grant, a grant the mod did not request, and a request not granted: refused.
+        for (id, requested, granted) in [
+            ("pw_none", &[][..], &[][..]),
+            ("pw_inert_grant", &[][..], &[Power::World][..]),
+            ("pw_not_granted", &[Power::World][..], &[][..]),
+        ] {
+            let (lines, fake) = run_gated(gated(root.path(), id, requested, granted));
+            assert_eq!(lines.len(), 1, "{id}");
+            assert_refused(&lines[0], id);
+            assert_eq!(fake.writes, 0, "{id}: the host must not be called");
+            assert_eq!(fake.glowing, None, "{id}");
+        }
+        // Requested and granted: the call reaches the host once.
+        let (lines, fake) = run_gated(gated(
+            root.path(),
+            "pw_both",
+            &[Power::World],
+            &[Power::World],
+        ));
+        assert_eq!(lines, ["true nil"]);
+        assert_eq!(fake.writes, 1);
+        assert_eq!(fake.glowing, Some(true));
+    }
+
+    #[test]
+    fn a_refusal_is_catchable_and_costs_one_unit_so_a_thousand_and_one_fit() {
+        let _gate = gate_glowing();
+        let root = tempfile::tempdir().unwrap();
+        // 1,001 refusals at ten units each would be 10,010 units, past the 10,000 of a turn; at one unit
+        // each they fit, and the handler runs to its end and commits.
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
+               local e = event.entity\n\
+               local refused = 0\n\
+               for i = 1, 1001 do\n\
+                 if not pcall(function() e:set_glowing(true) end) then refused = refused + 1 end\n\
+               end\n\
+               horizon.log(tostring(refused))\n\
+             end)";
+        let m = load(root.path(), "pw_cost", source);
+        let host = LuaHost::new(vec![m]);
+        let mut fake = Fake::at([0.0; 3]);
+        assert_eq!(
+            fire_real(&host, TurnHost::Server(&mut fake), 0),
+            1,
+            "1,001 refusals leave the turn standing"
+        );
+        assert_eq!(host.mods()[0].log_lines(), ["1001"]);
+        assert_eq!(fake.writes, 0);
+    }
+
+    #[test]
+    fn each_mod_in_one_event_is_judged_by_its_own_powers() {
+        let _gate = gate_glowing();
+        let root = tempfile::tempdir().unwrap();
+        let granted = gated(root.path(), "pw_two_a", &[Power::World], &[Power::World]);
+        let refused = gated(root.path(), "pw_two_b", &[Power::World], &[]);
+        let host = LuaHost::new(vec![granted, refused]);
+        let mut fake = Fake::at([0.0; 3]);
+        fire_real(&host, TurnHost::Server(&mut fake), 0);
+        assert_eq!(host.mods()[0].log_lines(), ["true nil"]);
+        let refused = host.mods()[1].log_lines();
+        assert_eq!(refused.len(), 1);
+        assert_refused(&refused[0], "pw_two_b");
+        assert_eq!(
+            fake.writes, 1,
+            "only the granted mod's call reached the host"
+        );
+        assert_eq!(fake.glowing, Some(true));
+    }
+
+    #[test]
+    fn a_refusal_is_warned_once_per_mod_and_power_and_names_no_arguments() {
+        let _gate = gate_glowing();
+        install_capture();
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
+               local e = event.entity\n\
+               for i = 1, 50 do pcall(function() e:set_glowing(false) end) end\n\
+             end)";
+        let m = load(root.path(), "pw_warn_once", source);
+        let _ = run_gated(m);
+        assert_eq!(
+            captured_with_prefix("pw_warn_once"),
+            [
+                "pw_warn_once: a host call needs the \"world\" power, which the owner has not granted; refused"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_turn_carries_the_id_and_the_powers_of_its_mod() {
+        let _gate = gate_glowing();
+        let root = tempfile::tempdir().unwrap();
+        let m = gated(root.path(), "pw_void", &[Power::World], &[Power::World]);
+        let void = Void::for_mod(&m);
+        assert_eq!(void.owner, "pw_void");
+        assert_eq!(void.powers, [Power::World]);
+        let bare = gated(root.path(), "pw_void_bare", &[Power::World], &[]);
+        assert!(Void::for_mod(&bare).powers.is_empty());
     }
 }

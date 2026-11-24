@@ -93,7 +93,7 @@ pub(crate) fn deliver_with(
     let Some(handler) = handler else {
         return;
     };
-    let void = Void::default();
+    let void = Void::for_mod(m);
     let mut host = TurnHost::None;
     let outcome = contained(m.id(), HOOK, || {
         scoped(&lua, &mut host, &void, |lua| {
