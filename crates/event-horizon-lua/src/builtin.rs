@@ -4,12 +4,14 @@
 use crate::assets;
 use crate::discover::{self, ScannedMod};
 use crate::host::{LuaHost, LuaMod, both_side_records, collect_load_notices};
+use crate::manifest::Power;
 use crate::package;
 use crate::provider::LuaProvider;
 use crate::settings::{Role, Schema, Settings};
 use mod_api::__private::native::BuiltMod;
 use mod_api::ModEntry;
 use mod_api::Side;
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -95,7 +97,7 @@ pub fn dev_paths(flags: Vec<PathBuf>, env: Option<&OsStr>) -> Vec<PathBuf> {
 /// is refused and the others still load. A missing folder is fine: the entry then subscribes to
 /// nothing. `dedicated` is the game's role: on a dedicated server a client-only mod is not loaded.
 pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loaded {
-    let (mods, refused, disabled, notices, skipped, packs) =
+    let (mods, refused, disabled, notices, skipped, packs, requested) =
         load_mods(game_dir, dev_paths, dedicated);
     let loaded = mods.len();
     let refused_lines: Vec<String> = refused.iter().map(|r| r.text.clone()).collect();
@@ -124,6 +126,7 @@ pub fn builtin(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Loade
         game_dir,
         disabled,
         &refused,
+        requested,
     )));
     let _ = horizon_hooks::mod_entries::register(provider);
     Loaded {
@@ -175,8 +178,10 @@ pub(crate) fn load_mods(
     Vec<String>,
     Vec<String>,
     Vec<PathBuf>,
+    HashMap<String, Vec<Power>>,
 ) {
     let scan = discover::scan_on(game_dir, dev_paths, dedicated);
+    let requested = scan.requested;
     let skipped: Vec<String> = scan
         .skipped
         .iter()
@@ -264,7 +269,15 @@ pub(crate) fn load_mods(
             ))),
         }
     }
-    (mods, refused, disabled, scan.notices, skipped, packs)
+    (
+        mods,
+        refused,
+        disabled,
+        scan.notices,
+        skipped,
+        packs,
+        requested,
+    )
 }
 
 #[cfg(test)]
@@ -309,7 +322,7 @@ mod tests {
 
     /// The mods and refusals of a scan with no dev paths (the loader's pair, without the notes).
     fn load_mods_pair(root: &Path) -> (Vec<LuaMod>, Vec<String>) {
-        let (mods, refused, _, _, _, _) = load_mods(root, &[], false);
+        let (mods, refused, _, _, _, _, _) = load_mods(root, &[], false);
         (mods, refused.into_iter().map(|r| r.text).collect())
     }
 
@@ -369,7 +382,7 @@ mod tests {
         );
         archive_on(root.path(), "zeta", "zeta_mod", "4.2.0", "both");
         archive_on(root.path(), "eta", "eta_mod", "5.0.0", "client");
-        let (_, refused, disabled, _, _, _) = load_mods(root.path(), &[], false);
+        let (_, refused, disabled, _, _, _, _) = load_mods(root.path(), &[], false);
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert!(disabled.is_empty());
         assert_eq!(
@@ -1645,7 +1658,7 @@ mod tests {
 
     /// The skip lines of a scan of `root` with `dedicated` set, and the loaded mod ids.
     fn skipped_and_loaded(root: &Path, dedicated: bool) -> (Vec<String>, Vec<String>) {
-        let (mods, _, _, _, skipped, _) = load_mods(root, &[], dedicated);
+        let (mods, _, _, _, skipped, _, _) = load_mods(root, &[], dedicated);
         (skipped, mods.iter().map(|m| m.id().to_string()).collect())
     }
 
@@ -1667,7 +1680,7 @@ mod tests {
             "return {}\n",
         );
         mod_folder_on(root.path(), "c_both", "both_mod", "both", "return {}\n");
-        let (mods, refused, _, _, skipped, _) = load_mods(root.path(), &[], true);
+        let (mods, refused, _, _, skipped, _, _) = load_mods(root.path(), &[], true);
         assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(
             skipped,
@@ -1719,11 +1732,13 @@ mod tests {
             "id = \"dev_client\"\nversion = \"1.0.0\"\nside = \"client\"\n",
             "return {}\n",
         );
-        let (mods, _, _, _, skipped, _) = load_mods(root.path(), std::slice::from_ref(&dev), true);
+        let (mods, _, _, _, skipped, _, _) =
+            load_mods(root.path(), std::slice::from_ref(&dev), true);
         assert!(mods.is_empty());
         assert_eq!(skipped.len(), 1, "{skipped:?}");
         assert!(skipped[0].starts_with("dev_client: "));
-        let (mods, _, _, _, skipped, _) = load_mods(root.path(), std::slice::from_ref(&dev), false);
+        let (mods, _, _, _, skipped, _, _) =
+            load_mods(root.path(), std::slice::from_ref(&dev), false);
         assert_eq!(mods.len(), 1);
         assert!(skipped.is_empty());
     }
@@ -1738,7 +1753,7 @@ mod tests {
             "id = \"needs_mod\"\nversion = \"1.0.0\"\nside = \"both\"\n[dependencies]\nbase_mod = \"1\"\n",
             "return {}\n",
         );
-        let (mods, refused, _, _, skipped, _) = load_mods(root.path(), &[], true);
+        let (mods, refused, _, _, skipped, _, _) = load_mods(root.path(), &[], true);
         assert!(
             mods.is_empty(),
             "the base is skipped and its dependent refused: nothing loads"
@@ -1778,7 +1793,7 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         std::fs::write(config.join(crate::settings::FILE), "level = 6\n").unwrap();
 
-        let (mods, refused, _, _, _, _) = load_mods(root.path(), &[], false);
+        let (mods, refused, _, _, _, _, _) = load_mods(root.path(), &[], false);
         assert!(refused.is_empty(), "{refused:?}");
         let host = LuaHost::new(mods);
         let shared = host.settings("tuned_mod").expect("loaded");
@@ -1822,7 +1837,7 @@ mod tests {
             "both",
             &[("assets/bad/textures/Upper.png", b"b")],
         );
-        let (mods, refused, _, _, _, packs) = load_mods(root.path(), &[], false);
+        let (mods, refused, _, _, _, packs, _) = load_mods(root.path(), &[], false);
         assert!(refused.is_empty());
         assert_eq!(mods.len(), 2, "a refused content must not refuse the mod");
         assert_eq!(packs.len(), 1, "{packs:?}");
@@ -1877,7 +1892,7 @@ mod tests {
             &[("assets/client_mod/a.png", b"a")],
         );
         crate::enabled::write(root.path(), "off", false).unwrap();
-        let (mods, _, disabled, _, skipped, packs) = load_mods(root.path(), &[], true);
+        let (mods, _, disabled, _, skipped, packs, _) = load_mods(root.path(), &[], true);
         assert!(mods.is_empty());
         assert_eq!(
             disabled.iter().map(|d| d.0.as_str()).collect::<Vec<_>>(),

@@ -195,6 +195,10 @@ pub struct Scan {
     pub disabled: Vec<Discovered>,
     pub skipped: Vec<Discovered>,
     pub notices: Vec<String>,
+    /// The powers each mod's manifest requests, by id, for every mod whose manifest was read: loaded,
+    /// disabled and refused by the plan. The Mods screen lists them; the granted ones are read from the
+    /// file when it asks, so they are not kept here.
+    pub requested: HashMap<String, Vec<Power>>,
 }
 
 /// One path the scan reads: a dev path (canonical) or an entry of `lua-mods/`.
@@ -321,6 +325,8 @@ pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan 
     for (k, item) in kept.iter().enumerate() {
         let id = &item.found.id;
         if !item.dev && !states.is_enabled(id) {
+            out.requested
+                .insert(id.clone(), item.package.manifest().powers.clone());
             out.disabled.push(item.found.clone());
             presence.insert(id.clone(), Presence::Disabled);
             continue;
@@ -358,6 +364,10 @@ pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan 
     let mut slots: Vec<Option<Kept>> = kept.into_iter().map(Some).collect();
     for (i, fault) in plan.refused {
         if let Some(item) = slots[entry_kept[i]].take() {
+            out.requested.insert(
+                item.found.id.clone(),
+                item.package.manifest().powers.clone(),
+            );
             out.refused.push(Refused {
                 path: item.found.dir,
                 fault,
@@ -369,6 +379,8 @@ pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan 
             let requested = item.package.manifest().powers.clone();
             let granted = states.granted(&item.found.id);
             let powers = powers::effective(&requested, &granted);
+            out.requested
+                .insert(item.found.id.clone(), requested.clone());
             out.loaded.push(ScannedMod {
                 found: item.found,
                 dev: item.dev,

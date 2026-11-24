@@ -22,6 +22,8 @@ pub struct Entry {
     pub status: Status,
     /// Whether the mod declares any setting.
     pub settings: bool,
+    /// Whether the mod requests at least one power (`Provider::powers` lists them).
+    pub powers: bool,
     /// The mod's icon as PNG bytes, when it has one that is readable and at most 256 KiB.
     pub icon_png: Option<Vec<u8>>,
 }
@@ -62,6 +64,24 @@ pub struct SettingView {
     pub default: ViewValue,
     /// Whether `value` differs from `default`.
     pub changed: bool,
+}
+
+/// One power a mod requests, as the Mods screen shows it. The texts are translation keys:
+/// `label_key` and `description_key` name the screen's own entries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PowerView {
+    /// The power's name in the manifest and the enabled file, e.g. `"world"`.
+    pub name: String,
+    pub label_key: String,
+    pub description_key: String,
+    /// Always `true` for a listed power: only requested powers are listed.
+    pub requested: bool,
+    /// Whether the enabled file grants it to the mod.
+    pub granted: bool,
+    /// Whether this build has at least one write behind the power, so a grant does something.
+    pub available: bool,
+    /// Whether the power is reserved: it may be requested and granted, but it is never effective.
+    pub reserved: bool,
 }
 
 /// What a setting accepts. Colour and keybind values are text (`#rrggbb` or a key name).
@@ -125,6 +145,10 @@ pub mod keys {
     pub const INVALID_VALUE: &str = "mods.provider.invalid_value";
     pub const BUSY: &str = "mods.provider.busy";
     pub const FILE: &str = "mods.provider.file";
+    pub const POWER_UNKNOWN: &str = "mods.provider.power_unknown";
+    pub const POWER_NOT_REQUESTED: &str = "mods.provider.power_not_requested";
+    pub const POWER_UNAVAILABLE: &str = "mods.provider.power_unavailable";
+    pub const POWER_NOT_EDITABLE: &str = "mods.provider.power_not_editable";
 }
 
 /// What the Lua host offers the Mods screen. Implementations run on the game's thread and must
@@ -150,6 +174,17 @@ pub trait Provider: Sync {
     fn reset_all(&self, id: &str) -> Result<(), Fault>;
     /// Writes the mod's state to the enabled file. It takes effect at the next start.
     fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), Fault>;
+    /// The powers mod `id` requests, in rank order; empty for an unknown mod or one that requests
+    /// none. Only requested powers are listed.
+    fn powers(&self, _id: &str) -> Vec<PowerView> {
+        Vec::new()
+    }
+    /// Grants (`granted`) or revokes `power` for mod `id`. A grant needs a power the mod requests,
+    /// and one this build can use. Nothing changes when this returns a [`Fault`]. The change takes
+    /// effect at the next start.
+    fn set_power(&self, _id: &str, _power: &str, _granted: bool) -> Result<(), Fault> {
+        Err(fault(keys::POWER_NOT_EDITABLE, &[]))
+    }
 }
 
 /// A [`Fault`] with the key and its named arguments.
@@ -218,6 +253,20 @@ mod tests {
     fn with_nothing_registered_there_is_no_provider() {
         static EMPTY: Registry<dyn Provider> = Registry::new();
         assert!(first(&EMPTY).is_none());
+    }
+
+    /// The defaults: no power is listed, and a grant is refused with the power-specific key (not the
+    /// settings one), nothing changed.
+    #[test]
+    fn the_default_power_methods_list_nothing_and_refuse_a_grant() {
+        assert!(Empty.powers("any").is_empty());
+        assert_eq!(
+            Empty.set_power("any", "world", true),
+            Err(Fault {
+                key: keys::POWER_NOT_EDITABLE,
+                args: Vec::new(),
+            })
+        );
     }
 
     /// The one test that uses the process-wide slot: the first registration wins, and a late one

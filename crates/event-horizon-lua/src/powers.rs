@@ -54,6 +54,12 @@ pub fn is_reserved(power: Power) -> bool {
     matches!(power, Power::Network | Power::Files)
 }
 
+/// Whether this build has at least one gated write behind `power`, so granting it does something.
+/// A power without one (every power but `world` and `spawn`, for now) can be granted but not used.
+pub fn has_ops(power: Power) -> bool {
+    table().iter().any(|(_, p)| *p == power)
+}
+
 /// The effective powers: those requested by the manifest and granted by the file, without the reserved
 /// ones, in `Power::rank` order without repeats. Empty when either list is empty.
 pub fn effective(requested: &[Power], granted: &[Power]) -> Vec<Power> {
@@ -238,6 +244,25 @@ mod tests {
         );
     }
 
+    /// `has_ops` is true exactly for the powers the generated table gates.
+    #[test]
+    fn a_power_has_ops_when_the_table_gates_a_write_for_it() {
+        assert!(has_ops(Power::World));
+        assert!(has_ops(Power::Spawn));
+        for power in [
+            Power::Commands,
+            Power::Nbt,
+            Power::Registration,
+            Power::Explosions,
+            Power::GameRules,
+            Power::Transactions,
+            Power::Network,
+            Power::Files,
+        ] {
+            assert!(!has_ops(power), "{} has no ops yet", power.name());
+        }
+    }
+
     #[test]
     fn every_power_has_its_name_and_label_key() {
         for power in ALL {
@@ -259,7 +284,13 @@ mod key_tests {
     fn every_power_key_has_an_english_entry() {
         let text = include_str!("../../horizon-client/assets/horizon/lang/en_us.json");
         let lang: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text).unwrap();
-        let mut keys = vec![REFUSED_KEY.to_string()];
+        let mut keys = vec![
+            REFUSED_KEY.to_string(),
+            "mods.provider.power_unknown".to_string(),
+            "mods.provider.power_not_requested".to_string(),
+            "mods.provider.power_unavailable".to_string(),
+            "mods.provider.power_not_editable".to_string(),
+        ];
         for power in [
             Power::Commands,
             Power::Nbt,

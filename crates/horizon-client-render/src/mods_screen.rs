@@ -1762,6 +1762,7 @@ mod tests {
             enabled,
             status,
             settings: false,
+            powers: false,
             icon_png: None,
         }
     }

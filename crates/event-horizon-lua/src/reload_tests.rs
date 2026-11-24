@@ -31,7 +31,8 @@ fn write_mod(dir: &Path, id: &str, source: &str) {
 /// way the game loads its mods. The host and its context are returned.
 fn setup(game: &Path, dev: &Path, id: &str, source: &str) -> (LuaHost, Context) {
     write_mod(dev, id, source);
-    let (mods, refused, _, _, _, _) = crate::builtin::load_mods(game, &[dev.to_path_buf()], false);
+    let (mods, refused, _, _, _, _, _) =
+        crate::builtin::load_mods(game, &[dev.to_path_buf()], false);
     assert!(refused.is_empty(), "the mod loads: {refused:?}");
     let host = LuaHost::new(mods);
     let context = Context::new(host.shared_mods(), game, &[dev.to_path_buf()], false);
@@ -80,7 +81,7 @@ fn an_installed_mod_is_not_a_dev_mod_and_nothing_changes() {
     let game = tempfile::tempdir().unwrap();
     let installed = game.path().join(discover::DIR).join("mod_b");
     write_mod(&installed, "mod_b", &handler("one"));
-    let (mods, _, _, _, _, _) = crate::builtin::load_mods(game.path(), &[], false);
+    let (mods, _, _, _, _, _, _) = crate::builtin::load_mods(game.path(), &[], false);
     let host = LuaHost::new(mods);
     let context = Context::new(host.shared_mods(), game.path(), &[], false);
 

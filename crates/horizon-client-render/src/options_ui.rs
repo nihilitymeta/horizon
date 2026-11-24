@@ -8953,6 +8953,7 @@ mod lua_page_tests {
                 enabled: true,
                 status: Status::Loaded,
                 settings: true,
+                powers: false,
                 icon_png: None,
             }]
         }

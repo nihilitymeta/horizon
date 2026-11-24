@@ -6,20 +6,25 @@
 //!
 //! The snapshot is taken when the game loads its mods: the enabled file is read again only at the
 //! next start, so [`Provider::set_enabled`] says so in the file, not in the list.
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use horizon_hooks::mod_entries::keys::{
-    BUSY, FILE, INVALID_VALUE, NOT_EDITABLE, UNKNOWN_MOD, UNKNOWN_SETTING,
+    BUSY, FILE, INVALID_VALUE, NOT_EDITABLE, POWER_NOT_REQUESTED, POWER_UNAVAILABLE, POWER_UNKNOWN,
+    UNKNOWN_MOD, UNKNOWN_SETTING,
 };
 use horizon_hooks::mod_entries::{
-    Entry, Fault, Provider, SettingView, Side as ViewSide, Status, ViewKind, ViewValue, fault,
+    Entry, Fault, PowerView, Provider, SettingView, Side as ViewSide, Status, ViewKind, ViewValue,
+    fault,
 };
 
 use crate::builtin::RefusedLine;
 use crate::discover::Side;
 use crate::enabled;
 use crate::host::LuaMod;
+use crate::manifest::Power;
+use crate::powers;
 use crate::setting_api;
 use crate::settings::{Change, Kind, Setting, SettingError, SettingSide, Value};
 
@@ -32,6 +37,9 @@ pub struct LuaProvider {
     disabled: Vec<(String, String)>,
     /// The refused packages: the name before the reason, the reason, and the key with its args.
     refused: Vec<Refused>,
+    /// The powers each mod's manifest requests, by id (`discover::Scan::requested`). A mod with no
+    /// entry requests none.
+    requested: HashMap<String, Vec<Power>>,
 }
 
 /// A refused package as the list shows it.
@@ -51,6 +59,7 @@ impl LuaProvider {
         game_dir: &Path,
         disabled: Vec<(String, String)>,
         refused: &[RefusedLine],
+        requested: HashMap<String, Vec<Power>>,
     ) -> LuaProvider {
         let refused = refused
             .iter()
@@ -72,7 +81,15 @@ impl LuaProvider {
             game_dir: game_dir.to_owned(),
             disabled,
             refused,
+            requested,
         }
+    }
+
+    /// The powers mod `id` requests, in rank order; empty when it requests none or is unknown.
+    fn requested_of(&self, id: &str) -> Vec<Power> {
+        let mut powers = self.requested.get(id).cloned().unwrap_or_default();
+        powers.sort_by_key(|p| p.rank());
+        powers
     }
 
     /// The loaded mod `id`.
@@ -114,6 +131,7 @@ impl Provider for LuaProvider {
                 enabled: true,
                 status: Status::Loaded,
                 settings: !m.settings().schema().settings().is_empty(),
+                powers: !self.requested_of(m.id()).is_empty(),
                 icon_png: m.icon().map(<[u8]>::to_vec),
             }
         });
@@ -129,6 +147,7 @@ impl Provider for LuaProvider {
             enabled: false,
             status: Status::Disabled,
             settings: false,
+            powers: !self.requested_of(id).is_empty(),
             icon_png: None,
         });
         let refused = self.refused.iter().map(|r| Entry {
@@ -145,6 +164,7 @@ impl Provider for LuaProvider {
                 reason: r.reason.clone(),
             },
             settings: false,
+            powers: !self.requested_of(&r.name).is_empty(),
             icon_png: None,
         });
         loaded.chain(disabled).chain(refused).collect()
@@ -207,6 +227,66 @@ impl Provider for LuaProvider {
             return Err(fault(UNKNOWN_MOD, &[("mod", id)]));
         }
         enabled::write(&self.game_dir, id, enabled)
+            .map_err(|reason| fault(FILE, &[("mod", id), ("reason", reason.as_str())]))
+    }
+
+    /// The powers mod `id` requests, in rank order, each with whether the file grants it now (read
+    /// from the file, so a change shows at once). Empty for an unknown mod.
+    fn powers(&self, id: &str) -> Vec<PowerView> {
+        if !self.known(id) {
+            return Vec::new();
+        }
+        let granted = enabled::read(&self.game_dir).granted(id);
+        self.requested_of(id)
+            .into_iter()
+            .map(|power| {
+                let reserved = powers::is_reserved(power);
+                PowerView {
+                    name: power.name().to_owned(),
+                    label_key: format!("{}.label", power.label_key()),
+                    description_key: format!("{}.description", power.label_key()),
+                    requested: true,
+                    granted: granted.contains(&power),
+                    available: !reserved && powers::has_ops(power),
+                    reserved,
+                }
+            })
+            .collect()
+    }
+
+    /// Grants or revokes `power` for mod `id` in the enabled file. The change takes effect at the next
+    /// start: a loaded mod keeps its powers until then, and the screen says so.
+    ///
+    /// A refusal writes nothing. Both directions are refused for an unknown mod and a name that is not
+    /// a power. Granting is also refused for a power the mod does not request (so the screen can never
+    /// write an inert grant), and for a reserved power or one with no write behind it in this build.
+    /// Revoking is always allowed for a known mod and a real power name: it never adds privilege, and a
+    /// dormant grant must not wake up when a later version requests the power. A revoke that finds no
+    /// grant to remove succeeds without writing (and without creating the file), unless the file cannot
+    /// be read, which is the file fault.
+    fn set_power(&self, id: &str, power: &str, granted: bool) -> Result<(), Fault> {
+        if !self.known(id) {
+            return Err(fault(UNKNOWN_MOD, &[("mod", id)]));
+        }
+        let Some(p) = Power::from_name(power) else {
+            return Err(fault(POWER_UNKNOWN, &[("mod", id), ("power", power)]));
+        };
+        if granted {
+            if !self.requested_of(id).contains(&p) {
+                return Err(fault(POWER_NOT_REQUESTED, &[("mod", id), ("power", power)]));
+            }
+            if powers::is_reserved(p) || !powers::has_ops(p) {
+                return Err(fault(POWER_UNAVAILABLE, &[("mod", id), ("power", power)]));
+            }
+        } else {
+            let state = enabled::read(&self.game_dir);
+            // A clean file with no such grant has nothing to remove: leave it alone. Anything the reader
+            // ignored goes through the writer, which refuses an unreadable file with the file fault.
+            if state.notice.is_none() && !state.granted(id).contains(&p) {
+                return Ok(());
+            }
+        }
+        enabled::grant(&self.game_dir, id, p, granted)
             .map_err(|reason| fault(FILE, &[("mod", id), ("reason", reason.as_str())]))
     }
 }
@@ -396,6 +476,7 @@ mod tests {
                 key: "lua_mod.refused.bad_id".into(),
                 args: vec![("id".into(), "bad.hlua".into())],
             }],
+            HashMap::new(),
         );
         (root, game, provider)
     }
@@ -463,8 +544,13 @@ mod tests {
             Some(ICON),
         );
         let plain = load(root.path(), game.path(), "plain", "plain_mod", "");
-        let provider =
-            LuaProvider::new(Arc::from(vec![iconed, plain]), game.path(), Vec::new(), &[]);
+        let provider = LuaProvider::new(
+            Arc::from(vec![iconed, plain]),
+            game.path(),
+            Vec::new(),
+            &[],
+            HashMap::new(),
+        );
         let entries = provider.entries();
         assert_eq!(entries[0].icon_png.as_deref(), Some(ICON));
         assert_eq!(entries[1].icon_png, None);
@@ -712,7 +798,13 @@ mod tests {
                 )
             })
             .collect();
-        let provider = LuaProvider::new(Arc::from(mods), game.path(), Vec::new(), &[]);
+        let provider = LuaProvider::new(
+            Arc::from(mods),
+            game.path(),
+            Vec::new(),
+            &[],
+            HashMap::new(),
+        );
         let entries = provider.entries();
         assert_eq!(entries.len(), 50);
         assert!(
@@ -755,5 +847,261 @@ mod tests {
             entries_ms * 1000.0 >= 20.0 * lookup_us,
             "lookup ({lookup_us:.2} us) is not 20x faster than entries ({entries_ms:.3} ms)"
         );
+    }
+
+    /// Installs a Lua mod in folder `folder` of `root` with id `id` and the manifest powers `powers`.
+    fn install(root: &Path, folder: &str, id: &str, powers: &[&str]) {
+        let dir = root.join(folder);
+        std::fs::create_dir_all(&dir).unwrap();
+        let names: Vec<String> = powers.iter().map(|p| format!("\"{p}\"")).collect();
+        std::fs::write(
+            dir.join(MANIFEST),
+            format!(
+                "id = \"{id}\"\nname = \"Name of {id}\"\nversion = \"1.2.0\"\nauthors = [\"Ann\"]\n\
+                 description = \"Does things\"\nlicense = \"MIT\"\nside = \"both\"\npowers = [{}]\n",
+                names.join(", ")
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(discover::ENTRY),
+            "horizon.on(\"server_tick\", function() end)\n",
+        )
+        .unwrap();
+    }
+
+    /// A game folder with `alpha_mod` (requests world, commands, files; world granted), `gamma_mod`
+    /// (requests world), `beta_mod` (requests nothing) and `off_mod` (requests world; turned off).
+    fn game_with_powers() -> tempfile::TempDir {
+        let game = tempfile::tempdir().unwrap();
+        let lua = game.path().join(discover::DIR);
+        install(&lua, "alpha", "alpha_mod", &["world", "commands", "files"]);
+        install(&lua, "gamma", "gamma_mod", &["world"]);
+        install(&lua, "beta", "beta_mod", &[]);
+        install(&lua, "off", "off_mod", &["world"]);
+        std::fs::write(
+            lua.join(enabled::FILE),
+            "[mods]\noff_mod = false\n\n[grants]\nalpha_mod = [\"world\"]\n",
+        )
+        .unwrap();
+        game
+    }
+
+    /// The provider the game builds for `game` (and the dev paths `dev`): the real load.
+    fn provider_for(game: &Path, dev: &[PathBuf]) -> LuaProvider {
+        let (mods, refused, disabled, _, _, _, requested) =
+            crate::builtin::load_mods(game, dev, false);
+        LuaProvider::new(Arc::from(mods), game, disabled, &refused, requested)
+    }
+
+    fn enabled_file(game: &Path) -> PathBuf {
+        game.join(discover::DIR).join(enabled::FILE)
+    }
+
+    /// The enabled file's bytes, or `None` when there is no file.
+    fn snapshot(game: &Path) -> Option<Vec<u8>> {
+        std::fs::read(enabled_file(game)).ok()
+    }
+
+    fn power_names(list: &[PowerView]) -> Vec<&str> {
+        list.iter().map(|v| v.name.as_str()).collect()
+    }
+
+    fn view<'a>(list: &'a [PowerView], name: &str) -> &'a PowerView {
+        list.iter().find(|v| v.name == name).unwrap()
+    }
+
+    #[test]
+    fn powers_list_the_requested_powers_in_rank_order_with_their_flags() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        let list = provider.powers("alpha_mod");
+        assert_eq!(power_names(&list), ["commands", "world", "files"]);
+        let commands = view(&list, "commands");
+        assert!(
+            commands.requested && !commands.granted && !commands.available && !commands.reserved
+        );
+        assert_eq!(commands.label_key, "horizon.mods.power.commands.label");
+        assert_eq!(
+            commands.description_key,
+            "horizon.mods.power.commands.description"
+        );
+        let world = view(&list, "world");
+        assert!(world.granted && world.available && !world.reserved);
+        let files = view(&list, "files");
+        assert!(!files.granted && !files.available && files.reserved);
+    }
+
+    #[test]
+    fn a_mod_requesting_nothing_lists_nothing_and_has_no_powers_entry_flag() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        assert!(provider.powers("beta_mod").is_empty());
+        assert!(provider.powers("no_such_mod").is_empty());
+        let entries = provider.entries();
+        let flag = |id: &str| entries.iter().find(|e| e.id == id).unwrap().powers;
+        assert!(!flag("beta_mod"));
+        assert!(flag("alpha_mod") && flag("off_mod"));
+    }
+
+    #[test]
+    fn a_grant_writes_the_grants_table_and_the_list_shows_it() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        assert_eq!(provider.set_power("gamma_mod", "world", true), Ok(()));
+        let text = String::from_utf8(snapshot(game.path()).unwrap()).unwrap();
+        assert!(text.contains("[grants]"), "{text}");
+        assert!(text.contains("gamma_mod = [\"world\"]"), "{text}");
+        assert!(
+            text.contains("alpha_mod = [\"world\"]"),
+            "the other grant is kept: {text}"
+        );
+        assert!(view(&provider.powers("gamma_mod"), "world").granted);
+    }
+
+    #[test]
+    fn a_revoke_removes_the_power_and_a_mod_left_with_none_loses_its_key() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        assert_eq!(provider.set_power("alpha_mod", "world", false), Ok(()));
+        let text = String::from_utf8(snapshot(game.path()).unwrap()).unwrap();
+        assert!(!text.contains("alpha_mod"), "{text}");
+        assert!(
+            !text.contains("grants"),
+            "the empty table is removed: {text}"
+        );
+        assert!(!view(&provider.powers("alpha_mod"), "world").granted);
+    }
+
+    #[test]
+    fn a_grant_keeps_the_mods_table() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        assert_eq!(provider.set_power("gamma_mod", "world", true), Ok(()));
+        let text = String::from_utf8(snapshot(game.path()).unwrap()).unwrap();
+        assert!(text.contains("off_mod = false"), "{text}");
+    }
+
+    #[test]
+    fn revoking_an_unavailable_leftover_grant_works() {
+        let game = game_with_powers();
+        std::fs::write(
+            enabled_file(game.path()),
+            "[grants]\nalpha_mod = [\"commands\", \"world\"]\n",
+        )
+        .unwrap();
+        let provider = provider_for(game.path(), &[]);
+        assert!(view(&provider.powers("alpha_mod"), "commands").granted);
+        assert_eq!(provider.set_power("alpha_mod", "commands", false), Ok(()));
+        let text = String::from_utf8(snapshot(game.path()).unwrap()).unwrap();
+        assert!(!text.contains("commands"), "{text}");
+        assert!(text.contains("world"), "{text}");
+    }
+
+    /// Each refusal gives its key and writes nothing: the file is byte-identical, or still absent.
+    #[test]
+    fn refusals_write_nothing() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        let before = snapshot(game.path());
+        let cases = [
+            (("nope", "world", true), UNKNOWN_MOD),
+            (("gamma_mod", "flying", true), POWER_UNKNOWN),
+            (("gamma_mod", "commands", true), POWER_NOT_REQUESTED),
+            (("nope", "world", false), UNKNOWN_MOD),
+            (("gamma_mod", "flying", false), POWER_UNKNOWN),
+            (("alpha_mod", "commands", true), POWER_UNAVAILABLE),
+            (("alpha_mod", "files", true), POWER_UNAVAILABLE),
+        ];
+        for ((id, power, granted), key) in cases {
+            let refused = provider.set_power(id, power, granted).unwrap_err();
+            assert_eq!(refused.key, key, "{id} {power}");
+            assert_eq!(snapshot(game.path()), before, "{id} {power} wrote nothing");
+        }
+        let bare = tempfile::tempdir().unwrap();
+        let none = provider_for(bare.path(), &[]);
+        assert!(none.set_power("nope", "world", true).is_err());
+        assert_eq!(
+            snapshot(bare.path()),
+            None,
+            "no file is created by a refusal"
+        );
+    }
+
+    #[test]
+    fn revoking_a_power_the_mod_does_not_request_removes_the_dormant_grant() {
+        let game = game_with_powers();
+        std::fs::write(
+            enabled_file(game.path()),
+            "[mods]\noff_mod = false\n\n[grants]\nalpha_mod = [\"world\"]\ngamma_mod = [\"files\", \"world\"]\n",
+        )
+        .unwrap();
+        let provider = provider_for(game.path(), &[]);
+        assert_eq!(provider.set_power("gamma_mod", "files", false), Ok(()));
+        let text = String::from_utf8(snapshot(game.path()).unwrap()).unwrap();
+        assert!(!text.contains("files"), "{text}");
+        assert!(text.contains("gamma_mod = [\"world\"]"), "{text}");
+        assert!(text.contains("alpha_mod = [\"world\"]"), "{text}");
+        assert!(text.contains("off_mod = false"), "{text}");
+    }
+
+    /// A revoke of a power that is not granted writes nothing: the file keeps its bytes, and no file is
+    /// created.
+    #[test]
+    fn a_revoke_with_nothing_granted_leaves_the_file_alone() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        let before = snapshot(game.path());
+        assert_eq!(provider.set_power("gamma_mod", "commands", false), Ok(()));
+        assert_eq!(provider.set_power("alpha_mod", "files", false), Ok(()));
+        assert_eq!(snapshot(game.path()), before);
+
+        let bare = tempfile::tempdir().unwrap();
+        install(
+            &bare.path().join(discover::DIR),
+            "alpha",
+            "alpha_mod",
+            &["world"],
+        );
+        let lone = provider_for(bare.path(), &[]);
+        assert_eq!(lone.set_power("alpha_mod", "world", false), Ok(()));
+        assert_eq!(snapshot(bare.path()), None);
+    }
+
+    #[test]
+    fn a_symlinked_enabled_file_gives_the_file_fault_and_is_not_written() {
+        let game = game_with_powers();
+        let elsewhere = game.path().join("elsewhere.toml");
+        std::fs::write(&elsewhere, "[mods]\n").unwrap();
+        std::fs::remove_file(enabled_file(game.path())).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, enabled_file(game.path())).unwrap();
+        let provider = provider_for(game.path(), &[]);
+        let failed = provider.set_power("gamma_mod", "world", true).unwrap_err();
+        assert_eq!(failed.key, FILE);
+        assert_eq!(std::fs::read(&elsewhere).unwrap(), b"[mods]\n");
+    }
+
+    #[test]
+    fn an_unparsable_enabled_file_is_not_overwritten() {
+        let game = game_with_powers();
+        let provider = provider_for(game.path(), &[]);
+        std::fs::write(enabled_file(game.path()), "[mods\nbroken = ").unwrap();
+        let failed = provider.set_power("gamma_mod", "world", true).unwrap_err();
+        assert_eq!(failed.key, FILE);
+        assert_eq!(snapshot(game.path()).unwrap(), b"[mods\nbroken = ");
+    }
+
+    #[test]
+    fn a_disabled_mod_and_a_dev_mod_are_edited_by_id() {
+        let game = game_with_powers();
+        let dev_root = tempfile::tempdir().unwrap();
+        install(dev_root.path(), "devmod", "dev_mod", &["world"]);
+        let dev = dev_root.path().join("devmod");
+        let provider = provider_for(game.path(), std::slice::from_ref(&dev));
+        assert_eq!(provider.set_power("off_mod", "world", true), Ok(()));
+        assert_eq!(provider.set_power("dev_mod", "world", true), Ok(()));
+        let text = String::from_utf8(snapshot(game.path()).unwrap()).unwrap();
+        assert!(text.contains("off_mod = [\"world\"]"), "{text}");
+        assert!(text.contains("dev_mod = [\"world\"]"), "{text}");
     }
 }
