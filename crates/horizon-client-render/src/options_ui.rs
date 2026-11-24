@@ -8,7 +8,7 @@ mod pack_drop;
 use std::time::Instant;
 
 pub use crate::settings::Opt;
-use horizon_hooks::mod_entries::{Fault, Provider, SettingView, ViewKind, ViewValue};
+use horizon_hooks::mod_entries::{Fault, PowerView, Provider, SettingView, ViewKind, ViewValue};
 
 #[path = "options_ui_widgets.rs"]
 mod widgets;
@@ -1758,6 +1758,8 @@ pub(crate) enum Act {
     /// Setting `.1` of Lua mod `.0` (its provider entry) clicked: a toggle, choice or colour
     /// steps on, through the provider.
     LuaSetting(usize, usize),
+    /// Power `.1` of Lua mod `.0` (its provider entry) clicked: Revoke, or the Grant and its confirm.
+    LuaPower(usize, usize),
     /// Text or keybind setting `.1` of Lua mod `.0` clicked: it starts to be edited.
     LuaEdit(usize, usize),
     /// Reset setting `.1` of Lua mod `.0` to its default.
@@ -2011,6 +2013,13 @@ pub struct OptionsUi {
     pub mods_screen: Option<crate::mods_screen::ModsScreen>,
     /// The last change a Lua mod's provider refused: its notice on the Lua page.
     lua_fault: Option<Fault>,
+    /// The Lua page's powers: the mod's entry, its id and its powers as the provider last
+    /// answered. Read when the page opens and after each change, never per frame.
+    lua_powers: Option<(usize, String, Vec<PowerView>)>,
+    /// The power button waiting for its second click, as `(entry, power)`. Any other action clears it.
+    lua_power_armed: Option<(usize, usize)>,
+    /// A power changed on this page: the restart note shows under the powers.
+    lua_power_changed: bool,
     /// The Lua text or keybind setting being edited, if any: at most one, and it ends when the
     /// page changes or a click lands elsewhere.
     lua_edit: Option<LuaEdit>,
@@ -2137,6 +2146,9 @@ impl Default for OptionsUi {
             mods_note: None,
             mods_screen: None,
             lua_fault: None,
+            lua_powers: None,
+            lua_power_armed: None,
+            lua_power_changed: false,
             lua_edit: None,
             pack_browser: false,
             pack_infos: Vec::new(),
@@ -2497,6 +2509,10 @@ impl OptionsUi {
     pub fn page(&self) -> Page {
         *self.stack.last().unwrap_or(&Page::Main)
     }
+    /// A Lua power's Grant is waiting for its confirm: Escape (pad B) cancels it, and the page stays.
+    pub fn lua_power_confirm_pending(&self) -> bool {
+        self.lua_power_armed.is_some()
+    }
     /// A Lua text edit or a keybind wait is open: the keys go to it, not to the focus.
     pub fn lua_edit_active(&self) -> bool {
         self.lua_edit.is_some()
@@ -2651,6 +2667,12 @@ impl OptionsUi {
         self.lua_fault = None;
         self.lua_edit = None;
         self.stack.push(page);
+        self.lua_power_armed = None;
+        self.lua_power_changed = false;
+        self.lua_powers = None;
+        if let Page::LuaMod(i) = page {
+            self.lua_powers_load(i);
+        }
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
         self.focus = None;
@@ -2982,7 +3004,8 @@ impl OptionsUi {
             return Vec::new();
         };
         let mut rows = vec![Row::Note(name)];
-        for (j, view) in provider.settings(&id).iter().enumerate() {
+        let settings = provider.settings(&id);
+        for (j, view) in settings.iter().enumerate() {
             let label = Text::literal(view.label.clone());
             let value = lua_value(&view.kind, &view.value);
             let control = match &view.kind {
@@ -3030,16 +3053,19 @@ impl OptionsUi {
             let reset = if view.changed { reset } else { inactive(reset) };
             rows.push(Row::Buttons(control, Some(reset)));
         }
-        rows.push(Row::Buttons(
-            button(
-                0.0,
-                0.0,
-                310.0,
-                tr("horizon.mods.screen.config.reset_all"),
-                Act::LuaResetAll(i),
-            ),
-            None,
-        ));
+        if !settings.is_empty() {
+            rows.push(Row::Buttons(
+                button(
+                    0.0,
+                    0.0,
+                    310.0,
+                    tr("horizon.mods.screen.config.reset_all"),
+                    Act::LuaResetAll(i),
+                ),
+                None,
+            ));
+        }
+        rows.extend(self.lua_power_rows(i));
         if let Some(fault) = &self.lua_fault {
             let args: Vec<Text> = fault
                 .args
@@ -3049,6 +3075,113 @@ impl OptionsUi {
             rows.push(Row::Note(Text::translate(fault.key, &args).plain()));
         }
         rows
+    }
+    /// The Powers section of Lua mod `i`'s page, when it requests a power: a heading, the note, then
+    /// per power its state, its description and one button (Revoke, Grant, its confirm, or
+    /// Not available). Built from the cached powers, so a repaint asks the provider nothing.
+    fn lua_power_rows(&self, i: usize) -> Vec<Row> {
+        let Some((entry, _, views)) = &self.lua_powers else {
+            return Vec::new();
+        };
+        if *entry != i || views.is_empty() {
+            return Vec::new();
+        }
+        let mut rows = vec![Row::Header("horizon.mods.powers.title")];
+        rows.extend(
+            wrap(&tr("horizon.mods.powers.note").plain(), 56)
+                .into_iter()
+                .map(Row::Note),
+        );
+        for (k, view) in views.iter().enumerate() {
+            let state = if view.granted {
+                "horizon.mods.powers.granted"
+            } else {
+                "horizon.mods.powers.not_granted"
+            };
+            let label = Text::option_name_value(tr(&view.label_key), tr(state));
+            rows.push(Row::Note(label.plain()));
+            rows.extend(
+                wrap(&tr(&view.description_key).plain(), 56)
+                    .into_iter()
+                    .map(Row::Note),
+            );
+            let usable = view.available && !view.reserved;
+            let (text, active) = if view.granted {
+                ("horizon.mods.powers.revoke", true)
+            } else if !usable {
+                ("horizon.mods.powers.unavailable", false)
+            } else if self.lua_power_armed == Some((i, k)) {
+                ("horizon.mods.powers.confirm", true)
+            } else {
+                ("horizon.mods.powers.grant", true)
+            };
+            let control = button(0.0, 0.0, 150.0, tr(text), Act::LuaPower(i, k));
+            let control = if active { control } else { inactive(control) };
+            rows.push(Row::Buttons(control, None));
+        }
+        if self.lua_power_changed {
+            rows.push(Row::Note(tr("horizon.mods.screen.restart").plain()));
+        }
+        rows
+    }
+    /// Reads Lua mod `i`'s powers from the provider into the page. Called when the page opens and
+    /// after each change to a power.
+    fn lua_powers_load(&mut self, i: usize) {
+        self.lua_powers = None;
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let Some((id, _)) = provider.lookup(i) else {
+            return;
+        };
+        let views = provider.powers(&id);
+        self.lua_powers = Some((i, id, views));
+    }
+    /// Ends a pending power confirm, if any, and lays the page out again so its button reads Grant.
+    fn lua_power_disarm(&mut self) -> Option<(usize, usize)> {
+        let armed = self.lua_power_armed.take();
+        if armed.is_some() {
+            self.relayout();
+        }
+        armed
+    }
+    /// A power button clicked. Revoke applies at once. Grant only arms its confirm; a second click
+    /// on the same button, with `armed` taken from before this click, grants.
+    fn lua_power_click(&mut self, i: usize, k: usize, armed: Option<(usize, usize)>) {
+        let Some((entry, id, views)) = &self.lua_powers else {
+            return;
+        };
+        let Some(view) = views.get(k) else {
+            return;
+        };
+        if *entry != i || !(view.granted || (view.available && !view.reserved)) {
+            return;
+        }
+        let (id, name, granted) = (id.clone(), view.name.clone(), view.granted);
+        if granted {
+            self.lua_power_set(i, &id, &name, false);
+        } else if armed == Some((i, k)) {
+            self.lua_power_set(i, &id, &name, true);
+        } else {
+            self.lua_power_armed = Some((i, k));
+            self.relayout();
+        }
+    }
+    /// Grants or revokes a power through the provider. A refusal is shown; an accepted change
+    /// reads the powers again and shows the restart note.
+    fn lua_power_set(&mut self, i: usize, id: &str, power: &str, granted: bool) {
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        match provider.set_power(id, power, granted) {
+            Ok(()) => {
+                self.lua_fault = None;
+                self.lua_power_changed = true;
+                self.lua_powers_load(i);
+            }
+            Err(fault) => self.lua_fault = Some(fault),
+        }
+        self.relayout();
     }
     /// Keeps the provider's answer to a change: a refusal is shown, an accepted change clears it,
     /// and the page is laid out again so its labels show the stored values.
@@ -3640,6 +3773,8 @@ impl OptionsUi {
         drag: bool,
         right: bool,
     ) -> Vec<Event> {
+        // A click ends a pending power confirm, unless it is the confirm's own button.
+        let armed = self.lua_power_disarm();
         if self.resource_error.is_some() {
             if !drag
                 && !right
@@ -3984,6 +4119,7 @@ impl OptionsUi {
                             }
                         }
                         Act::LuaSetting(i, j) => self.lua_click(*i, *j),
+                        Act::LuaPower(i, k) => self.lua_power_click(*i, *k, armed),
                         Act::LuaEdit(i, j) => self.lua_begin_edit(*i, *j),
                         Act::LuaReset(i, j) => self.lua_reset(*i, *j),
                         Act::LuaResetAll(i) => self.lua_reset_all(*i),
@@ -4405,6 +4541,12 @@ impl OptionsUi {
         let page = self.stack.pop().unwrap_or(Page::Main);
         self.lua_fault = None;
         self.lua_edit = None;
+        self.lua_power_armed = None;
+        self.lua_power_changed = false;
+        self.lua_powers = None;
+        if let Page::LuaMod(i) = self.page() {
+            self.lua_powers_load(i);
+        }
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
         self.dragging = None;
@@ -4649,6 +4791,11 @@ impl OptionsUi {
         shift: bool,
     ) -> Vec<Event> {
         use winit::keyboard::KeyCode as K;
+        // Any key but Enter on the armed button ends a power confirm; Escape only ends it.
+        let armed = self.lua_power_disarm();
+        if key == K::Escape && armed.is_some() {
+            return Vec::new();
+        }
         if self.page() == Page::HdrCalibration
             && let Some(c) = &mut self.calibration
         {
@@ -5071,6 +5218,7 @@ impl OptionsUi {
                             }
                         }
                         Act::LuaSetting(i, j) => self.lua_click(i, j),
+                        Act::LuaPower(i, k) => self.lua_power_click(i, k, armed),
                         Act::LuaEdit(i, j) => self.lua_begin_edit(i, j),
                         Act::LuaReset(i, j) => self.lua_reset(i, j),
                         Act::LuaResetAll(i) => self.lua_reset_all(i),
@@ -8930,7 +9078,9 @@ mod pages;
 mod lua_page_tests {
     use super::tests::atlas;
     use super::*;
-    use horizon_hooks::mod_entries::{self, Entry, SettingView, Side, Status, ViewKind as K};
+    use horizon_hooks::mod_entries::{
+        self, Entry, PowerView, SettingView, Side, Status, ViewKind as K,
+    };
     use std::sync::Mutex;
 
     /// A provider with one Lua mod, `lua`, named "Lua", whose settings the tests read and write.
@@ -8940,6 +9090,14 @@ mod lua_page_tests {
         refuse: Option<&'static str>,
         /// The keys `set` was called with.
         sets: Mutex<Vec<String>>,
+        /// The powers the mod requests, as the provider lists them.
+        powers: Mutex<Vec<PowerView>>,
+        /// Every `set_power` call: mod id, power, granted.
+        power_calls: Mutex<Vec<(String, String, bool)>>,
+        /// A `set_power` is refused with `mods.provider.power_unavailable`.
+        power_refuse: bool,
+        /// How many times `powers` was read.
+        power_reads: Mutex<usize>,
     }
     impl Provider for Fake {
         fn entries(&self) -> Vec<Entry> {
@@ -8953,7 +9111,7 @@ mod lua_page_tests {
                 enabled: true,
                 status: Status::Loaded,
                 settings: true,
-                powers: false,
+                powers: !self.powers.lock().unwrap().is_empty(),
                 icon_png: None,
             }]
         }
@@ -8989,6 +9147,33 @@ mod lua_page_tests {
             Ok(())
         }
         fn set_enabled(&self, _: &str, _: bool) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn powers(&self, _: &str) -> Vec<PowerView> {
+            *self.power_reads.lock().unwrap() += 1;
+            self.powers.lock().unwrap().clone()
+        }
+        fn set_power(
+            &self,
+            id: &str,
+            power: &str,
+            granted: bool,
+        ) -> Result<(), mod_entries::Fault> {
+            self.power_calls
+                .lock()
+                .unwrap()
+                .push((id.into(), power.into(), granted));
+            if self.power_refuse {
+                return Err(mod_entries::fault(
+                    mod_entries::keys::POWER_UNAVAILABLE,
+                    &[("mod", id), ("power", power)],
+                ));
+            }
+            for view in self.powers.lock().unwrap().iter_mut() {
+                if view.name == power {
+                    view.granted = granted;
+                }
+            }
             Ok(())
         }
     }
@@ -9107,13 +9292,73 @@ mod lua_page_tests {
 
     /// Installs a fake provider for this test's thread and returns it.
     fn install(refuse: Option<&'static str>) -> &'static Fake {
+        install_powers(Vec::new(), false, refuse)
+    }
+
+    /// Installs a fake whose mod requests `powers`; a `set_power` is refused when `power_refuse`.
+    fn install_powers(
+        powers: Vec<PowerView>,
+        power_refuse: bool,
+        refuse: Option<&'static str>,
+    ) -> &'static Fake {
         let fake: &'static Fake = Box::leak(Box::new(Fake {
             settings: Mutex::new(settings()),
             refuse,
             sets: Mutex::new(Vec::new()),
+            powers: Mutex::new(powers),
+            power_calls: Mutex::new(Vec::new()),
+            power_refuse,
+            power_reads: Mutex::new(0),
         }));
         TEST_LUA.with(|cell| cell.set(Some(fake)));
         fake
+    }
+
+    /// A power the mod requests: its name, its state and whether this build can use it.
+    fn power(name: &str, granted: bool, available: bool, reserved: bool) -> PowerView {
+        PowerView {
+            name: name.into(),
+            label_key: format!("horizon.mods.power.{name}.label"),
+            description_key: format!("horizon.mods.power.{name}.description"),
+            requested: true,
+            granted,
+            available,
+            reserved,
+        }
+    }
+
+    /// The three powers of the page tests: world (usable), commands (not in this build), files
+    /// (reserved).
+    fn three_powers(world_granted: bool) -> Vec<PowerView> {
+        vec![
+            power("world", world_granted, true, false),
+            power("commands", false, false, false),
+            power("files", false, false, true),
+        ]
+    }
+
+    /// The texts of a page's widgets: labels and text lines, in order.
+    fn page_text(widgets: &[Widget]) -> Vec<String> {
+        widgets
+            .iter()
+            .filter_map(|w| match &w.kind {
+                WKind::Button { label, .. }
+                | WKind::Slider { label, .. }
+                | WKind::Text { text: label, .. } => Some(label.plain()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A press on the button of `act`, at its place on the page.
+    fn tap(ui: &mut OptionsUi, s: &mut Settings, act: &Act) -> Vec<Event> {
+        let (x, y, _) = button(&widgets(ui, s), act);
+        press(ui, s, x, y)
+    }
+
+    /// The label of the button of `act` now.
+    fn label_of(ui: &mut OptionsUi, s: &Settings, act: &Act) -> String {
+        button(&widgets(ui, s), act).2
     }
 
     const SIZE: (f32, f32) = (480.0, 1200.0);
@@ -9705,5 +9950,326 @@ mod lua_page_tests {
         assert_eq!(ui.scrollbar_drag_y, None);
         assert!(ui.lua_edit.is_none(), "the click ends the wait");
         assert!(names(fake).is_empty());
+    }
+
+    /// Runs `f` with the English lang loaded, so the labels the tests read are the words.
+    fn english(f: impl FnOnce()) {
+        lang::scoped(lang::Language::load(&[], "en_us"), f);
+    }
+
+    #[test]
+    fn a_mod_without_powers_has_no_powers_section() {
+        english(|| {
+            install(None);
+            let s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let texts = page_text(&widgets(&mut ui, &s));
+            assert!(!texts.iter().any(|t| t == "Powers"), "{texts:?}");
+            assert!(!texts.iter().any(|t| t == "Grant" || t == "Revoke"));
+            assert_eq!(
+                texts.iter().filter(|t| *t == "Reset").count(),
+                7,
+                "one per setting"
+            );
+        });
+    }
+
+    #[test]
+    fn three_powers_are_listed_in_rank_order_with_their_button_states() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let all = widgets(&mut ui, &s);
+            let (world, commands, files) = (
+                button(&all, &Act::LuaPower(0, 0)),
+                button(&all, &Act::LuaPower(0, 1)),
+                button(&all, &Act::LuaPower(0, 2)),
+            );
+            assert_eq!(world.2, "Grant");
+            assert_eq!(commands.2, "Not available");
+            assert_eq!(files.2, "Not available");
+            assert!(
+                world.1 < commands.1 && commands.1 < files.1,
+                "rank order on the page"
+            );
+            let inactive = |act: &Act| {
+                all.iter().any(
+                    |w| matches!(&w.kind, WKind::Button { act: a, active: false, .. } if a == act),
+                )
+            };
+            assert!(!inactive(&Act::LuaPower(0, 0)));
+            assert!(inactive(&Act::LuaPower(0, 1)) && inactive(&Act::LuaPower(0, 2)));
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+        });
+    }
+
+    #[test]
+    fn the_first_grant_click_arms_the_confirm_and_only_the_second_grants() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let reads = *fake.power_reads.lock().unwrap();
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert!(
+                fake.power_calls.lock().unwrap().is_empty(),
+                "the first click only arms"
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Confirm grant");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                *fake.power_calls.lock().unwrap(),
+                [("lua".to_owned(), "world".to_owned(), true)]
+            );
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                reads + 1,
+                "the powers are read again"
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Revoke");
+        });
+    }
+
+    #[test]
+    fn another_click_or_a_page_change_clears_the_pending_confirm() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaSetting(0, 0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Confirm grant");
+            // A focus move with the arrow keys clears it too.
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::ArrowDown, None);
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            // Leaving the page and coming back clears it.
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            ui.back(&mut s);
+            ui.show(Page::LuaMod(0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert!(
+                fake.power_calls.lock().unwrap().is_empty(),
+                "no grant without a second click"
+            );
+        });
+    }
+
+    #[test]
+    fn revoke_applies_at_once() {
+        english(|| {
+            let fake = install_powers(three_powers(true), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Revoke");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                *fake.power_calls.lock().unwrap(),
+                [("lua".to_owned(), "world".to_owned(), false)]
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+        });
+    }
+
+    #[test]
+    fn a_refused_change_shows_its_fault_and_keeps_the_state() {
+        english(|| {
+            let fake = install_powers(three_powers(false), true, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                fake.power_calls.lock().unwrap().len(),
+                1,
+                "the provider was asked"
+            );
+            let fault = ui.lua_fault.clone().expect("the refusal is kept");
+            assert_eq!(fault.key, mod_entries::keys::POWER_UNAVAILABLE);
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            assert!(!ui.lua_power_changed, "no restart note for a refusal");
+            assert!(!fake.powers.lock().unwrap()[0].granted);
+        });
+    }
+
+    #[test]
+    fn a_disabled_power_button_does_nothing() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaPower(0, 1));
+            press(&mut ui, &mut s, x, y);
+            press(&mut ui, &mut s, x, y);
+            assert!(ui.lua_power_armed.is_none());
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 1)), "Not available");
+        });
+    }
+
+    #[test]
+    fn the_keyboard_reaches_the_usable_power_button_and_enter_grants_after_a_second_enter() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let mut reached = Vec::new();
+            for _ in 0..80 {
+                ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::ArrowDown, None);
+                if let Some(FocusId::Act(act)) = &ui.focus {
+                    reached.push(act.clone());
+                }
+            }
+            let powers: Vec<Act> = reached
+                .into_iter()
+                .filter(|a| matches!(a, Act::LuaPower(..)))
+                .collect();
+            assert_eq!(
+                powers.first(),
+                Some(&Act::LuaPower(0, 0)),
+                "the walk reaches Grant"
+            );
+            assert!(
+                !powers.contains(&Act::LuaPower(0, 1)),
+                "a disabled button is not a stop"
+            );
+            assert!(!powers.contains(&Act::LuaPower(0, 2)));
+            // Focus the Grant button again and press Enter twice.
+            while ui.focus != Some(FocusId::Act(Act::LuaPower(0, 0))) {
+                ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::ArrowUp, None);
+            }
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::Enter, None);
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::Enter, None);
+            assert_eq!(fake.power_calls.lock().unwrap().len(), 1);
+        });
+    }
+
+    #[test]
+    fn escape_cancels_a_pending_confirm_and_keeps_the_page() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::Escape, None);
+            assert_eq!(
+                ui.page(),
+                Page::LuaMod(0),
+                "Escape only cancels the confirm"
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+        });
+    }
+
+    #[test]
+    fn the_restart_note_follows_a_successful_change() {
+        english(|| {
+            install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let note = tr("horizon.mods.screen.restart").plain();
+            assert!(!page_text(&widgets(&mut ui, &s)).contains(&note));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert!(page_text(&widgets(&mut ui, &s)).contains(&note));
+        });
+    }
+
+    #[test]
+    fn powers_are_read_on_open_and_after_a_change_not_on_each_repaint() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            assert_eq!(*fake.power_reads.lock().unwrap(), 1);
+            for _ in 0..20 {
+                let _ = widgets(&mut ui, &s);
+                ui.relayout();
+            }
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                1,
+                "repaints read the cache"
+            );
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                2,
+                "a change reads once more"
+            );
+        });
+    }
+
+    #[test]
+    fn a_page_of_eight_powers_builds_its_rows_in_a_few_milliseconds() {
+        english(|| {
+            let powers: Vec<PowerView> = (0..8)
+                .map(|k| power(&format!("p{k}"), k % 2 == 0, k % 3 != 0, false))
+                .collect();
+            let fake = install_powers(powers, false, None);
+            let s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let start = std::time::Instant::now();
+            let rounds = 50;
+            for _ in 0..rounds {
+                ui.relayout();
+                let _ = ui.layout(&s, SIZE.0, SIZE.1);
+            }
+            let per_page = start.elapsed() / rounds;
+            eprintln!("lua powers page (8 powers, 7 settings): {per_page:?} to build the rows");
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                1,
+                "rows are built without the provider"
+            );
+            assert!(
+                per_page < std::time::Duration::from_millis(50),
+                "{per_page:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn every_new_lang_key_is_in_en_us() {
+        let keys = [
+            "horizon.mods.powers.title",
+            "horizon.mods.powers.note",
+            "horizon.mods.powers.grant",
+            "horizon.mods.powers.revoke",
+            "horizon.mods.powers.confirm",
+            "horizon.mods.powers.unavailable",
+            "horizon.mods.powers.granted",
+            "horizon.mods.powers.not_granted",
+            "horizon.mods.power.world.label",
+            "horizon.mods.power.world.description",
+            "horizon.mods.power.commands.label",
+            "horizon.mods.power.commands.description",
+            "horizon.mods.power.files.label",
+            "horizon.mods.power.files.description",
+            "mods.provider.power_unavailable",
+        ];
+        lang::scoped(lang::Language::load(&[], "en_us"), || {
+            for key in keys {
+                assert!(lang::has(key), "{key} is missing from en_us");
+            }
+        });
     }
 }

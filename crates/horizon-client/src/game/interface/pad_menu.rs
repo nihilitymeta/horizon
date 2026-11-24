@@ -859,12 +859,13 @@ impl Game<'_> {
             self.pad.menu.slider_hold = None;
             return Ok(());
         }
-        // B while a Lua text edit or keybind wait is open is Escape: it ends the edit. Not the
-        // footer's Done pressed as a click, which would commit a text draft (options_ui `lua_end_by_click`).
+        // B while a Lua text edit or keybind wait, or a Lua power's confirm, is open is Escape: it
+        // ends the edit or the confirm. Not the footer's Done pressed as a click, which would commit
+        // a text draft (options_ui `lua_end_by_click`).
         if matches!(button, Button::East | Button::Start)
             && !prompt
             && self.screen == Screen::Options
-            && self.ui.options.lua_edit_active()
+            && (self.ui.options.lua_edit_active() || self.ui.options.lua_power_confirm_pending())
         {
             return self.options_key(KeyCode::Escape, None);
         }

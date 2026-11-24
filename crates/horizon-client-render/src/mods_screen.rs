@@ -165,7 +165,8 @@ fn lua_entry(
         description: lua.description.clone(),
         icon,
         status,
-        config: lua.settings,
+        // A mod that requests powers has a page too: its Powers section is there.
+        config: lua.settings || lua.powers,
         lua: Some(index),
         toggle: (!matches!(lua.status, mod_entries::Status::Refused { .. })).then_some(lua.enabled),
         badge: Some(tr("horizon.mods.screen.badge.lua").with_color(d::GRAY)),
