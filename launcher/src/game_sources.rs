@@ -463,6 +463,222 @@ pub fn install(release: &Release, select: bool) -> Result<String, String> {
     Ok(version)
 }
 
+/// Adds `repo` to `sources`, updating itself when `auto_update`: the pure part of [`add`]. Returns
+/// whether it takes over Horizon's own game updates (a source that updates itself, other than the
+/// default one, which changes nothing else).
+fn add_to(sources: &mut Vec<Source>, repo: &str, auto_update: bool) -> Result<bool, String> {
+    if sources.iter().any(|s| same_repo(&s.repo, repo)) {
+        return Err(trf("{repo} is a source already.", &[("repo", repo)]));
+    }
+    sources.push(Source {
+        repo: repo.to_owned(),
+        auto_update,
+        installed: None,
+    });
+    // The fork's own default source is not "Horizon's own": following it changes nothing.
+    Ok(auto_update && !same_repo(repo, DEFAULT))
+}
+
+/// Adds the repository `text` names, updating itself when `auto_update`. A source that updates
+/// itself takes over the updates: Horizon's own automatic game updates turn off
+/// ([`step_aside_for_horizon_updates`]). Returns the repository, and whether it took over.
+pub fn add(text: &str, auto_update: bool) -> Result<(String, bool), String> {
+    let repo = repo_of(text)?;
+    let mut sources = load();
+    let took_over = add_to(&mut sources, &repo, auto_update)?;
+    // The settings change is saved before the source: were the source saved first and this save
+    // to fail, a retry would hit "is a source already" and never step aside.
+    if took_over {
+        let mut settings = backend::Settings::load();
+        if step_aside_for_horizon_updates(&mut settings) {
+            settings.save()?;
+        }
+    }
+    save(&sources)?;
+    Ok((repo, took_over))
+}
+
+/// Turns Horizon's own automatic game updates off in `settings` (`Settings::install_new_versions`:
+/// new Horizon game versions no longer install themselves). The launcher updating itself is not
+/// one of them: it comes from Event Horizon's own releases, so `auto_update_launcher` stays as it
+/// is. Returns whether anything changed; the player can turn it back on by hand. Nothing happens
+/// when it is already off, so a settings file that never said stays as it was.
+pub fn step_aside_for_horizon_updates(settings: &mut backend::Settings) -> bool {
+    if settings.auto_install() {
+        settings.install_new_versions = Some(false);
+        true
+    } else {
+        false
+    }
+}
+
+/// Forgets `repo` in `sources`: the pure part of [`remove`].
+fn remove_from(sources: &mut Vec<Source>, repo: &str) -> Result<(), String> {
+    let before = sources.len();
+    sources.retain(|s| !same_repo(&s.repo, repo));
+    if sources.len() == before {
+        return Err(trf("{repo} is not a source.", &[("repo", repo)]));
+    }
+    Ok(())
+}
+
+/// Forgets a source. The versions it installed stay: remove them on the Versions page.
+pub fn remove(repo: &str) -> Result<(), String> {
+    edit(|sources| remove_from(sources, repo))
+}
+
+/// Sets `repo`'s automatic updates in `sources`: the pure part of [`set_auto_update`].
+fn set_auto_update_in(sources: &mut [Source], repo: &str, on: bool) -> Result<(), String> {
+    let source = sources
+        .iter_mut()
+        .find(|s| same_repo(&s.repo, repo))
+        .ok_or_else(|| trf("{repo} is not a source.", &[("repo", repo)]))?;
+    source.auto_update = on;
+    Ok(())
+}
+
+/// Turns a source's automatic updates on or off.
+pub fn set_auto_update(repo: &str, on: bool) -> Result<(), String> {
+    edit(|sources| set_auto_update_in(sources, repo, on))
+}
+
+/// The sources with a release newer than the one installed (or none installed), with it. A
+/// source with no build for this computer has nothing to install.
+pub fn updates(sources: &[Source], api: Api) -> Vec<(Source, Result<Release, String>)> {
+    sources
+        .iter()
+        .filter_map(|s| match latest(&s.repo, api) {
+            Ok(None) => None,
+            Ok(Some(r)) if s.installed.as_ref().is_some_and(|i| i.tag == r.tag) => None,
+            Ok(Some(r)) => Some((s.clone(), Ok(r))),
+            Err(e) => Some((s.clone(), Err(e))),
+        })
+        .collect()
+}
+
+/// What `tools/deploy_local_mac.sh` writes in a version it installs from a checkout.
+#[derive(Deserialize)]
+struct LocalBuild {
+    #[serde(default)]
+    commit: String,
+}
+
+/// A version built here from Event Horizon's checkout (`tools/deploy_local_mac.sh`): its commit.
+/// That script is not in this tree; the function only reads the file it would write.
+fn local_build(version: &str) -> Option<String> {
+    let text = fs::read_to_string(backend::version_dir(version).join(".local_build")).ok()?;
+    let build: LocalBuild = serde_json::from_str(&text).ok()?;
+    Some(build.commit.chars().take(7).collect())
+}
+
+/// An Event Horizon release installed from its GitHub source: the release as a player reads it
+/// (`0.1.0`, `Nightly 2026-11-05`).
+fn release_build(version: &str) -> Option<String> {
+    let about = build_import::about(version)?;
+    Some(release_name(tag_of_label(&about.file)?))
+}
+
+/// The release tag in a source's label (`nihilitymeta/horizon eh-nightly-2026-11-05`), for Event
+/// Horizon's own repositories, under their old names too: an install made before the move keeps its
+/// label. Only the game's old names count: a moved repository that is not `DEFAULT` (the modkit)
+/// is no Event Horizon release.
+fn tag_of_label(file: &str) -> Option<&str> {
+    std::iter::once(DEFAULT)
+        .chain(
+            RENAMED
+                .iter()
+                .filter(|(_, new)| new.eq_ignore_ascii_case(DEFAULT))
+                .map(|(old, _)| *old),
+        )
+        .find_map(|repo| file.strip_prefix(repo)?.strip_prefix(' '))
+}
+
+/// `eh-v0.1.0` → `0.1.0`, `eh-nightly-2026-11-05` → `Nightly 2026-11-05`.
+fn release_name(tag: &str) -> String {
+    if let Some(date) = tag.strip_prefix(NIGHTLY_PREFIX) {
+        return format!("Nightly {date}");
+    }
+    tag.strip_prefix(TAG_PREFIX).unwrap_or(tag).to_owned()
+}
+
+/// Whether an installed version is Event Horizon's: built here, or one of its releases.
+pub fn is_event_horizon(version: &str) -> bool {
+    local_build(version).is_some() || release_build(version).is_some()
+}
+
+/// An imported build that is not one of Event Horizon's releases (the Versions page's "Imported").
+pub fn is_other_import(version: &str) -> bool {
+    build_import::is_imported(version) && release_build(version).is_none()
+}
+
+/// A version as a player reads it: `Event Horizon 0.1.0`, `Event Horizon · local 752a5a5`, else
+/// what Horizon calls it (`nightly::label`).
+pub fn label(version: &str) -> Option<String> {
+    if let Some(release) = release_build(version) {
+        return Some(trf(
+            "Event Horizon {release}",
+            &[("release", release.as_str())],
+        ));
+    }
+    if let Some(commit) = local_build(version) {
+        return Some(match commit.is_empty() {
+            true => tr("Event Horizon · local").to_owned(),
+            false => trf(
+                "Event Horizon · local {commit}",
+                &[("commit", commit.as_str())],
+            ),
+        });
+    }
+    crate::nightly::label(version)
+}
+
+/// Event Horizon's release tags: `eh-v<version>` for a version of the owner's choosing,
+/// `eh-nightly-<date>` for a nightly (event-horizon-release.yml).
+pub const TAG_PREFIX: &str = "eh-v";
+pub const NIGHTLY_PREFIX: &str = "eh-nightly-";
+
+pub fn is_event_horizon_tag(tag: &str) -> bool {
+    tag.starts_with(TAG_PREFIX) || tag.starts_with(NIGHTLY_PREFIX)
+}
+
+/// An `eh-v<major>.<minor>.<patch>` tag's numbers, missing ones as zero; None for any other tag.
+fn numbers(tag: &str) -> Option<[u64; 3]> {
+    let version = tag.strip_prefix(TAG_PREFIX)?;
+    let version = version.split(['-', '+']).next().unwrap_or(version);
+    let mut out = [0; 3];
+    for (slot, part) in out.iter_mut().zip(version.split('.')) {
+        *slot = part.parse().ok()?;
+    }
+    Some(out)
+}
+
+/// The release this launcher was built for, when the release workflow built it
+/// (`HORIZON_LAUNCHER_TAG`); None for a launcher built by hand, which never updates itself.
+fn own_tag() -> Option<&'static str> {
+    option_env!("HORIZON_LAUNCHER_TAG").filter(|t| is_event_horizon_tag(t))
+}
+
+/// When the release workflow built this launcher (`HORIZON_LAUNCHER_BUILT`, `2026-11-05T09:03:00Z`).
+fn own_built() -> &'static str {
+    option_env!("HORIZON_LAUNCHER_BUILT").unwrap_or_default()
+}
+
+/// Whether release `latest`, published at `published`, is newer than this launcher's release
+/// `own`, built at `built`: two versions compare by their numbers; otherwise (a nightly on either
+/// side) a release published after this launcher was built is newer.
+fn newer(latest: &str, published: &str, own: Option<&str>, built: &str) -> bool {
+    let Some(own) = own else {
+        return false;
+    };
+    if latest == own {
+        return false;
+    }
+    match (numbers(latest), numbers(own)) {
+        (Some(latest), Some(own)) => latest > own,
+        _ => !published.is_empty() && !built.is_empty() && published > built,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -877,5 +1093,151 @@ mod tests {
         assert!(selects(Some("imported-2026-11-04-abcdef1"), Some(&before)));
         assert!(!selects(Some("imported-2026-10-01-0a0a0a0"), Some(&before)));
         assert!(!selects(Some("imported-2026-10-01-0a0a0a0"), None));
+    }
+
+    #[test]
+    fn the_launcher_updates_only_to_a_newer_event_horizon_release() {
+        let built = "2026-11-05T09:03:00Z";
+        // Two versions: by their numbers.
+        assert!(newer("eh-v0.2.0", "", Some("eh-v0.1.9"), built));
+        assert!(newer("eh-v0.10.0", "", Some("eh-v0.9.0"), built));
+        assert!(!newer("eh-v0.1.0", "", Some("eh-v0.1.0"), built));
+        assert!(!newer("eh-v0.1.0", "", Some("eh-v0.2.0"), built));
+        // A nightly on either side: by when it was published, after this launcher was built.
+        assert!(newer(
+            "eh-nightly-2026-11-06",
+            "2026-11-06T09:20:00Z",
+            Some("eh-nightly-2026-11-05"),
+            built
+        ));
+        assert!(newer(
+            "eh-nightly-2026-11-06",
+            "2026-11-06T09:20:00Z",
+            Some("eh-v0.1.0"),
+            built
+        ));
+        assert!(!newer(
+            "eh-nightly-2026-11-05",
+            "2026-11-05T09:01:00Z",
+            Some("eh-v0.1.0"),
+            built
+        ));
+        assert!(!newer(
+            "eh-nightly-2026-11-05",
+            "2026-11-05T09:20:00Z",
+            Some("eh-nightly-2026-11-05"),
+            built
+        ));
+        // A launcher built by hand never updates from here.
+        assert!(!newer("eh-v0.2.0", "2027-01-01T00:00:00Z", None, built));
+        assert!(is_event_horizon_tag("eh-v0.1.0") && is_event_horizon_tag("eh-nightly-2026-11-05"));
+        assert!(!is_event_horizon_tag("launcher@0.2.40"));
+        assert_eq!(release_name("eh-nightly-2026-11-05"), "Nightly 2026-11-05");
+        assert_eq!(release_name("eh-v0.1.0"), "0.1.0");
+    }
+
+    #[test]
+    fn a_label_from_before_the_move_still_names_its_release() {
+        assert_eq!(
+            tag_of_label("whos-carmen/horizon eh-nightly-2026-11-08-2"),
+            Some("eh-nightly-2026-11-08-2")
+        );
+        assert_eq!(
+            tag_of_label("nihilitymeta/horizon eh-v0.1.0"),
+            Some("eh-v0.1.0")
+        );
+        assert_eq!(tag_of_label("someone/else eh-v0.1.0"), None);
+    }
+
+    #[test]
+    fn a_modkit_or_other_label_is_not_an_event_horizon_release() {
+        assert_eq!(tag_of_label("whos-carmen/horizon-modkit v0.7.1"), None);
+        assert_eq!(tag_of_label("nihilitymeta/horizon-modkit v0.7.1"), None);
+        assert_eq!(tag_of_label("whos-carmen/horizon-evil eh-v0.1.0"), None);
+    }
+
+    #[test]
+    fn a_source_that_updates_itself_takes_over_from_horizons_own_updates() {
+        // Horizon's own automatic game updates on, as a saved settings file has them.
+        let mut settings = backend::Settings {
+            auto_update_launcher: Some(true),
+            install_new_versions: Some(true),
+            ..backend::Settings::default()
+        };
+        let mut sources = Vec::new();
+        assert_eq!(add_to(&mut sources, "a/b", true), Ok(true));
+        assert!(step_aside_for_horizon_updates(&mut settings));
+        // The source itself updates; Horizon's own game updates are off, and the launcher
+        // updating itself (Event Horizon's releases, not Horizon's) stays on.
+        assert!(sources.iter().any(|s| s.repo == "a/b" && s.auto_update));
+        assert_eq!(settings.auto_update_launcher, Some(true));
+        assert_eq!(settings.install_new_versions, Some(false));
+        // Nothing changes when Horizon's own updates are already off.
+        assert!(!step_aside_for_horizon_updates(&mut settings));
+        // A source added without its own updates takes nothing over.
+        let mut settings = backend::Settings {
+            install_new_versions: Some(true),
+            ..backend::Settings::default()
+        };
+        assert_eq!(add_to(&mut sources, "c/d", false), Ok(false));
+        assert_eq!(settings.install_new_versions, Some(true));
+        assert!(step_aside_for_horizon_updates(&mut settings));
+    }
+
+    #[test]
+    fn adding_the_default_source_changes_nothing_else() {
+        let mut sources = Vec::new();
+        assert_eq!(add_to(&mut sources, DEFAULT, true), Ok(false));
+        assert!(sources.iter().any(|s| s.repo == DEFAULT && s.auto_update));
+    }
+
+    #[test]
+    fn the_same_repository_in_two_cases_is_one_source() {
+        let mut sources = Vec::new();
+        assert_eq!(add_to(&mut sources, "Owner/Repo", false), Ok(false));
+        assert!(add_to(&mut sources, "owner/repo", false).is_err());
+        assert_eq!(sources.len(), 1);
+        set_auto_update_in(&mut sources, "OWNER/REPO", true).unwrap();
+        assert!(sources[0].auto_update);
+        remove_from(&mut sources, "owner/REPO").unwrap();
+        assert!(sources.is_empty());
+        assert!(remove_from(&mut sources, "owner/repo").is_err());
+        assert!(set_auto_update_in(&mut sources, "owner/repo", true).is_err());
+    }
+
+    #[test]
+    fn a_source_with_the_newest_release_has_no_update() {
+        let installed = Source {
+            repo: "a/b".into(),
+            auto_update: true,
+            installed: Some(Installed {
+                tag: "eh-v0.1.0".into(),
+                version: "imported-x".into(),
+            }),
+        };
+        let new = Source {
+            repo: "c/d".into(),
+            auto_update: true,
+            installed: None,
+        };
+        let api = |path: &str| -> Result<Option<serde_json::Value>, String> {
+            let repo = path
+                .trim_start_matches("repos/")
+                .trim_end_matches("/releases/latest");
+            let p = platform().unwrap_or("linux-x86_64");
+            Ok(Some(
+                serde_json::json!({ "tag_name": "eh-v0.1.0", "assets": [{
+                    "name": format!("event-horizon-{p}.tar.gz"),
+                    "browser_download_url": format!("https://github.com/{repo}/releases/download/eh-v0.1.0/event-horizon-{p}.tar.gz"),
+                }]}),
+            ))
+        };
+        if platform().is_none() {
+            return;
+        }
+        let found = updates(&[installed, new], &api);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0.repo, "c/d");
+        assert_eq!(found[0].1.as_ref().unwrap().tag, "eh-v0.1.0");
     }
 }
