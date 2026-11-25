@@ -551,8 +551,6 @@ impl Launcher {
     }
 
     /// Installs the newer release of the GitHub source that installed `version`, and plays it.
-    // The next chunk's Play button calls this; nothing calls it yet.
-    #[allow(dead_code)]
     pub(crate) fn install_source_update(&mut self, version: &str) {
         let Some((_, release)) = self
             .source_updates
