@@ -36,7 +36,7 @@ fn badge(tone: Tone, label: &str) -> Div {
 ///
 /// A nightly's short commit, which only a tooltip shows; empty for any other version.
 fn commit_of(tag: &str) -> String {
-    horizon_launcher::nightly::label(tag)
+    horizon_launcher::game_sources::label(tag)
         .and_then(|label| {
             label
                 .split_once(" · ")
@@ -213,6 +213,13 @@ impl Launcher {
         page = page
             .children(self.import_error.clone().map(|e| notice(e, &t).mb(px(10.))))
             .children(self.glass_local_builds(
+                "Event Horizon",
+                &horizon_launcher::game_sources::is_event_horizon,
+                None,
+                on_disk,
+                cx,
+            ))
+            .children(self.glass_local_builds(
                 "Native mod builds",
                 &native_mods::is_native,
                 None,
@@ -221,7 +228,7 @@ impl Launcher {
             ))
             .children(self.glass_local_builds(
                 "Imported builds",
-                &build_import::is_imported,
+                &horizon_launcher::game_sources::is_other_import,
                 Some(tr(
                     "Unsigned: you picked these programs yourself, and Horizon can't \
                     check where they came from. Updates never replace them.",
@@ -241,6 +248,7 @@ impl Launcher {
                 &|tag| {
                     !native_mods::is_native(tag)
                         && !build_import::is_imported(tag)
+                        && !horizon_launcher::game_sources::is_event_horizon(tag)
                         && !listed.contains(&tag)
                 },
                 Some(tr(
@@ -662,7 +670,8 @@ impl Launcher {
                     line.push(tag.clone());
                 }
                 if let Some(about) = build_import::about(&tag) {
-                    let base = horizon_launcher::nightly::label(&about.base).unwrap_or(about.base);
+                    let base =
+                        horizon_launcher::game_sources::label(&about.base).unwrap_or(about.base);
                     line.push(trf("Game files from {base}", &[("base", &base)]));
                     line.push(about.file);
                 }
@@ -676,7 +685,7 @@ impl Launcher {
                 let title = if native_mods::is_native(&tag) {
                     self.version_label(&tag)
                 } else {
-                    horizon_launcher::nightly::label(&tag)
+                    horizon_launcher::game_sources::label(&tag)
                         .or_else(|| build_import::label(&tag))
                         .unwrap_or_else(|| tag.trim_start_matches('v').to_string())
                 };

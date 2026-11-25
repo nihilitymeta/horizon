@@ -796,7 +796,9 @@ impl Launcher {
         }
         match horizon_launcher::nightly::date_of(tag) {
             Some(_) => self.version_name(tag),
-            None => build_import::label(tag).unwrap_or_else(|| tag.to_string()),
+            None => horizon_launcher::game_sources::label(tag)
+                .or_else(|| build_import::label(tag))
+                .unwrap_or_else(|| tag.to_string()),
         }
     }
 }
