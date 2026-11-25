@@ -392,9 +392,21 @@ impl Launcher {
         let stable = self
             .selected_instance()
             .is_some_and(|i| i.channel == horizon_launcher::instances::Channel::Stable);
-        // A Stable instance follows the newest stable build, not each Nightly: its update is
-        // that build when it isn't installed yet.
-        let update = if stable {
+        // Event Horizon: a build a GitHub source installed is updated by that source's newer
+        // release; any other Event Horizon build (a local one) by nothing. Horizon's newer Nightly
+        // is an update only of Horizon's own versions.
+        let from_source = self
+            .source_updates
+            .iter()
+            .find(|(v, _)| v == tag)
+            .map(|(_, r)| r.tag.clone());
+        let update = if from_source.is_some() {
+            from_source.filter(|_| follows)
+        } else if horizon_launcher::game_sources::is_event_horizon(tag) {
+            None
+        } else if stable {
+            // A Stable instance follows the newest stable build, not each Nightly: its update is
+            // that build when it isn't installed yet.
             self.stable_builds()
                 .first()
                 .map(|b| b.tag.clone())
@@ -406,6 +418,7 @@ impl Launcher {
                 .filter(|_| follows && !tag.is_empty())
                 .map(|r| r.tag.clone())
         };
+        let source_update = self.source_updates.iter().any(|(v, _)| v == tag);
         let installing = update
             .as_ref()
             .and_then(|u| self.installing.as_ref().filter(|(t, _)| t == u))
@@ -638,6 +651,13 @@ impl Launcher {
                     SharedString::from("play"),
                 );
                 let main = match (&update, press) {
+                    (Some(_), _) if source_update => {
+                        let version = tag.to_string();
+                        main.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.install_source_update(&version);
+                            cx.notify();
+                        }))
+                    }
                     (None, PlayPress::Play) if build_first => {
                         main.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                             this.play_after_build = this.selected_instance().map(|i| i.id.clone());
