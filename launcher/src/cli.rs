@@ -65,6 +65,35 @@ enum RustCmd {
     Remove,
 }
 #[derive(Subcommand)]
+enum SourcesCmd {
+    /// The sources, what each installed, and whether it updates itself (the default)
+    List,
+    /// Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>)
+    ///
+    /// Unless `--no-auto-update` is given (and the repository is not the default source), the source
+    /// updates itself and Horizon's own automatic game updates turn off: new Horizon game versions are
+    /// no longer installed automatically. The launcher updating itself is not one of them (it comes
+    /// from Event Horizon's own releases) and stays as it is. Turn game updates back on by hand in the
+    /// settings if you want them.
+    Add {
+        repo: String,
+        /// Don't install its new releases when the launcher checks for updates
+        #[arg(long)]
+        no_auto_update: bool,
+    },
+    /// Forget a source; the versions it installed stay
+    Remove { repo: String },
+    /// Turn a source's automatic updates on or off
+    Auto {
+        repo: String,
+        /// on or off
+        state: String,
+    },
+    /// Install the newest release of a source now (of every source with none named)
+    Update { repo: Option<String> },
+}
+
+#[derive(Subcommand)]
 enum ServersCmd {
     /// The servers, their folder and whether they run
     List,
@@ -1001,6 +1030,12 @@ enum Cmd {
         #[command(subcommand)]
         action: Option<RustCmd>,
     },
+    /// GitHub sources: game builds a repository publishes as releases, such as Event Horizon's,
+    /// installed on an installed version's game files (docs/event-horizon-releases.md)
+    Sources {
+        #[command(subcommand)]
+        action: Option<SourcesCmd>,
+    },
     /// Servers hosted with horizon-server (the Servers page): list them, create one, or run any
     /// horizon-server command on one
     Servers {
@@ -1816,6 +1851,7 @@ fn execute(command: Cmd, as_json: bool) -> Result<i32, String> {
         Cmd::Instance { action } => instance(action.unwrap_or(InstanceCmd::List), as_json)?,
         Cmd::Modpack { action } => return modpack(action.unwrap_or(ModpackCmd::List), as_json),
         Cmd::Mods { action } => mods(action.unwrap_or(ModsCmd::List { instance: None }), as_json)?,
+        Cmd::Sources { action } => sources(action.unwrap_or(SourcesCmd::List), as_json)?,
         Cmd::Servers { action } => servers(action.unwrap_or(ServersCmd::List), as_json)?,
         Cmd::Rust { action } => rust(action.unwrap_or(RustCmd::Status), as_json)?,
         Cmd::Java { action } => java(action.unwrap_or(JavaCmd::List), as_json)?,
@@ -2150,6 +2186,87 @@ fn data(action: DataCmd, as_json: bool) -> Result<(), String> {
     }
     Ok(())
 }
+fn sources(action: SourcesCmd, as_json: bool) -> Result<(), String> {
+    use horizon_launcher::game_sources;
+    match action {
+        SourcesCmd::List => {
+            let list = game_sources::load();
+            if as_json {
+                json(serde_json::to_value(&list).map_err(|e| e.to_string())?);
+            } else if list.is_empty() {
+                println!("No GitHub sources. Add one: horizon-launcher sources add <owner>/<repo>");
+            } else {
+                for s in list {
+                    let installed = s
+                        .installed
+                        .map(|i| format!("{} ({})", i.tag, i.version))
+                        .unwrap_or_else(|| "nothing installed yet".into());
+                    let auto = if s.auto_update {
+                        "updates itself"
+                    } else {
+                        "updates by hand"
+                    };
+                    println!("{}: {installed}, {auto}", s.repo);
+                }
+            }
+        }
+        SourcesCmd::Add {
+            repo,
+            no_auto_update,
+        } => {
+            let (repo, took_over) = game_sources::add(&repo, !no_auto_update)?;
+            if took_over {
+                println!("Horizon's game updates are off (new game versions no longer install themselves); this source updates itself. Turn it back on in settings if you want it.");
+            }
+            println!(
+                "Added {repo}. Install its newest release: horizon-launcher sources update {repo}"
+            );
+        }
+        SourcesCmd::Remove { repo } => {
+            game_sources::remove(&repo)?;
+            println!("Removed {repo}. The versions it installed stay.");
+        }
+        SourcesCmd::Auto { repo, state } => {
+            let on = on_off(&state)?;
+            game_sources::set_auto_update(&repo, on)?;
+            println!(
+                "{repo} {}.",
+                if on {
+                    "updates itself"
+                } else {
+                    "updates by hand"
+                }
+            );
+        }
+        SourcesCmd::Update { repo } => {
+            let list = game_sources::load();
+            let picked: Vec<_> = match &repo {
+                Some(r) => list
+                    .into_iter()
+                    .filter(|s| s.repo.eq_ignore_ascii_case(r))
+                    .collect(),
+                None => list,
+            };
+            if let Some(r) = &repo {
+                if picked.is_empty() {
+                    return Err(format!("{r} is not a source."));
+                }
+            }
+            let found = game_sources::updates(&picked, &github_mods::api);
+            if found.is_empty() {
+                println!("Every source has its newest release installed.");
+            }
+            for (source, latest) in found {
+                let release = latest.map_err(|e| format!("{}: {e}", source.repo))?;
+                // A source named here is what the player wants to play.
+                let version = game_sources::install(&release, repo.is_some())?;
+                println!("Installed {} as {version}.", release.label());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn servers(action: ServersCmd, as_json: bool) -> Result<(), String> {
     use horizon_launcher::servers::{self, NewServer, World};
     let find = |which: &str| {
@@ -4080,6 +4197,10 @@ mod tests {
 #[cfg(test)]
 #[path = "cli_catalog_tests.rs"]
 mod catalog_tests;
+
+#[cfg(test)]
+#[path = "cli_sources_tests.rs"]
+mod sources_tests;
 
 #[path = "cli_native_permission.rs"]
 mod native_permission_impl;

@@ -240,11 +240,11 @@ MCP: `account_select`.
 
 ## `horizon-launcher settings`
 
-Show the launcher's settings, or set one (the Settings page): selected-version TAG, game-architecture auto|x64|arm64, minecraft-dir PATH, server-dir PATH ("default" resets a folder), install-new-versions on|off, prune-old-versions on|off (delete old versions after an install, keeping the selected one, the ones instances use and the newest few), keep-versions N (how many of the newest to keep; "default" is 2), opening-animation on|off, proxy http://host:port|socks5://host:port ("default" removes it), while-playing stay|minimize|hide (what the window does while the game runs), language system|en|fr|ru|de|zh|es|uk|pl (the window's language; system follows the computer's), accent violet|blue|teal|green|amber|red|pink|#rrggbb|DEGREES (a named accent, any colour, or any hue), background PATH (a picture behind Home; "default" shows Horizon's landscape), cache-limit-gib N (managed cache limit in GiB: 10, 25 (default), 50, 100; 0 disables automatic cleanup).
+Show the launcher's settings, or set one (the Settings page): selected-version TAG, game-architecture auto|x64|arm64, minecraft-dir PATH, server-dir PATH ("default" resets a folder), install-new-versions on|off, auto-update-launcher on|off (the launcher installs its own newer release by itself; off by default, the update command still works), prune-old-versions on|off (delete old versions after an install, keeping the selected one, the ones instances use and the newest few), keep-versions N (how many of the newest to keep; "default" is 2), opening-animation on|off, proxy http://host:port|socks5://host:port ("default" removes it), while-playing stay|minimize|hide (what the window does while the game runs), language system|en|fr|ru|de|zh|es|uk|pl (the window's language; system follows the computer's), accent violet|blue|teal|green|amber|red|pink|#rrggbb|DEGREES (a named accent, any colour, or any hue), background PATH (a picture behind Home; "default" shows Horizon's landscape), cache-limit-gib N (managed cache limit in GiB: 10, 25 (default), 50, 100; 0 disables automatic cleanup).
 
     horizon-launcher settings [KEY] [VALUE]
 
-- `KEY` (selected-version, minecraft-dir, server-dir, install-new-versions, prune-old-versions, keep-versions, opening-animation, game-architecture, proxy, while-playing, language, accent, background, cache-limit-gib)
+- `KEY` (selected-version, minecraft-dir, server-dir, install-new-versions, auto-update-launcher, prune-old-versions, keep-versions, opening-animation, game-architecture, proxy, while-playing, language, accent, background, cache-limit-gib)
 - `VALUE`: The new value (with KEY)
 
 MCP: `settings`.
@@ -1002,6 +1002,56 @@ Delete the toolchain and the native builds' Cargo home.
     horizon-launcher rust remove
 
 MCP: `rust_remove`.
+
+## `horizon-launcher sources list`
+
+The sources, what each installed, and whether it updates itself (the default).
+
+    horizon-launcher sources list
+
+MCP: `sources_list`.
+
+## `horizon-launcher sources add`
+
+Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>).
+
+    horizon-launcher sources add <REPO>
+
+- `REPO`
+- `--no-auto-update`: Don't install its new releases when the launcher checks for updates
+
+MCP: `sources_add`.
+
+## `horizon-launcher sources remove`
+
+Forget a source; the versions it installed stay.
+
+    horizon-launcher sources remove <REPO>
+
+- `REPO`
+
+MCP: `sources_remove`.
+
+## `horizon-launcher sources auto`
+
+Turn a source's automatic updates on or off.
+
+    horizon-launcher sources auto <REPO> <STATE>
+
+- `REPO`
+- `STATE`: on or off
+
+MCP: `sources_auto`.
+
+## `horizon-launcher sources update`
+
+Install the newest release of a source now (of every source with none named).
+
+    horizon-launcher sources update [REPO]
+
+- `REPO`
+
+MCP: `sources_update`.
 
 ## `horizon-launcher servers list`
 
