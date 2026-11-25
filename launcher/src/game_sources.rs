@@ -679,6 +679,82 @@ fn newer(latest: &str, published: &str, own: Option<&str>, built: &str) -> bool 
     }
 }
 
+/// The launcher's own update, from Event Horizon's releases, never Horizon's: the newest release
+/// with an archive for this computer, when it is newer than the one this launcher came with.
+pub fn launcher_update(api: Api) -> Option<backend::Release> {
+    launcher_update_from(api, own_tag(), own_built())
+}
+
+fn launcher_update_from(api: Api, own: Option<&str>, built: &str) -> Option<backend::Release> {
+    // A launcher built by hand has no release to compare with: it makes no request at all.
+    let own = own?;
+    let found = latest(DEFAULT, api).ok().flatten()?;
+    newer(&found.tag, &found.published, Some(own), built).then(|| backend::Release {
+        name: format!("Event Horizon {}", release_name(&found.tag)),
+        body: String::new(),
+        date: String::new(),
+        time: String::new(),
+        asset: Some((found.url.clone(), found.size)),
+        prerelease: false,
+        nightly: None,
+        tag: found.tag,
+    })
+}
+
+/// What a launcher update's download is checked against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DigestCheck {
+    /// The SHA-256 GitHub lists for the archive (Event Horizon's releases).
+    GitHubList,
+    /// Horizon's signed checksums.
+    Signed,
+}
+
+/// Which check a launcher update from release `tag` is verified with.
+pub fn digest_check(tag: &str) -> DigestCheck {
+    if is_event_horizon_tag(tag) {
+        DigestCheck::GitHubList
+    } else {
+        DigestCheck::Signed
+    }
+}
+
+/// Whether a launcher update from release `tag` first checks the launcher already installed (a
+/// newer one there means nothing to do). Only Horizon's tags do: an Event Horizon tag has no version
+/// to compare, so its update always goes on to the download.
+pub fn runs_installed_precheck(tag: &str) -> bool {
+    digest_check(tag) == DigestCheck::Signed
+}
+
+/// The SHA-256 GitHub lists for Event Horizon release `tag`'s archive for this computer: what a
+/// launcher update from it is checked against.
+pub fn launcher_digest(tag: &str, api: Api) -> Result<String, String> {
+    let platform = platform()
+        .ok_or_else(|| tr("Event Horizon has no launcher for this computer.").to_owned())?;
+    let release = api(&format!("repos/{DEFAULT}/releases/tags/{tag}"))?
+        .ok_or_else(|| trf("Event Horizon has no release {tag}.", &[("tag", tag)]))?;
+    pick(DEFAULT, &release, platform)?.sha256.ok_or_else(|| {
+        trf(
+            "GitHub lists no checksum for Event Horizon {tag}: not installed.",
+            &[("tag", tag)],
+        )
+    })
+}
+
+/// The installed versions that a newer release of their source would replace, with that release:
+/// what the Play button offers as an update for a version a source installed. A version no source
+/// installed (a local build, one of Horizon's) has none here.
+pub fn pending() -> Vec<(String, Release)> {
+    let sources: Vec<Source> = load()
+        .into_iter()
+        .filter(|s| s.installed.is_some())
+        .collect();
+    updates(&sources, &github_mods::api)
+        .into_iter()
+        .filter_map(|(source, latest)| Some((source.installed?.version, latest.ok()?)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1134,6 +1210,117 @@ mod tests {
         assert!(!is_event_horizon_tag("launcher@0.2.40"));
         assert_eq!(release_name("eh-nightly-2026-11-05"), "Nightly 2026-11-05");
         assert_eq!(release_name("eh-v0.1.0"), "0.1.0");
+    }
+
+    /// Event Horizon's release `tag` with one archive for `platform`, listing `digest` if given.
+    fn eh_release(tag: &str, platform: &str, digest: Option<&str>) -> serde_json::Value {
+        let mut archive = serde_json::json!({
+            "name": format!("event-horizon-{platform}.tar.gz"),
+            "size": 1234,
+            "browser_download_url": format!("https://github.com/nihilitymeta/horizon/releases/download/{tag}/event-horizon-{platform}.tar.gz"),
+        });
+        if let Some(digest) = digest {
+            archive["digest"] = serde_json::json!(format!("sha256:{digest}"));
+        }
+        serde_json::json!({
+            "tag_name": tag,
+            "published_at": "2026-11-20T09:00:00Z",
+            "html_url": format!("https://github.com/nihilitymeta/horizon/releases/tag/{tag}"),
+            "assets": [archive],
+        })
+    }
+
+    #[test]
+    fn the_launcher_update_is_the_newer_event_horizon_archive_and_no_request_for_a_hand_build() {
+        let Some(platform) = platform() else {
+            return;
+        };
+        let json = eh_release("eh-v0.2.0", platform, None);
+        let calls = std::cell::Cell::new(0);
+        let api = |_: &str| -> Result<Option<serde_json::Value>, String> {
+            calls.set(calls.get() + 1);
+            Ok(Some(json.clone()))
+        };
+        let built = "2026-11-05T09:03:00Z";
+        let update = launcher_update_from(&api, Some("eh-v0.1.0"), built).unwrap();
+        assert_eq!(update.tag, "eh-v0.2.0");
+        assert_eq!(update.name, "Event Horizon 0.2.0");
+        assert_eq!(update.asset.as_ref().map(|a| a.1), Some(1234));
+        assert!(update
+            .asset
+            .unwrap()
+            .0
+            .starts_with("https://github.com/nihilitymeta/horizon/"));
+        // Same version, or older: no update.
+        assert!(launcher_update_from(&api, Some("eh-v0.2.0"), built).is_none());
+        assert!(launcher_update_from(&api, Some("eh-v0.3.0"), built).is_none());
+        // A launcher built by hand never updates, and asks GitHub nothing.
+        let before = calls.get();
+        assert!(launcher_update_from(&api, None, built).is_none());
+        assert_eq!(calls.get(), before);
+        // A newer release with no archive for this computer is no update.
+        let other = if platform == "linux-x86_64" {
+            "windows-x64"
+        } else {
+            "linux-x86_64"
+        };
+        let elsewhere = eh_release("eh-v0.9.0", other, None);
+        let api =
+            |_: &str| -> Result<Option<serde_json::Value>, String> { Ok(Some(elsewhere.clone())) };
+        assert!(launcher_update_from(&api, Some("eh-v0.1.0"), built).is_none());
+    }
+
+    #[test]
+    fn the_launcher_digest_is_the_listed_sha256_and_a_release_without_one_is_refused() {
+        let Some(platform) = platform() else {
+            return;
+        };
+        let digest = "b".repeat(64);
+        let listed = eh_release("eh-v0.2.0", platform, Some(&digest));
+        let api = |path: &str| -> Result<Option<serde_json::Value>, String> {
+            assert_eq!(path, "repos/nihilitymeta/horizon/releases/tags/eh-v0.2.0");
+            Ok(Some(listed.clone()))
+        };
+        assert_eq!(launcher_digest("eh-v0.2.0", &api).unwrap(), digest);
+
+        let unlisted = eh_release("eh-v0.2.0", platform, None);
+        let api =
+            |_: &str| -> Result<Option<serde_json::Value>, String> { Ok(Some(unlisted.clone())) };
+        let error = launcher_digest("eh-v0.2.0", &api).unwrap_err();
+        assert!(error.contains("eh-v0.2.0"), "{error}");
+
+        let other = if platform == "linux-x86_64" {
+            "windows-x64"
+        } else {
+            "linux-x86_64"
+        };
+        let elsewhere = eh_release("eh-v0.2.0", other, Some(&digest));
+        let api =
+            |_: &str| -> Result<Option<serde_json::Value>, String> { Ok(Some(elsewhere.clone())) };
+        let error = launcher_digest("eh-v0.2.0", &api).unwrap_err();
+        assert!(error.contains(platform), "{error}");
+
+        let api = |_: &str| -> Result<Option<serde_json::Value>, String> { Ok(None) };
+        let error = launcher_digest("eh-v0.2.0", &api).unwrap_err();
+        assert!(error.contains("eh-v0.2.0"), "{error}");
+    }
+
+    #[test]
+    fn an_event_horizon_tag_is_checked_against_the_github_lists_and_any_other_against_signatures() {
+        assert_eq!(digest_check("eh-v0.2.0"), DigestCheck::GitHubList);
+        assert_eq!(
+            digest_check("eh-nightly-2026-11-06"),
+            DigestCheck::GitHubList
+        );
+        // Horizon's own tags keep their signed checksums.
+        assert_eq!(digest_check("launcher@0.2.40"), DigestCheck::Signed);
+        assert_eq!(digest_check("launcher-v0.2.40"), DigestCheck::Signed);
+    }
+
+    #[test]
+    fn only_a_horizon_tag_runs_the_installed_launcher_precheck() {
+        assert!(runs_installed_precheck("launcher@0.2.40"));
+        assert!(!runs_installed_precheck("eh-v0.2.0"));
     }
 
     #[test]

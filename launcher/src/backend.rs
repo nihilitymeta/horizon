@@ -3235,7 +3235,11 @@ fn launcher_update_from(releases: &[Release], own: &str) -> Option<Release> {
 pub fn releases_and_updates(
     on_releases: impl FnOnce(Result<Vec<Release>, String>),
 ) -> Result<Updates, String> {
-    releases_and_updates_with(release_list, installed, launcher_releases_in, on_releases)
+    let mut updates =
+        releases_and_updates_with(release_list, installed, launcher_releases_in, on_releases)?;
+    // Event Horizon: this launcher updates from Event Horizon's releases, never Horizon's.
+    updates.launcher = crate::game_sources::launcher_update(&crate::github_mods::api);
+    Ok(updates)
 }
 
 fn releases_and_updates_with(
@@ -3817,13 +3821,26 @@ pub fn stage_update(release: &Release, progress: impl Fn(f32)) -> Result<Option<
         .asset
         .clone()
         .ok_or("This launcher release has no build for this platform.")?;
-    let target = launcher_version(&release.tag).unwrap_or("0");
-    if installed_launcher_version(&update_target())
-        .is_some_and(|v| v != VERSION && compare_versions(&v, target).is_ge())
-    {
-        return Ok(None);
+    // Horizon's tags only: an Event Horizon tag has no `launcher-v` version to compare with, so
+    // its update goes on to the download whatever the installed launcher says.
+    if crate::game_sources::runs_installed_precheck(&release.tag) {
+        let target = launcher_version(&release.tag).unwrap_or("0");
+        if installed_launcher_version(&update_target())
+            .is_some_and(|v| v != VERSION && compare_versions(&v, target).is_ge())
+        {
+            return Ok(None);
+        }
     }
-    let sha256 = signed_digest(&release.tag, launcher_asset().unwrap_or_default())?;
+    // An Event Horizon release is checked against the SHA-256 GitHub lists for it; Horizon's
+    // against their signed checksums.
+    let sha256 = match crate::game_sources::digest_check(&release.tag) {
+        crate::game_sources::DigestCheck::GitHubList => {
+            crate::game_sources::launcher_digest(&release.tag, &crate::github_mods::api)?
+        }
+        crate::game_sources::DigestCheck::Signed => {
+            signed_digest(&release.tag, launcher_asset().unwrap_or_default())?
+        }
+    };
     let work = update_work_dir();
     remove_abandoned_stages(&work, std::time::SystemTime::now(), process_alive);
     let stage = new_stage_folder(&work)?;
