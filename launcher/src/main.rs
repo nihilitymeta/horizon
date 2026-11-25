@@ -87,6 +87,7 @@ mod servers_page;
 mod setup_page;
 mod shell;
 mod shortcut_page;
+mod sources_page;
 mod specimen;
 mod sticky;
 mod switch_page;
@@ -548,6 +549,8 @@ struct Launcher {
     /// The Mods page: the browser's search, installs and updates (`mods_page.rs`).
     mods: mods_page::Mods,
     github: github_mods_page::Github,
+    /// The GitHub sources card on the Versions page (`sources_page.rs`).
+    sources: sources_page::Sources,
     /// The instances, for the sidebar and Play, and their dialog (`instances_page.rs`).
     instances: instances_page::Instances,
     /// Home's Worlds section, of the selected instance (`worlds_page.rs`).

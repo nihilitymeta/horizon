@@ -302,6 +302,7 @@ impl Launcher {
                 &on_disk,
                 cx,
             ));
+        let page = page.child(self.sources_card(cx));
         let releases = match &self.releases {
             Load::Loading => return page.child(centered(tr("Loading releases…"), &t)),
             Load::Failed(e) => {

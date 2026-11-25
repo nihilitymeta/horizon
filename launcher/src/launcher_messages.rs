@@ -443,6 +443,7 @@ impl Launcher {
         changed |= self.servers_tick();
         changed |= self.mods_tick();
         changed |= self.github_tick();
+        changed |= self.sources_tick();
         changed |= self.native_log_read(cx);
         changed |= self.toast_tick();
         if let Some(sign_in) = &self.sign_in {

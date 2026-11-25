@@ -250,6 +250,7 @@ impl Launcher {
                 cx,
             ));
         }
+        page = page.child(self.sources_card(cx));
         // The list's own states sit in a card, readable on any sky; a failure says it plainly.
         let state_card = |text_: String, retry: bool, cx: &mut Context<Self>| {
             crate::glass::plate(radius::PANEL)
