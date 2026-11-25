@@ -484,7 +484,17 @@ impl Launcher {
         !backend::package_managed_launcher()
     }
 
+    /// A newer launcher was found on its own (`Msg::Updates`): it downloads only when the player
+    /// turned automatic launcher updates on. Otherwise the About row's Update button offers it.
     pub(crate) fn update_launcher(&mut self, release: Release) {
+        if self.settings.auto_updates_launcher() {
+            self.press_launcher_update(release);
+        }
+    }
+
+    /// Downloads and stages a launcher release the player asked for (the About row's button), or
+    /// the one [`Self::update_launcher`] chose. Refused where the launcher can't replace itself.
+    pub(crate) fn press_launcher_update(&mut self, release: Release) {
         if !backend::self_update_allowed()
             || matches!(
                 self.self_update,

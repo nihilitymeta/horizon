@@ -3408,6 +3408,12 @@ pub fn self_update_allowed() -> bool {
     !cfg!(debug_assertions) && std::env::var_os("HORIZON_LAUNCHER_NO_SELF_UPDATE").is_none()
 }
 
+/// Automatic launcher updates happen only when this copy may replace itself and the player
+/// turned them on. The hard gate wins over the setting.
+fn launcher_auto_update(allowed: bool, settings: &Settings) -> bool {
+    allowed && settings.auto_update_launcher()
+}
+
 /// The version in `horizon-launcher --version`'s output (`horizon-launcher 0.1.5`).
 fn parse_version_output(out: &str) -> Option<&str> {
     out.trim()
@@ -4246,6 +4252,11 @@ pub struct Settings {
     /// and before Play (`browser::horizon::auto`). Unset is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mods_auto_update: Option<bool>,
+    /// Whether the launcher downloads and installs its own newer release by itself, when it
+    /// finds one (`update_launcher`). Unset is off: the About row's Update button asks first.
+    /// Only ever on where [`self_update_allowed`] says the launcher may replace itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_update_launcher: Option<bool>,
     /// First-use native code permission for this launcher install, Unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_mods_allowed_at: Option<u64>,
@@ -4360,6 +4371,16 @@ impl Settings {
     /// Registry mods update by themselves ([`Settings::mods_auto_update`]): on unless turned off.
     pub fn auto_updates_mods(&self) -> bool {
         self.mods_auto_update.unwrap_or(true)
+    }
+    /// The player's own switch for the launcher's automatic self-update: off unless turned on.
+    /// Use [`Settings::auto_updates_launcher`] for the gate that also checks the environment.
+    pub fn auto_update_launcher(&self) -> bool {
+        self.auto_update_launcher.unwrap_or(false)
+    }
+    /// The launcher installs its own newer release by itself: the player turned it on, and this
+    /// copy may replace itself at all ([`self_update_allowed`]).
+    pub fn auto_updates_launcher(&self) -> bool {
+        launcher_auto_update(self_update_allowed(), self)
     }
     /// How many of the newest release versions pruning keeps: at least the newest.
     pub fn keep_newest(&self) -> usize {
@@ -6083,6 +6104,20 @@ pub fn {f}("
             Some("imported-2026-11-01-abcdef0"),
             &["imported-2026-11-01-abcdef0".to_string()]
         ));
+    }
+
+    #[test]
+    fn auto_update_launcher_defaults_off_and_the_environment_wins() {
+        let mut settings = Settings::default();
+        assert!(!settings.auto_update_launcher());
+        assert!(!launcher_auto_update(true, &settings));
+        settings.auto_update_launcher = Some(true);
+        assert!(launcher_auto_update(true, &settings));
+        // `HORIZON_LAUNCHER_NO_SELF_UPDATE` (or a development build) makes `allowed` false, and
+        // then a setting of on changes nothing.
+        assert!(!launcher_auto_update(false, &settings));
+        settings.auto_update_launcher = Some(false);
+        assert!(!launcher_auto_update(true, &settings));
     }
 
     /// The Nightly is the only build Horizon ships (docs/release-flow.md): every launcher takes the

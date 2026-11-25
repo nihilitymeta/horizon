@@ -542,6 +542,37 @@ impl Launcher {
         )
     }
 
+    /// The Updates card's switch for the launcher's own automatic update
+    /// (`Settings::auto_updates_launcher`): off by default, so the About tile's button asks first.
+    fn launcher_auto_update_row(&mut self, cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        index_row(
+            0,
+            tr("Install new launcher versions automatically"),
+            note("Off: the Update button above asks before the launcher replaces itself."),
+            Some(
+                crate::switch(
+                    "auto-update-launcher",
+                    self.settings.auto_update_launcher(),
+                    &t,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.settings.auto_update_launcher =
+                        Some(!this.settings.auto_update_launcher());
+                    this.save_settings();
+                    if this.settings.auto_updates_launcher() {
+                        if let Some(release) = this.updates.launcher.clone() {
+                            this.update_launcher(release);
+                        }
+                    }
+                    cx.notify();
+                }))
+                .into_any_element(),
+            ),
+            &t,
+        )
+    }
+
     /// Updates' two tiles (the mockup's `AboutTile`s): Horizon and its update, the launcher and its
     /// own.
     fn update_tiles(
@@ -629,6 +660,7 @@ impl Launcher {
                 Some(b.install.into_any_element()),
                 &t,
             ))
+            .child(self.launcher_auto_update_row(cx))
             .child(index_row(
                 0,
                 tr("Delete old versions automatically"),

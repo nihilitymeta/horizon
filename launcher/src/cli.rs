@@ -881,7 +881,8 @@ enum Cmd {
     /// Show the launcher's settings, or set one (the Settings page): selected-version TAG,
     /// game-architecture auto|x64|arm64,
     /// minecraft-dir PATH, server-dir PATH ("default" resets a folder), install-new-versions
-    /// on|off, prune-old-versions on|off (delete old versions after an install, keeping the
+    /// on|off, auto-update-launcher on|off (the launcher installs its own newer release by itself;
+    /// off by default, the update command still works), prune-old-versions on|off (delete old versions after an install, keeping the
     /// selected one, the ones instances use and the newest few), keep-versions N (how many of the
     /// newest to keep; "default" is 2), opening-animation on|off, proxy http://host:port|socks5://host:port
     /// ("default" removes it), while-playing stay|minimize|hide (what the window does while the game runs), language
@@ -1045,11 +1046,12 @@ pub fn command() -> clap::Command {
 pub const AI_COMMANDS: [&str; 2] = ["mcp", "agent-config"];
 
 /// The keys `settings` sets.
-const SETTING_KEYS: [&str; 14] = [
+const SETTING_KEYS: [&str; 15] = [
     "selected-version",
     "minecraft-dir",
     "server-dir",
     "install-new-versions",
+    "auto-update-launcher",
     "prune-old-versions",
     "keep-versions",
     "opening-animation",
@@ -1077,6 +1079,7 @@ fn set_setting(s: &mut backend::Settings, key: &str, value: &str) -> Result<(), 
         "minecraft-dir" => s.minecraft_dir = folder(value),
         "server-dir" => s.server_dir = folder(value),
         "install-new-versions" => s.install_new_versions = Some(on_off(value)?),
+        "auto-update-launcher" => s.auto_update_launcher = Some(on_off(value)?),
         "prune-old-versions" => s.prune_old_versions = Some(on_off(value)?),
         "keep-versions" => {
             s.keep_versions = match value {
@@ -3781,6 +3784,19 @@ mod tests {
         );
         set_setting(&mut settings, "language", "system").unwrap();
         assert_eq!(settings.language, None);
+    }
+
+    #[test]
+    fn auto_update_launcher_setting_round_trips() {
+        let mut settings = backend::Settings::default();
+        assert!(!settings.auto_update_launcher());
+        assert_eq!(settings_json(&settings)["auto_update_launcher"], false);
+        set_setting(&mut settings, "auto-update-launcher", "on").unwrap();
+        assert_eq!(settings.auto_update_launcher, Some(true));
+        assert_eq!(settings_json(&settings)["auto_update_launcher"], true);
+        set_setting(&mut settings, "auto-update-launcher", "off").unwrap();
+        assert_eq!(settings.auto_update_launcher, Some(false));
+        assert!(set_setting(&mut settings, "auto-update-launcher", "maybe").is_err());
     }
 
     #[test]

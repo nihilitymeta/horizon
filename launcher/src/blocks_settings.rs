@@ -14,6 +14,22 @@ impl Launcher {
                 cx.notify();
             }),
         );
+        // The launcher's own newer release: installed by itself only when on (`update_launcher`).
+        let launcher_auto = switch(
+            "auto-update-launcher",
+            self.settings.auto_update_launcher(),
+            &t,
+        )
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.settings.auto_update_launcher = Some(!this.settings.auto_update_launcher());
+            this.save_settings();
+            if this.settings.auto_updates_launcher() {
+                if let Some(release) = this.updates.launcher.clone() {
+                    this.update_launcher(release);
+                }
+            }
+            cx.notify();
+        }));
         let prune = switch("auto-prune", self.settings.auto_prune(), &t).on_click(cx.listener(
             |this, _: &ClickEvent, _, cx| {
                 this.settings.prune_old_versions = Some(!this.settings.auto_prune());
@@ -138,7 +154,7 @@ impl Launcher {
                 Some(if backend::self_update_allowed() {
                     get.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         if let Some(release) = release.clone() {
-                            this.update_launcher(release);
+                            this.press_launcher_update(release);
                         }
                         cx.notify();
                     }))
@@ -213,6 +229,15 @@ impl Launcher {
                         tr("Launcher"),
                         Some(plain(&launcher)),
                         launcher_action,
+                        &t,
+                    ))
+                    .child(index_row(
+                        n + 1,
+                        tr("Install new launcher versions automatically"),
+                        Some(plain(
+                            "Off: the Update button above asks before the launcher replaces itself.",
+                        )),
+                        Some(launcher_auto.into_any_element()),
                         &t,
                     ))
                     .child(index_row(
