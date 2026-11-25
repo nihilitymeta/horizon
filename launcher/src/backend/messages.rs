@@ -59,6 +59,12 @@ pub enum Msg {
     Native(Result<String, crate::native_mods::Failed>),
     /// An imported game build is installed (`build_import::import`): its version, or why not.
     Imported(Result<String, String>),
+    /// The GitHub sources that update themselves were updated (`game_sources::update_automatic`):
+    /// what each installed, or why not; and the installed versions a newer release would replace.
+    SourcesUpdated(
+        Vec<Result<String, String>>,
+        Vec<(String, crate::game_sources::Release)>,
+    ),
     /// A Java instance's game is ready to start (`java_game`, wrapped): the instance's id and
     /// game folder, and the command or why not.
     /// A Java instance's game ready to start, and its variables for the post-exit command.

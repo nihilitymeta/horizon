@@ -109,6 +109,7 @@ impl Launcher {
                 }
             }),
             updates: Updates::default(),
+            source_updates: Vec::new(),
             checked: None,
             update_error: None,
             // The installer the last Update started could not put the new launcher in place.
@@ -547,6 +548,28 @@ impl Launcher {
         }
         self.update_install = Some(release.tag.clone());
         self.install(&release);
+    }
+
+    /// Installs the newer release of the GitHub source that installed `version`, and plays it.
+    // The next chunk's Play button calls this; nothing calls it yet.
+    #[allow(dead_code)]
+    pub(crate) fn install_source_update(&mut self, version: &str) {
+        let Some((_, release)) = self
+            .source_updates
+            .iter()
+            .find(|(v, _)| v == version)
+            .cloned()
+        else {
+            return;
+        };
+        self.source_updates.retain(|(v, _)| v != version);
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let done = horizon_launcher::game_sources::install(&release, true)
+                .map(|v| format!("{} → {v}", release.label()));
+            let pending = horizon_launcher::game_sources::pending();
+            let _ = tx.send(Msg::SourcesUpdated(vec![done], pending));
+        });
     }
 
     /// The native mods turned on in the instance Play starts, unpacked and checked, with their

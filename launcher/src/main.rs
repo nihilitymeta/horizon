@@ -271,6 +271,8 @@ struct Launcher {
     long_list: cull::Cull,
     opening: Option<Opening>,
     updates: Updates,
+    /// The installed GitHub-source versions that a newer release would replace, with it.
+    source_updates: Vec<(String, horizon_launcher::game_sources::Release)>,
     checked: Option<Instant>,
     update_error: Option<String>,
     self_update: SelfUpdate,

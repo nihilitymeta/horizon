@@ -236,8 +236,29 @@ impl Launcher {
                     if self.settings.auto_install() {
                         self.install_update();
                     }
+                    // GitHub sources that update themselves: downloads, never compiles.
+                    let tx = self.tx.clone();
+                    std::thread::spawn(move || {
+                        let done = horizon_launcher::game_sources::update_automatic();
+                        let pending = horizon_launcher::game_sources::pending();
+                        let _ = tx.send(Msg::SourcesUpdated(done, pending));
+                    });
                     if let Some(release) = self.updates.launcher.clone() {
                         self.update_launcher(release);
+                    }
+                }
+                Msg::SourcesUpdated(results, pending) => {
+                    self.source_updates = pending;
+                    if results.iter().any(Result::is_ok) {
+                        self.installed = backend::installed();
+                        // `game_sources::install` may have moved the selection to the new build.
+                        self.settings.selected = backend::Settings::load().selected;
+                    }
+                    for result in results {
+                        match result {
+                            Ok(done) => eprintln!("GitHub source updated: {done}"),
+                            Err(e) => eprintln!("GitHub source not updated: {e}"),
+                        }
                     }
                 }
                 Msg::Updates(Err(e)) => self.update_error = Some(e),

@@ -755,9 +755,59 @@ pub fn pending() -> Vec<(String, Release)> {
         .collect()
 }
 
+/// One automatic update pass at a time: a check that comes while one runs leaves it to that one.
+static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Held while an automatic pass runs; releases the pass when dropped.
+struct Pass;
+
+impl Drop for Pass {
+    fn drop(&mut self) {
+        RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// The pass's claim, or none while another pass runs.
+fn claim_pass() -> Option<Pass> {
+    // `then`, not `then_some`: a refused claim must not build a `Pass`, whose drop would free the flag.
+    (!RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst)).then(|| Pass)
+}
+
+/// What the launcher's update check does: installs each new release of a source that updates
+/// itself. Returns what it installed, and what failed.
+pub fn update_automatic() -> Vec<Result<String, String>> {
+    let Some(_pass) = claim_pass() else {
+        return Vec::new();
+    };
+    let sources: Vec<Source> = load().into_iter().filter(|s| s.auto_update).collect();
+    // The old tree also updated the modkit here; this tree has no modkit module.
+    updates(&sources, &github_mods::api)
+        .into_iter()
+        .map(|(source, latest)| {
+            let release = latest.map_err(|e| format!("{}: {e}", source.repo))?;
+            install(&release, false)
+                .map(|v| format!("{} → {v}", release.label()))
+                .map_err(|e| format!("{}: {e}", release.label()))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_automatic_pass_at_a_time_and_the_claim_is_released() {
+        let first = claim_pass().expect("the first pass gets the claim");
+        assert!(claim_pass().is_none(), "a second pass waits for the first");
+        // A check that comes meanwhile returns at once, without touching the network.
+        assert!(update_automatic().is_empty());
+        drop(first);
+        assert!(
+            claim_pass().is_some(),
+            "the claim is back after the pass ends"
+        );
+    }
 
     #[test]
     fn a_source_is_a_repository() {
