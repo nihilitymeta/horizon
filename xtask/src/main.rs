@@ -43,7 +43,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | mod-api [notes|coverage] | tokens | icons | perf-wasm | mixins-tool release | mixins-tool patch SOURCE | mixins-tool identity TARGET | sdk-index DIST COMMIT DATE [--nightly NAME] [--previous BUILD DIFF]";
+const USAGE: &str = "usage: cargo run -p xtask -- package BINARY OUTDIR | package-server ENGINE OUTDIR | lua-host OUTDIR | mod-api [notes|coverage] | tokens | icons | perf-wasm | mixins-tool release | mixins-tool patch SOURCE | mixins-tool identity TARGET | sdk-index DIST COMMIT DATE [--nightly NAME] [--previous BUILD DIFF]";
 
 /// What the release folder takes from the repository at HEAD, as `git archive` writes it.
 const ARCHIVED: [&str; 5] = [
@@ -59,6 +59,8 @@ const ARCHIVED: [&str; 5] = [
 // horizon-server, which hosts a server with the client as its engine, docs/server.md) and the
 // wasm runtime are listed, with the checkout's exporters, in the SDK's required inputs
 // (`horizon_mod_package::sdk::inputs`): routes `package` and `package-server`.
+// `lua-host OUTDIR` writes only the Lua host's package (`horizon-native-mods/event_horizon_lua/`) into OUTDIR,
+// the part of `package` the release workflow ships beside the game; it needs no exporters and no SDK inputs.
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -67,6 +69,7 @@ fn main() -> ExitCode {
         [task, engine, out] if task == "package-server" => {
             package_server(Path::new(engine), Path::new(out))
         }
+        [task, out] if task == "lua-host" => write_lua_host(Path::new(out)),
         [task] if task == "mod-api" => mod_api::run(),
         [task, notes] if task == "mod-api" && notes == "notes" => mod_api::notes(),
         [task, coverage] if task == "mod-api" && coverage == "coverage" => mod_api::coverage(),

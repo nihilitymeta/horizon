@@ -1,0 +1,142 @@
+name: event horizon release
+# Event Horizon's releases (docs/event-horizon-releases.md): the game, the launcher and cargo-horizon-mod for Windows x64
+# and Linux x86_64, built on GitHub-hosted runners and published as a GitHub release. No automatic builds: only a tag or a manual run.
+# - Push a tag: git tag eh-v0.1.0 && git push origin eh-v0.1.0
+# - By hand: Actions, this workflow, Run workflow, with the tag (it must start with eh-v).
+# Another platform is another row in the build matrix (a Linux row needs the apt step below).
+on:
+  push:
+    tags: ['eh-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create, e.g. eh-v0.1.0 (must start with eh-v)'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: event-horizon-release
+  cancel-in-progress: false
+jobs:
+  decide:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$EVENT" == push ]]; then
+            tag="$REF_NAME"
+          else
+            tag="$INPUT_TAG"
+          fi
+          if [[ ! "$tag" =~ ^eh-v[0-9A-Za-z._-]+$ ]]; then
+            echo "::error::the tag must look like eh-v0.1.0, not '$tag'"; exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+  build:
+    needs: decide
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+            exe: .exe
+          # Not ubuntu-latest: the programs link the runner's glibc and run only on systems at least as new. 24.04 (glibc
+          # 2.39) runs on Debian 13 and every distribution newer than 2024; ubuntu-latest moved on to a newer glibc.
+          # `cache` keeps the build cache of the old runner away from this one.
+          - os: ubuntu-24.04
+            name: linux-x86_64
+            exe: ''
+            cache: -ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    env:
+      # The app registration for Microsoft sign-in is a repository variable, set on the fork. Unset, the launcher
+      # builds but can't sign in.
+      HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
+      TAG: ${{ needs.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Linux audio and input libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-xcb-dev libfontconfig-dev libvulkan-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}${{ matrix.cache }}
+          workspaces: |
+            . -> target
+            launcher -> target
+      # Built from source (no HORIZON_VERSION): the programs don't call themselves Horizon releases in crash reports.
+      - name: Build the game, horizon-ctl and cargo-horizon-mod
+        shell: bash
+        run: |
+          cargo build --release --locked -p event-horizon -p horizon-client-lib --bin event-horizon --bin horizon-ctl
+          cargo build --release --locked -p cargo-horizon-mod
+      - name: The game starts
+        shell: bash
+        run: target/release/event-horizon${{ matrix.exe }} --help | grep -q -- '--resources'
+      - name: Build the launcher
+        shell: bash
+        working-directory: launcher
+        # The release it belongs to, and when it was built: the launcher updates itself to a release published after
+        # it was built.
+        run: |
+          [[ -n "$HORIZON_MSA_CLIENT_ID" ]] || echo "::warning::HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in to Microsoft"
+          export HORIZON_LAUNCHER_TAG="$TAG" HORIZON_LAUNCHER_VERSION="${TAG#eh-}"
+          export HORIZON_LAUNCHER_BUILT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cargo build --release --locked
+      - name: Package
+        shell: bash
+        run: |
+          dir="event-horizon-${{ matrix.name }}"
+          mkdir -p "dist/$dir"
+          # The game ships under the name the launcher and the docs use: horizon-client.
+          cp "target/release/event-horizon${{ matrix.exe }}" "dist/$dir/horizon-client${{ matrix.exe }}"
+          for program in horizon-ctl cargo-horizon-mod; do
+            cp "target/release/$program${{ matrix.exe }}" "dist/$dir/"
+          done
+          cp "launcher/target/release/horizon-launcher${{ matrix.exe }}" "dist/$dir/"
+          # cargo-horizon-mod links MPL-2.0 libraries (StyLua, selene): the notice says where their source is.
+          cp THIRD_PARTY_NOTICES.md "dist/$dir/"
+          # The Lua host's package, which the game loads from beside its executable (horizon-native-mods/).
+          cargo run --release --locked -p xtask -- lua-host "dist/$dir"
+          cd dist
+          if [[ "${{ runner.os }}" == Windows ]]; then 7z a -tzip "$dir.zip" "$dir" >/dev/null; else tar -czf "$dir.tar.gz" "$dir"; fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}
+          path: dist/event-horizon-${{ matrix.name }}.*
+          if-no-files-found: error
+  publish:
+    needs: [decide, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum event-horizon-* > SHA256SUMS && cat SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.decide.outputs.tag }}
+        run: |
+          title="Event Horizon ${TAG#eh-v}"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$title" \
+            --notes "$title, built from $GITHUB_SHA. Install it from the launcher's GitHub sources (docs/event-horizon-releases.md)." \
+            dist/event-horizon-* dist/SHA256SUMS
