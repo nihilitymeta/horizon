@@ -10,11 +10,14 @@
 #![allow(dead_code)]
 
 use crate::backend;
+use crate::build_import;
 use crate::github_mods::{self, Target};
 use crate::i18n::{tr, trf};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 /// What GitHub's JSON for one resource is read through: `Ok(None)` for a 404, as
 /// `github::json_optional` gives it.
@@ -279,6 +282,185 @@ pub fn latest(repo: &str, api: Api) -> Result<Option<Release>, String> {
         )
     })?;
     Ok(pick(repo, &release, platform).ok())
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Checks a downloaded `body` of `release`: at most `max` bytes, and the SHA-256 GitHub lists for
+/// it. A release that lists no digest is refused, so nothing is installed unchecked.
+pub(crate) fn verify(release: &Release, body: &[u8], max: u64) -> Result<(), String> {
+    let asset = release.asset.as_str();
+    if body.len() as u64 > max {
+        return Err(trf(
+            "{asset} is bigger than it can be.",
+            &[("asset", asset)],
+        ));
+    }
+    let Some(expected) = &release.sha256 else {
+        return Err(trf(
+            "{asset} lists no checksum, so it is not installed.",
+            &[("asset", asset)],
+        ));
+    };
+    if sha256(body) != *expected {
+        return Err(trf(
+            "{asset} does not match the checksum GitHub lists for it.",
+            &[("asset", asset)],
+        ));
+    }
+    Ok(())
+}
+
+/// Downloads `release`'s file into a scratch folder, under its own name, at most `max` bytes, and
+/// checks it with [`verify`]. Shared with `modkit`.
+pub(crate) fn fetch(release: &Release, max: u64) -> Result<PathBuf, String> {
+    let mut body = Vec::new();
+    backend::get(&release.url)?
+        .into_reader()
+        .take(max + 1)
+        .read_to_end(&mut body)
+        .map_err(|e| {
+            let error = e.to_string();
+            trf(
+                "Download interrupted: {error}",
+                &[("error", error.as_str())],
+            )
+        })?;
+    verify(release, &body, max)?;
+    stage_in(&std::env::temp_dir(), &release.asset, &body)
+}
+
+/// Writes `body` as `asset` into a new private folder under `base`; the file keeps its name (the
+/// import reads a .tar.gz or a .zip by it). A name that is not a plain file name is refused before
+/// any folder is made. The folder is removed again when the write fails.
+fn stage_in(base: &Path, asset: &str, body: &[u8]) -> Result<PathBuf, String> {
+    if !plain_segment(asset) {
+        return Err(trf(
+            "{asset} is not a plain file name, so it is not saved.",
+            &[("asset", asset)],
+        ));
+    }
+    let dir = private_scratch_dir_in(base)?;
+    // Removes the folder on every error below; disarmed once the file is in place.
+    let mut scratch = RemoveOnDrop(Some(dir.clone()));
+    let file = dir.join(asset);
+    fs::write(&file, body).map_err(|e| e.to_string())?;
+    scratch.0 = None;
+    Ok(file)
+}
+
+/// A folder removed when this is dropped, unless it was set to `None` first.
+struct RemoveOnDrop(Option<PathBuf>);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.take() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+}
+
+/// A new, empty folder in `base` that only this user can open. Its name is random, so nobody can
+/// guess it and make it first; `create_dir` fails rather than use a folder that is already there,
+/// and on unix it is created 0700.
+fn private_scratch_dir_in(base: &Path) -> Result<PathBuf, String> {
+    use std::hash::{BuildHasher, Hasher};
+    for _ in 0..64 {
+        // A `RandomState` is seeded from the operating system's randomness on every call.
+        let nonce = std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish();
+        let dir = base.join(format!("horizon-source-{nonce:016x}"));
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        match builder.create(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => {
+                let error = e.to_string();
+                let shown = dir.display().to_string();
+                return Err(trf(
+                    "{dir}: {error}",
+                    &[("dir", shown.as_str()), ("error", error.as_str())],
+                ));
+            }
+        }
+    }
+    let shown = base.display().to_string();
+    Err(trf(
+        "no free folder under {dir}",
+        &[("dir", shown.as_str())],
+    ))
+}
+
+/// Whether installing a source's new build moves the selection to it: when the player has none,
+/// is on a version Horizon published (so a new launcher moves to the source's build), or on the
+/// build the source installed before. A version picked by hand stays.
+fn selects(selected: Option<&str>, before: Option<&Installed>) -> bool {
+    match selected {
+        None => true,
+        Some(s) if backend::is_game_tag(s) || crate::nightly::date_of(s).is_some() => true,
+        Some(s) => before.is_some_and(|b| b.version == s),
+    }
+}
+
+/// Installs `release` and records it as its source's; selects it as [`selects`] says, or always
+/// when `select`. Horizon's newest release is installed first when there are no game files yet.
+/// Returns the version it made.
+pub fn install(release: &Release, select: bool) -> Result<String, String> {
+    let before = load()
+        .into_iter()
+        .find(|s| same_repo(&s.repo, &release.repo))
+        .and_then(|s| s.installed);
+    let settings = backend::Settings::load();
+    let select = select || selects(settings.selected.as_deref(), before.as_ref());
+    let has_game_files = backend::installed()
+        .iter()
+        .any(|v| backend::is_game_tag(v) || crate::nightly::date_of(v).is_some());
+    if !has_game_files {
+        backend::install_tag("latest", true, |_| {})?;
+    }
+    let file = fetch(release, MAX_ARCHIVE)?;
+    let made = build_import::import_as(&file, None, &release.label(), select);
+    let _ = fs::remove_dir_all(file.parent().unwrap_or(&file));
+    let version = made?;
+    edit(|sources| {
+        if let Some(source) = sources
+            .iter_mut()
+            .find(|s| same_repo(&s.repo, &release.repo))
+        {
+            source.installed = Some(Installed {
+                tag: release.tag.clone(),
+                version: version.clone(),
+            });
+        }
+        Ok(())
+    })?;
+    // An instance pinned to the build it replaces plays the new one; the old one goes, unless the
+    // player still has it selected.
+    if let Some(old) = before.filter(|b| b.version != version) {
+        for instance in crate::instances::list() {
+            if instance.version.as_deref() == Some(old.version.as_str()) {
+                let _ = crate::instances::edit(&instance.id, |meta| {
+                    meta.version = Some(version.clone());
+                });
+            }
+        }
+        let still = backend::Settings::load().selected.as_deref() == Some(old.version.as_str());
+        if !still {
+            let _ = backend::remove_version(&old.version);
+        }
+    }
+    Ok(version)
 }
 
 #[cfg(test)]
@@ -561,5 +743,139 @@ mod tests {
         let list = parse(Some(saved));
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].repo, "Owner/Repo");
+    }
+
+    /// Scratch folders for these tests: under the cargo target dir, never the system temp folder
+    /// (a small tmpfs on some machines), and removed with the `TempDir`.
+    fn scratch_root() -> PathBuf {
+        let target = std::env::var_os("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target"));
+        let root = target.join("launcher-test-scratch");
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn release_with(sha256: Option<String>) -> Release {
+        Release {
+            repo: "a/b".into(),
+            tag: "eh-v0.1.0".into(),
+            asset: "event-horizon-linux-x86_64.tar.gz".into(),
+            url: "https://github.com/a/b/releases/download/eh-v0.1.0/event-horizon-linux-x86_64.tar.gz".into(),
+            size: 3,
+            published: String::new(),
+            sha256,
+        }
+    }
+
+    /// The FIPS 180-2 test vector for "abc": the expected value is written out, not computed.
+    const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    #[test]
+    fn sha256_is_the_standard_digest() {
+        assert_eq!(sha256(b"abc"), ABC);
+        assert_eq!(
+            sha256(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn a_release_that_lists_no_digest_is_refused() {
+        let error = verify(&release_with(None), b"abc", MAX_ARCHIVE).unwrap_err();
+        assert!(
+            error.contains("event-horizon-linux-x86_64.tar.gz"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_download_with_the_wrong_digest_is_refused() {
+        let wrong = "0".repeat(64);
+        assert!(verify(&release_with(Some(wrong)), b"abc", MAX_ARCHIVE).is_err());
+    }
+
+    #[test]
+    fn a_download_with_the_listed_digest_is_accepted() {
+        assert_eq!(
+            verify(&release_with(Some(ABC.into())), b"abc", MAX_ARCHIVE),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_download_bigger_than_the_cap_is_refused_even_with_the_right_digest() {
+        let body = b"abcd";
+        let release = release_with(Some(sha256(body)));
+        assert!(verify(&release, body, 3).is_err());
+        assert_eq!(verify(&release, body, 4), Ok(()));
+    }
+
+    #[test]
+    fn a_download_keeps_its_name_in_a_new_folder_only_its_owner_can_open() {
+        let root = tempfile::tempdir_in(scratch_root()).unwrap();
+        let file = stage_in(root.path(), "event-horizon-linux-x86_64.tar.gz", b"bytes").unwrap();
+        assert_eq!(
+            file.file_name().unwrap(),
+            "event-horizon-linux-x86_64.tar.gz"
+        );
+        assert_eq!(fs::read(&file).unwrap(), b"bytes");
+        let dir = file.parent().unwrap();
+        assert_eq!(dir.parent(), Some(root.path()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(dir).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
+    }
+
+    #[test]
+    fn a_download_that_cannot_be_written_leaves_no_folder_behind() {
+        let root = tempfile::tempdir_in(scratch_root()).unwrap();
+        // A name longer than a file system allows: the folder is made, then the write fails.
+        let long = "a".repeat(300);
+        assert!(stage_in(root.path(), &long, b"bytes").is_err());
+        let left: Vec<_> = fs::read_dir(root.path()).unwrap().flatten().collect();
+        assert!(left.is_empty(), "left behind: {left:?}");
+    }
+
+    #[test]
+    fn a_name_that_is_not_a_plain_file_name_is_refused_before_a_folder_is_made() {
+        let root = tempfile::tempdir_in(scratch_root()).unwrap();
+        for name in [
+            "",
+            "../escape.tar.gz",
+            "sub/archive.tar.gz",
+            "..\\archive.zip",
+        ] {
+            assert!(stage_in(root.path(), name, b"bytes").is_err(), "{name}");
+        }
+        let left: Vec<_> = fs::read_dir(root.path()).unwrap().flatten().collect();
+        assert!(left.is_empty(), "left behind: {left:?}");
+    }
+
+    #[test]
+    fn each_download_gets_its_own_new_folder() {
+        let root = tempfile::tempdir_in(scratch_root()).unwrap();
+        let a = private_scratch_dir_in(root.path()).unwrap();
+        let b = private_scratch_dir_in(root.path()).unwrap();
+        assert_ne!(a, b);
+        assert!(a.is_dir() && b.is_dir());
+        assert_eq!(a.parent(), Some(root.path()));
+    }
+
+    #[test]
+    fn a_new_build_is_selected_unless_the_player_picked_another_version_by_hand() {
+        let before = Installed {
+            tag: "eh-v0.1.0".into(),
+            version: "imported-2026-11-04-abcdef1".into(),
+        };
+        assert!(selects(None, None));
+        assert!(selects(Some("v2026.10.13"), Some(&before)));
+        assert!(selects(Some("nightly-2026-11-08-0c02067"), None));
+        assert!(selects(Some("imported-2026-11-04-abcdef1"), Some(&before)));
+        assert!(!selects(Some("imported-2026-10-01-0a0a0a0"), Some(&before)));
+        assert!(!selects(Some("imported-2026-10-01-0a0a0a0"), None));
     }
 }
