@@ -239,7 +239,7 @@ pub(crate) fn backdrop(batch: &mut HudBatch, atlas: &HudAtlas, in_world: bool) {
 pub(crate) fn mark(batch: &mut HudBatch, atlas: &HudAtlas, cols: &Columns, title: &str) {
     let (x, y) = (cols.side_x, cols.side_y);
     style::fill(batch, atlas, [x, y + 2.0, 6.0, 6.0], style::accent());
-    let horizon = Text::literal("Horizon");
+    let horizon = Text::literal("Event Horizon");
     batch.text_styled(atlas, &horizon, x + 10.0, y, style::WHITE, true);
     let title = Text::literal(title);
     batch.text_styled(atlas, &title, x, y + 10.0, style::muted(), true);

@@ -465,9 +465,9 @@ impl<'a> Split<'a> {
             n => format!(" - Window {n}"),
         };
         if self.players() > 1 && !who.is_empty() {
-            format!("Horizon{name} · {}", who.join(", "))
+            format!("Event Horizon{name} · {}", who.join(", "))
         } else {
-            format!("Horizon{name}")
+            format!("Event Horizon{name}")
         }
     }
 
@@ -534,7 +534,7 @@ impl<'a> Split<'a> {
                 // Its own title for a moment: `above_menu_bar` finds it by it.
                 Some((at, size)) => {
                     let attributes = attributes
-                        .with_title(format!("Horizon {key}"))
+                        .with_title(format!("Event Horizon {key}"))
                         .with_decorations(false)
                         .with_position(at)
                         .with_inner_size(size);
@@ -562,7 +562,7 @@ impl<'a> Split<'a> {
                             }
                         }
                     }
-                    .with_title("Horizon")
+                    .with_title("Event Horizon")
                 }
             };
             let made = event_loop
@@ -582,7 +582,7 @@ impl<'a> Split<'a> {
                 let _ = window.request_inner_size(size);
                 window.set_outer_position(at);
                 #[cfg(target_os = "macos")]
-                above_menu_bar(&format!("Horizon {key}"));
+                above_menu_bar(&format!("Event Horizon {key}"));
             }
             match made {
                 Ok((window, compositor)) => {

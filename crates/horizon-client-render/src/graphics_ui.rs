@@ -979,7 +979,7 @@ impl H {
                     _ if out.pack_lights => (s.running_pack.as_deref())
                         .unwrap_or_else(|| crate::shader_ui::pack_name(s))
                         .to_owned(),
-                    HdrLook::Horizon => lang::get_or("horizon.hdr.look.horizon", "Horizon"),
+                    HdrLook::Horizon => lang::get_or("horizon.hdr.look.horizon", "Event Horizon"),
                     HdrLook::Vanilla => lang::get_or("horizon.hdr.look.vanilla", "Vanilla"),
                 }),
             ),

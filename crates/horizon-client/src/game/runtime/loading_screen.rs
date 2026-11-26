@@ -103,8 +103,9 @@ impl Loading {
             .map_or([1280, 720], |o| o.window_size)
             .map(f64::from);
         self.fullscreen = horizon_client::window::FullscreenState::new(fullscreen);
-        let attributes =
-            horizon_client::window::with_icon(Window::default_attributes().with_title("Horizon"));
+        let attributes = horizon_client::window::with_icon(
+            Window::default_attributes().with_title("Event Horizon"),
+        );
         // Wayland names the window by its app id, which the horizon.desktop entry matches.
         #[cfg(target_os = "linux")]
         let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
@@ -501,21 +502,21 @@ pub(super) fn missing_resources(
     if !root.join("horizon-resources.json").is_file() {
         let launcher = get.map_or(String::new(), |get| {
             format!(
-                "Horizon is started from its launcher: download it at {} (Download). It needs \
+                "Event Horizon is started from its launcher: download it at {} (Download). It needs \
                  your own Minecraft: Java Edition; the launcher signs you in and prepares the \
                  game files.\nDevelopers: ",
                 get.address
             )
         });
         return Some(format!(
-            "Horizon's prepared game files are missing: no horizon-resources.json in {}\n\
+            "Event Horizon's prepared game files are missing: no horizon-resources.json in {}\n\
              {launcher}horizon-prepare --prepare, or pass --resources <folder>",
             shown.display(),
         ));
     }
     damaged_prepared(root).map(|problem| {
         format!(
-            "Horizon's prepared game files are damaged: {problem} in {}\n\
+            "Event Horizon's prepared game files are damaged: {problem} in {}\n\
              Prepare them again with the launcher, or: horizon-prepare --prepare",
             shown.display()
         )

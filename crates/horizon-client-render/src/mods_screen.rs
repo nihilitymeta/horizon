@@ -117,7 +117,7 @@ impl Entry {
     fn horizon() -> Self {
         Self {
             id: "horizon".into(),
-            name: "Horizon".into(),
+            name: "Event Horizon".into(),
             version: horizon_core::release::VERSION.into(),
             authors: "Ludovic Marie and the Horizon contributors".into(),
             license: "MIT".into(),
@@ -1495,12 +1495,12 @@ mod tests {
         let m = Measure(&atlas.font);
         let mut screen =
             ModsScreen::new(427, 240, false, &mods(&[installed("zoom", "Zoom", None)]));
-        assert_eq!(names(&screen), ["Horizon", "Minecraft", "Zoom"]);
+        assert_eq!(names(&screen), ["Event Horizon", "Minecraft", "Zoom"]);
         // The sort button reverses the order.
         let (action, sound) =
             screen.click(&m, centre(screen.geo().sort).0, centre(screen.geo().sort).1);
         assert_eq!((action, sound), (Action::None, true));
-        assert_eq!(names(&screen), ["Zoom", "Minecraft", "Horizon"]);
+        assert_eq!(names(&screen), ["Zoom", "Minecraft", "Event Horizon"]);
         // The search keeps the names that contain it, in any case.
         let (x, y) = centre(screen.geo().search);
         screen.click(&m, x, y);
@@ -1713,7 +1713,10 @@ mod tests {
             .collect();
         let mut screen = ModsScreen::new(427, 240, false, &mods(&list));
         screen.step(1);
-        assert_eq!(screen.current().map(|e| e.name.as_str()), Some("Horizon"));
+        assert_eq!(
+            screen.current().map(|e| e.name.as_str()),
+            Some("Event Horizon")
+        );
         for _ in 0..21 {
             screen.step(1);
         }
@@ -1722,7 +1725,10 @@ mod tests {
         screen.step(1);
         assert_eq!(screen.current().map(|e| e.name.as_str()), Some("Mod 19"));
         screen.step(-30);
-        assert_eq!(screen.current().map(|e| e.name.as_str()), Some("Horizon"));
+        assert_eq!(
+            screen.current().map(|e| e.name.as_str()),
+            Some("Event Horizon")
+        );
         assert_eq!(screen.list.amount, 0.0);
     }
 
@@ -1822,7 +1828,14 @@ mod tests {
         screen.refresh();
         assert_eq!(
             names(&screen),
-            ["Zoom", "Minecraft", "Horizon", "Gamma", "Beta", "Alpha"]
+            [
+                "Zoom",
+                "Minecraft",
+                "Gamma",
+                "Event Horizon",
+                "Beta",
+                "Alpha"
+            ]
         );
         // A Lua row has no settings page, so its Config button does nothing.
         screen.descending = false;
@@ -2107,7 +2120,7 @@ mod tests {
     fn without_a_provider_the_list_is_the_built_in_and_installed_entries() {
         let list = mods(&[installed("zoom", "Zoom", None)]);
         let screen = ModsScreen::with_links(427, 240, false, &list, &[], None);
-        assert_eq!(names(&screen), ["Horizon", "Minecraft", "Zoom"]);
+        assert_eq!(names(&screen), ["Event Horizon", "Minecraft", "Zoom"]);
     }
 
     #[test]
