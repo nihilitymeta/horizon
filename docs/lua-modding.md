@@ -250,6 +250,231 @@ be cancelled (`commands.rs`, tests around line 650).
 Settings are read with `horizon.setting(key)` and changes are seen once with
 `horizon.on_setting_changed(handler)`. A script cannot change a setting.
 
+## Loot hooks
+
+Four hooks take part in a loot roll. Each has one answer field, which the handler sets to
+change the result. A value of the wrong type is refused and the game keeps its own value.
+
+| Hook | Answer | Runs when |
+|---|---|---|
+| `loot_table_load` | `table` | a loot table is loaded from data |
+| `loot_drops` | `drops` | a roll's drops are about to fall: a block breaks, a mob dies, an explosion goes off, or a player's use drops items (shears, a brush) |
+| `loot_condition` | `holds` | a loot table checks a condition whose type is a mod's own kind |
+| `loot_function` | `stack` | a loot table runs a function whose type is a mod's own kind on an item stack |
+
+### Kinds of a mod's own
+
+A loot table names a function or a condition of a mod's own kind with a `type` whose
+namespace is not `minecraft:`. A function sits in a `modifier` list, and a condition in a
+`condition` key:
+
+```json
+{"type": "minecraft:item", "name": "minecraft:stick", "modifier": [{"type": "mymod:double"}]}
+```
+
+- The `data` a hook gets is the whole object, `type` included.
+- Every listener of `loot_function` and of `loot_condition` is called for every kind. A
+  listener returns early when `event.kind` is not its own.
+- An unclaimed function leaves the stack as it was. An unclaimed condition stays `false`,
+  because `holds` starts `false`.
+
+### Read-only tables and copies
+
+`event.id`, `event.kind`, `event.data`, `event.ctx`, `event.context` and the tables the
+game hands over (`event.table`, `event.stack`) are read-only. A change to one of them, even
+a nested field, raises an error, and the handler stops without an answer. To change a stack
+or a loot table, build a modified copy and assign it to `event.stack` or `event.table`.
+
+This helper copies a read-only value. It returns an empty table as it is: a copy of an
+empty JSON object would come out as an empty array (see [JSON rules](#json-rules)).
+
+```luau
+local function copy(value)
+	if type(value) ~= "table" or next(value) == nil then
+		return value
+	end
+	local result = {}
+	for key, item in pairs(value) do
+		result[key] = copy(item)
+	end
+	return result
+end
+```
+
+### Example: a function of a mod's own kind
+
+The sample below adds the function `loot_function_sample:double` to the modifier list of
+every entry in `minecraft:chests/simple_dungeon`, when the table loads. The
+`loot_function` handler then doubles the count of the stack it is given, capped at 64.
+
+```luau
+-- Loot-function sample: a loot function of this mod's own kind, reached from a vanilla table.
+-- loot_table_load adds the function "loot_function_sample:double" to the modifier list of every
+-- entry in minecraft:chests/simple_dungeon. loot_function then answers that kind: the stack's
+-- count is doubled, capped at 64. Other kinds are left alone.
+-- Hooks used: loot_table_load (listen, answer field: table), loot_function (listen, answer field: stack).
+
+local TABLE_ID = "minecraft:chests/simple_dungeon"
+local KIND = "loot_function_sample:double"
+local MAX_COUNT = 64
+
+-- A copy of a read-only JSON value. An empty table is shared, not copied: a copy would lose the
+-- marker that keeps an empty JSON object an object.
+local function copy(value)
+	if type(value) ~= "table" or next(value) == nil then
+		return value
+	end
+	local result = {}
+	for key, item in pairs(value) do
+		result[key] = copy(item)
+	end
+	return result
+end
+
+horizon.on("loot_table_load", function(event)
+	if event.id ~= TABLE_ID then
+		return
+	end
+	local table_copy = copy(event.table)
+	for _, pool in ipairs(table_copy.pools) do
+		for _, entry in ipairs(pool.entries) do
+			local modifiers = {}
+			for _, existing in ipairs(entry.modifier or {}) do
+				modifiers[#modifiers + 1] = copy(existing)
+			end
+			modifiers[#modifiers + 1] = { type = KIND }
+			entry.modifier = modifiers
+		end
+	end
+	event.table = table_copy
+end)
+
+horizon.on("loot_function", function(event)
+	if event.kind ~= KIND then
+		return
+	end
+	local stack = copy(event.stack)
+	stack.count = math.min(stack.count * 2, MAX_COUNT)
+	event.stack = stack
+end)
+```
+
+### loot_table_load
+
+- `event.id` is the table's id, such as `minecraft:chests/simple_dungeon` (read-only).
+- `event.table` is the table's JSON as a Lua table (see [JSON rules](#json-rules)).
+- `table` answers with a whole new table. A non-table answer (`event.table = 5`) is refused,
+  and the loaded table is kept.
+- A table with a `null` inside an array is not delivered: the handler does not run.
+
+### loot_drops
+
+`event.context` describes what dropped the items:
+
+| Field | Value |
+|---|---|
+| `table` | the loot table's id |
+| `dimension` | the dimension's id |
+| `origin` | `{x=, y=, z=}`, numbers |
+| `block` | nil, or `{pos = {x=, y=, z=}, state = {id = ...}}` for a block break |
+| `entity` | nil, or `{id = number, type = string}` for a mob |
+| `player` | nil, or the player's UUID as a string |
+| `damage_source` | nil, or the damage source table |
+| `tool` | nil, or a stack table `{id, count, nbt}` |
+| `explosion` | nil, or a number |
+| `used` | a boolean: true for a player's use |
+
+`event.drops` is the list the game rolled. Each entry is a stack table `{id, count, nbt}`,
+where `nbt` is optional. The `drops` answer is a whole new list, of at most 1024 entries.
+An entry with `count` 0 refuses the whole answer, and the previous list is kept.
+
+```luau
+-- Loot-drops sample: a zombie that a player kills drops one extra bone.
+-- loot_drops fires when a loot table rolls for a block, a mob or an explosion. event.context
+-- says what dropped the items; event.drops is the list the game rolled, each entry a stack
+-- table {id, count, nbt}. The handler answers by assigning a new list.
+-- Hook used: loot_drops (listen, answer field: drops).
+
+local TABLE_ID = "minecraft:entities/zombie"
+local EXTRA_ITEM = "minecraft:bone"
+
+horizon.on("loot_drops", function(event)
+	local context = event.context
+	if context.table ~= TABLE_ID or context.player == nil then
+		return
+	end
+
+	-- The drops are read-only: keep every stack in a new list, then append the extra one.
+	local drops = {}
+	for _, stack in ipairs(event.drops) do
+		table.insert(drops, stack)
+	end
+	table.insert(drops, { id = EXTRA_ITEM, count = 1 })
+	event.drops = drops
+end)
+```
+
+### loot_condition
+
+- `kind`, the condition's type; `data`, the condition's object; `ctx`, the roll's context.
+- `ctx` has `queried_table_id`, `queried_stack`, `entity`, `damage`, `player`, `tool`,
+  `block`, `luck`, `biome`, `seed` and `place`, as the type file (`horizon.d.luau`) declares
+  them. Missing values are nil.
+- `holds` takes a boolean. Any other value is refused and `holds` stays `false`.
+
+### loot_function
+
+- `kind`, `data` and `ctx` as for a condition.
+- `stack` is the stack the roll has so far, a loot stack table with the fields `item`
+  (the id), `count`, `damage`, `enchantments`, `potion`, `map`, `exploration`,
+  `ominous_amplifier`, `stew_effects`, `names` and `components`.
+- The `stack` answer is a whole new loot stack table. Only `item` and `count` are required.
+  The rest default as the game does: `damage` 0, the lists empty, `potion` and
+  `ominous_amplifier` absent, `map` false. A component set to nil or false is removed.
+- The engine checks the stack again when it writes it back. A stack it rejects leaves the
+  roll unchanged.
+
+### Refused answers
+
+A refused answer is logged as a warning, and the value the game had stays. An answer of
+`nil` is no answer: nothing changes and nothing is logged.
+
+| Answer | Refused because |
+|---|---|
+| any value of the wrong type | for example `holds = "yes"`, `drops = 5` or `table = 5` |
+| a stack key the game does not have | any key not in the list above is refused by name |
+| an unknown item id | the id is not a known item |
+| a missing or fractional `count` | `count` is required and must be a whole number |
+| `exploration` set | exploration maps are read-only |
+| a list over 256 entries | any list in a stack (`enchantments`, `stew_effects`, `names`, `components`) takes at most 256 items |
+| a name over 64 characters | an item id, enchantment, potion, name or component name is at most 64 characters |
+| a list with a hole | list keys must be 1 to n |
+| a stack the engine rejects | the roll is unchanged |
+
+### JSON rules
+
+The data of loot tables and of a mod's own kinds crosses into Lua as JSON:
+
+| Rule | Behaviour |
+|---|---|
+| an object | a table with string keys |
+| an array | a table with keys 1 to n |
+| a table that mixes keys, has a hole, or has a key that is not a string | refused |
+| an empty JSON object | an empty table that is still an object when it comes back |
+| a table a mod builds as `{}` | an empty array (`[]`) when it comes back |
+| `null` inside an object | the key is left out |
+| `null` inside an array | the hook is not delivered |
+| a whole number up to 2^53 | an integer; any other finite number is a float; NaN and infinities are refused |
+| nesting | at most 64 levels |
+| size | at most 100,000 values in one JSON value |
+
+A value past the nesting or size limit is not delivered.
+
+### Not available yet
+
+- The tag lookup is not available to Lua. A condition or a function cannot read tags.
+- A loot stack's `exploration` is read-only (see [Refused answers](#refused-answers)).
+
 ## The Lua API
 
 The full API is declared in `crates/event-horizon-lua/lua-types/horizon.d.luau`. Use
