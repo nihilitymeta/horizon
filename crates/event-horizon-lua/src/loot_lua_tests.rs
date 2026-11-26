@@ -403,3 +403,108 @@ fn a_wrong_typed_condition_answer_is_refused_and_holds_stays_false() {
     );
     assert!(!holds);
 }
+
+/// A Lua value of `source`, evaluated in `lua`.
+fn lua_value(lua: &mlua::Lua, source: &str) -> mlua::Value {
+    lua.load(source)
+        .eval::<mlua::Value>()
+        .expect("the test's Lua evaluates")
+}
+
+/// The stack a handler sees (its fields are the engine's, written as Lua), with an enchantment, a
+/// potion, a renamed item and a removed component.
+fn loot_stack_with_everything() -> mod_api::world::snapshots::LootStack {
+    let mut stack = mod_api::world::snapshots::LootStack::new(
+        mod_api::__private::item_key("minecraft:stick").unwrap(),
+        2,
+    );
+    stack.damage = 3;
+    stack.enchantments = vec![("minecraft:sharpness".to_owned(), 3)];
+    stack.potion = Some("minecraft:swiftness".to_owned());
+    stack.map = true;
+    stack.ominous_amplifier = Some(1);
+    stack.stew_effects = vec![("minecraft:night_vision".to_owned(), 100)];
+    stack.names = vec![(
+        "minecraft:custom_name".to_owned(),
+        mod_api::Text::literal("Gold"),
+    )];
+    stack.components = vec![
+        ("minecraft:custom_name".to_owned(), None),
+        ("minecraft:damage".to_owned(), Some(mod_api::Tag::Int(4))),
+    ];
+    stack
+}
+
+#[test]
+fn a_loot_stack_written_to_lua_reads_back_unchanged() {
+    let _host = stick_host();
+    let lua = mlua::Lua::new();
+    let stack = loot_stack_with_everything();
+    let value = <mod_api::world::snapshots::LootStack as event_horizon_lua_convert::scalar::ToLuaValue>::to_lua_value(&stack, &lua)
+        .unwrap();
+    assert_eq!(
+        event_horizon_lua_convert::loot::loot_stack_from_lua(&value),
+        Ok(stack)
+    );
+}
+
+#[test]
+fn a_handler_that_changes_the_count_gets_that_count_and_nothing_else() {
+    let _host = stick_host();
+    let lua = mlua::Lua::new();
+    let stack = loot_stack_with_everything();
+    let value = <mod_api::world::snapshots::LootStack as event_horizon_lua_convert::scalar::ToLuaValue>::to_lua_value(&stack, &lua)
+        .unwrap();
+    let mlua::Value::Table(table) = &value else {
+        panic!("a loot stack is a table")
+    };
+    table.raw_set("count", 29).unwrap();
+    let mut expected = stack;
+    expected.count = 29;
+    assert_eq!(
+        event_horizon_lua_convert::loot::loot_stack_from_lua(&value),
+        Ok(expected)
+    );
+}
+
+#[test]
+fn an_unknown_item_a_fractional_count_and_an_exploration_map_are_refused_by_name() {
+    let _host = stick_host();
+    let lua = mlua::Lua::new();
+    let unknown = lua_value(&lua, "return {item = 'minecraft:nope', count = 1}");
+    let err = event_horizon_lua_convert::loot::loot_stack_from_lua(&unknown).unwrap_err();
+    assert!(err.contains("minecraft:nope"), "{err}");
+    let fraction = lua_value(&lua, "return {item = 'minecraft:stick', count = 1.5}");
+    let err = event_horizon_lua_convert::loot::loot_stack_from_lua(&fraction).unwrap_err();
+    assert!(err.contains("count"), "{err}");
+    let explore = lua_value(
+        &lua,
+        "return {item = 'minecraft:stick', count = 1, exploration = {destination = 'x'}}",
+    );
+    let err = event_horizon_lua_convert::loot::loot_stack_from_lua(&explore).unwrap_err();
+    assert_eq!(err, "exploration maps are read-only");
+}
+
+#[test]
+fn an_unknown_key_is_refused_by_name() {
+    let _host = stick_host();
+    let lua = mlua::Lua::new();
+    let typo = lua_value(
+        &lua,
+        "return {item = 'minecraft:stick', count = 1, colour = 'red'}",
+    );
+    let err = event_horizon_lua_convert::loot::loot_stack_from_lua(&typo).unwrap_err();
+    assert!(err.contains("colour"), "{err}");
+}
+
+#[test]
+fn a_list_longer_than_256_entries_is_refused() {
+    let _host = stick_host();
+    let lua = mlua::Lua::new();
+    let pairs = vec!["{'minecraft:sharpness', 1}"; 257].join(",");
+    let source =
+        format!("return {{item = 'minecraft:stick', count = 1, enchantments = {{{pairs}}}}}");
+    let err = event_horizon_lua_convert::loot::loot_stack_from_lua(&lua_value(&lua, &source))
+        .unwrap_err();
+    assert!(err.contains("256"), "{err}");
+}
