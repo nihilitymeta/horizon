@@ -697,9 +697,11 @@ pub(crate) fn turns_in_reporting(
                 continue;
             }
             if contained(m.id(), hook, || commit(m.id(), &event, &host)) == Some(false) {
+                flush_problems(&mut host);
                 return Ok(());
             }
         }
+        flush_problems(&mut host);
         Ok(())
     }
 }
@@ -857,10 +859,21 @@ pub(crate) fn replace_in_reporting(
                 None => false,
             };
             if answered {
+                flush_problems(&mut host);
                 return Ok(());
             }
         }
+        flush_problems(&mut host);
         Ok(())
+    }
+}
+
+/// Sends the owner's queued error lines (`display.rs`) when the turn that just ended has a server host:
+/// a problem the turn logged reaches the owner now and not at the next handler call, which may never
+/// come for a mod with one rare hook.
+fn flush_problems(host: &mut TurnHost<'_>) {
+    if let Some(server) = host.server() {
+        crate::display::flush_turn(server);
     }
 }
 
