@@ -419,7 +419,7 @@ end)
 - `kind`, the condition's type; `data`, the condition's object; `ctx`, the roll's context.
 - `ctx` has `queried_table_id`, `queried_stack`, `entity`, `damage`, `player`, `tool`,
   `block`, `luck`, `biome`, `seed` and `place`, as the type file (`horizon.d.luau`) declares
-  them. Missing values are nil.
+  them. Missing values are nil. `seed` is a decimal string, because a roll's seed does not fit a Lua number.
 - `holds` takes a boolean. Any other value is refused and `holds` stays `false`.
 
 ### loot_function

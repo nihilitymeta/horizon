@@ -11139,7 +11139,7 @@ impl ToLuaValue for mod_api::world::snapshots::LootContext {
         table.raw_set("block", self.block.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
         table.raw_set("luck", self.luck.to_lua_value(lua)?)?;
         table.raw_set("biome", self.biome.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
-        table.raw_set("seed", self.seed.to_lua_value(lua)?)?;
+        table.raw_set("seed", self.seed.to_string().to_lua_value(lua)?)?;
         table.raw_set("place", self.place.to_lua_value(lua)?)?;
         Ok(Value::Table(table))
     }

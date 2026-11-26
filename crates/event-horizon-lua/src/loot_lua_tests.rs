@@ -374,12 +374,46 @@ fn a_condition_a_handler_claims_reaches_it_with_its_kind_data_and_context() {
     // The handler sets `holds` only when every value it reads is the one the test gave: a wrong
     // kind, data, or context field leaves the answer false.
     let (_, holds) = fire_condition(
-        "horizon.on(\"loot_condition\", function(event) if event.kind ~= \"mymod:is_night\" then return end if event.data.flag == 3 and event.ctx.luck == 2.5 and event.ctx.seed == 7 then event.holds = true end end)",
+        "horizon.on(\"loot_condition\", function(event) if event.kind ~= \"mymod:is_night\" then return end if event.data.flag == 3 and event.ctx.luck == 2.5 and event.ctx.seed == \"7\" then event.holds = true end end)",
         "mymod:is_night",
         &serde_json::json!({"flag": 3}),
         &luck_context(),
     );
     assert!(holds);
+}
+
+/// A handler that answers `holds` only when `ctx.seed` is exactly `seed` as a Lua string.
+fn seed_condition_source(seed: &str) -> String {
+    format!(
+        "horizon.on(\"loot_condition\", function(event) if event.kind == \"mymod:is_night\" and type(event.ctx.seed) == \"string\" and event.ctx.seed == \"{seed}\" then event.holds = true end end)"
+    )
+}
+
+#[test]
+fn a_condition_with_a_seed_past_2_to_the_53_is_delivered_as_its_exact_decimal_string() {
+    // A roll's seed is a full i64; a Lua number cannot hold it, so it arrives as its decimal text.
+    let seed = -5_299_148_278_949_906_928_i64;
+    let (log, holds) = fire_condition(
+        &seed_condition_source(&seed.to_string()),
+        "mymod:is_night",
+        &serde_json::json!({}),
+        &mod_api::LootContext::new(seed),
+    );
+    assert!(holds, "log: {log:?}");
+    assert!(log.is_empty(), "log: {log:?}");
+}
+
+#[test]
+fn a_condition_with_the_largest_seed_is_delivered_as_its_exact_decimal_string() {
+    let seed = i64::MAX;
+    let (log, holds) = fire_condition(
+        &seed_condition_source(&seed.to_string()),
+        "mymod:is_night",
+        &serde_json::json!({}),
+        &mod_api::LootContext::new(seed),
+    );
+    assert!(holds, "log: {log:?}");
+    assert!(log.is_empty(), "log: {log:?}");
 }
 
 #[test]
@@ -547,13 +581,56 @@ fn a_function_a_handler_claims_sees_its_kind_data_context_and_count_and_writes_t
     let mut expected = stack.clone();
     expected.count = 29;
     let (_, after) = fire_function(
-        "horizon.on(\"loot_function\", function(event) if event.kind ~= \"mymod:double\" then return end if event.data.factor == 3 and event.ctx.seed == 7 and event.stack.count == 2 then local s = {} for k, v in pairs(event.stack) do s[k] = v end s.count = 29 event.stack = s end end)",
+        "horizon.on(\"loot_function\", function(event) if event.kind ~= \"mymod:double\" then return end if event.data.factor == 3 and event.ctx.seed == \"7\" and event.stack.count == 2 then local s = {} for k, v in pairs(event.stack) do s[k] = v end s.count = 29 event.stack = s end end)",
         "mymod:double",
         &serde_json::json!({"factor": 3}),
         &luck_context(),
         stack,
     );
     assert_eq!(after, expected);
+}
+
+/// A handler that replaces the stack's count with 29 only when `ctx.seed` is exactly `seed`.
+fn seed_function_source(seed: &str) -> String {
+    format!(
+        "horizon.on(\"loot_function\", function(event) if event.kind ~= \"mymod:double\" then return end if type(event.ctx.seed) == \"string\" and event.ctx.seed == \"{seed}\" then local s = {{}} for k, v in pairs(event.stack) do s[k] = v end s.count = 29 event.stack = s end end)"
+    )
+}
+
+#[test]
+fn a_function_with_a_seed_past_2_to_the_53_runs_and_its_stack_arrives() {
+    let _host = stick_host();
+    let seed = -5_299_148_278_949_906_928_i64;
+    let stack = loot_stack_with_everything();
+    let mut expected = stack.clone();
+    expected.count = 29;
+    let (log, after) = fire_function(
+        &seed_function_source(&seed.to_string()),
+        "mymod:double",
+        &serde_json::json!({}),
+        &mod_api::LootContext::new(seed),
+        stack,
+    );
+    assert_eq!(after, expected, "log: {log:?}");
+    assert!(log.is_empty(), "log: {log:?}");
+}
+
+#[test]
+fn a_function_with_the_largest_seed_runs_and_its_stack_arrives() {
+    let _host = stick_host();
+    let seed = i64::MAX;
+    let stack = loot_stack_with_everything();
+    let mut expected = stack.clone();
+    expected.count = 29;
+    let (log, after) = fire_function(
+        &seed_function_source(&seed.to_string()),
+        "mymod:double",
+        &serde_json::json!({}),
+        &mod_api::LootContext::new(seed),
+        stack,
+    );
+    assert_eq!(after, expected, "log: {log:?}");
+    assert!(log.is_empty(), "log: {log:?}");
 }
 
 #[test]

@@ -4766,7 +4766,7 @@ export type LootContext = {
 	block: string?,
 	luck: number,
 	biome: string?,
-	seed: number,
+	seed: string,
 	place: LootPlace?,
 }
 

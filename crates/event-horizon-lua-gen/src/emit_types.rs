@@ -842,6 +842,17 @@ fn is_loot_family(path: &str) -> bool {
     path.starts_with("world::snapshots::Loot")
 }
 
+/// The fields the Lua side takes as a decimal string, as `(plain path, field)`. A roll's seed is a
+/// full `i64`, and a Lua number is a double that cannot hold it exactly, so the generic integer
+/// rule (which refuses an inexact value) would fail every loot hook. Other 64-bit fields keep that
+/// rule on purpose: an id must never be rounded silently.
+const DECIMAL_FIELDS: &[(&str, &str)] = &[("world::snapshots::LootContext", "seed")];
+
+/// Whether `field` of the plain type at `path` is written as a decimal string (see [`DECIMAL_FIELDS`]).
+pub fn is_decimal_field(path: &str, field: &str) -> bool {
+    DECIMAL_FIELDS.contains(&(path, field))
+}
+
 /// Whether any field of the type is a list (so the file needs [`LIST_HELPER`]).
 fn uses_list(def: &Def) -> bool {
     let fields: Vec<&Field> = match &def.body {
@@ -903,10 +914,14 @@ fn impl_text(def: &Def) -> String {
         Body::Named(fields) => {
             out.push_str("        let table = lua.create_table()?;\n");
             for field in fields {
-                out.push_str(&format!(
-                    "        table.raw_set({:?}, {})?;\n",
-                    field.name,
+                let value = if is_decimal_field(&def.path, &field.name) {
+                    format!("self.{}.to_string().to_lua_value(lua)?", field.name)
+                } else {
                     value_expr(&format!("self.{}", field.name), field)
+                };
+                out.push_str(&format!(
+                    "        table.raw_set({:?}, {value})?;\n",
+                    field.name
                 ));
             }
             out.push_str("        Ok(Value::Table(table))\n");
@@ -1463,6 +1478,30 @@ mod tests {
             "a hand-written impl is not repeated"
         );
         syn::parse_file(text).expect("the generated text parses");
+    }
+
+    #[test]
+    fn a_loot_seed_is_a_decimal_string_and_other_64_bit_fields_stay_exact() {
+        let text = r#"[
+          {"id": "type:world::snapshots::LootContext", "hash": "a", "kind": "struct", "wire": false,
+           "constructible": true,
+           "fields": [{"id": "type:world::snapshots::LootContext.seed", "hash": "b", "type": "i64"},
+                      {"id": "type:world::snapshots::LootContext.entity", "hash": "c", "type": "i64"}]}
+        ]"#;
+        let types: Vec<Type> = serde_json::from_str(text).expect("parses");
+        let plan = plan(&types, &[], "h");
+        assert!(
+            plan.text
+                .contains("table.raw_set(\"seed\", self.seed.to_string().to_lua_value(lua)?)?;"),
+            "{}",
+            plan.text
+        );
+        assert!(
+            plan.text
+                .contains("table.raw_set(\"entity\", self.entity.to_lua_value(lua)?)?;"),
+            "an id stays on the exact integer rule: {}",
+            plan.text
+        );
     }
 
     #[test]

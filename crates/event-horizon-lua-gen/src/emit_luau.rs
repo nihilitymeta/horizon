@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::carried::{self, Shape};
 use crate::emit_hooks::camel;
 use crate::emit_impl::{EventShape, command_input, is_block_click, scalar_name};
-use crate::emit_types::{Body, Field, Plain, Variant};
+use crate::emit_types::{Body, Field, Plain, Variant, is_decimal_field};
 use crate::handles::MemberIr;
 use crate::types::{FloatKind, IntKind, TypeIr, map_type};
 
@@ -326,13 +326,17 @@ fn family_type(
 /// empty table; a tuple struct is an array of its field types (`{ A | B }` when they differ); a
 /// newtype whose value is its getter's is that type. An enum with no data is a union of its
 /// variants' names (`"main" | "off"`); any other enum is a union of tables, each with a `tag`.
-fn plain_type(name: &str, body: &Body, mapper: &mut Mapper<'_>) -> String {
+fn plain_type(name: &str, path: &str, body: &Body, mapper: &mut Mapper<'_>) -> String {
     match body {
         Body::Unit => format!("export type {name} = {{}}\n\n"),
         Body::Named(fields) => {
             let mut text = format!("export type {name} = {{\n");
             for field in fields {
-                let (ty, note) = mapper.typed(&field.text);
+                let (ty, note) = if is_decimal_field(path, &field.name) {
+                    ("string".to_owned(), String::new())
+                } else {
+                    mapper.typed(&field.text)
+                };
                 text.push_str(&format!("\t{}: {ty},{note}\n", key(&field.name)));
             }
             text.push_str("}\n\n");
@@ -513,7 +517,7 @@ fn emit_with(input: &Input<'_>, references: &[&str]) -> Result<Emitted, String> 
                 continue;
             };
             let name = mapper.names[&path].clone();
-            text.push_str(&plain_type(&name, body, &mut mapper));
+            text.push_str(&plain_type(&name, &path, body, &mut mapper));
             done.insert(path);
         }
     }
@@ -596,7 +600,7 @@ mod tests {
             variants: vec![unit_variant("Main"), unit_variant("OffHand")],
         };
         assert_eq!(
-            plain_type("Hand", &hand, &mut m),
+            plain_type("Hand", "Hand", &hand, &mut m),
             "export type Hand = \"main\" | \"off_hand\"\n\n"
         );
         assert!(m.any.is_empty());
@@ -625,7 +629,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            plain_type("Action", &action, &mut m),
+            plain_type("Action", "Action", &action, &mut m),
             "export type Action =\n\
              \t| { tag: \"idle\" }\n\
              \t| { tag: \"hurt\", amount: number }\n\
@@ -639,7 +643,7 @@ mod tests {
         let mut m = mapper(&[]);
         let label = Body::Named(vec![field("label", "Option<String>")]);
         assert_eq!(
-            plain_type("Label", &label, &mut m),
+            plain_type("Label", "Label", &label, &mut m),
             "export type Label = {\n\tlabel: string?,\n}\n\n"
         );
     }
@@ -649,7 +653,7 @@ mod tests {
         let mut m = mapper(&[]);
         let span = Body::Named(vec![field("end", "i32"), field("start", "i32")]);
         assert_eq!(
-            plain_type("Span", &span, &mut m),
+            plain_type("Span", "Span", &span, &mut m),
             "export type Span = {\n\t[\"end\"]: number,\n\tstart: number,\n}\n\n"
         );
     }
@@ -708,7 +712,7 @@ mod tests {
         let mut m = mapper(&[]);
         let odd = Body::Named(vec![field("thing", "Refused")]);
         assert_eq!(
-            plain_type("Holder", &odd, &mut m),
+            plain_type("Holder", "Holder", &odd, &mut m),
             "export type Holder = {\n\tthing: any, -- Rust: Refused\n}\n\n"
         );
         assert_eq!(m.any, ["Refused"]);
