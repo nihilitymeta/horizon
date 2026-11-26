@@ -270,9 +270,6 @@ impl Options {
                     // Single player always runs on its server thread: a launcher's saved arguments
                     // may still name the old switches.
                     "--server-thread" | "--game-tests" => {}
-                    // Event Horizon's executable reads this one itself (the developer tools); the game's
-                    // parser must not refuse it.
-                    "--dev-tools" => {}
                     "--in-frame" | "--no-server-thread" => eprintln!(
                         "Horizon: {arg} was removed: single player runs on its server thread."
                     ),

@@ -162,6 +162,9 @@ impl LaunchArguments {
                 "--lua-mod" => {
                     args.next().ok_or_else(|| MissingValue(arg.clone()))?;
                 }
+                // The developer tools' switch: Event Horizon's executable reads it from the command
+                // line itself (`--dev-tools` or HORIZON_DEV_TOOLS=1); the game takes no such option.
+                "--dev-tools" => {}
                 _ if arg.starts_with("--lua-mod=") => {}
                 _ => {
                     let value = args.next().ok_or_else(|| MissingValue(arg.clone()))?;
@@ -347,5 +350,25 @@ mod tests {
         // A flag with no value is refused as the other value options are.
         let error = parse(&["--lua-mod"]).unwrap_err();
         assert_eq!(error.to_string(), "missing value after --lua-mod");
+    }
+
+    #[test]
+    fn the_dev_tools_switch_takes_no_value_and_is_not_passed_on() {
+        let parsed = LaunchArguments::parse(
+            ["--dev-tools", "--control", "--world", "W"]
+                .iter()
+                .map(|a| a.to_string()),
+            Path::new("/start"),
+            Path::new("/default"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.rest,
+            [
+                Argument::Switch("--control".into()),
+                Argument::Value("--world".into(), "W".into())
+            ]
+        );
     }
 }
