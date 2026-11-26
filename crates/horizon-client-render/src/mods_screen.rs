@@ -36,8 +36,9 @@ const BANNER_H: i32 = 50;
 /// The panel's button row.
 const BUTTONS_H: i32 = 26;
 const MAIN_PAD: i32 = 4;
-/// The sidebar and the panel overlap by 3 px (`columnSpacing(-3)`).
-const TOTAL_W: i32 = SIDEBAR_W - 3 + PANEL_W;
+/// The panel's frame starts where the sidebar ends: NeoForge overlaps the two columns by 3 px
+/// (`columnSpacing(-3)`), which here drew the frame over the list's right edge.
+const TOTAL_W: i32 = SIDEBAR_W + PANEL_W + 2 * FRAME_PAD;
 const SCROLLBAR_W: i32 = 6;
 const WHEEL_STEP: f64 = 18.0;
 const ROWS: usize = 1000;
@@ -472,7 +473,7 @@ impl ModsScreen {
         let content = (self.height - HEADER_H - FOOTER_H).max(0);
         let left = ((self.width - TOTAL_W) / 2).max(0);
         let top = HEADER_H - FRAME_PAD;
-        let panel_x = left + SIDEBAR_W - 3;
+        let panel_x = left + SIDEBAR_W + FRAME_PAD;
         let view = (content - BUTTONS_H).max(0);
         let button_w = PANEL_W / 3 - 1;
         let gap = (PANEL_W + 2 * FRAME_PAD - 3 * button_w) / 4;
