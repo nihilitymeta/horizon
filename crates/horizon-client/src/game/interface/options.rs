@@ -417,7 +417,9 @@ impl Game<'_> {
                         Screen::Paused
                     };
                     self.set_screen(back);
-                    if to_game {
+                    // Back to the title menu is not back in the world: grabbing the pointer there
+                    // hid it and locked it under a menu.
+                    if to_game && self.title.is_none() {
                         self.capture(true);
                     }
                     self.dragging = false;
