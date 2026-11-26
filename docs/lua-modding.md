@@ -521,3 +521,18 @@ it shows whether it is granted and gives one button:
 
 Each change to a grant shows the restart note. A refused change shows its reason on
 the page (`crates/horizon-client-render/src/options_ui.rs`).
+
+## Checking a mod end to end
+
+`tools/lua_host_e2e.py` runs the Lua host in a real game: it copies two fixture mods
+(`tools/lua_host_e2e/lua-mods/`) into a scratch game folder, launches the game through
+`horizon-ctl`, spawns loot rolls and kills a zombie, quits, and reads the game's log. It passes
+when the log shows both mods loaded, the table-load, condition and function hooks reached Lua,
+and the zombie's drops hold the gated emerald and the doubled diamonds. It needs a display (it
+re-runs itself under `xvfb-run` when there is none) and the prepared resources.
+
+    python3 tools/lua_host_e2e.py [--bin-dir DIR] [--resources DIR] [--out DIR] [--keep]
+
+`--bin-dir` holds `horizon-client`, `horizon-ctl` and `horizon-native-mods/` (default
+`target/fast`); `--out` gets the game log copy and the scratch folder is removed unless `--keep`.
+The result is one JSON object of checks on stdout; the exit code is 0 only if all pass.
