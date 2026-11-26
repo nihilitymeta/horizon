@@ -278,12 +278,12 @@ fn refuses_what_this_build_does_not_read() {
         (text.replace("schema = 1", "schema = 2"), "schema 2"),
         (
             text.replace("api = \"0.2\"", "api = \"0.3\""),
-            "needs shader API 0.3; this Horizon serves 0.2",
+            "needs shader API 0.3; this Event Horizon serves 0.2",
         ),
         // The line before, retired when 0.2 came on by default.
         (
             text.replace("api = \"0.2\"", "api = \"0.1\""),
-            "needs shader API 0.1; this Horizon serves 0.2",
+            "needs shader API 0.1; this Event Horizon serves 0.2",
         ),
         (
             text.replace("\"sample_pack\"", "\"Sample\""),

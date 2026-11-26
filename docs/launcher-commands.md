@@ -18,7 +18,7 @@ MCP: none: the player's switch.
 
 ## `horizon-launcher versions`
 
-List Horizon releases, or the installed versions.
+List Event Horizon releases, or the installed versions.
 
     horizon-launcher versions
 
@@ -143,7 +143,7 @@ MCP: `native_lock`.
 
 ## `horizon-launcher native-build`
 
-Native mods (docs/modding/src/how-to/native-mods.md): compile flat Rust mod projects against the instance's exact Horizon source revision with the launcher's own Rust, as the version the instance then plays. Not sandboxed: the mods' code runs with your rights.
+Native mods (docs/modding/src/how-to/native-mods.md): compile flat Rust mod projects against the instance's exact Event Horizon source revision with the launcher's own Rust, as the version the instance then plays. Not sandboxed: the mods' code runs with your rights.
 
     horizon-launcher native-build [FOLDER]
 
@@ -154,8 +154,8 @@ Native mods (docs/modding/src/how-to/native-mods.md): compile flat Rust mod proj
 - `--server-output`: Export mode: build a standalone dedicated-server engine into this folder instead of an instance's build. Needs a mod FOLDER; no instance is read or changed, and no launcher config is written
 - `--allow-jar-downloads`: Allow exact-hash jar downloads into the local cache for the server export; jar bytes are never included in the exported folder
 - `--instance`: The instance whose installed native mods to build, and which then plays the build (default: the selected one)
-- `--version`: The installed version whose game files the build reuses, and whose commit it builds on when no mod pins one (default: the one the instance plays, so a rebuild stays on its Horizon)
-- `--update`: Move to the newest installed release or Nightly instead of the Horizon the instance plays (rebuilds the mods for that pinned SDK)
+- `--version`: The installed version whose game files the build reuses, and whose commit it builds on when no mod pins one (default: the one the instance plays, so a rebuild stays on its Event Horizon)
+- `--update`: Move to the newest installed release or Nightly instead of the Event Horizon the instance plays (rebuilds the mods for that pinned SDK)
 - `--trust-native-code`: Allow native code for this install (remembered; revoke in Settings, Storage)
 - `--profile` (optimized): Native mods use the pinned SDK's optimized compilation settings. The game is never rebuilt by a mod build
 - `--back-up-worlds`: When a mod this build can't use was saved into the instance's worlds, back those worlds up (into the game folder's backups/) and build without it. Without this the build stops and names the worlds, leaving the instance as it is
@@ -240,7 +240,7 @@ MCP: `account_select`.
 
 ## `horizon-launcher settings`
 
-Show the launcher's settings, or set one (the Settings page): selected-version TAG, game-architecture auto|x64|arm64, minecraft-dir PATH, server-dir PATH ("default" resets a folder), install-new-versions on|off, auto-update-launcher on|off (the launcher installs its own newer release by itself; off by default, the update command still works), prune-old-versions on|off (delete old versions after an install, keeping the selected one, the ones instances use and the newest few), keep-versions N (how many of the newest to keep; "default" is 2), opening-animation on|off, proxy http://host:port|socks5://host:port ("default" removes it), while-playing stay|minimize|hide (what the window does while the game runs), language system|en|fr|ru|de|zh|es|uk|pl (the window's language; system follows the computer's), accent violet|blue|teal|green|amber|red|pink|#rrggbb|DEGREES (a named accent, any colour, or any hue), background PATH (a picture behind Home; "default" shows Horizon's landscape), cache-limit-gib N (managed cache limit in GiB: 10, 25 (default), 50, 100; 0 disables automatic cleanup).
+Show the launcher's settings, or set one (the Settings page): selected-version TAG, game-architecture auto|x64|arm64, minecraft-dir PATH, server-dir PATH ("default" resets a folder), install-new-versions on|off, auto-update-launcher on|off (the launcher installs its own newer release by itself; off by default, the update command still works), prune-old-versions on|off (delete old versions after an install, keeping the selected one, the ones instances use and the newest few), keep-versions N (how many of the newest to keep; "default" is 2), opening-animation on|off, proxy http://host:port|socks5://host:port ("default" removes it), while-playing stay|minimize|hide (what the window does while the game runs), language system|en|fr|ru|de|zh|es|uk|pl (the window's language; system follows the computer's), accent violet|blue|teal|green|amber|red|pink|#rrggbb|DEGREES (a named accent, any colour, or any hue), background PATH (a picture behind Home; "default" shows Event Horizon's landscape), cache-limit-gib N (managed cache limit in GiB: 10, 25 (default), 50, 100; 0 disables automatic cleanup).
 
     horizon-launcher settings [KEY] [VALUE]
 
@@ -292,7 +292,7 @@ MCP: `logs`.
 
 ## `horizon-launcher update`
 
-Look for a newer Horizon release and launcher, and install them.
+Look for a newer Event Horizon release and launcher, and install them.
 
     horizon-launcher update
 
@@ -302,7 +302,7 @@ MCP: `update`.
 
 ## `horizon-launcher desktop-entry`
 
-Linux: put Horizon in the applications menu (an entry and the icon, under $XDG_DATA_HOME), or take it out with --remove.
+Linux: put Event Horizon in the applications menu (an entry and the icon, under $XDG_DATA_HOME), or take it out with --remove.
 
     horizon-launcher desktop-entry
 
@@ -412,7 +412,7 @@ Make an instance: empty but for your options and name, or a copy of another one'
 
 - `NAME`
 - `--copy`: The instance to copy (its name or id)
-- `--minecraft`: Make a Minecraft: Java Edition instance of this version (1.21.4, latest or latest-snapshot) instead of a Horizon one
+- `--minecraft`: Make a Minecraft: Java Edition instance of this version (1.21.4, latest or latest-snapshot) instead of an Event Horizon one
 - `--loader`: With this mod loader: fabric, quilt, forge or neoforge
 - `--loader-version`: The loader's version (default: its newest stable one)
 
@@ -470,7 +470,7 @@ MCP: `instance_rename`.
 
 ## `horizon-launcher instance delete`
 
-Delete an instance: its folder (worlds, options, packs) goes to the Trash, where you can get it back. Horizon's own instance stays.
+Delete an instance: its folder (worlds, options, packs) goes to the Trash, where you can get it back. Event Horizon's own instance stays.
 
     horizon-launcher instance delete <INSTANCE>
 
@@ -512,7 +512,7 @@ MCP: `instance_select`.
 
 ## `horizon-launcher instance version`
 
-Keep an instance on one installed Horizon version, or "latest" to follow updates again.
+Keep an instance on one installed Event Horizon version, or "latest" to follow updates again.
 
     horizon-launcher instance version <INSTANCE> <VERSION>
 
@@ -523,7 +523,7 @@ MCP: `instance_version`.
 
 ## `horizon-launcher instance export`
 
-Export an instance (or a port) to share: its settings, packs, Horizon mods and the worlds named, as a .mrpack (resource packs from Modrinth listed by download) or a zip. Never logs, screenshots or account data; worlds go without their per-player files.
+Export an instance (or a port) to share: its settings, packs, Event Horizon mods and the worlds named, as a .mrpack (resource packs from Modrinth listed by download) or a zip. Never logs, screenshots or account data; worlds go without their per-player files.
 
     horizon-launcher instance export [INSTANCE]
 
@@ -570,7 +570,7 @@ Import what a file is, as dropping it on the window does: a shared instance (a .
 
 - `FILE`
 - `--instance`: The instance a pack goes into
-- `--java`: A .mrpack becomes a Minecraft: Java Edition instance with its Minecraft version, mod loader, mods and overrides, instead of a Horizon instance or a Modpacks import
+- `--java`: A .mrpack becomes a Minecraft: Java Edition instance with its Minecraft version, mod loader, mods and overrides, instead of an Event Horizon instance or a Modpacks import
 
 MCP: `instance_import`.
 
@@ -735,7 +735,7 @@ MCP: `packs_remove`, needs `confirm: true`.
 
 ## `horizon-launcher java list`
 
-The Java runtimes Horizon downloaded from Mojang and the ones installed on this computer.
+The Java runtimes Event Horizon downloaded from Mojang and the ones installed on this computer.
 
     horizon-launcher java list
 
@@ -869,7 +869,7 @@ MCP: `mods_list`.
 
 ## `horizon-launcher mods search`
 
-Search for packs Horizon loads, or for what a Java instance runs (made for its Minecraft version and loader).
+Search for packs Event Horizon loads, or for what a Java instance runs (made for its Minecraft version and loader).
 
     horizon-launcher mods search [TEXT]...
 
@@ -883,7 +883,7 @@ MCP: `mods_search`.
 
 ## `horizon-launcher mods check`
 
-Say how well a Java mod runs in Horizon: its jar is downloaded (checksum checked), carried over and read; the answer is kept.
+Say how well a Java mod runs in Event Horizon: its jar is downloaded (checksum checked), carried over and read; the answer is kept.
 
     horizon-launcher mods check <PROJECT>
 
@@ -921,7 +921,7 @@ MCP: `mods_update`.
 
 ## `horizon-launcher mods add-github`
 
-Install a native mod from a GitHub link (docs/modding/src/how-to/native-mods.md, "Install from GitHub"): https://github.com/OWNER/REPO (its latest release, else its default branch), .../releases/tag/TAG, .../tree/REF or .../commit/SHA. Resolved to an exact release file or commit, checked like a registry mod. NOT reviewed by the Horizon registry.
+Install a native mod from a GitHub link (docs/modding/src/how-to/native-mods.md, "Install from GitHub"): https://github.com/OWNER/REPO (its latest release, else its default branch), .../releases/tag/TAG, .../tree/REF or .../commit/SHA. Resolved to an exact release file or commit, checked like a registry mod. NOT reviewed by the Event Horizon registry.
 
     horizon-launcher mods add-github <URL>
 

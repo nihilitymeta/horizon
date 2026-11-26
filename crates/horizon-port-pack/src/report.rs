@@ -41,13 +41,14 @@ impl Status {
             Status::Ported => PLAIN_PORTED,
             Status::Partial => PLAIN_PARTIAL,
             Status::NotYet => "It does not come over yet.",
-            Status::NotNeeded => "Nothing to port: Horizon has it built in or does not need it.",
+            Status::NotNeeded => {
+                "Nothing to port: Event Horizon has it built in or does not need it."
+            }
         }
     }
 }
 
-const PLAIN_PORTED: &str =
-    "Its blocks and items came over and passed Horizon's checks; the mod's own code is not run.";
+const PLAIN_PORTED: &str = "Its blocks and items came over and passed Event Horizon's checks; the mod's own code is not run.";
 const PLAIN_PARTIAL: &str = "Part of it came over, but something is left out, differs from the original or has not been checked yet; the technical detail says what.";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -151,10 +152,10 @@ fn not_yet(tier: &str) -> &'static str {
 
 fn not_needed(class: &str) -> &'static str {
     match class {
-        "library" => "library: its API maps to Horizon's mod API and SDK",
-        "performance" => "performance mod: Horizon's engine is the replacement",
+        "library" => "library: its API maps to Event Horizon's mod API and SDK",
+        "performance" => "performance mod: Event Horizon's engine is the replacement",
         "other" => "pack tooling or an engine feature, folded into the pipeline or the engine",
-        "client-ui" => "built into Horizon",
+        "client-ui" => "built into Event Horizon",
         _ => "nothing to port",
     }
 }
@@ -162,7 +163,7 @@ fn not_needed(class: &str) -> &'static str {
 /// What keeps a mod that has not been carried over from coming over, in plain words.
 fn plain_not_yet(r: &Record) -> &'static str {
     if r.class == "unknown" {
-        return "Horizon cannot tell yet what this mod does (it needs its jar or a reviewed entry), so it cannot say whether it will come over.";
+        return "Event Horizon cannot tell yet what this mod does (it needs its jar or a reviewed entry), so it cannot say whether it will come over.";
     }
     if r.class == "integration" {
         return "It joins other mods together, so it waits until those are ported.";
@@ -175,33 +176,33 @@ fn plain_not_yet(r: &Record) -> &'static str {
             "Content only (blocks, items, structures). It can come over once its jar is here."
         }
         "logic" => {
-            "Needs what blocks and items do when used, placed, broken or ticked, which Horizon's mod API cannot run from a mod yet, so it does not come over."
+            "Needs what blocks and items do when used, placed, broken or ticked, which Event Horizon's mod API cannot run from a mod yet, so it does not come over."
         }
         "machines" => {
-            "Needs machine-style features (block entities, menus, item, fluid and energy handling, networking) that Horizon's mod API does not have yet, so it does not come over."
+            "Needs machine-style features (block entities, menus, item, fluid and energy handling, networking) that Event Horizon's mod API does not have yet, so it does not come over."
         }
         "deep" => {
-            "Needs mobs, custom rendering and models, dimensions or new game hooks that Horizon's mod API does not have yet, so it does not come over."
+            "Needs mobs, custom rendering and models, dimensions or new game hooks that Event Horizon's mod API does not have yet, so it does not come over."
         }
         "client" => {
             "Needs the game's client interfaces (keys, targeting, inventory reading, interface, rendering), so it does not come over yet."
         }
-        _ => "Horizon has not worked out what this mod needs yet.",
+        _ => "Event Horizon has not worked out what this mod needs yet.",
     }
 }
 
 fn plain_not_needed(class: &str) -> &'static str {
     match class {
         "library" => {
-            "A library other mods build on. Horizon's mod API and SDK take its place, so there is nothing to port."
+            "A library other mods build on. Event Horizon's mod API and SDK take its place, so there is nothing to port."
         }
         "performance" => {
-            "It makes the game faster. Horizon's own engine does that, so there is nothing to port."
+            "It makes the game faster. Event Horizon's own engine does that, so there is nothing to port."
         }
         "other" => {
-            "Pack tooling or a game feature that Horizon already has, so there is nothing to port."
+            "Pack tooling or a game feature that Event Horizon already has, so there is nothing to port."
         }
-        "client-ui" => "Built into Horizon already, so there is nothing to port.",
+        "client-ui" => "Built into Event Horizon already, so there is nothing to port.",
         _ => "Nothing to port.",
     }
 }
@@ -373,9 +374,9 @@ fn resource_row(path: &str, outcome: Option<&Outcome>, record: Option<&Record>) 
         old_layout: false,
         plain: match (shader, outcome.map(|o| o.state)) {
             (true, _) => "Shader packs are not converted yet.",
-            (false, Some(State::Available)) => "Copied as a resource pack; Horizon has not checked how it renders. Turn it on in the game's Resource Packs screen.",
+            (false, Some(State::Available)) => "Copied as a resource pack; Event Horizon has not checked how it renders. Turn it on in the game's Resource Packs screen.",
             (false, None) => "Not downloaded yet; Port gets it.",
-            (false, Some(_)) => "Horizon could not use this resource pack yet; the technical detail says why.",
+            (false, Some(_)) => "Event Horizon could not use this resource pack yet; the technical detail says why.",
         }
         .into(),
         reason: outcome.map_or_else(

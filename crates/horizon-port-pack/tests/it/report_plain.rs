@@ -178,7 +178,7 @@ fn every_reason_has_a_plain_sentence_and_the_technical_reason_is_kept() {
     assert!(said("lib").contains("library other mods build on"));
     assert!(said("fast").contains("makes the game faster"));
     assert!(said("tool").contains("Pack tooling"));
-    assert!(said("hud").contains("Built into Horizon"));
+    assert!(said("hud").contains("Built into Event Horizon"));
     assert_eq!(said("nothing"), "Nothing to port.");
     // The plain words come beside the technical ones; nothing is replaced.
     assert!(

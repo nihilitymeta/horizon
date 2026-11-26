@@ -14,7 +14,7 @@ use std::{
 
 /// What `check` and the report say of a jar made for 1.20 or older that is not carried.
 pub const OLD_LAYOUT: &str =
-    "Made for Minecraft 1.20 or older: Horizon ports mods made for 1.21 and later.";
+    "Made for Minecraft 1.20 or older: Event Horizon ports mods made for 1.21 and later.";
 
 /// The data folders 1.21 renamed to the singular, before and after: the tag folders in
 /// 24w19a, the others in 24w21a (pack format 45).

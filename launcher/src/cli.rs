@@ -38,7 +38,7 @@ use std::process::Command;
 #[command(
     name = "horizon-launcher",
     version = backend::VERSION,
-    about = "Installs, prepares and starts Horizon. Without a subcommand, opens the window."
+    about = "Installs, prepares and starts Event Horizon. Without a subcommand, opens the window."
 )]
 struct Cli {
     /// Print JSON instead of text, where a command has something to report
@@ -49,7 +49,7 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum JavaCmd {
-    /// The Java runtimes Horizon downloaded from Mojang and the ones installed on this computer
+    /// The Java runtimes Event Horizon downloaded from Mojang and the ones installed on this computer
     List,
     /// Download Mojang's Java runtime: a major (8, 16, 17, 21, 25) or a component name from a
     /// version's JSON (java-runtime-delta)
@@ -71,7 +71,7 @@ enum SourcesCmd {
     /// Add a repository (https://github.com/<owner>/<repo>, or <owner>/<repo>)
     ///
     /// Unless `--no-auto-update` is given (and the repository is not the default source), the source
-    /// updates itself and Horizon's own automatic game updates turn off: new Horizon game versions are
+    /// updates itself and Event Horizon's own automatic game updates turn off: new Event Horizon game versions are
     /// no longer installed automatically. The launcher updating itself is not one of them (it comes
     /// from Event Horizon's own releases) and stays as it is. Turn game updates back on by hand in the
     /// settings if you want them.
@@ -253,7 +253,7 @@ enum InstanceCmd {
         #[arg(long)]
         copy: Option<String>,
         /// Make a Minecraft: Java Edition instance of this version (1.21.4, latest or
-        /// latest-snapshot) instead of a Horizon one
+        /// latest-snapshot) instead of an Event Horizon one
         #[arg(long, conflicts_with = "copy")]
         minecraft: Option<String>,
         /// With this mod loader: fabric, quilt, forge or neoforge
@@ -305,7 +305,7 @@ enum InstanceCmd {
     /// Rename an instance (its folder stays)
     Rename { instance: String, name: String },
     /// Delete an instance: its folder (worlds, options, packs) goes to the Trash, where you can
-    /// get it back. Horizon's own instance stays
+    /// get it back. Event Horizon's own instance stays
     Delete { instance: String },
     /// Set an instance's icon: a block or item name from your prepared files (grass_block),
     /// a colour (#3fa7d6), or none
@@ -317,9 +317,9 @@ enum InstanceCmd {
     },
     /// Make Play start this instance
     Select { instance: String },
-    /// Keep an instance on one installed Horizon version, or "latest" to follow updates again
+    /// Keep an instance on one installed Event Horizon version, or "latest" to follow updates again
     Version { instance: String, version: String },
-    /// Export an instance (or a port) to share: its settings, packs, Horizon mods and the worlds
+    /// Export an instance (or a port) to share: its settings, packs, Event Horizon mods and the worlds
     /// named, as a .mrpack (resource packs from Modrinth listed by download) or a zip. Never
     /// logs, screenshots or account data; worlds go without their per-player files
     Export {
@@ -379,7 +379,7 @@ enum InstanceCmd {
         #[arg(long)]
         instance: Option<String>,
         /// A .mrpack becomes a Minecraft: Java Edition instance with its Minecraft version, mod
-        /// loader, mods and overrides, instead of a Horizon instance or a Modpacks import
+        /// loader, mods and overrides, instead of an Event Horizon instance or a Modpacks import
         #[arg(long)]
         java: bool,
     },
@@ -578,7 +578,7 @@ enum ModsCmd {
         #[arg(long)]
         instance: Option<String>,
     },
-    /// Search for packs Horizon loads, or for what a Java instance runs (made for its
+    /// Search for packs Event Horizon loads, or for what a Java instance runs (made for its
     /// Minecraft version and loader)
     Search {
         text: Vec<String>,
@@ -593,7 +593,7 @@ enum ModsCmd {
         #[arg(long)]
         instance: Option<String>,
     },
-    /// Say how well a Java mod runs in Horizon: its jar is downloaded (checksum checked),
+    /// Say how well a Java mod runs in Event Horizon: its jar is downloaded (checksum checked),
     /// carried over and read; the answer is kept
     Check {
         project: String,
@@ -634,7 +634,7 @@ enum ModsCmd {
     /// Install a native mod from a GitHub link (docs/modding/src/how-to/native-mods.md, "Install from GitHub"):
     /// https://github.com/OWNER/REPO (its latest release, else its default branch),
     /// .../releases/tag/TAG, .../tree/REF or .../commit/SHA. Resolved to an exact release file or
-    /// commit, checked like a registry mod. NOT reviewed by the Horizon registry
+    /// commit, checked like a registry mod. NOT reviewed by the Event Horizon registry
     AddGithub {
         url: String,
         /// The mod to install when the link holds several
@@ -695,7 +695,7 @@ enum KindArg {
     Mod,
     Resource,
     Modpack,
-    /// Horizon's own shader packs (Horizon's registry only)
+    /// Event Horizon's own shader packs (Event Horizon's registry only)
     Shader,
     /// Data packs (Modrinth): install one into a world with `mods install <pack> --world <name>`
     Datapack,
@@ -706,7 +706,7 @@ enum SourceArg {
     Modrinth,
     /// CurseForge support is coming soon
     Curseforge,
-    /// Horizon's own registry: mods, modpacks and resource packs made for Horizon, reviewed
+    /// Event Horizon's own registry: mods, modpacks and resource packs made for Event Horizon, reviewed
     Horizon,
 }
 
@@ -726,7 +726,7 @@ impl SourceArg {
 enum Cmd {
     /// Write a shell completion script to stdout
     Completions { shell: clap_complete::Shell },
-    /// List Horizon releases, or the installed versions
+    /// List Event Horizon releases, or the installed versions
     Versions {
         /// Only the versions installed here (no network)
         #[arg(long)]
@@ -838,7 +838,7 @@ enum Cmd {
         update_lock: bool,
     },
     /// Native mods (docs/modding/src/how-to/native-mods.md): compile flat Rust mod projects against the instance's exact
-    /// Horizon source revision with the launcher's own Rust, as the version the instance then
+    /// Event Horizon source revision with the launcher's own Rust, as the version the instance then
     /// plays. Not sandboxed: the mods' code runs with your rights
     NativeBuild {
         /// Discover internal uses through compiler diagnostics. Prints resolved declarations
@@ -874,10 +874,10 @@ enum Cmd {
         instance: Option<String>,
         /// The installed version whose game files the build reuses, and whose commit it builds on
         /// when no mod pins one (default: the one the instance plays, so a rebuild stays on its
-        /// Horizon)
+        /// Event Horizon)
         #[arg(long)]
         version: Option<String>,
-        /// Move to the newest installed release or Nightly instead of the Horizon the instance
+        /// Move to the newest installed release or Nightly instead of the Event Horizon the instance
         /// plays (rebuilds the mods for that pinned SDK)
         #[arg(long, conflicts_with = "version")]
         update: bool,
@@ -918,7 +918,7 @@ enum Cmd {
     /// system|en|fr|ru|de|zh|es|uk|pl (the window's language; system follows the computer's), accent
     /// violet|blue|teal|green|amber|red|pink|#rrggbb|DEGREES (a named accent, any colour, or any
     /// hue), background PATH (a picture behind Home; "default"
-    /// shows Horizon's landscape), cache-limit-gib N (managed cache limit
+    /// shows Event Horizon's landscape), cache-limit-gib N (managed cache limit
     /// in GiB: 10, 25 (default), 50, 100; 0 disables automatic cleanup)
     Settings {
         #[arg(value_parser = SETTING_KEYS)]
@@ -954,13 +954,13 @@ enum Cmd {
         #[arg(long)]
         crash: bool,
     },
-    /// Look for a newer Horizon release and launcher, and install them
+    /// Look for a newer Event Horizon release and launcher, and install them
     Update {
         /// Only report what is available
         #[arg(long)]
         check: bool,
     },
-    /// Linux: put Horizon in the applications menu (an entry and the icon, under
+    /// Linux: put Event Horizon in the applications menu (an entry and the icon, under
     /// $XDG_DATA_HOME), or take it out with --remove
     DesktopEntry {
         /// Remove the entry and the icon, and stop adding them back

@@ -482,7 +482,7 @@ mod tests {
             horizon_shader_api::check(&horizon_shader_api::Pack::read(&pack).unwrap()).is_err()
         );
         for (api, extra, why) in [
-            ("0.1", "", "needs shader API 0.1; this Horizon serves 0.2"),
+            ("0.1", "", "needs shader API 0.1; this Event Horizon serves 0.2"),
             (
                 "0.2",
                 "[frame]\nblend = \"linear\"\nprimaries = \"bt2020\"\n",
