@@ -214,3 +214,122 @@ fn a_wrong_typed_drops_value_is_refused_and_the_previous_list_is_kept() {
     );
     assert_eq!(drops, [("minecraft:stick".to_owned(), 1)]);
 }
+
+/// A load reader with no registries, tags or settings: the data-load context of these tests.
+struct NoLoad;
+
+impl mod_api::LoadReader for NoLoad {
+    fn registry(&self, _name: &str) -> Option<std::sync::Arc<[String]>> {
+        None
+    }
+    fn fluid_tags(&self) -> std::sync::Arc<[(String, std::sync::Arc<[String]>)]> {
+        std::sync::Arc::from(Vec::new())
+    }
+    fn setting(&self, _mod_id: &str, _key: &str) -> Option<String> {
+        None
+    }
+}
+
+/// The simple dungeon chest's table as the data packs load it: one pool with one stick.
+fn chest_table() -> serde_json::Value {
+    serde_json::json!({
+        "type": "minecraft:chest",
+        "pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:stick"}]}]
+    })
+}
+
+/// Fires `loot_table_load` for table `id` at one mod whose main.luau is `source`. Returns the mod's
+/// log lines; the table is changed in place, as the hook's output.
+fn fire_table(source: &str, id: &str, table: &mut serde_json::Value) -> Vec<String> {
+    let root = tempfile::tempdir().unwrap();
+    let host = LuaHost::new(vec![load_one(root.path(), "mymod", source)]);
+    let load = NoLoad;
+    let context = mod_api::OwningLoad::new(mod_api::DataLoadOrigin::ServerDataLoad, &load);
+    let mut event = mod_api::LootTableLoadEvent { id, table };
+    let _phase = mod_api::__private::PhaseOwner::scope(mod_api::__private::ModPhase::World);
+    mod_api::Hooks::loot_table_load(&host, &context, &mut event);
+    host.mods()[0].log_lines()
+}
+
+#[test]
+fn an_entry_a_handler_adds_to_a_loaded_table_reaches_the_table() {
+    // The event's tables are read-only: a change is a new table assigned to `event.table`.
+    let mut table = chest_table();
+    fire_table(
+        "horizon.on(\"loot_table_load\", function(event) if event.id == \"minecraft:chests/simple_dungeon\" then local old = event.table.pools[1] local entries = {} for i, e in ipairs(old.entries) do entries[i] = e end entries[#entries + 1] = {type = \"minecraft:item\", name = \"minecraft:stone\"} event.table = {type = event.table.type, pools = {{rolls = old.rolls, entries = entries}}} end end)",
+        "minecraft:chests/simple_dungeon",
+        &mut table,
+    );
+    assert_eq!(
+        table["pools"][0]["entries"],
+        serde_json::json!([
+            {"type": "minecraft:item", "name": "minecraft:stick"},
+            {"type": "minecraft:item", "name": "minecraft:stone"}
+        ])
+    );
+}
+
+#[test]
+fn an_in_place_edit_of_a_loaded_table_is_refused_and_the_table_is_kept() {
+    let mut table = chest_table();
+    fire_table(
+        "horizon.on(\"loot_table_load\", function(event) event.table.pools[1].rolls = 9 end)",
+        "minecraft:chests/simple_dungeon",
+        &mut table,
+    );
+    assert_eq!(table, chest_table());
+}
+
+#[test]
+fn a_table_a_handler_assigns_replaces_the_loaded_table() {
+    let mut table = chest_table();
+    fire_table(
+        "horizon.on(\"loot_table_load\", function(event) event.table = {type = \"minecraft:chest\", pools = {{rolls = 2, entries = {}}}} end)",
+        "minecraft:chests/simple_dungeon",
+        &mut table,
+    );
+    assert_eq!(
+        table,
+        serde_json::json!({"type": "minecraft:chest", "pools": [{"rolls": 2, "entries": []}]})
+    );
+}
+
+#[test]
+fn a_wrong_typed_table_is_refused_and_the_loaded_table_is_kept() {
+    let mut table = chest_table();
+    fire_table(
+        "horizon.on(\"loot_table_load\", function(event) event.table = 5 end)",
+        "minecraft:chests/simple_dungeon",
+        &mut table,
+    );
+    assert_eq!(table, chest_table());
+}
+
+#[test]
+fn a_table_with_a_null_in_an_array_is_not_delivered() {
+    let mut table = serde_json::json!({"pools": [null]});
+    let log = fire_table(
+        "horizon.on(\"loot_table_load\", function(event) horizon.log(\"ran\") end)",
+        "minecraft:chests/simple_dungeon",
+        &mut table,
+    );
+    assert!(log.is_empty());
+    assert_eq!(table, serde_json::json!({"pools": [null]}));
+}
+
+#[test]
+fn a_copy_with_one_number_changed_keeps_its_empty_array_and_object() {
+    // `conditions` is `[]` and `predicate` is `{}` as the JSON gave them: the copy keeps both.
+    let mut table = serde_json::json!({
+        "type": "minecraft:chest",
+        "pools": [{"rolls": 1, "conditions": [], "predicate": {}, "entries": [{"type": "minecraft:item", "name": "minecraft:stick"}]}]
+    });
+    fire_table(
+        "horizon.on(\"loot_table_load\", function(event) local copy = {} for k, v in pairs(event.table) do copy[k] = v end local pool = {} for k, v in pairs(event.table.pools[1]) do pool[k] = v end pool.rolls = 3 copy.pools = {pool} event.table = copy end)",
+        "minecraft:chests/simple_dungeon",
+        &mut table,
+    );
+    assert_eq!(table["pools"][0]["rolls"], serde_json::json!(3));
+    assert_eq!(table["pools"][0]["conditions"], serde_json::json!([]));
+    assert_eq!(table["pools"][0]["predicate"], serde_json::json!({}));
+}

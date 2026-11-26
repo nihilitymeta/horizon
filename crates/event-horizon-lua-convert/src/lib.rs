@@ -3,6 +3,7 @@
 
 pub mod ids;
 pub mod item;
+pub mod json;
 pub mod nbt;
 #[rustfmt::skip]
 pub mod generated_types;

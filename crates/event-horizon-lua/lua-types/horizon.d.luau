@@ -1659,6 +1659,11 @@ export type LootDropsEvent = {
 	drops: {ItemStackSpec}, -- answer
 }
 
+export type LootTableLoadEvent = {
+	id: string, -- read-only
+	table: any, -- answer -- Rust: Value
+}
+
 export type MenuBackgroundEvent = {
 	radius: number | NoneMarker?, -- answer
 }
@@ -3087,6 +3092,7 @@ export type OnHook =
 	((name: "living_use_totem", handler: (event: LivingUseTotemEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "living_visibility", handler: (event: LivingVisibilityEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "loot_drops", handler: (event: LootDropsEvent) -> (), options: HandlerOptions?) -> ()) &
+	((name: "loot_table_load", handler: (event: LootTableLoadEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "menu_background", handler: (event: MenuBackgroundEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "menu_clicked", handler: (event: MenuClickedEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "menu_closed", handler: (event: MenuClosedEvent) -> (), options: HandlerOptions?) -> ()) &

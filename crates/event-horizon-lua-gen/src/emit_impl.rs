@@ -578,6 +578,7 @@ fn outputs_of(
             }
             Some(_) => {}
             None if !output_supported(&shown(&param.ty), plain)
+                && !is_json_value(&shown(&param.ty))
                 && !is_appended(&hook.name, &param.param, &shown(&param.ty)) =>
             {
                 return Err(format!("output: {}", shown(&param.ty)));
@@ -679,6 +680,7 @@ fn plan<'a>(
         }
         let list = hook.kind == Kind::Collect
             && (is_list_kind(&collect_type(&output.rust_type))
+                || is_json_value(&collect_type(&output.rust_type))
                 || carried::shape_of(&output.rust_type).is_some());
         if !list {
             return Err("has an output: its listeners write back, not in this slice".to_owned());
@@ -912,6 +914,12 @@ pub(crate) fn command_input(ty: &str) -> Option<&'static str> {
         "command::CommandInvocation" | "CommandInvocation" => Some("invocation"),
         _ => None,
     }
+}
+
+/// Whether a collect output's type (without spaces, `serde_json::Value` or its `Value` in the
+/// dispatch function) is a JSON value, which converts through `event_horizon_lua_convert::json`.
+pub(crate) fn is_json_value(ty: &str) -> bool {
+    matches!(ty, "Value" | "serde_json::Value")
 }
 
 /// Whether an argument type (`&'a LootDrops<'a>`) is the `loot_drops` view, read by value.
@@ -1271,6 +1279,10 @@ fn build_text(method: &Method<'_>, outputs: bool) -> String {
                 _ if is_appended(&method.hook.name, &output.key, &output.ty) => {
                     "lua.create_table()?".to_owned()
                 }
+                _ if is_json_value(&output.ty) => format!(
+                    "event_horizon_lua_convert::json::to_lua(lua, &out_{}.borrow())?",
+                    output.key
+                ),
                 Some((shape, view)) => carried::output_lua(shape, &output.key, view),
                 None => format!("out_{}.borrow().to_lua_value(lua)?", output.key),
             };
@@ -1360,7 +1372,12 @@ fn checks_text(method: &Method<'_>, outputs: bool) -> String {
     }
     if outputs {
         for output in &method.outputs {
-            if let Some((shape, view)) =
+            if is_json_value(&output.ty) {
+                calls.push(format!(
+                    "event_horizon_lua_convert::json::fits(&out_{}.borrow())",
+                    output.key
+                ));
+            } else if let Some((shape, view)) =
                 output.shape.and_then(|shape| method.view_for(shape, false))
             {
                 calls.push(carried::output_check(shape, &output.key, view));
@@ -1558,6 +1575,10 @@ fn commit_text(method: &Method<'_>) -> String {
         // An `Option` output takes `horizon.none` as None; any other output refuses it.
         let optional = output.ty.starts_with("Option<");
         match output.shape.and_then(|shape| method.view_for(shape, true)) {
+            _ if is_json_value(&output.ty) => body.push_str(&format!(
+                "                crate::dispatch::accept_by(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), event_horizon_lua_convert::json::from_lua_table);\n",
+                key = output.key
+            )),
             Some((shape, view)) => body.push_str(&format!(
                 "                crate::dispatch::{accept}(&out_{key}, id, {hook:?}, {key:?}, &answered.answer({key:?}), {convert});\n",
                 accept = if optional { "accept_opt_by" } else { "accept_by" },
