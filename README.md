@@ -1,13 +1,17 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/media/readme/title-dark.png">
-    <img src="docs/media/readme/title-light.png" alt="Horizon" width="320">
+    <img src="docs/media/readme/title-light.png" alt="Event Horizon" width="320">
   </picture>
 </p>
 
 <p align="center">
   <b>Minecraft: Java Edition 26.3, rewritten from scratch in Rust.</b><br>
   It opens your worlds, generates the same terrain and plays by the same rules, without Java.
+</p>
+
+<p align="center">
+  <b>Event Horizon</b> is a fork of the upstream Horizon project. It adds Lua mods (sandboxed Luau scripts in <code>lua-mods/</code>) and a built-in developer-tools mod that starts with <code>HORIZON_DEV_TOOLS=1</code> or <code>--dev-tools</code>. See <a href="docs/lua-modding.md">Lua mods</a>, <a href="docs/dev-tools.md">developer tools</a> and <a href="docs/event-horizon-releases.md">releases</a>.
 </p>
 
 <p align="center">
@@ -37,13 +41,13 @@
 <h2 align="center">What you get</h2>
 
 - **Vanilla Minecraft:** survival, creative and hardcore in every dimension, with the same terrain, mobs, villagers and redstone. Your saves open as they are.
-- **Multiplayer:** vanilla and Horizon servers, LAN, and invite codes for playing your world with friends. You can [host a server](https://playhorizon.dev/docs/hosting) too.
-- **Mods:** Horizon's own mod system, with mods like zoom and a minimap, and shader packs. Browse the [catalogue](https://playhorizon.dev/mods) or [make a mod](https://playhorizon.dev/docs/make-a-mod).
+- **Multiplayer:** vanilla and Event Horizon servers, LAN, and invite codes for playing your world with friends. You can [host a server](https://playhorizon.dev/docs/hosting) too.
+- **Mods:** Event Horizon's own mod system, with mods like zoom and a minimap, and shader packs. Browse the [catalogue](https://playhorizon.dev/mods) or [make a mod](https://playhorizon.dev/docs/make-a-mod).
 - **Beyond vanilla:** terrain up to 1,024 chunks away, HDR, controller support, graphics presets and dynamic lights.
 
 <h2 align="center">What you need</h2>
 
-- **Your own copy of Minecraft: Java Edition.** Horizon ships no Minecraft files. It builds them from the game you bought, so install version 26.3 and start it once.
+- **Your own copy of Minecraft: Java Edition.** Event Horizon ships no Minecraft files. It builds them from the game you bought, so install version 26.3 and start it once.
 - **Windows, macOS or Linux:** Windows on x64 or ARM64, macOS 12 or later, Linux on x86-64.
 
 <h2 align="center">Made by the Horizon Team</h2>

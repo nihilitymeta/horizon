@@ -60,7 +60,7 @@ rm -f "$out/$zip" "$dmg"
 
 cat > "$out/dmg.json" <<JSON
 {
-  "title": "Horizon",
+  "title": "Event Horizon",
   "icon-size": 128,
   "background": "$here/background.png",
   "window": { "position": { "x": 200, "y": 160 }, "size": { "width": 660, "height": 420 } },
@@ -71,7 +71,7 @@ cat > "$out/dmg.json" <<JSON
   ]
 }
 JSON
-"${DMGBUILD:-dmgbuild}" -s "$out/dmg.json" Horizon "$dmg"
+"${DMGBUILD:-dmgbuild}" -s "$out/dmg.json" "Event Horizon" "$dmg"
 rm "$out/dmg.json"
 if [[ "$identity" != "-" ]]; then
   codesign --force --timestamp ${keychain[@]+"${keychain[@]}"} --sign "$identity" "$dmg"
