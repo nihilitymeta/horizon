@@ -45,6 +45,9 @@ mod hlua_tests;
 pub mod host;
 pub mod hostcall;
 mod load_order;
+mod loot_lua;
+#[cfg(test)]
+mod loot_lua_tests;
 mod manifest;
 #[cfg(test)]
 mod manifest_tests;

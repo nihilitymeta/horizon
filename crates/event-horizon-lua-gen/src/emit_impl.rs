@@ -835,6 +835,28 @@ fn plan<'a>(
             ));
             continue;
         }
+        if is_loot_drops(&arg.rust_type) {
+            // The loot view is borrowed and call-scoped. Its block state and held tool convert
+            // through the turn's host, and that host must have their ids, as the stacks do.
+            let (Some(view), true, Some(built)) =
+                (view.as_deref(), turn.is_some(), turn_view.as_deref())
+            else {
+                return Err(format!(
+                    "argument `{}`: the hook has no turn host",
+                    arg.name
+                ));
+            };
+            if !carried::allowed(Shape::State, reach) {
+                return Err(carried::refusal(Shape::State));
+            }
+            let field = field_of(sig, &arg.name);
+            checks.push(format!("crate::loot_lua::carried({view}, {field})"));
+            fields.push((
+                arg.name.clone(),
+                format!("crate::loot_lua::loot_drops_lua(lua, {field}, {built})?"),
+            ));
+            continue;
+        }
         let mapped = map_type(&arg.rust_type)
             .map_err(|error| format!("argument `{}`: {error}", arg.name))?;
         let shown = format!(
@@ -890,6 +912,13 @@ pub(crate) fn command_input(ty: &str) -> Option<&'static str> {
         "command::CommandInvocation" | "CommandInvocation" => Some("invocation"),
         _ => None,
     }
+}
+
+/// Whether an argument type (`&'a LootDrops<'a>`) is the `loot_drops` view, read by value.
+pub(crate) fn is_loot_drops(ty: &str) -> bool {
+    let text: String = ty.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let text = text.replace("'a", "");
+    !text.contains("mut") && text.trim_start_matches('&').starts_with("LootDrops<")
 }
 
 /// Whether an argument type (`&'a BlockClick<'a>`) is the right click view, read by value.

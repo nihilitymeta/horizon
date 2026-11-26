@@ -1,4 +1,4 @@
-# Handle coverage (issue 74, H2) from surface e113db1f95c292ef2796afae2d1783dc, by event-horizon-lua-gen: do not edit.
+# Handle coverage (issue 74, H2) from surface 2f592c9f087329694313223be0b54592, by event-horizon-lua-gen: do not edit.
 # families: BlockEntityRef, BossBarRef, ChunkRef, DisplayRef, DragonRef, EntityRef, FishingHookRef, ItemEntityRef, LevelRef, LivingRef, MenuRef, MerchantRef, MinecartRef, MobRef, OriginalPlayerRef, PlayerRef, ProjectileRef, RaidRef, UnspawnedMobRef
 # not generated (no member binds): InstanceGroupRef, SoundRef
 
