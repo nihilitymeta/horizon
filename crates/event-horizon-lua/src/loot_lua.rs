@@ -19,7 +19,7 @@ pub(crate) fn carried(host: &dyn Host, drops: &LootDrops<'_>) -> Option<()> {
     Some(())
 }
 
-/// The context as Lua: `table`, `dimension`, `origin` (`{x, y, z}` as a 1-based array),
+/// The context as Lua: `table`, `dimension`, `origin` (`{x=, y=, z=}`, numbers),
 /// `block` (`{pos, state}` or nil), `entity` (`{id, type}` or nil), `player` (a UUID string or nil),
 /// `damage_source` (the `HurtSource` table or nil), `tool` (a stack table or nil), `explosion`
 /// (a number or nil) and `used` (a boolean).
