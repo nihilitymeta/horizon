@@ -1654,6 +1654,13 @@ export type LivingVisibilityEvent = {
 	visibility: number, -- answer
 }
 
+export type LootConditionEvent = {
+	kind: string, -- read-only
+	data: any, -- read-only -- Rust: serde_json::Value
+	ctx: LootContext, -- read-only
+	holds: boolean, -- answer
+}
+
 export type LootDropsEvent = {
 	context: any, -- read-only -- Rust: LootDrops
 	drops: {ItemStackSpec}, -- answer
@@ -3091,6 +3098,7 @@ export type OnHook =
 	((name: "living_speed", handler: (event: LivingSpeedEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "living_use_totem", handler: (event: LivingUseTotemEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "living_visibility", handler: (event: LivingVisibilityEvent) -> (), options: HandlerOptions?) -> ()) &
+	((name: "loot_condition", handler: (event: LootConditionEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "loot_drops", handler: (event: LootDropsEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "loot_table_load", handler: (event: LootTableLoadEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "menu_background", handler: (event: MenuBackgroundEvent) -> (), options: HandlerOptions?) -> ()) &
@@ -4740,6 +4748,20 @@ export type WorldEpoch = number
 
 export type WorldPhase = "world_open_failed" | "world_close_final" | "world_close_failed"
 
+export type LootContext = {
+	queried_table_id: string,
+	queried_stack: ItemStackSpec?,
+	entity: LootEntity?,
+	damage: LootDamage?,
+	player: LootEntity?,
+	tool: LootTool?,
+	block: string?,
+	luck: number,
+	biome: string?,
+	seed: number,
+	place: LootPlace?,
+}
+
 export type AttributeOperation = "add_value" | "add_multiplied_base" | "add_multiplied_total"
 
 export type Authority = "local_authoritative" | "integrated_server" | "dedicated_server" | "remote_client"
@@ -4763,4 +4785,44 @@ export type SoundAttenuation = "none" | "linear"
 export type TickId = number
 
 export type ToolAbility = "axe_strip" | "axe_scrape" | "axe_wax_off" | "shovel_flatten" | "shovel_douse" | "hoe_till"
+
+export type LootDamage = {
+	kind: string,
+	source: LootEntity?,
+	direct: LootEntity?,
+}
+
+export type LootEntity = {
+	kind: string,
+	living: boolean,
+	on_fire: boolean,
+	baby: boolean,
+	vehicle: LootEntity?,
+	cube_size: number?,
+	sheep: any?, -- Rust: Option<(String, bool)>
+	captain: boolean?,
+	frog_variant: string?,
+	chicken_variant: string?,
+	powered: boolean,
+	equipment: {any}, -- Rust: Vec<(String, world::snapshots::LootStack)>
+}
+
+export type LootPlace = {
+	origin: { x: number, y: number, z: number }?,
+	block_entity: any?, -- Rust: Tag
+	level: LootLevel?,
+}
+
+export type LootTool = {
+	item: any, -- Rust: ItemKey
+	enchantments: {any}, -- Rust: Vec<(String, i32)>
+}
+
+export type LootLevel = {
+	dimension: string,
+	game_time: number,
+	day_time: number,
+	raining: boolean,
+	thundering: boolean,
+}
 

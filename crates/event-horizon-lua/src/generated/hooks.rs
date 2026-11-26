@@ -5447,6 +5447,7 @@ pub const EMITTED: &[&str] = &[
     "living_speed",
     "living_use_totem",
     "living_visibility",
+    "loot_condition",
     "loot_drops",
     "loot_table_load",
     "menu_background",

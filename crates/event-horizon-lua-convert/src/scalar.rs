@@ -220,6 +220,22 @@ impl<T: FromLuaValue> FromLuaValue for Option<T> {
     }
 }
 
+impl<T: ToLuaValue + ?Sized> ToLuaValue for Box<T> {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        (**self).to_lua_value(lua)
+    }
+}
+
+/// A pair is a two-item Lua array, in order: `(String, i32)` is `{"minecraft:sharpness", 3}`.
+impl<A: ToLuaValue, B: ToLuaValue> ToLuaValue for (A, B) {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set(1, self.0.to_lua_value(lua)?)?;
+        table.raw_set(2, self.1.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl<T: ToLuaValue> ToLuaValue for Option<T> {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         match self {

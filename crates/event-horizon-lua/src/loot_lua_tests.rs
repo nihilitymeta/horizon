@@ -333,3 +333,73 @@ fn a_copy_with_one_number_changed_keeps_its_empty_array_and_object() {
     assert_eq!(table["pools"][0]["conditions"], serde_json::json!([]));
     assert_eq!(table["pools"][0]["predicate"], serde_json::json!({}));
 }
+
+/// The tag lookup the vocab's test listeners use: a condition's event carries one, and a Lua
+/// handler does not read it in this slice.
+struct NoTags;
+impl mod_api::Tags for NoTags {}
+
+/// Fires `loot_condition` for `kind` with `data` and `ctx` at one mod whose main.luau is `source`.
+/// Returns the mod's log lines and the answer (`holds`), which starts `false`.
+fn fire_condition(
+    source: &str,
+    kind: &str,
+    data: &serde_json::Value,
+    ctx: &mod_api::LootContext,
+) -> (Vec<String>, bool) {
+    let root = tempfile::tempdir().unwrap();
+    let host = LuaHost::new(vec![load_one(root.path(), "mymod", source)]);
+    let tags = NoTags;
+    let mut event = mod_api::LootConditionEvent {
+        kind,
+        data,
+        ctx,
+        holds: false,
+        tags: &tags,
+    };
+    let _phase = mod_api::__private::PhaseOwner::scope(mod_api::__private::ModPhase::World);
+    mod_api::Hooks::loot_condition(&host, &mut event);
+    (host.mods()[0].log_lines(), event.holds)
+}
+
+/// A loot context with a seed of 7 and a luck of 2.5, the rest as an empty roll has them.
+fn luck_context() -> mod_api::LootContext {
+    let mut ctx = mod_api::LootContext::new(7);
+    ctx.luck = 2.5;
+    ctx
+}
+
+#[test]
+fn a_condition_a_handler_claims_reaches_it_with_its_kind_data_and_context() {
+    // The handler sets `holds` only when every value it reads is the one the test gave: a wrong
+    // kind, data, or context field leaves the answer false.
+    let (_, holds) = fire_condition(
+        "horizon.on(\"loot_condition\", function(event) if event.kind ~= \"mymod:is_night\" then return end if event.data.flag == 3 and event.ctx.luck == 2.5 and event.ctx.seed == 7 then event.holds = true end end)",
+        "mymod:is_night",
+        &serde_json::json!({"flag": 3}),
+        &luck_context(),
+    );
+    assert!(holds);
+}
+
+#[test]
+fn a_condition_another_handler_claims_leaves_holds_false() {
+    let (_, holds) = fire_condition(
+        "horizon.on(\"loot_condition\", function(event) if event.kind ~= \"mymod:other\" then return end event.holds = true end)",
+        "mymod:is_night",
+        &serde_json::json!({}),
+        &luck_context(),
+    );
+    assert!(!holds);
+}
+
+#[test]
+fn a_wrong_typed_condition_answer_is_refused_and_holds_stays_false() {
+    let (_, holds) = fire_condition(
+        "horizon.on(\"loot_condition\", function(event) if event.kind == \"mymod:is_night\" then event.holds = \"yes\" end end)",
+        "mymod:is_night",
+        &serde_json::json!({}),
+        &luck_context(),
+    );
+    assert!(!holds);
+}

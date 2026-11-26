@@ -438,6 +438,30 @@ fn value_supported(ty: &str, plain: &Plain) -> bool {
     SCALAR_NAMES.contains(&ty) || ty == "Text" || plain.decides(ty)
 }
 
+/// Whether `ty` converts inside a loot family type (see [`is_loot_family`]): the same as
+/// [`convertible`], and also a tuple of convertible items (a Lua array in order: `(String, i32)` is
+/// `{"minecraft:sharpness", 3}`), a list of them, and the leaves the loot context needs.
+pub fn family_convertible(ty: &TypeIr, plain: &Plain) -> bool {
+    match ty {
+        TypeIr::Tuple(items) => {
+            !items.is_empty() && items.iter().all(|item| family_convertible(item, plain))
+        }
+        TypeIr::Option(inner) => {
+            !matches!(**inner, TypeIr::Option(_)) && family_convertible(inner, plain)
+        }
+        TypeIr::List(elem) => {
+            !matches!(**elem, TypeIr::Str | TypeIr::Option(_)) && family_convertible(elem, plain)
+        }
+        TypeIr::Named(name) => {
+            matches!(
+                name.as_str(),
+                "Tag" | "ItemKey" | "item::item_stack::ItemStack"
+            ) || convertible(ty, plain)
+        }
+        _ => convertible(ty, plain),
+    }
+}
+
 /// The scalar types a value converts as: primitives and `String`, spelled without a path.
 const SCALAR_NAMES: [&str; 6] = ["bool", "i32", "u32", "f32", "f64", "String"];
 
@@ -493,10 +517,11 @@ fn replace_answer(sig: &HookSig, plain: &Plain, reach: Reach) -> Result<String, 
 
 /// The type of a collect hook's output argument (`&'a mut Vec<String>`), without spaces: `Vec<String>`.
 fn collect_type(rust_type: &str) -> String {
-    rust_type
+    // A `&mut` output names its referent after `mut`; a plain output (`holds: bool`) is its own type.
+    let text = rust_type
         .split_once("mut")
-        .map(|(_, rest)| rest.chars().filter(|ch| !ch.is_whitespace()).collect())
-        .unwrap_or_default()
+        .map_or(rust_type, |(_, rest)| rest);
+    text.chars().filter(|ch| !ch.is_whitespace()).collect()
 }
 
 /// Whether `ty` (without spaces) is one of the list kinds a hook may write back in this slice.
@@ -520,6 +545,10 @@ pub fn cancel_key(hook: &str) -> &'static str {
         _ => "cancelled",
     }
 }
+
+/// The collect hooks whose plain `bool` output (`holds`) a listener writes: the answer is the value
+/// the listener set, and it starts as the event's own value. Only the hooks named here take it.
+pub const PLAIN_COLLECT_OUTPUTS: &[&str] = &["loot_condition"];
 
 /// The `Vec<Text>` outputs a cancel hook appends to rather than replaces: `(hook, key, type)`. Each
 /// mod's turn starts with an empty list and answers the lines it adds; the game appends them to the
@@ -681,6 +710,8 @@ fn plan<'a>(
         let list = hook.kind == Kind::Collect
             && (is_list_kind(&collect_type(&output.rust_type))
                 || is_json_value(&collect_type(&output.rust_type))
+                || (collect_type(&output.rust_type) == "bool"
+                    && PLAIN_COLLECT_OUTPUTS.contains(&hook.name.as_str()))
                 || carried::shape_of(&output.rust_type).is_some());
         if !list {
             return Err("has an output: its listeners write back, not in this slice".to_owned());
@@ -837,6 +868,22 @@ fn plan<'a>(
             ));
             continue;
         }
+        if is_dyn_tags(&arg.rust_type) {
+            // The `loot_condition` tag lookup is not carried in this slice: the Lua event has no
+            // `tags` field, and a handler cannot read tags yet (a later chunk adds the Tags userdata).
+            continue;
+        }
+        if is_json_value(compact(&arg.rust_type).trim_start_matches('&')) {
+            // A JSON argument (`data`) is read-only: a Lua table, or the hook is not delivered when
+            // the value has a null inside an array (the same rule as a loot table's JSON).
+            let field = field_of(sig, &arg.name);
+            checks.push(format!("event_horizon_lua_convert::json::fits({field})"));
+            fields.push((
+                arg.name.clone(),
+                format!("event_horizon_lua_convert::json::to_lua(lua, {field})?"),
+            ));
+            continue;
+        }
         if is_loot_drops(&arg.rust_type) {
             // The loot view is borrowed and call-scoped. Its block state and held tool convert
             // through the turn's host, and that host must have their ids, as the stacks do.
@@ -927,6 +974,13 @@ pub(crate) fn is_loot_drops(ty: &str) -> bool {
     let text: String = ty.chars().filter(|ch| !ch.is_whitespace()).collect();
     let text = text.replace("'a", "");
     !text.contains("mut") && text.trim_start_matches('&').starts_with("LootDrops<")
+}
+
+/// Whether an argument type (`&'a dyn Tags`) is the tag lookup a `loot_condition` listener reads.
+pub(crate) fn is_dyn_tags(ty: &str) -> bool {
+    let text = compact(ty);
+    let text = text.trim_start_matches('&');
+    text.starts_with("dyn") && text.ends_with("Tags")
 }
 
 /// Whether an argument type (`&'a BlockClick<'a>`) is the right click view, read by value.

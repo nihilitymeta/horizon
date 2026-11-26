@@ -11127,6 +11127,53 @@ impl ToLuaValue for mod_api::world::snapshots::ExplorationMap {
     }
 }
 
+impl ToLuaValue for mod_api::world::snapshots::LootContext {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("queried_table_id", self.queried_table_id.to_string().to_lua_value(lua)?)?;
+        table.raw_set("queried_stack", self.queried_stack.to_lua_value(lua)?)?;
+        table.raw_set("entity", self.entity.to_lua_value(lua)?)?;
+        table.raw_set("damage", self.damage.to_lua_value(lua)?)?;
+        table.raw_set("player", self.player.to_lua_value(lua)?)?;
+        table.raw_set("tool", self.tool.to_lua_value(lua)?)?;
+        table.raw_set("block", self.block.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("luck", self.luck.to_lua_value(lua)?)?;
+        table.raw_set("biome", self.biome.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("seed", self.seed.to_lua_value(lua)?)?;
+        table.raw_set("place", self.place.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::world::snapshots::LootDamage {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("source", self.source.to_lua_value(lua)?)?;
+        table.raw_set("direct", self.direct.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::world::snapshots::LootEntity {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("kind", self.kind.to_string().to_lua_value(lua)?)?;
+        table.raw_set("living", self.living.to_lua_value(lua)?)?;
+        table.raw_set("on_fire", self.on_fire.to_lua_value(lua)?)?;
+        table.raw_set("baby", self.baby.to_lua_value(lua)?)?;
+        table.raw_set("vehicle", self.vehicle.to_lua_value(lua)?)?;
+        table.raw_set("cube_size", self.cube_size.to_lua_value(lua)?)?;
+        table.raw_set("sheep", self.sheep.to_lua_value(lua)?)?;
+        table.raw_set("captain", self.captain.to_lua_value(lua)?)?;
+        table.raw_set("frog_variant", self.frog_variant.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("chicken_variant", self.chicken_variant.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("powered", self.powered.to_lua_value(lua)?)?;
+        table.raw_set("equipment", list_to_lua(&self.equipment, lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
 impl ToLuaValue for mod_api::world::snapshots::LootLevel {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -11135,6 +11182,43 @@ impl ToLuaValue for mod_api::world::snapshots::LootLevel {
         table.raw_set("day_time", self.day_time.to_lua_value(lua)?)?;
         table.raw_set("raining", self.raining.to_lua_value(lua)?)?;
         table.raw_set("thundering", self.thundering.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::world::snapshots::LootPlace {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("origin", self.origin.to_lua_value(lua)?)?;
+        table.raw_set("block_entity", self.block_entity.to_lua_value(lua)?)?;
+        table.raw_set("level", self.level.to_lua_value(lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::world::snapshots::LootStack {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("item", self.item.to_lua_value(lua)?)?;
+        table.raw_set("count", self.count.to_lua_value(lua)?)?;
+        table.raw_set("damage", self.damage.to_lua_value(lua)?)?;
+        table.raw_set("enchantments", list_to_lua(&self.enchantments, lua)?)?;
+        table.raw_set("potion", self.potion.as_ref().map(|value| value.to_string()).to_lua_value(lua)?)?;
+        table.raw_set("map", self.map.to_lua_value(lua)?)?;
+        table.raw_set("exploration", self.exploration.to_lua_value(lua)?)?;
+        table.raw_set("ominous_amplifier", self.ominous_amplifier.to_lua_value(lua)?)?;
+        table.raw_set("stew_effects", list_to_lua(&self.stew_effects, lua)?)?;
+        table.raw_set("names", list_to_lua(&self.names, lua)?)?;
+        table.raw_set("components", list_to_lua(&self.components, lua)?)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl ToLuaValue for mod_api::world::snapshots::LootTool {
+    fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("item", self.item.to_lua_value(lua)?)?;
+        table.raw_set("enchantments", list_to_lua(&self.enchantments, lua)?)?;
         Ok(Value::Table(table))
     }
 }

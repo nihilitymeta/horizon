@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use mod_surface::{Function, Type, TypeKind};
 
-use crate::emit_impl::{MAX_ARRAY_LEN, convertible, scalar_name};
+use crate::emit_impl::{MAX_ARRAY_LEN, convertible, family_convertible, scalar_name};
 use crate::types::{Access, Mapped, TypeIr, map_type};
 
 /// The most items a borrowed list copies into a Lua array in one call.
@@ -316,7 +316,22 @@ pub fn plan_decided(
         let plain = Plain::from_paths(accepted.keys().map(String::as_str));
         let ready: Vec<String> = pending
             .iter()
-            .filter(|(_, def)| first_blocker(&def.body, def.borrowed, &plain).is_none())
+            .filter(|(path, def)| {
+                // A loot family type may name itself (`LootEntity.vehicle`): it is plain while its
+                // own fields are checked.
+                let blocker = if is_loot_family(path) {
+                    let own = Plain::from_paths(
+                        accepted
+                            .keys()
+                            .map(String::as_str)
+                            .chain(std::iter::once(path.as_str())),
+                    );
+                    first_blocker(&def.body, def.borrowed, true, &own)
+                } else {
+                    first_blocker(&def.body, def.borrowed, false, &plain)
+                };
+                blocker.is_none()
+            })
             .map(|(path, _)| path.clone())
             .collect();
         if ready.is_empty() {
@@ -343,7 +358,8 @@ pub fn plan_decided(
             .collect(),
     };
     for (path, def) in &pending {
-        let reason = match first_blocker(&def.body, def.borrowed, &plain) {
+        let reason = match first_blocker(&def.body, def.borrowed, is_loot_family(&def.path), &plain)
+        {
             Some(reason) => reason,
             None => "no conversion".to_owned(),
         };
@@ -809,11 +825,21 @@ fn has_text(ty: &TypeIr) -> bool {
 }
 
 /// Whether a field's type converts: a list only in a borrowed type, anything else as [`convertible`].
-fn field_convertible(ty: &TypeIr, borrowed: bool, plain: &Plain) -> bool {
+/// A loot family type takes its lists, tuples and leaves as [`family_convertible`] says.
+fn field_convertible(ty: &TypeIr, borrowed: bool, family: bool, plain: &Plain) -> bool {
+    if family {
+        return family_convertible(ty, plain);
+    }
     match ty {
         TypeIr::List(elem) => borrowed && list_convertible(elem, plain),
         _ => convertible(ty, plain),
     }
+}
+
+/// Whether a type is one of the loot context's types (`world::snapshots::LootContext` and its
+/// nested types): the chunk that gives them Lua conversions (#66) widens what they convert.
+fn is_loot_family(path: &str) -> bool {
+    path.starts_with("world::snapshots::Loot")
 }
 
 /// Whether any field of the type is a list (so the file needs [`LIST_HELPER`]).
@@ -829,7 +855,7 @@ fn uses_list(def: &Def) -> bool {
 }
 
 /// The reason the body is not yet convertible given `plain`, or `None` when every field converts.
-fn first_blocker(body: &Body, borrowed: bool, plain: &Plain) -> Option<String> {
+fn first_blocker(body: &Body, borrowed: bool, family: bool, plain: &Plain) -> Option<String> {
     let fields: Vec<&Field> = match body {
         Body::Unit | Body::Getter { .. } => Vec::new(),
         Body::Named(fields) | Body::Tuple(fields) => fields.iter().collect(),
@@ -837,7 +863,7 @@ fn first_blocker(body: &Body, borrowed: bool, plain: &Plain) -> Option<String> {
     };
     fields
         .into_iter()
-        .find(|field| !field_convertible(&field.ty.ty, borrowed, plain))
+        .find(|field| !field_convertible(&field.ty.ty, borrowed, family, plain))
         .map(|field| {
             format!(
                 "field `{}` has type `{}`: no Lua conversion (or a type that is not plain)",

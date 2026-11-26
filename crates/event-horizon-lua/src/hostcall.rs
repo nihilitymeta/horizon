@@ -2113,7 +2113,8 @@ mod tests {
             .filter(|line| line.ends_with(" emitted"))
             .count();
         assert_eq!(emitted, crate::generated::hooks::EMITTED.len());
-        assert!(coverage.contains("# hooks: 749, emitted: 408, skipped: 341\n"));
+        assert!(coverage.contains("# hooks: 749, emitted: 409, skipped: 340\n"));
+        assert!(lines.contains(&"loot_condition emitted"));
         assert!(lines.contains(&"player_command emitted"));
         assert!(lines.contains(&"right_click_block emitted"));
         // The declaration hooks are answered from the records, and no mod can subscribe to them.
