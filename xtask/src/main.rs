@@ -38,6 +38,10 @@ mod mod_api;
 #[allow(dead_code)]
 #[path = "../../crates/event-horizon-lua/src/package.rs"]
 mod lua_package;
+// The developer tools' package, the same way: the game refuses `--dev-tools` without it.
+#[allow(dead_code)]
+#[path = "../../crates/event-horizon-dev-tools/src/package.rs"]
+mod dev_tools_package;
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -383,10 +387,13 @@ fn package(binary: &Path, out: &Path) -> Result<(), String> {
     write_lua_host(out)
 }
 
-/// The Lua host's package, which the game loads from beside its executable (a built-in mod).
+/// The packages of Event Horizon's built-in mods, which the game loads from beside its executable:
+/// the Lua host's, and the developer tools' (`--dev-tools` fails without it).
 fn write_lua_host(out: &Path) -> Result<(), String> {
     let dir = out.join("horizon-native-mods").join(lua_package::ID);
-    lua_package::write_to(&dir).map_err(|e| format!("{}: {e}", dir.display()))
+    lua_package::write_to(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let dir = out.join("horizon-native-mods").join(dev_tools_package::ID);
+    dev_tools_package::write_to(&dir).map_err(|e| format!("{}: {e}", dir.display()))
 }
 
 fn package_server(engine: &Path, out: &Path) -> Result<(), String> {
@@ -628,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn write_lua_host_writes_the_three_files() {
+    fn write_lua_host_writes_both_builtin_packages() {
         let out = std::env::temp_dir().join(format!("xtask-lua-host-{}", std::process::id()));
         let _ = fs::remove_dir_all(&out);
         write_lua_host(&out).unwrap();
@@ -638,6 +645,11 @@ mod tests {
         }
         let manifest = fs::read_to_string(dir.join("horizon-mod.toml")).unwrap();
         assert!(manifest.contains("event_horizon_lua"));
+        let tools = out.join("horizon-native-mods").join(dev_tools_package::ID);
+        assert!(
+            tools.join("horizon-mod.toml").is_file(),
+            "the developer tools' package is missing"
+        );
         fs::remove_dir_all(&out).unwrap();
     }
 

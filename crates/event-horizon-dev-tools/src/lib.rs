@@ -137,6 +137,15 @@ mod tests {
         assert!(!requested(None, [os("--dev-tools-off"), os("--world")]));
     }
 
+    /// The manifest says the same side as `BUILT`, or the loader refuses the package. (Here, not in
+    /// `package.rs`: xtask includes that file and has no `BUILT`.)
+    #[test]
+    fn the_manifest_side_is_the_built_side() {
+        let manifest = package::manifest_text();
+        assert!(manifest.contains("side = 'server'\n"), "{manifest}");
+        assert_eq!(BUILT[0].side, mod_api::Side::Server);
+    }
+
     #[test]
     fn the_built_in_mod_is_the_tools_package() {
         assert_eq!(BUILT.len(), 1);

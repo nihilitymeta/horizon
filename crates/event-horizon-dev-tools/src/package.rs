@@ -58,14 +58,6 @@ mod tests {
         assert_eq!(read.manifest.name, "Event Horizon Developer Tools");
     }
 
-    /// The manifest says the same side as `BUILT`, or the loader refuses the package.
-    #[test]
-    fn the_manifest_side_is_the_built_side() {
-        let manifest = manifest_text();
-        assert!(manifest.contains("side = 'server'\n"), "{manifest}");
-        assert_eq!(crate::BUILT[0].side, mod_api::Side::Server);
-    }
-
     #[test]
     fn the_version_is_the_crates_version() {
         assert_eq!(VERSION, env!("CARGO_PKG_VERSION"));

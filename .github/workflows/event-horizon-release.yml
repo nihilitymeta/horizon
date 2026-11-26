@@ -109,7 +109,7 @@ jobs:
           cp "launcher/target/release/horizon-launcher${{ matrix.exe }}" "dist/$dir/"
           # cargo-horizon-mod links MPL-2.0 libraries (StyLua, selene): the notice says where their source is.
           cp THIRD_PARTY_NOTICES.md "dist/$dir/"
-          # The Lua host's package, which the game loads from beside its executable (horizon-native-mods/).
+          # The Lua host's and the developer tools' packages, which the game loads from beside its executable (horizon-native-mods/).
           cargo run --release --locked -p xtask -- lua-host "dist/$dir"
           cd dist
           if [[ "${{ runner.os }}" == Windows ]]; then 7z a -tzip "$dir.zip" "$dir" >/dev/null; else tar -czf "$dir.tar.gz" "$dir"; fi

@@ -16,6 +16,7 @@ Each platform has one archive, `event-horizon-windows-x64.zip` or `event-horizon
 | `cargo-horizon-mod` | makes, checks and packs mods |
 | `THIRD_PARTY_NOTICES.md` | licences of the bundled libraries |
 | `horizon-native-mods/event_horizon_lua/` | the Lua host's package, which the game loads from beside its executable |
+| `horizon-native-mods/event_horizon_dev_tools/` | the developer tools' package; the game needs it to start with `--dev-tools` |
 
 The release also has `SHA256SUMS`, with the SHA-256 of each archive. The launcher checks a downloaded archive against
 the SHA-256 that GitHub lists for it, and refuses an archive that has none or whose digest does not match.
