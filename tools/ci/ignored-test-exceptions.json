@@ -1174,5 +1174,53 @@
     "path": "crates/horizon-world/tests/it/world_io.rs",
     "reason": "microbenchmark; run with --ignored --nocapture",
     "rationale": "Existing explicit manual runner by-hand in tools/ci/ignored-tests/manual-horizon-world.txt: microbenchmark; run with --ignored --nocapture. Not selected by daily shards."
+  },
+  {
+    "package": "event-horizon-lua-gen",
+    "target": "lib",
+    "test": "emit_hooks::tests::the_real_surface_names_match_the_game_enum",
+    "path": "crates/event-horizon-lua-gen/src/emit_hooks.rs",
+    "reason": "reads the real surface (EH_SURFACE) and the game's generated HookId (EH_HOOKID_FILE)",
+    "rationale": "needs the game's surface.json and generated HookId file named by environment variables that no CI job sets; run by hand Its manual row in tools/ci/ignored-tests/manual-event-horizon-lua-gen.txt names who runs it."
+  },
+  {
+    "package": "event-horizon-lua-gen",
+    "target": "lib",
+    "test": "emit_impl::tests::the_real_surface_slice",
+    "path": "crates/event-horizon-lua-gen/src/emit_impl.rs",
+    "reason": "reads $EH_SURFACE and $EH_HOOKS_TRAIT; run by hand",
+    "rationale": "needs the game's surface.json and generated trait named by environment variables that no CI job sets; run by hand Its manual row in tools/ci/ignored-tests/manual-event-horizon-lua-gen.txt names who runs it."
+  },
+  {
+    "package": "event-horizon-lua-gen",
+    "target": "lib",
+    "test": "handles::tests::the_real_surface_parses_completely",
+    "path": "crates/event-horizon-lua-gen/src/handles.rs",
+    "reason": "reads the real surface.json named by EH_SURFACE",
+    "rationale": "needs the game's surface.json named by EH_SURFACE, which no CI job sets; run by hand Its manual row in tools/ci/ignored-tests/manual-event-horizon-lua-gen.txt names who runs it."
+  },
+  {
+    "package": "event-horizon-lua-gen",
+    "target": "lib",
+    "test": "ir::tests::the_real_surface_loads",
+    "path": "crates/event-horizon-lua-gen/src/ir.rs",
+    "reason": "reads the real surface.json named by EH_SURFACE",
+    "rationale": "needs the game's surface.json named by EH_SURFACE, which no CI job sets; run by hand Its manual row in tools/ci/ignored-tests/manual-event-horizon-lua-gen.txt names who runs it."
+  },
+  {
+    "package": "event-horizon-lua-gen",
+    "target": "lib",
+    "test": "trait_sigs::tests::the_real_trait_parses_completely",
+    "path": "crates/event-horizon-lua-gen/src/trait_sigs.rs",
+    "reason": "reads the generated trait named by EH_HOOKS_TRAIT; run by hand",
+    "rationale": "needs the generated trait named by EH_HOOKS_TRAIT, which no CI job sets; run by hand Its manual row in tools/ci/ignored-tests/manual-event-horizon-lua-gen.txt names who runs it."
+  },
+  {
+    "package": "event-horizon-lua-gen",
+    "target": "lib",
+    "test": "types::tests::the_real_surface_types_all_map",
+    "path": "crates/event-horizon-lua-gen/src/types.rs",
+    "reason": "reads $EH_SURFACE; run by hand",
+    "rationale": "needs the game's surface.json named by EH_SURFACE, which no CI job sets; run by hand Its manual row in tools/ci/ignored-tests/manual-event-horizon-lua-gen.txt names who runs it."
   }
 ]

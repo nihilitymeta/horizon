@@ -296,6 +296,7 @@ horizon-client-lib mobs::nautilus::hostile_target_tests::a_nautilus_only_targets
 horizon-client-lib mobs::nautilus::tests::a_charge_knocks_its_target_back_along_its_facing lib daily resources
 horizon-client-lib mobs::nav::tests::a_creeper_falls_by_its_own_health_while_it_has_a_target lib daily resources
 horizon-client-lib mobs::nether::nether_ghast_power_tests::ghast_explosion_power_sizes_the_fireball_it_shoots lib daily resources
+horizon-client-lib mobs::observe::tests::the_ai_tap_snapshots_only_a_watched_mob lib daily resources
 horizon-client-lib mobs::phantom::dive_tests::a_bite_is_level_event_1039_at_the_phantoms_block_unless_it_is_silent lib daily resources
 horizon-client-lib mobs::phantom::dive_tests::the_first_dive_comes_eight_ticks_after_the_chase_starts lib daily resources
 horizon-client-lib mobs::phantom::tests::a_phantom_bites_a_player_pressed_behind_a_foot_high_pane_wall lib daily resources

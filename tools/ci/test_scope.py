@@ -46,6 +46,14 @@ MOD_API_GEN = [
     "tools/layering/mod_vocab_state.json",
 ]
 READERS = {
+    # The build script includes the Windows executable resources and the packaging sources of two crates.
+    "event-horizon": [
+        "packaging/windows/exe.rs", "crates/event-horizon-dev-tools/src/package.rs",
+        "crates/event-horizon-lua/src/package.rs",
+    ],
+    # The Lua tests read the English language file, and the lua check the Lua type stubs the lua crate ships.
+    "event-horizon-lua": ["crates/horizon-client/assets/horizon/lang/en_us.json"],
+    "event-horizon-lua-check": ["crates/event-horizon-lua/lua-types/horizon.d.luau"],
     "cargo-horizon-mod": [
         "Cargo.lock", "crates/horizon-mod-api", "crates/horizon-mod-package/src/sdk/fixture.tar.xz",
         "crates/horizon-mod-package/tests/index", "docs/modding/src/how-to/native-mods.md", "tools/ci/rust-version",
@@ -97,6 +105,7 @@ READERS = {
     # Commands (tokens, icons, package), not tests: listed so the scan finds nothing unexplained.
     "xtask": [
         "crates/horizon-client/src", "crates/horizon-mod-vocab/src/hooks", "crates/horizon-perf/web",
+        "crates/event-horizon-dev-tools/src/package.rs", "crates/event-horizon-lua/src/package.rs",
         "crates/horizon-prepare", "crates/horizon-theme", "docs/media/brand", "mods/horizon/src/test/java", "packaging",
         "research-lock.json", "tools",
     ],

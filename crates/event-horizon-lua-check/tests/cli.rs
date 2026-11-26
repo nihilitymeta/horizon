@@ -36,6 +36,7 @@ fn path_str(path: &Path) -> &str {
 const GOOD: &str = "horizon.on(\"server_tick\", function() end)\n";
 
 #[test]
+#[ignore = "daily"]
 fn a_good_mod_loads_and_exits_zero() {
     let root = tempfile::tempdir().unwrap();
     let dir = mod_folder(root.path(), "good", "good_mod", GOOD);
@@ -47,6 +48,7 @@ fn a_good_mod_loads_and_exits_zero() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn a_syntax_error_fails_and_names_the_file_and_line() {
     let root = tempfile::tempdir().unwrap();
     let dir = mod_folder(
@@ -62,6 +64,7 @@ fn a_syntax_error_fails_and_names_the_file_and_line() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn a_refused_manifest_fails_and_prints_its_key() {
     let root = tempfile::tempdir().unwrap();
     let dir = mod_folder(root.path(), "bad", "Bad Id", GOOD);
@@ -72,6 +75,7 @@ fn a_refused_manifest_fails_and_prints_its_key() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn an_unused_local_warns_and_fails_only_under_strict() {
     let root = tempfile::tempdir().unwrap();
     let dir = mod_folder(
@@ -89,6 +93,7 @@ fn an_unused_local_warns_and_fails_only_under_strict() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn an_unformatted_script_would_reformat_and_is_left_on_disk() {
     let root = tempfile::tempdir().unwrap();
     let text = "local   x=1\nprint( x )\n";
@@ -108,6 +113,7 @@ fn an_unformatted_script_would_reformat_and_is_left_on_disk() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn a_misspelt_api_member_fails_and_names_the_file_line_and_member() {
     let root = tempfile::tempdir().unwrap();
     let dir = mod_folder(
@@ -123,6 +129,7 @@ fn a_misspelt_api_member_fails_and_names_the_file_line_and_member() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn an_undefined_plain_global_fails() {
     let root = tempfile::tempdir().unwrap();
     let dir = mod_folder(root.path(), "undef", "undef_mod", "foo()\n");
@@ -132,6 +139,7 @@ fn an_undefined_plain_global_fails() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn list_prints_loaded_refused_and_disabled_mods() {
     let root = tempfile::tempdir().unwrap();
     let game = root.path().join("game");
@@ -149,6 +157,7 @@ fn list_prints_loaded_refused_and_disabled_mods() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn emit_types_writes_both_files_and_refuses_a_changed_one_without_force() {
     let root = tempfile::tempdir().unwrap();
     let out = root.path().join("types");
@@ -166,6 +175,7 @@ fn emit_types_writes_both_files_and_refuses_a_changed_one_without_force() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn usage_errors_and_unreadable_paths_exit_two() {
     assert_eq!(run(&[]).0, 2);
     assert_eq!(run(&["check"]).0, 2);
@@ -177,6 +187,7 @@ fn usage_errors_and_unreadable_paths_exit_two() {
 }
 
 #[test]
+#[ignore = "daily"]
 fn list_prints_a_mod_the_host_refuses_after_discovery_as_refused() {
     // Discovery accepts this mod (its manifest and script read fine); the host refuses it when its
     // declaration pass runs `horizon.on` with a hook name it does not know, so the line comes from

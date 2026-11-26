@@ -16,6 +16,14 @@ horizon-client game::container_loot::tests::transfers_between_containers lib dai
 horizon-client game::crafting_recipe_kind_tests::registered_crafting_remainder_drops_through_server_item_toss lib daily resources
 horizon-client game::crafting_recipe_kind_tests::unregistered_serializer_failed_reload_preserves_previous_recipes lib daily resources
 horizon-client game::dedicated::tests::console_logging_survives_closed_stdout lib daily child-process
+horizon-client game::dev_inspect::tests::a_guest_swapped_out_by_a_nested_turn_has_no_attachments_in_the_dev_read lib daily resources
+horizon-client game::dev_inspect::tests::a_guests_attachments_are_in_the_dev_read_inside_and_outside_its_turn lib daily resources
+horizon-client game::dev_inspect::tests::a_spawned_mobs_saved_data_is_read_and_a_stale_handle_gives_none lib daily resources
+horizon-client game::dev_inspect::tests::level_dimension_is_the_overworld_id_of_a_loaded_level lib daily resources
+horizon-client game::dev_inspect::tests::owner_is_the_hub_single_player_owner_only lib daily resources
+horizon-client game::dev_inspect::tests::selector_ids_are_empty_when_it_does_not_parse_or_names_nothing lib daily resources
+horizon-client game::dev_inspect::tests::the_dev_read_shows_a_mobs_attachments_with_no_key_when_it_has_none lib daily resources
+horizon-client game::dev_inspect::tests::the_host_players_attachments_are_in_the_dev_read lib daily resources
 horizon-client game::dispenser::decision_tests::crown_is_prepared_once_for_three_and_eight_dispenser_candidates lib daily resources
 horizon-client game::entity_sections::tests::a_real_mob_tick_tells_inside_each_position_write lib daily resources
 horizon-client game::equip_answers::tests::an_unpreparable_listening_stack_refuses_instead_of_using_the_data_answer lib daily resources

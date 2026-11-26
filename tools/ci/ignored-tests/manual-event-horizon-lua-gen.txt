@@ -1,0 +1,7 @@
+# event-horizon-lua-gen's ignored tests that never run in the daily shards, and who runs them (README.md: `manual`).
+event-horizon-lua-gen emit_hooks::tests::the_real_surface_names_match_the_game_enum by-hand manual # needs a game-generated surface or trait named by environment variables; run by hand
+event-horizon-lua-gen emit_impl::tests::the_real_surface_slice by-hand manual # needs a game-generated surface or trait named by environment variables; run by hand
+event-horizon-lua-gen handles::tests::the_real_surface_parses_completely by-hand manual # needs a game-generated surface or trait named by environment variables; run by hand
+event-horizon-lua-gen ir::tests::the_real_surface_loads by-hand manual # needs a game-generated surface or trait named by environment variables; run by hand
+event-horizon-lua-gen trait_sigs::tests::the_real_trait_parses_completely by-hand manual # needs a game-generated surface or trait named by environment variables; run by hand
+event-horizon-lua-gen types::tests::the_real_surface_types_all_map by-hand manual # needs a game-generated surface or trait named by environment variables; run by hand
