@@ -393,7 +393,7 @@ impl Launcher {
             .map(|j| j.loader.as_ref().map(|l| l.kind.name()));
         let title = match loader {
             Some(Some(loader)) => trf("{loader} mods", &[("loader", loader)]),
-            _ => tr("Horizon mods").to_string(),
+            _ => tr("Event Horizon mods").to_string(),
         };
         let filter = self
             .servers

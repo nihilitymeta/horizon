@@ -369,7 +369,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             e,
-            "Coordinates HUD needs shader API 0.1; this Horizon serves 0.2."
+            "Coordinates HUD needs shader API 0.1; this Event Horizon serves 0.2."
         );
         assert!(
             fetched

@@ -41,7 +41,7 @@ pub(super) fn classify(
     if projects.is_empty() {
         return Ok(result);
     }
-    let base = base.ok_or_else(|| tr("Install Horizon first.").to_string())?;
+    let base = base.ok_or_else(|| tr("Install Event Horizon first.").to_string())?;
     let built_on = checked_about(base)?;
     let origin = built_on.as_ref().map_or(base, |about| about.base.as_str());
     let revision = build_revision(base, built_on.as_ref())?;

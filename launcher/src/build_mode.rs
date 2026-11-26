@@ -747,7 +747,7 @@ impl Launcher {
             .child(text_in(13., pal.muted).truncate().child(step.to_owned()))
             .children(self.first_build.map(|bytes| {
                 text_in(13., pal.muted).child(trf(
-                    "First time only: Horizon downloads a compiler ({size}) and the mod tools for this game. Later builds take seconds.",
+                    "First time only: Event Horizon downloads a compiler ({size}) and the mod tools for this game. Later builds take seconds.",
                     &[("size", &storage::format_bytes(bytes))],
                 ))
             }))
@@ -859,7 +859,7 @@ impl Launcher {
                     "flash",
                     pal.accent,
                     tr("Needs no build by itself").into(),
-                    tr("This mod uses the game as it ships, so Horizon can start without building when every enabled mod is like this.").to_string(),
+                    tr("This mod uses the game as it ships, so Event Horizon can start without building when every enabled mod is like this.").to_string(),
                 ),
                 // Made for another build: it fits this one, and the build compiles it as usual.
                 Route::Fits { line } => ("tick-02", pal.success, tr("Fits this game").into(), line.clone()),

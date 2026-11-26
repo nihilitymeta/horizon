@@ -394,7 +394,7 @@ impl Launcher {
                 .child(
                     shell::text(theme::night::TITLE, shell::c(n.ink))
                         .font_family(theme::DISPLAY_FONT)
-                        .child(tr("Horizon Launcher")),
+                        .child(tr("Event Horizon Launcher")),
                 )
         });
         shell::sidebar_plate(&t)

@@ -38,7 +38,7 @@ pub(super) fn template(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).ok()
         .filter(|template| ["/* MOD_ENTRIES */", "/* MOD_SLOTS */", "/* BUILT_MODS */"].iter()
             .all(|marker| template.matches(marker).count() == 1))
-        .ok_or_else(|| crate::i18n::tr("This game source has no native inventory entry template. Update Horizon and rebuild the mods against this game.").to_string())
+        .ok_or_else(|| crate::i18n::tr("This game source has no native inventory entry template. Update Event Horizon and rebuild the mods against this game.").to_string())
 }
 
 pub(super) fn main_rs(
@@ -855,7 +855,10 @@ mod tests {
                 &internals::Catalog::default(),
             )
             .unwrap_err();
-            assert!(error.contains("Update Horizon and rebuild"), "{error}");
+            assert!(
+                error.contains("Update Event Horizon and rebuild"),
+                "{error}"
+            );
             assert!(!stage_dir.join(GAME).exists());
             assert!(!stage_dir.join("native-api").exists());
         }

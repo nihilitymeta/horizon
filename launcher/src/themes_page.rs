@@ -106,7 +106,7 @@ impl Launcher {
         let current = themes::theme(self.settings.theme.as_deref()).map(|th| th.id);
         let mut options: Vec<(Option<&'static str>, &'static str, &'static str, Night)> = vec![(
             None,
-            "Horizon",
+            "Event Horizon",
             themes::HORIZON_DESCRIPTION,
             theme::night::NIGHT,
         )];
@@ -328,7 +328,7 @@ impl Launcher {
             Some(
                 div()
                     .child(tr(
-                        "Horizon's violet by default. Every colour keeps text as easy to read.",
+                        "Event Horizon's violet by default. Every colour keeps text as easy to read.",
                     ))
                     .into_any_element(),
             ),
@@ -678,7 +678,7 @@ impl Launcher {
             Some(
                 div()
                     .child(tr(
-                        "Theme, accent colour, glass, blur and Home's background go back to how Horizon ships.",
+                        "Theme, accent colour, glass, blur and Home's background go back to how Event Horizon ships.",
                     ))
                     .into_any_element(),
             ),
@@ -700,7 +700,7 @@ impl Launcher {
                     // A failed write keeps the save notice and its retry; the toast must not
                     // claim the old look is gone for good.
                     crate::glass_toast::say(if saved {
-                        tr("The launcher's look is back to how Horizon ships")
+                        tr("The launcher's look is back to how Event Horizon ships")
                     } else {
                         tr("The launcher's look is reset for now, but it could not be saved")
                     });
@@ -903,7 +903,7 @@ impl Launcher {
         let said = if custom {
             tr("Your picture, behind Home, cropped to fill it.")
         } else {
-            tr("Horizon's landscape. Pick a PNG, JPEG or WebP picture of your own.")
+            tr("Event Horizon's landscape. Pick a PNG, JPEG or WebP picture of your own.")
         };
         let detail = div().flex().flex_col().child(said.to_string()).children(
             self.background_error

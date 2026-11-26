@@ -35,7 +35,7 @@ impl Launcher {
                 .flex_col()
                 .gap(px(6.))
                 .child(tr(
-                    "While you play, the game tells Horizon you're playing, so the launcher can show how many people play right now. It's anonymous, it's on now, and you can turn it off here or in Settings.",
+                    "While you play, the game tells Event Horizon you're playing, so the launcher can show how many people play right now. It's anonymous, it's on now, and you can turn it off here or in Settings.",
                 ))
                 .child(
                     div()
@@ -82,7 +82,7 @@ impl Launcher {
                     .text_size(px(28.))
                     .line_height(px(34.))
                     .text_color(white(ink::FULL))
-                    .child(tr("Make Horizon yours")),
+                    .child(tr("Make Event Horizon yours")),
             )
             .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
                 "Pick a look to start with. The \"I'm playing\" ping is already on; you can turn it off below. You can change all of this later in Settings.",
@@ -149,7 +149,7 @@ impl Launcher {
                     .gap(px(2.))
                     .children(self.installing.as_ref().map(|(_, p)| {
                         ui::text(13., FontWeight::NORMAL, ink::BODY).child(trf(
-                            "Installing Horizon… {percent}%",
+                            "Installing Event Horizon… {percent}%",
                             &[(
                                 "percent",
                                 &((p.clamp(0., 1.) * 100.).round() as u32).to_string(),

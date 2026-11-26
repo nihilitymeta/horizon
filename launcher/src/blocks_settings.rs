@@ -223,7 +223,7 @@ impl Launcher {
                     .child(group("Account", "user").mt_0())
                     .child(accounts)
                     .child(group("Updates", "reload"))
-                    .child(index_row(n + 1, "Horizon", Some(plain(&horizon)), horizon_action, &t))
+                    .child(index_row(n + 1, "Event Horizon", Some(plain(&horizon)), horizon_action, &t))
                     .child(index_row(
                         n + 1,
                         tr("Launcher"),
@@ -271,7 +271,7 @@ impl Launcher {
                     .child(self.while_playing_row(n + 3, cx))
                     .child(index_row(
                         n + 3,
-                        tr("Show the Horizon logo at startup"),
+                        tr("Show the Event Horizon logo at startup"),
                         Some(plain("Shown for a moment while the version list loads.")),
                         Some(opening.into_any_element()),
                         &t,
@@ -309,7 +309,7 @@ impl Launcher {
                             n + 11,
                             tr("Applications menu"),
                             Some(plain(if self.settings.desktop_entry() {
-                                "Horizon and its icon are in your desktop's menu."
+                                "Event Horizon and its icon are in your desktop's menu."
                             } else {
                                 "Not in your desktop's menu."
                             })),
@@ -368,7 +368,7 @@ impl Launcher {
                 .child(div().text_size(px(24.)).font_weight(FontWeight::BOLD).child(tr("Allow native mods?")))
                 .children(name.map(|name| div().font_weight(FontWeight::BOLD).child(name)))
                 .child(tr("These mods are programs that run inside your game. Like any program you install, they can read and change your files. Allow them only if you trust who made them."))
-                .children(horizon_launcher::rust_toolchain::installed().is_none().then(|| trf("Horizon will first download a compiler ({size}) to build them.", &[("size", &size)])))
+                .children(horizon_launcher::rust_toolchain::installed().is_none().then(|| trf("Event Horizon will first download a compiler ({size}) to build them.", &[("size", &size)])))
                 .child(tr("You can take this permission back in Settings > Storage."))
                 .children(self.consent_error.clone().map(|error| div().text_color(t.danger).child(error)))
                 .children(bytes.is_none().then(|| div().text_color(t.danger).child(tr("Native mods can't be built on this computer, so they can't be allowed here."))))
@@ -800,7 +800,7 @@ impl Launcher {
             }
             Some(SignInState::Done(Err(e))) => div().text_color(t.danger).child(e.clone()),
             None if self.accounts.accounts.is_empty() => div().child(tr(
-                "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers. It also plays online servers with your name and skin.",
+                "Event Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers. It also plays online servers with your name and skin.",
             )),
             None => div().child(tr("Add another account.")),
         };

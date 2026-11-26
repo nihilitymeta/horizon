@@ -102,7 +102,7 @@ fn error(key: &str) -> Option<String> {
     let build = BUILD.to_owned();
     let sdk = |refusal: Sdk| refusal.to_string();
     Some(match key {
-        "no-horizon" => tr("Install Horizon first.").to_string(),
+        "no-horizon" => tr("Install Event Horizon first.").to_string(),
         "no-sdk" => sdk(Sdk::NoSdk { build }),
         "offline-size" => sdk(Sdk::Offline {
             build,

@@ -42,7 +42,7 @@ Install a local unsigned developer build from a trusted checkout.
 
     horizon-launcher developer-install --program <PROGRAM> --trust-unsigned <CHECKOUT>
 
-- `CHECKOUT`: The trusted clean Horizon checkout to package
+- `CHECKOUT`: The trusted clean Event Horizon checkout to package
 - `--program`: The real horizon-client executable built from that committed checkout
 - `--trust-unsigned`: Allow executing this checkout's build code and unsigned game with your rights
 

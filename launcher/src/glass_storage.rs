@@ -202,8 +202,7 @@ impl Launcher {
             let (detail, actions) = match self.storage_revoke {
                 None => (
                     tr(
-                        "Allowed: they run with access to your computer. Turn off takes the \
-                        permission back; Horizon asks again before the next build.",
+                        "Allowed: they run with access to your computer. Turn off takes the permission back; Event Horizon asks again before the next build.",
                     )
                     .to_string(),
                     div().child(match self.storage_counting {
@@ -220,9 +219,7 @@ impl Launcher {
                 ),
                 Some((mods, instances_)) => (
                     match (mods, instances_) {
-                        (0, _) => tr("No native mods are switched on. Turning off only takes \
-                                      the permission back; Horizon asks again before the next \
-                                      build.")
+                        (0, _) => tr("No native mods are switched on. Turning off only takes the permission back; Event Horizon asks again before the next build.")
                         .to_string(),
                         (1, _) => tr("This takes the permission back and switches off your \
                                       one native mod. Turn it back on from its instance's \
@@ -288,7 +285,7 @@ impl Launcher {
                 Some(
                     div()
                         .child(tr(
-                            "Not allowed: Horizon asks before it builds the first one.",
+                            "Not allowed: Event Horizon asks before it builds the first one.",
                         ))
                         .children(
                             self.storage_revoke_error

@@ -240,10 +240,10 @@ impl Launcher {
             .child(
                 text(theme::HEADING)
                     .text_color(t.ink)
-                    .child(tr("Help make Horizon faster and steadier?")),
+                    .child(tr("Help make Event Horizon faster and steadier?")),
             )
             .child(text(theme::UI).text_color(t.muted).child(trf(
-                "Horizon can send a few things to its developers. {opening} Settings can change any of it at any time.",
+                "Event Horizon can send a few things to its developers. {opening} Settings can change any of it at any time.",
                 &[("opening", tr(telemetry::OPENING))],
             )))
             .child(

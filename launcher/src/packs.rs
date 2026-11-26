@@ -211,7 +211,7 @@ fn read(path: &Path, kind: Kind, on: &[String]) -> Option<Pack> {
                 .map(crate::browser::horizon::made_for_other_shader_api);
             (
                 name.unwrap_or_else(|| file.clone()),
-                "Horizon shader pack".into(),
+                "Event Horizon shader pack".into(),
                 None,
             )
         }

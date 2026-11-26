@@ -271,7 +271,7 @@ impl Launcher {
             cx.notify();
         });
         let what = match kind {
-            NewKind::Horizon => tr("Horizon"),
+            NewKind::Horizon => tr("Event Horizon"),
             NewKind::Vanilla => tr("Vanilla"),
             NewKind::Modded => tr("Modded"),
         };

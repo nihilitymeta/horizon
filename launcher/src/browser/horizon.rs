@@ -355,9 +355,9 @@ pub fn trust_and_capabilities(
         )
     }];
     lines.push(match &p.key {
-        Some(_) => tr("Signed by its author: Horizon checks it really is theirs").to_string(),
+        Some(_) => tr("Signed by its author: Event Horizon checks it really is theirs").to_string(),
         None => tr(
-            "Not signed by its author: Horizon checks the download arrives complete and unchanged",
+            "Not signed by its author: Event Horizon checks the download arrives complete and unchanged",
         )
         .to_string(),
     });
@@ -446,7 +446,8 @@ fn project_of(index: &Index, p: &index::Project) -> Option<Project> {
             trf("Taken down: {reason}", &[("reason", &reason)]).to_string()
         }
         Blocked::EarlierSystem => {
-            tr("Made for Horizon's earlier mod system: it can't be installed yet.").to_string()
+            tr("Made for Event Horizon's earlier mod system: it can't be installed yet.")
+                .to_string()
         }
         Blocked::OtherShaderApi(api) => made_for_other_shader_api(&api),
     });
@@ -498,7 +499,7 @@ fn unsupported_capabilities(capabilities: &index::Capabilities) -> Option<String
     let unknown = capabilities.unknown();
     (!unknown.is_empty()).then(|| {
         trf(
-            "Can't install: it was made for Horizon's earlier mod system ({names})",
+            "Can't install: it was made for Event Horizon's earlier mod system ({names})",
             &[("names", &unknown.join(", "))],
         )
     })
@@ -902,7 +903,7 @@ fn newest<'a>(index: &Index, p: &'a index::Project) -> Result<&'a index::Version
 /// What the browser and the installed packs say of a shader pack made for shader API `api`.
 pub fn made_for_other_shader_api(api: &str) -> String {
     format!(
-        "Made for shader API {api}: this Horizon serves {}.",
+        "Made for shader API {api}: this Event Horizon serves {}.",
         horizon_shader_api::API
     )
 }
@@ -911,7 +912,7 @@ pub fn made_for_other_shader_api(api: &str) -> String {
 /// (`horizon_shader_api::Manifest::parse`).
 fn other_shader_api(api: &str) -> String {
     format!(
-        "needs shader API {api}; this Horizon serves {}",
+        "needs shader API {api}; this Event Horizon serves {}",
         horizon_shader_api::API
     )
 }

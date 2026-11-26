@@ -108,8 +108,14 @@ fn row_explanations_keep_the_coverage_reports_english_and_dependency_counts() {
     .collect();
     let missing = std::env::temp_dir().join(format!("horizon-row-english-{}", std::process::id()));
     let rows = report::build(&records, &missing);
+    // The report's own sentences name the product "Horizon"; the launcher says "Event Horizon".
     for row in &rows {
-        assert_eq!(row_plain(row), row.plain_text(), "{}", row.key);
+        assert_eq!(
+            row_plain(row),
+            row.plain_text().replace("Horizon", "Event Horizon"),
+            "{}",
+            row.key
+        );
     }
     assert!(row_plain(&rows[2]).ends_with("1 mod it depends on that is not ported yet."));
     assert!(row_plain(&rows[3]).ends_with("2 mods it depends on that are not ported yet."));

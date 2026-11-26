@@ -209,7 +209,7 @@ fn native_shader_choice_follows_the_manifest_after_rename() {
     assert_eq!(
         listed
             .iter()
-            .filter(|p| p.description == "Horizon shader pack")
+            .filter(|p| p.description == "Event Horizon shader pack")
             .count(),
         1
     );

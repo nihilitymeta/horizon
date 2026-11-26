@@ -46,7 +46,7 @@ impl Launcher {
         let plays = self.version_of(&instance).cloned();
         let base = base.or_else(|| native_mods::base_for(plays.as_deref(), &self.installed, false));
         let Some(base) = base else {
-            let error = tr("Install Horizon first.").to_string();
+            let error = tr("Install Event Horizon first.").to_string();
             self.native_log_preflight(&error);
             self.native_error = Some(error);
             return;

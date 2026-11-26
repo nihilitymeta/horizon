@@ -813,7 +813,7 @@ pub(crate) fn short(path: &std::path::Path) -> String {
 /// address and the system's error code; any other error stays as it is.
 pub(crate) fn download_error(error: &str) -> String {
     if error.starts_with("No connection") {
-        tr("Horizon couldn't reach the internet. Check your connection, then try again.")
+        tr("Event Horizon couldn't reach the internet. Check your connection, then try again.")
             .to_string()
     } else {
         error.to_string()

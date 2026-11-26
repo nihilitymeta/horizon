@@ -28,7 +28,7 @@ impl Launcher {
             if tag.is_empty() {
                 "Minecraft"
             } else {
-                "Horizon"
+                "Event Horizon"
             },
             |i| i.name.as_str(),
         );

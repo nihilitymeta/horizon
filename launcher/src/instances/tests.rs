@@ -136,7 +136,7 @@ fn existing_worlds_stay_where_they_are_and_every_folder_becomes_an_instance() {
     let all = list_in(&home, &data);
     let ids: Vec<&str> = all.iter().map(|i| i.id.as_str()).collect();
     assert_eq!(ids, [DEFAULT, "pack:cozy", "port:small-pack"]);
-    assert_eq!(all[0].name, "Horizon");
+    assert_eq!(all[0].name, "Event Horizon");
     assert_eq!(all[0].home, home);
     assert_eq!(all[1].home, home.join("horizon-packs/cozy/home"));
     assert_eq!(all[2].name, "Small Pack");
@@ -350,7 +350,7 @@ fn a_java_instance_plays_one_minecraft_version_in_its_own_folder() {
     assert_eq!(java.java.as_ref().unwrap().minecraft, "1.21.4");
     let copy = create_in(&home, &data, "Second", Some(&java), None).unwrap();
     assert_eq!(copy.java, java.java);
-    let horizon = create_in(&home, &data, "Horizon two", None, None).unwrap();
+    let horizon = create_in(&home, &data, "Event Horizon two", None, None).unwrap();
     assert_eq!(horizon.java, None);
     let store = fs::read_to_string(data.join(FILE)).unwrap();
     assert_eq!(
@@ -517,7 +517,7 @@ fn switching_what_an_instance_plays_keeps_its_worlds_mods_and_settings() {
         [
             Unkept::Mods {
                 count: 2,
-                made_for: "Horizon".into()
+                made_for: "Event Horizon".into()
             },
             Unkept::Worlds {
                 count: 1,

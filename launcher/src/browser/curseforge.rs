@@ -218,7 +218,7 @@ impl Source for CurseForge {
     fn project(&self, id: &str) -> Result<Project, String> {
         let m = self.get(&format!("{API}/mods/{}", encode(id)))?;
         parse_mod(&m["data"])
-            .ok_or_else(|| format!("CurseForge: {id} is not a pack Horizon loads."))
+            .ok_or_else(|| format!("CurseForge: {id} is not a pack Event Horizon loads."))
     }
 
     fn versions(&self, project: &Project) -> Result<Vec<Version>, String> {

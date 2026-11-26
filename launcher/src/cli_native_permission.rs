@@ -16,7 +16,7 @@ pub(super) fn github_native(
     trust: bool,
 ) -> Result<(), String> {
     if java {
-        return Err("Native mods from GitHub are for Horizon instances.".into());
+        return Err("Native mods from GitHub are for Event Horizon instances.".into());
     }
     println!("{}", found.label());
     println!("Source, to read: {}", found.source_url());

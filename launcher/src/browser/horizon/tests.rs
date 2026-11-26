@@ -590,13 +590,13 @@ fn shader_packs_for_another_shader_api_are_marked_and_not_installed() {
     let versions = versions_of(&index, "glow");
     assert_eq!(
         versions[0].blocked.as_deref(),
-        Some("needs shader API 0.1; this Horizon serves 0.2")
+        Some("needs shader API 0.1; this Event Horizon serves 0.2")
     );
     assert!(super::super::pick(Kind::Shader, &versions, true).is_none());
     let p = index.project("glow").unwrap();
     assert_eq!(
         newest(&index, p).unwrap_err(),
-        "Soft Glow needs shader API 0.1; this Horizon serves 0.2."
+        "Soft Glow needs shader API 0.1; this Event Horizon serves 0.2."
     );
     assert!(index.installable(p, GAME).is_none());
     let home = scratch("shader-api");
@@ -604,7 +604,7 @@ fn shader_packs_for_another_shader_api_are_marked_and_not_installed() {
     // The card, the CLI and MCP give this answer. As everything that can't be installed here,
     // it is left out of the list, and listed last with `everything`.
     let marked =
-        super::super::Support::No("Made for shader API 0.1: this Horizon serves 0.2.".into());
+        super::super::Support::No("Made for shader API 0.1: this Event Horizon serves 0.2.".into());
     assert_eq!(project.support(), marked);
     assert!(search(&index, &Query::new("", Kind::Shader)).is_empty());
     let everything = Query {
@@ -622,7 +622,7 @@ fn shader_packs_for_another_shader_api_are_marked_and_not_installed() {
     let e = install_from(&index, true, &project, &home, &|_, _| {}).unwrap_err();
     assert_eq!(
         e,
-        "Soft Glow needs shader API 0.1; this Horizon serves 0.2."
+        "Soft Glow needs shader API 0.1; this Event Horizon serves 0.2."
     );
     assert!(!home.join("mod-browser").exists(), "nothing was downloaded");
     assert!(!home.join("shaderpacks").exists());

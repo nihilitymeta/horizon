@@ -419,8 +419,8 @@ impl Launcher {
         );
         let mut summary = match kind {
             NewKind::Horizon => match self.draft_horizon() {
-                Some(tag) => format!("Horizon · {}", self.version_label(&tag)),
-                None => "Horizon".into(),
+                Some(tag) => format!("Event Horizon · {}", self.version_label(&tag)),
+                None => "Event Horizon".into(),
             },
             NewKind::Vanilla => format!("{} · {minecraft}", tr("Vanilla")),
             NewKind::Modded => format!("{} · {minecraft}", loader.name()),
@@ -454,8 +454,8 @@ impl Launcher {
             let (id, title, note) = match k {
                 NewKind::Horizon => (
                     "horizon",
-                    tr("Horizon"),
-                    tr("Minecraft rebuilt in Rust, with Horizon mods").to_string(),
+                    tr("Event Horizon"),
+                    tr("Minecraft rebuilt in Rust, with Event Horizon mods").to_string(),
                 ),
                 NewKind::Vanilla => (
                     "vanilla",
@@ -748,7 +748,7 @@ impl Launcher {
                     "entry-pack",
                     "package-01",
                     "Install a modpack",
-                    "Browse Modrinth and Horizon packs",
+                    "Browse Modrinth and Event Horizon packs",
                     false,
                 )
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -840,7 +840,7 @@ impl Launcher {
         let (busy, copy, error) = (d.busy, d.copy, d.error.clone());
         let title = match (editing, kind) {
             (Some(i), _) => trf("Edit {name}", &[("name", &i.name)]),
-            (None, NewKind::Horizon) => tr("A new Horizon instance").into(),
+            (None, NewKind::Horizon) => tr("A new Event Horizon instance").into(),
             (None, NewKind::Vanilla) => tr("A new vanilla instance").into(),
             (None, NewKind::Modded) => tr("A new modded instance").into(),
         };
@@ -1257,7 +1257,7 @@ impl Launcher {
         let selected = self.selected_instance().cloned();
         let from = selected
             .as_ref()
-            .map_or_else(|| "Horizon".into(), |i| i.name.clone());
+            .map_or_else(|| "Event Horizon".into(), |i| i.name.clone());
         let icon = match &selected {
             Some(i) => self.glass_instance_icon(i, 36.),
             None => self.horizon_mark(36.),

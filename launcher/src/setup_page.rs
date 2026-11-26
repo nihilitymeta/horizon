@@ -278,7 +278,7 @@ impl Setup {
             Stage::Welcome if self.mode == Mode::Install => {
                 body = body
                     .child(text(night::UI, c(n.ink_soft)).child(
-                        tr("Installs Horizon Launcher for this account. No administrator needed.")
+                        tr("Installs Event Horizon Launcher for this account. No administrator needed.")
                             .to_string(),
                     ))
                     .child(self.folder_row(cx))
@@ -307,7 +307,7 @@ impl Setup {
             Stage::Welcome => {
                 body = body
                     .child(text(night::UI, c(n.ink_soft)).child(
-                        tr("Removes Horizon Launcher from this computer. Your worlds and the game's folder stay.")
+                        tr("Removes Event Horizon Launcher from this computer. Your worlds and the game's folder stay.")
                             .to_string(),
                     ))
                     .child(self.toggle(
@@ -346,8 +346,8 @@ impl Setup {
             }
             Stage::Done { left } => {
                 let said = match self.mode {
-                    Mode::Install => tr("Horizon Launcher is installed.").to_string(),
-                    Mode::Uninstall => tr("Horizon Launcher was removed.").to_string(),
+                    Mode::Install => tr("Event Horizon Launcher is installed.").to_string(),
+                    Mode::Uninstall => tr("Event Horizon Launcher was removed.").to_string(),
                 };
                 body = body.child(text(night::TITLE, c(n.ink)).child(said));
                 if !left.is_empty() {
@@ -368,7 +368,7 @@ impl Setup {
                 if self.mode == Mode::Install {
                     body = body.child(
                         div().flex().items_center().justify_end().child(
-                            crate::button("launch", tr("Launch Horizon"), Kind::Primary, &t)
+                            crate::button("launch", tr("Launch Event Horizon"), Kind::Primary, &t)
                                 .on_click(
                                     cx.listener(|this, _: &ClickEvent, _, cx| this.launch(cx)),
                                 ),
@@ -396,7 +396,7 @@ impl Setup {
             .flex()
             .flex_col()
             .gap(px(18.))
-            .child(text(night::DISPLAY, c(n.ink)).child(tr("Horizon Launcher")))
+            .child(text(night::DISPLAY, c(n.ink)).child(tr("Event Horizon Launcher")))
             .child(body)
     }
 }

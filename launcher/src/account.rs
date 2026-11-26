@@ -1380,11 +1380,7 @@ fn set_item(items: &dyn Items, key: &str, secret: &str) -> Result<(), String> {
 /// the player's credential store is full (an undocumented limit of its total size). The Xbox app
 /// and the Minecraft Launcher are known to leave hundreds of items there (#4313, #4366).
 #[cfg(any(target_os = "windows", test))]
-pub const CREDENTIAL_MANAGER_FULL: &str = "Windows Credential Manager is full, so Horizon can't \
-     keep your sign-in (Windows error 8; it isn't your computer's memory). Open Credential Manager \
-     from the Start menu, go to Windows Credentials and remove entries you no longer use, then sign \
-     in again. The Xbox app and the Minecraft Launcher often leave many XblGrts and Xbl| entries \
-     there; removing an entry can sign the app that made it out.";
+pub const CREDENTIAL_MANAGER_FULL: &str = "Windows Credential Manager is full, so Event Horizon can't keep your sign-in (Windows error 8; it isn't your computer's memory). Open Credential Manager from the Start menu, go to Windows Credentials and remove entries you no longer use, then sign in again. The Xbox app and the Minecraft Launcher often leave many XblGrts and Xbl| entries there; removing an entry can sign the app that made it out.";
 
 /// What the launcher says for a Windows error code Credential Manager gave when writing an item,
 /// when it says more than the code.

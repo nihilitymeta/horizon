@@ -105,7 +105,8 @@ impl Launcher {
                                 None => this.location_target = Some(path),
                                 Some(Ok(_)) => {
                                     this.location_error = Some(
-                                        tr("Choose an empty folder for Horizon's data.").into(),
+                                        tr("Choose an empty folder for Event Horizon's data.")
+                                            .into(),
                                     );
                                 }
                                 Some(Err(error)) => this.location_picker_error(error.to_string()),

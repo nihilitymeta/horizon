@@ -73,7 +73,7 @@ impl Launcher {
     fn palette_commands(&self, q: &str) -> Vec<Command> {
         let instance = self
             .selected_instance()
-            .map_or_else(|| "Horizon".to_owned(), |i| i.name.clone());
+            .map_or_else(|| "Event Horizon".to_owned(), |i| i.name.clone());
         let mut all = Vec::new();
         for i in &self.instances.list {
             if matches!(i.kind, InstanceKind::Default | InstanceKind::Own) {

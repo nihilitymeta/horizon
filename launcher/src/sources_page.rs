@@ -85,7 +85,7 @@ impl Launcher {
                 // undoes the step-aside.
                 game_sources::step_aside_for_horizon_updates(&mut self.settings);
                 trf(
-                    "Added {repo}. It updates itself, and Horizon's game updates are off.",
+                    "Added {repo}. It updates itself, and Event Horizon's game updates are off.",
                     &[("repo", &repo)],
                 )
                 .to_string()

@@ -53,11 +53,11 @@ impl Refusal {
     pub fn plain(&self) -> String {
         let why = match self {
             Self::BuildScript { mod_id } => trf(
-                "{mod} can't be built here: it brings build steps of its own, which Horizon doesn't run.",
+                "{mod} can't be built here: it brings build steps of its own, which Event Horizon doesn't run.",
                 &[("mod", mod_id)],
             ),
             Self::Features { mod_id } => trf(
-                "{mod} can't be built here: it asks for build options Horizon's game doesn't offer.",
+                "{mod} can't be built here: it asks for build options Event Horizon's game doesn't offer.",
                 &[("mod", mod_id)],
             ),
             Self::Sdk(refusal) => return refusal.to_string(),
@@ -331,7 +331,7 @@ impl Identity {
     /// Which package files the `runtime` and `api` slices hold.
     pub(super) fn slices(&self) -> Result<&Slices, String> {
         self.slices.as_ref().ok_or_else(|| {
-            tr("This prebuilt game has no slices. Update Horizon and rebuild the mods against this game.")
+            tr("This prebuilt game has no slices. Update Event Horizon and rebuild the mods against this game.")
                 .to_string()
         })
     }

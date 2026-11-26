@@ -933,7 +933,7 @@ impl Launcher {
             horizon_launcher::worlds::list(&backend::game_home())
                 .into_iter()
                 .map(|w| {
-                    let line = format!("Horizon · {} · {}", tr(w.mode), bytes(w.size));
+                    let line = format!("Event Horizon · {} · {}", tr(w.mode), bytes(w.size));
                     (w.path, (w.name, line))
                 })
                 .collect()
@@ -2439,8 +2439,7 @@ impl Launcher {
             return div().child(centered(
                 if self.older_horizon() {
                     tr(
-                        "This server's Horizon is too old to show its settings here. Update it on \
-                     the Backups tab, then they appear.",
+                        "This server's Event Horizon is too old to show its settings here. Update it on the Backups tab, then they appear.",
                     )
                 } else {
                     tr("Reading the settings…")
@@ -2718,7 +2717,7 @@ impl Launcher {
         }
         self.setting_row(
             "Delete server",
-            tr("Remove this server from Horizon and move its worlds, settings and backups to the trash.").into(),
+            tr("Remove this server from Event Horizon and move its worlds, settings and backups to the trash.").into(),
             controls.into_any_element(),
         )
         .items_start()
@@ -2850,7 +2849,11 @@ impl Launcher {
             .flex_col()
             .border_t_1()
             .border_color(rule)
-            .child(self.setting_row("This server's Horizon", about, control.into_any_element()));
+            .child(self.setting_row(
+                "This server's Event Horizon",
+                about,
+                control.into_any_element(),
+            ));
         if self.servers.setting("updates", "keep").is_some() {
             rows = rows.child(self.setting_row(
                 "Older versions kept",
@@ -2983,8 +2986,7 @@ impl Launcher {
         if self.older_horizon() {
             return tab
                 .child(text(theme::UI).text_color(t.muted).child(tr(
-                    "This server's Horizon is too old to list its backups here: they're in its \
-                     backups folder. Update it below.",
+                    "This server's Event Horizon is too old to list its backups here: they're in its backups folder. Update it below.",
                 )))
                 .child(self.updates_section(status, cx));
         }

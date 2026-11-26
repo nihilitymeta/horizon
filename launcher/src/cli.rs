@@ -1539,8 +1539,7 @@ fn execute(command: Cmd, as_json: bool) -> Result<i32, String> {
                     || account.is_some()
                 {
                     return Err(format!(
-                        "{} plays Minecraft: Java Edition: --version, --world, --creative, \
-                         --join and --account are for Horizon instances.",
+                        "{} plays Minecraft: Java Edition: --version, --world, --creative, --join and --account are for Event Horizon instances.",
                         instance.name
                     ));
                 }
@@ -1872,7 +1871,7 @@ fn java(action: JavaCmd, as_json: bool) -> Result<(), String> {
             } else {
                 for r in &all {
                     let from = match r.source {
-                        java::Source::Mojang => "Mojang's, downloaded by Horizon",
+                        java::Source::Mojang => "Mojang's, downloaded by Event Horizon",
                         java::Source::Installed => "installed",
                     };
                     println!("Java {}  ({from})\n  {}", r.version, r.home.display());
@@ -2736,7 +2735,7 @@ fn mods(action: ModsCmd, as_json: bool) -> Result<(), String> {
             ..
         } => {
             if java.is_some() {
-                return Err("Native mods from GitHub are for Horizon instances.".into());
+                return Err("Native mods from GitHub are for Event Horizon instances.".into());
             }
             let mut origins = github_mods::origins(&home);
             origins.retain(|o| id.as_deref().is_none_or(|i| o.id == i));
@@ -2990,7 +2989,7 @@ fn instance(action: InstanceCmd, as_json: bool) -> Result<(), String> {
         } => {
             let Some(java) = instances::find(&instance)?.java else {
                 return Err(format!(
-                    "{instance} is a Horizon instance: mod loaders are for Java instances."
+                    "{instance} is an Event Horizon instance: mod loaders are for Java instances."
                 ));
             };
             if list {
@@ -3036,7 +3035,7 @@ fn instance(action: InstanceCmd, as_json: bool) -> Result<(), String> {
             let window = window.as_deref().map(parse_window).transpose()?;
             if instances::find(&instance)?.java.is_none() {
                 return Err(format!(
-                    "{instance} is a Horizon instance: Horizon is not a Java program."
+                    "{instance} is an Event Horizon instance: Event Horizon is not a Java program."
                 ));
             }
             changed(instances::edit(&instance, |m| {

@@ -38,10 +38,10 @@ impl Launcher {
         {
             // Results come in pages: only a last page gives the real count.
             if m.more {
-                return tr("Search Horizon mods").into();
+                return tr("Search Event Horizon mods").into();
             }
             trf(
-                "Search {count} Horizon mods",
+                "Search {count} Event Horizon mods",
                 &[("count", &m.results.len().to_string())],
             )
             .into()
@@ -58,7 +58,7 @@ impl Launcher {
         let t = self.theme;
         let instance = self
             .selected_instance()
-            .map_or_else(|| "Horizon".to_owned(), |i| i.name.clone());
+            .map_or_else(|| "Event Horizon".to_owned(), |i| i.name.clone());
         let head = ui::page_head(
             tr("Mods"),
             trf(
@@ -376,7 +376,7 @@ impl Launcher {
                 .px(px(4.))
                 .child(ui::icon("information-circle", 14., white(ink::QUIET)))
                 .child(ui::text(13., FontWeight::NORMAL, ink::QUIET).child(trf(
-                    "{count} more mods made for Horizon's earlier mod system are hidden until their authors update them.",
+                    "{count} more mods made for Event Horizon's earlier mod system are hidden until their authors update them.",
                     &[("count", &count.to_string())],
                 ))),
         )
@@ -392,7 +392,7 @@ impl Launcher {
             let details = m.error_details;
             let horizon = m.source == SourceId::Horizon && m.java_for(m.kind).is_none();
             let what = if horizon {
-                tr("Couldn't load Horizon's mod list.")
+                tr("Couldn't load Event Horizon's mod list.")
             } else {
                 tr("The search didn't go through.")
             };
@@ -817,7 +817,7 @@ impl Launcher {
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(tone)
                         .child(trf(
-                            "{support} in Horizon",
+                            "{support} in Event Horizon",
                             &[("support", tr(support.label()))],
                         )),
                 )

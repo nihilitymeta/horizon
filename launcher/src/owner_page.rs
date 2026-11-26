@@ -74,11 +74,11 @@ impl Launcher {
                     .child(tr("Sign in to play").to_string()),
             )
             .child(line(
-                "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
+                "Event Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
                 n.ink_soft,
             ))
             .child(line(
-                "No Minecraft install needed: Horizon downloads it from Mojang for your account.",
+                "No Minecraft install needed: Event Horizon downloads it from Mojang for your account.",
                 n.ink_soft,
             ));
         let raised = || {
@@ -314,10 +314,10 @@ impl Launcher {
                     .flex_col()
                     .gap(px(8.))
                     .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
-                        "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
+                        "Event Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
                     )))
                     .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
-                        "No Minecraft install needed: Horizon downloads it from Mojang for your account.",
+                        "No Minecraft install needed: Event Horizon downloads it from Mojang for your account.",
 ))),
             );
         card = match state {

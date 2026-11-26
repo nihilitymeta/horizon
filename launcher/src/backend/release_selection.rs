@@ -20,7 +20,7 @@ pub(super) fn snapshot(tag: &str) -> Result<Vec<Release>, String> {
         crate::github::API,
         super::REPO
     ))?
-    .ok_or_else(|| format!("No Horizon snapshot is tagged {tag}."))?;
+    .ok_or_else(|| format!("No Event Horizon snapshot is tagged {tag}."))?;
     let settings = super::Settings::load();
     let assets = super::game_assets_for(
         std::env::consts::OS,

@@ -32,7 +32,7 @@ const CHECKING: usize = 2;
 /// The sources to pick from on the tabs that have both ([`switches`]); CurseForge is shown
 /// beside them as coming soon.
 pub(super) const SOURCES: [(SourceId, &str); 2] = [
-    (SourceId::Horizon, "Horizon"),
+    (SourceId::Horizon, "Event Horizon"),
     (SourceId::Modrinth, "Modrinth"),
 ];
 const PAGE: usize = 20;
@@ -839,7 +839,7 @@ impl Launcher {
         let java = self.mods.java.clone();
         let instance = self
             .selected_instance()
-            .map_or_else(|| "Horizon".to_string(), |i| i.name.clone());
+            .map_or_else(|| "Event Horizon".to_string(), |i| i.name.clone());
         let world = self.mods.world.clone().and_then(|path| {
             let (_, name) = self.mods.worlds.iter().find(|(p, _)| *p == path)?;
             Some((path, name.clone()))

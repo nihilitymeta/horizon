@@ -129,7 +129,7 @@ impl std::fmt::Display for Refusal {
                 &[("build", build)],
             ),
             Self::Unsigned { build, .. } => trf(
-                "The mod tools for {build} didn't pass Horizon's safety check, so nothing was installed and your game is untouched. Try again later; if it keeps happening, please report it.",
+                "The mod tools for {build} didn't pass Event Horizon's safety check, so nothing was installed and your game is untouched. Try again later; if it keeps happening, please report it.",
                 &[("build", build)],
             ),
             Self::UpdateLauncher { build, what } => trf(
@@ -145,7 +145,7 @@ impl std::fmt::Display for Refusal {
                 &[("build", build), ("why", why)],
             ),
             Self::Host => {
-                tr("Native mods can't be built on this computer: Horizon has no game package for its system yet.").into()
+                tr("Native mods can't be built on this computer: Event Horizon has no game package for its system yet.").into()
             }
             Self::Cache(why) => trf(
                 "Could not keep the mod tools: {why}",

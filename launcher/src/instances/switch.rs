@@ -39,7 +39,7 @@ impl Plays {
     /// Whose mods it loads: Horizon's, a loader's, or none (Vanilla).
     fn mods_for(&self) -> Option<(&'static str, &'static str)> {
         match self {
-            Plays::Horizon => Some(("horizon", "Horizon")),
+            Plays::Horizon => Some(("horizon", "Event Horizon")),
             Plays::Java { loader, .. } => loader.as_ref().map(|l| (l.kind.id(), l.kind.name())),
         }
     }

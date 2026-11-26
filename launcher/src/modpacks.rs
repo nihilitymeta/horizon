@@ -116,10 +116,7 @@ impl Imported {
         ));
         if s.ready + s.blocked + s.later > 0 {
             lines.push(trf(
-                "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support \
-                 Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client \
-                 features), {later} are not sorted yet (not identified, or waiting on other mods or \
-                 other work).",
+                "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).",
                 &[
                     ("ready", &n(s.ready)),
                     ("blocked", &n(s.blocked)),
@@ -173,7 +170,7 @@ pub fn row_plain(row: &Row) -> String {
     let plain = match row.plain.as_str() {
         "Its blocks and items came over and passed Horizon's checks; the mod's own code is not run." => {
             tr(
-                "Its blocks and items came over and passed Horizon's checks; the mod's own code is not run.",
+                "Its blocks and items came over and passed Event Horizon's checks; the mod's own code is not run.",
             )
         }
         "Part of it came over, but something is left out, differs from the original or has not been checked yet; the technical detail says what." => {
@@ -183,11 +180,11 @@ pub fn row_plain(row: &Row) -> String {
         }
         "It does not come over yet." => tr("It does not come over yet."),
         "Nothing to port: Horizon has it built in or does not need it." => {
-            tr("Nothing to port: Horizon has it built in or does not need it.")
+            tr("Nothing to port: Event Horizon has it built in or does not need it.")
         }
         "Horizon cannot tell yet what this mod does (it needs its jar or a reviewed entry), so it cannot say whether it will come over." => {
             tr(
-                "Horizon cannot tell yet what this mod does (it needs its jar or a reviewed entry), so it cannot say whether it will come over.",
+                "Event Horizon cannot tell yet what this mod does (it needs its jar or a reviewed entry), so it cannot say whether it will come over.",
             )
         }
         "It joins other mods together, so it waits until those are ported." => {
@@ -203,17 +200,17 @@ pub fn row_plain(row: &Row) -> String {
         }
         "Needs what blocks and items do when used, placed, broken or ticked, which Horizon's mod API cannot run from a mod yet, so it does not come over." => {
             tr(
-                "Needs what blocks and items do when used, placed, broken or ticked, which Horizon's mod API cannot run from a mod yet, so it does not come over.",
+                "Needs what blocks and items do when used, placed, broken or ticked, which Event Horizon's mod API cannot run from a mod yet, so it does not come over.",
             )
         }
         "Needs machine-style features (block entities, menus, item, fluid and energy handling, networking) that Horizon's mod API does not have yet, so it does not come over." => {
             tr(
-                "Needs machine-style features (block entities, menus, item, fluid and energy handling, networking) that Horizon's mod API does not have yet, so it does not come over.",
+                "Needs machine-style features (block entities, menus, item, fluid and energy handling, networking) that Event Horizon's mod API does not have yet, so it does not come over.",
             )
         }
         "Needs mobs, custom rendering and models, dimensions or new game hooks that Horizon's mod API does not have yet, so it does not come over." => {
             tr(
-                "Needs mobs, custom rendering and models, dimensions or new game hooks that Horizon's mod API does not have yet, so it does not come over.",
+                "Needs mobs, custom rendering and models, dimensions or new game hooks that Event Horizon's mod API does not have yet, so it does not come over.",
             )
         }
         "Needs the game's client interfaces (keys, targeting, inventory reading, interface, rendering), so it does not come over yet." => {
@@ -222,39 +219,39 @@ pub fn row_plain(row: &Row) -> String {
             )
         }
         "Horizon has not worked out what this mod needs yet." => {
-            tr("Horizon has not worked out what this mod needs yet.")
+            tr("Event Horizon has not worked out what this mod needs yet.")
         }
         "A library other mods build on. Horizon's mod API and SDK take its place, so there is nothing to port." => {
             tr(
-                "A library other mods build on. Horizon's mod API and SDK take its place, so there is nothing to port.",
+                "A library other mods build on. Event Horizon's mod API and SDK take its place, so there is nothing to port.",
             )
         }
         "It makes the game faster. Horizon's own engine does that, so there is nothing to port." => {
             tr(
-                "It makes the game faster. Horizon's own engine does that, so there is nothing to port.",
+                "It makes the game faster. Event Horizon's own engine does that, so there is nothing to port.",
             )
         }
         "Pack tooling or a game feature that Horizon already has, so there is nothing to port." => {
             tr(
-                "Pack tooling or a game feature that Horizon already has, so there is nothing to port.",
+                "Pack tooling or a game feature that Event Horizon already has, so there is nothing to port.",
             )
         }
         "Built into Horizon already, so there is nothing to port." => {
-            tr("Built into Horizon already, so there is nothing to port.")
+            tr("Built into Event Horizon already, so there is nothing to port.")
         }
         "Nothing to port." => tr("Nothing to port."),
         "Made for Minecraft 1.20 or older: Horizon ports mods made for 1.21 and later." => {
-            tr("Made for Minecraft 1.20 or older: Horizon ports mods made for 1.21 and later.")
+            tr("Made for Minecraft 1.20 or older: Event Horizon ports mods made for 1.21 and later.")
         }
         "Shader packs are not converted yet." => tr("Shader packs are not converted yet."),
         "Copied as a resource pack; Horizon has not checked how it renders. Turn it on in the game's Resource Packs screen." => {
             tr(
-                "Copied as a resource pack; Horizon has not checked how it renders. Turn it on in the game's Resource Packs screen.",
+                "Copied as a resource pack; Event Horizon has not checked how it renders. Turn it on in the game's Resource Packs screen.",
             )
         }
         "Not downloaded yet; Port gets it." => tr("Not downloaded yet; Port gets it."),
         "Horizon could not use this resource pack yet; the technical detail says why." => {
-            tr("Horizon could not use this resource pack yet; the technical detail says why.")
+            tr("Event Horizon could not use this resource pack yet; the technical detail says why.")
         }
         other => other,
     };

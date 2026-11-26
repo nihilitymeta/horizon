@@ -156,7 +156,7 @@ pub fn holds_game(path: &Path) -> bool {
 
 fn not_a_game(file: &str) -> String {
     trf(
-        "{file} is not a Horizon game for this computer.",
+        "{file} is not an Event Horizon game for this computer.",
         &[("file", file)],
     )
 }

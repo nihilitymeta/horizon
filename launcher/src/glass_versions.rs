@@ -230,8 +230,7 @@ impl Launcher {
                 "Imported builds",
                 &horizon_launcher::game_sources::is_other_import,
                 Some(tr(
-                    "Unsigned: you picked these programs yourself, and Horizon can't \
-                    check where they came from. Updates never replace them.",
+                    "Unsigned: you picked these programs yourself, and Event Horizon can't check where they came from. Updates never replace them.",
                 )),
                 on_disk,
                 cx,
