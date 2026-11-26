@@ -1666,6 +1666,13 @@ export type LootDropsEvent = {
 	drops: {ItemStackSpec}, -- answer
 }
 
+export type LootFunctionEvent = {
+	kind: string, -- read-only
+	data: any, -- read-only -- Rust: serde_json::Value
+	ctx: LootContext, -- read-only
+	stack: any, -- answer -- Rust: LootStack
+}
+
 export type LootTableLoadEvent = {
 	id: string, -- read-only
 	table: any, -- answer -- Rust: Value
@@ -3100,6 +3107,7 @@ export type OnHook =
 	((name: "living_visibility", handler: (event: LivingVisibilityEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "loot_condition", handler: (event: LootConditionEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "loot_drops", handler: (event: LootDropsEvent) -> (), options: HandlerOptions?) -> ()) &
+	((name: "loot_function", handler: (event: LootFunctionEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "loot_table_load", handler: (event: LootTableLoadEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "menu_background", handler: (event: MenuBackgroundEvent) -> (), options: HandlerOptions?) -> ()) &
 	((name: "menu_clicked", handler: (event: MenuClickedEvent) -> (), options: HandlerOptions?) -> ()) &

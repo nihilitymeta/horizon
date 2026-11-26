@@ -1,5 +1,5 @@
 # Hook coverage (issue 74, H3) from surface 2f592c9f087329694313223be0b54592, by event-horizon-lua-gen: do not edit.
-# hooks: 749, emitted: 409, skipped: 340
+# hooks: 749, emitted: 410, skipped: 339
 # skipped, answer: ArmPose: 1
 # skipped, answer: Minimap: 1
 # skipped, answer: Vec<GuiDraw>: 1
@@ -18,7 +18,7 @@
 # skipped, argument <..>: a mutable argument writes back, not in this slice: 1
 # skipped, handle input: host <..> is not carried by a turn: 2
 # skipped, handle output: 4
-# skipped, has an output: its listeners write back, not in this slice: 44
+# skipped, has an output: its listeners write back, not in this slice: 43
 # skipped, hot path (needs measurement): 10
 # skipped, listen hook returns <..>: its listeners answer nothing: 1
 # skipped, not a method of the Hooks trait: 144
@@ -430,7 +430,7 @@ living_use_totem emitted
 living_visibility emitted
 loot_condition emitted
 loot_drops emitted
-loot_function skipped: has an output: its listeners write back, not in this slice
+loot_function emitted
 loot_table_load emitted
 makes_open_trapdoor_above_climbable skipped: hot path (needs measurement)
 makes_piglins_neutral skipped: not a method of the Hooks trait

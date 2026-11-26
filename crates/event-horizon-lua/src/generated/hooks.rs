@@ -5449,6 +5449,7 @@ pub const EMITTED: &[&str] = &[
     "living_visibility",
     "loot_condition",
     "loot_drops",
+    "loot_function",
     "loot_table_load",
     "menu_background",
     "menu_clicked",

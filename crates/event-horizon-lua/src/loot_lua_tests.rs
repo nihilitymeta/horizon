@@ -508,3 +508,104 @@ fn a_list_longer_than_256_entries_is_refused() {
         .unwrap_err();
     assert!(err.contains("256"), "{err}");
 }
+
+/// Fires `loot_function` for `kind` with `data`, `ctx` and `stack` at one mod whose main.luau is
+/// `source`. Returns the mod's log lines and the stack after the hook (the roll's stack, which the
+/// answer replaces when the handler assigns `event.stack`).
+fn fire_function(
+    source: &str,
+    kind: &str,
+    data: &serde_json::Value,
+    ctx: &mod_api::LootContext,
+    stack: mod_api::world::snapshots::LootStack,
+) -> (Vec<String>, mod_api::world::snapshots::LootStack) {
+    let root = tempfile::tempdir().unwrap();
+    let host = LuaHost::new(vec![load_one(root.path(), "mymod", source)]);
+    let tags = NoTags;
+    let mut stack = stack;
+    {
+        let mut event = mod_api::LootFunctionEvent {
+            kind,
+            data,
+            ctx,
+            tags: &tags,
+            stack: &mut stack,
+        };
+        let _phase = mod_api::__private::PhaseOwner::scope(mod_api::__private::ModPhase::World);
+        mod_api::Hooks::loot_function(&host, &mut event);
+    }
+    (host.mods()[0].log_lines(), stack)
+}
+
+#[test]
+fn a_function_a_handler_claims_sees_its_kind_data_context_and_count_and_writes_the_stack() {
+    // The handler copies every field of the stack it reads, then changes the count: the copy is a
+    // new table, so the frozen one the event holds is never written. A wrong kind, data, context
+    // or count leaves the stack as it was.
+    let _host = stick_host();
+    let stack = loot_stack_with_everything();
+    let mut expected = stack.clone();
+    expected.count = 29;
+    let (_, after) = fire_function(
+        "horizon.on(\"loot_function\", function(event) if event.kind ~= \"mymod:double\" then return end if event.data.factor == 3 and event.ctx.seed == 7 and event.stack.count == 2 then local s = {} for k, v in pairs(event.stack) do s[k] = v end s.count = 29 event.stack = s end end)",
+        "mymod:double",
+        &serde_json::json!({"factor": 3}),
+        &luck_context(),
+        stack,
+    );
+    assert_eq!(after, expected);
+}
+
+#[test]
+fn a_function_another_handler_claims_leaves_the_stack_unchanged() {
+    let _host = stick_host();
+    let stack = loot_stack_with_everything();
+    let (_, after) = fire_function(
+        "horizon.on(\"loot_function\", function(event) if event.kind ~= \"mymod:other\" then return end event.stack = {item = \"minecraft:stick\", count = 1} end)",
+        "mymod:double",
+        &serde_json::json!({}),
+        &luck_context(),
+        stack.clone(),
+    );
+    assert_eq!(after, stack);
+}
+
+#[test]
+fn an_unknown_item_or_a_number_written_as_the_stack_is_refused_and_the_stack_is_unchanged() {
+    let _host = stick_host();
+    let stack = loot_stack_with_everything();
+    let (_, after) = fire_function(
+        "horizon.on(\"loot_function\", function(event) if event.kind == \"mymod:bad\" then event.stack = {item = \"minecraft:nope\", count = 1} end end)",
+        "mymod:bad",
+        &serde_json::json!({}),
+        &luck_context(),
+        stack.clone(),
+    );
+    assert_eq!(after, stack);
+    let (_, after) = fire_function(
+        "horizon.on(\"loot_function\", function(event) if event.kind == \"mymod:bad\" then event.stack = 5 end end)",
+        "mymod:bad",
+        &serde_json::json!({}),
+        &luck_context(),
+        stack.clone(),
+    );
+    assert_eq!(after, stack);
+}
+
+#[test]
+fn an_in_place_edit_of_the_stack_without_assigning_it_is_an_error_and_the_stack_is_unchanged() {
+    // `event.stack` is the event's frozen data, not the answer: the answer is what the handler
+    // assigns to `event.stack`. So `event.stack.count = 29` writes the frozen table, which is
+    // read-only, the handler errors, and nothing is answered.
+    let _host = stick_host();
+    let stack = loot_stack_with_everything();
+    // The handler's error is reported by the host, not in the mod's own log lines.
+    let (_log, after) = fire_function(
+        "horizon.on(\"loot_function\", function(event) if event.kind == \"mymod:double\" then event.stack.count = 29 end end)",
+        "mymod:double",
+        &serde_json::json!({}),
+        &luck_context(),
+        stack.clone(),
+    );
+    assert_eq!(after, stack);
+}

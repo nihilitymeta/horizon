@@ -550,6 +550,22 @@ pub fn cancel_key(hook: &str) -> &'static str {
 /// the listener set, and it starts as the event's own value. Only the hooks named here take it.
 pub const PLAIN_COLLECT_OUTPUTS: &[&str] = &["loot_condition"];
 
+/// The collect hooks whose `LootStack` output (`stack`) a listener writes: the answer is the stack
+/// the listener set, read back through `FromLuaValue for LootStack` (a stack the conversion refuses
+/// leaves the roll's stack as it was). The output starts as the roll's own stack, and a handler that
+/// changes the Lua table in place without assigning `event.stack` answers nothing: the table it
+/// reads is the event's frozen data, so the in-place write is an error (see the tests in
+/// `loot_lua_tests.rs`). Only the hooks named here take it.
+pub const LOOT_STACK_OUTPUTS: &[&str] = &["loot_function"];
+
+/// Whether a collect output of type `ty` (without `mut` or spaces) is the loot stack, for a `hook`
+/// named in [`LOOT_STACK_OUTPUTS`]. The path may carry the mod API's or the snapshot module's prefix.
+fn is_loot_stack_output(hook: &str, ty: &str) -> bool {
+    let bare = ty.replace("mod_api::", "");
+    let bare = bare.strip_prefix("world::snapshots::").unwrap_or(&bare);
+    LOOT_STACK_OUTPUTS.contains(&hook) && bare == "LootStack"
+}
+
 /// The `Vec<Text>` outputs a cancel hook appends to rather than replaces: `(hook, key, type)`. Each
 /// mod's turn starts with an empty list and answers the lines it adds; the game appends them to the
 /// hook's list in dispatch order (`accept_lines` in `dispatch`), so a mod never sees another's lines.
@@ -608,6 +624,7 @@ fn outputs_of(
             Some(_) => {}
             None if !output_supported(&shown(&param.ty), plain)
                 && !is_json_value(&shown(&param.ty))
+                && !is_loot_stack_output(&hook.name, &shown(&param.ty))
                 && !is_appended(&hook.name, &param.param, &shown(&param.ty)) =>
             {
                 return Err(format!("output: {}", shown(&param.ty)));
@@ -712,6 +729,7 @@ fn plan<'a>(
                 || is_json_value(&collect_type(&output.rust_type))
                 || (collect_type(&output.rust_type) == "bool"
                     && PLAIN_COLLECT_OUTPUTS.contains(&hook.name.as_str()))
+                || is_loot_stack_output(&hook.name, &collect_type(&output.rust_type))
                 || carried::shape_of(&output.rust_type).is_some());
         if !list {
             return Err("has an output: its listeners write back, not in this slice".to_owned());
