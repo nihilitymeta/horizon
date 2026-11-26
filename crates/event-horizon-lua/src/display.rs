@@ -27,6 +27,23 @@ pub const MAX_LINES: usize = 5;
 /// How many characters of a problem's first message the line shows.
 const SHOWN_CHARS: usize = 80;
 
+/// What the owner reads of a logged problem: its first line, without the mod's id, and for a script error
+/// without the file path: `alpha: tick: runtime error: /game/lua-mods/alpha/main.luau:2: boom` shows as
+/// `tick: boom`. The log line has the rest.
+fn readable(source: &str, line: &str) -> String {
+    let first = line.lines().next().unwrap_or("");
+    // The log escapes a newline as `\u{a}`: the traceback after it is not for the owner.
+    let first = first.split("\\u{a}").next().unwrap_or(first);
+    let text = first.strip_prefix(&format!("{source}: ")).unwrap_or(first);
+    if let Some((hook, rest)) = text.split_once(": ")
+        && let Some(at) = rest.find(".luau:")
+        && let Some((_, message)) = rest[at..].split_once(": ")
+    {
+        return format!("{hook}: {message}");
+    }
+    text.to_owned()
+}
+
 /// The session's state: the mode, the mods that already have their line, the lines counted, and
 /// the lines queued for the next turn.
 #[derive(Debug)]
@@ -72,7 +89,7 @@ impl Session {
         }
         self.mods.insert(source.to_owned());
         self.lines += 1;
-        let shown: String = line
+        let shown: String = readable(source, line)
             .chars()
             .map(|c| if c.is_control() { ' ' } else { c })
             .take(SHOWN_CHARS)
@@ -202,7 +219,7 @@ mod tests {
         sent_to(&mut session, &mut owner);
         assert_eq!(
             owner.sent,
-            vec!["[Lua] alpha: 1 problem, e.g. \"alpha: tick: boom\". See the log.".to_owned()]
+            vec!["[Lua] alpha: 1 problem, e.g. \"tick: boom\". See the log.".to_owned()]
         );
     }
 
@@ -275,6 +292,24 @@ mod tests {
         };
         sent_to(&mut off, &mut owner);
         assert!(owner.sent.is_empty());
+    }
+
+    #[test]
+    fn a_script_error_shows_the_hook_and_message_without_the_path_or_traceback() {
+        assert_eq!(
+            readable(
+                "alpha",
+                "alpha: loot_drops: runtime error: /game/lua-mods/alpha/main.luau:2: boom\\u{a}stack traceback:\\u{a}\\t[C]: in ?"
+            ),
+            "loot_drops: boom"
+        );
+        assert_eq!(
+            readable(
+                "alpha",
+                "alpha: a host call needs the \"world\" power; refused"
+            ),
+            "a host call needs the \"world\" power; refused"
+        );
     }
 
     #[test]
