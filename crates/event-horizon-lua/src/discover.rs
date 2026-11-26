@@ -227,6 +227,7 @@ pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan 
     let mut out = Scan::default();
     let states = enabled::read(game_dir);
     out.notices.extend(states.notice.clone());
+    crate::display::set_mode(states.display);
 
     let mut candidates = Vec::new();
     for (k, path) in dev_paths.iter().enumerate() {

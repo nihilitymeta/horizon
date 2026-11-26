@@ -364,3 +364,39 @@ fn concurrent_grants_lose_no_entry() {
     assert_eq!(grants.len(), 40, "{grants:?}");
     assert!(other_files(root.path()).is_empty());
 }
+
+#[test]
+fn display_errors_owner_is_read_and_absent_or_off_is_not() {
+    use crate::display::Errors;
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(
+        read(root.path()).display,
+        Errors::Off,
+        "no file: nothing on screen"
+    );
+    put(root.path(), "[display]\nerrors = \"owner\"\n");
+    let enabled = read(root.path());
+    assert_eq!(enabled.display, Errors::Owner);
+    assert!(enabled.notice.is_none());
+    put(root.path(), "[display]\nerrors = \"off\"\n");
+    let enabled = read(root.path());
+    assert_eq!(enabled.display, Errors::Off);
+    assert!(enabled.notice.is_none(), "an explicit off is not a problem");
+}
+
+#[test]
+fn an_invalid_display_value_reads_as_off_with_one_notice() {
+    use crate::display::Errors;
+    let root = tempfile::tempdir().unwrap();
+    put(root.path(), "[display]\nerrors = \"screen\"\n");
+    let enabled = read(root.path());
+    assert_eq!(enabled.display, Errors::Off, "fails closed");
+    assert!(
+        enabled.notice.is_some(),
+        "the invalid value is named in the file's notice"
+    );
+    put(root.path(), "display = 1\n");
+    let enabled = read(root.path());
+    assert_eq!(enabled.display, Errors::Off);
+    assert!(enabled.notice.is_some());
+}

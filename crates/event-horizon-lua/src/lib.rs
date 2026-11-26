@@ -24,6 +24,7 @@ pub mod discover;
 #[cfg(test)]
 mod discover_tests;
 pub mod dispatch;
+pub mod display;
 pub mod enabled;
 #[cfg(test)]
 mod enabled_tests;

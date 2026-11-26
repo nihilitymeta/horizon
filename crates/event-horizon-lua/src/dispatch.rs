@@ -20,7 +20,7 @@ use mod_api::Text;
 use crate::declare;
 use crate::discover::Side;
 use crate::generated::hooks::{HookSide, hook_info};
-use crate::host::{Escaped, LuaHost, LuaMod, call_handler, call_handler_value, warn_once};
+use crate::host::{Escaped, LuaHost, LuaMod, call_handler, call_handler_value, warn_problem};
 use crate::hostcall::{
     FiredSide, TurnHost, Void, contained, log_panic, note_skipped, open_call, run_hosted, scoped,
 };
@@ -207,12 +207,12 @@ fn keep<T>(
 
 /// Logs that a mod's event could not be built for `hook`, once per process for each reason.
 fn warn_build_failure(id: &str, hook: &str, err: &mlua::Error) {
-    warn_once(id, &format!("{id}: {hook}: {}", Escaped(err)));
+    warn_problem(id, &format!("{id}: {hook}: {}", Escaped(err)));
 }
 
 /// Logs the one warning for a refused output and returns `true`.
 fn refuse(id: &str, hook: &str, output: &str, why: &str) -> bool {
-    warn_once(
+    warn_problem(
         id,
         &format!("{id}: {hook}: output `{output}` refused, {}", Escaped(why)),
     );
@@ -325,7 +325,7 @@ pub fn answer_by<T>(
     match converted {
         Ok(answer) => Some(answer),
         Err(err) => {
-            warn_once(
+            warn_problem(
                 id,
                 &format!(
                     "{id}: {hook}: answer refused, the mod gives no answer: {}",
@@ -454,7 +454,7 @@ impl LuaHost {
             let handlers = match declare::handlers(&m.lua(), hook) {
                 Ok(handlers) => handlers,
                 Err(err) => {
-                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -474,7 +474,7 @@ impl LuaHost {
                     call_handler(&m.lua(), handler, event.table())
                 }) {
                     Some(Err(err)) => {
-                        warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                        warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     }
                     Some(Ok(())) => {}
                     None => break,
@@ -662,7 +662,7 @@ pub(crate) fn turns_in_reporting(
                 Ok(handlers) => handlers,
                 Err(err) => {
                     failed_turn.set(true);
-                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -687,7 +687,7 @@ pub(crate) fn turns_in_reporting(
             .unwrap_or(true);
             if failed {
                 failed_turn.set(true);
-                warn_once(
+                warn_problem(
                     m.id(),
                     &format!(
                         "{}: {hook}: a handler failed, so this mod's changes to the event are dropped",
@@ -786,7 +786,7 @@ pub(crate) fn replace_in_reporting(
                 Ok(handlers) => handlers,
                 Err(err) => {
                     failed_turn.set(true);
-                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     continue;
                 }
             };
@@ -819,7 +819,10 @@ pub(crate) fn replace_in_reporting(
                         Err(err) => {
                             // A panicking host call already has its line; the handler's error is its echo.
                             if void.panic_message().is_none() {
-                                warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                                warn_problem(
+                                    m.id(),
+                                    &format!("{}: {hook}: {}", m.id(), Escaped(err)),
+                                );
                             }
                             failed = true;
                         }
@@ -832,13 +835,13 @@ pub(crate) fn replace_in_reporting(
                     (found, failed || panicked || void.is_void())
                 }
                 Err(err) => {
-                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                     (None, true)
                 }
             };
             if failed {
                 failed_turn.set(true);
-                warn_once(
+                warn_problem(
                     m.id(),
                     &format!(
                         "{}: {hook}: a handler failed, so this mod gives no answer",

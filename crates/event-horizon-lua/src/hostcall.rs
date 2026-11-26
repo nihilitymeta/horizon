@@ -37,7 +37,7 @@ use horizon_client::crash::contain;
 use mlua::{AnyUserData, Error, Lua, MultiValue, Table, Value};
 use mod_api::{BlockClick, ClientHost, Host, HostSide, ServerHost};
 
-use crate::host::{Escaped, LuaMod, warn_once};
+use crate::host::{Escaped, LuaMod, warn_once, warn_problem};
 use crate::manifest::Power;
 
 /// A right click as a Lua handler reads it (`click` in `use_without_item` and `use_item_on`): its
@@ -327,6 +327,9 @@ pub(crate) fn scoped<R>(
     body: impl FnOnce(&Lua) -> R,
 ) -> mlua::Result<R> {
     let mut turn_host = host.reborrow();
+    if let Some(server) = turn_host.server() {
+        crate::display::flush_turn(server);
+    }
     lua.scope(|scope| {
         let mut spent = 0u32;
         let calls = scope.create_function_mut(
@@ -402,7 +405,7 @@ pub(crate) fn panic_line(id: &str, hook: &str, message: &str, quarantined: bool)
 /// and the panic is logged once through `warn_once`.
 pub(crate) fn record_panic(id: &str, hook: &str, message: &str) {
     let quarantined = crate::quarantine::quarantine(id, hook);
-    warn_once(id, &panic_line(id, hook, message, quarantined));
+    warn_problem(id, &panic_line(id, hook, message, quarantined));
 }
 
 /// Logs a host call's panic once, if the turn had one. Returns whether it had one.
@@ -444,7 +447,7 @@ pub(crate) fn run_hosted(
             if let Err(err) = crate::host::call_handler(lua, handler, event) {
                 // A panicking host call already has its line; the handler's error is its echo.
                 if void.panic_message().is_none() {
-                    warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+                    warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
                 }
                 failed = true;
             }
@@ -457,7 +460,7 @@ pub(crate) fn run_hosted(
     match outcome {
         Ok(failed) => failed || void.is_void(),
         Err(err) => {
-            warn_once(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
+            warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
             true
         }
     }

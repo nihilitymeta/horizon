@@ -1774,6 +1774,13 @@ pub(crate) fn warn_once(source: &str, line: &str) {
     }
 }
 
+/// [`warn_once`] for a mod's runtime failure or power refusal: the same log line, and the note the
+/// owner's chat line is built from (`display.rs`). Other warnings keep to `warn_once`.
+pub(crate) fn warn_problem(source: &str, line: &str) {
+    crate::display::problem(source, line);
+    warn_once(source, line);
+}
+
 /// Appends `line` to a mod's buffer, dropping the oldest lines past `MAX_LOG_LINES`.
 fn keep_line(log: &Mutex<Vec<String>>, line: String) {
     let mut lines = lock(log);

@@ -12,6 +12,10 @@
 //! as a whole, and at most 64 mods may hold grants; each problem is counted in the same one notice.
 //! A `[grants]` that is not a table ignores the grants only: the `[mods]` states still apply.
 //!
+//! A `[display]` table, `errors = "owner"`, asks for one chat line to the owner per mod with a problem
+//! (see `display.rs`). `"off"` is the default; an absent, invalid or unknown value reads as `"off"` and
+//! counts in the same notice.
+//!
 //! `write` changes one entry of `[mods]`, and `grant` one power of `[grants]`. It writes a temporary file beside the file with `create_new`, syncs it,
 //! and renames it over the file, so a reader sees the old text or the new text, never a part. A
 //! symlinked file is never written through. Writers in this process are serialised by a mutex, so
@@ -26,6 +30,7 @@ use std::sync::PoisonError;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::discover::DIR;
+use crate::display::Errors;
 use crate::manifest::{Power, valid_id};
 
 /// The file's name, under the `lua-mods` folder.
@@ -36,6 +41,8 @@ pub const MAX_ENABLED: u64 = 64 * 1024;
 const TABLE: &str = "mods";
 /// The table that holds the grants: `id = ["power", ...]`.
 const GRANTS: &str = "grants";
+/// The table that holds the display settings: `errors = "off" | "owner"` (see `display.rs`).
+const DISPLAY: &str = "display";
 /// The most mods that may hold grants in one file; the rest are ignored (and counted).
 pub const MAX_GRANT_MODS: usize = 64;
 /// The most powers one mod may be granted in the file; a longer list is refused as a whole.
@@ -48,6 +55,8 @@ pub const MAX_GRANTS_PER_MOD: usize = 16;
 pub struct Enabled {
     pub states: HashMap<String, bool>,
     pub grants: HashMap<String, Vec<Power>>,
+    /// The `[display] errors` setting; `Errors::Off` unless the file asks for `"owner"`.
+    pub display: Errors,
     pub notice: Option<String>,
 }
 
@@ -66,6 +75,7 @@ impl Enabled {
         Enabled {
             states: HashMap::new(),
             grants: HashMap::new(),
+            display: Errors::Off,
             notice: Some(format!("enabled.toml {what}; every mod is enabled")),
         }
     }
@@ -106,11 +116,19 @@ pub fn read(game_dir: &Path) -> Enabled {
 fn parse(table: &toml::Table) -> Enabled {
     let mut states = HashMap::new();
     let mut grants = HashMap::new();
+    let mut display = Errors::Off;
     let mut ignored = 0usize;
     for (key, value) in table {
         if key == GRANTS {
             match value {
                 toml::Value::Table(mods) => ignored += parse_grants(mods, &mut grants),
+                _ => ignored += 1,
+            }
+            continue;
+        }
+        if key == DISPLAY {
+            match value {
+                toml::Value::Table(settings) => ignored += parse_display(settings, &mut display),
                 _ => ignored += 1,
             }
             continue;
@@ -137,8 +155,23 @@ fn parse(table: &toml::Table) -> Enabled {
     Enabled {
         states,
         grants,
+        display,
         notice,
     }
+}
+
+/// The `[display]` table's `errors` setting into `out`; returns how many entries were ignored. Only
+/// `"owner"` changes the setting: `"off"` is the default, and any other value or key is ignored.
+fn parse_display(settings: &toml::Table, out: &mut Errors) -> usize {
+    let mut ignored = 0;
+    for (key, value) in settings {
+        match (key.as_str(), value.as_str()) {
+            ("errors", Some("owner")) => *out = Errors::Owner,
+            ("errors", Some("off")) => *out = Errors::Off,
+            _ => ignored += 1,
+        }
+    }
+    ignored
 }
 
 /// The valid grants of a `[grants]` table, into `out`; returns how many entries were ignored. A mod

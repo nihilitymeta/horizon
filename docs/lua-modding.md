@@ -156,6 +156,23 @@ Known limits of the power check:
 - `[grants]` allows at most 64 mods, and each up to 16 powers. A longer list for one
   mod refuses that mod's list as a whole.
 
+### Showing errors on screen
+
+By default a mod's runtime errors and refused power calls go to the log only. The
+owner can ask for one chat line instead, in `lua-mods/enabled.toml`:
+
+```toml
+[display]
+errors = "owner"      # "off" (default) | "owner"
+```
+
+With `"owner"`, the first problem of each mod in a session sends the owner one line,
+`[Lua] <mod>: 1 problem, e.g. "<first message>". See the log.`. Later problems of
+that mod send nothing more. At most one line per mod, and five lines in all per
+session. The owner is the host player in singleplayer and on a LAN host; on a
+dedicated server there is no such player, so nothing is sent. No screen, no toast.
+A missing, unknown or invalid value reads as `"off"`, with one notice in the log.
+
 ## Limits on what a script can use
 
 Each mod runs in its own Luau state (`state.rs`):

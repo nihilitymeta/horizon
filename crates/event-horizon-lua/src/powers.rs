@@ -18,7 +18,7 @@
 
 use mlua::{Error, MultiValue, Value};
 
-use crate::host::warn_once;
+use crate::host::warn_problem;
 use crate::manifest::Power;
 
 /// The gated host operations: `("Family::method", power)`, generated from the same members as the
@@ -135,7 +135,7 @@ pub(crate) fn guard(op: &str, args: &MultiValue) -> Result<(), Error> {
 pub(crate) fn refuse(op: &str, owner: &str, power: Power) -> Error {
     let method = op.rsplit("::").next().unwrap_or(op);
     let name = power.name();
-    warn_once(
+    warn_problem(
         owner,
         &format!(
             "{owner}: a host call needs the \"{name}\" power, which is not in effect (the mod did not request it, or the owner has not granted it); refused"
