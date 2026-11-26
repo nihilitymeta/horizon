@@ -384,6 +384,10 @@ fn parse(line: &str) -> Option<Cmd<'_>> {
                 text => parse_coords(text).map_or(BlockAction::Usage, BlockAction::Watch),
             },
         }),
+        // `/lua` alone opens the console window, as `/console` does; with code it runs the chunk.
+        "lua" if rest.is_empty() => Some(Cmd::Console {
+            action: console::Action::Open,
+        }),
         "lua" => Some(Cmd::Lua { code: rest }),
         "luareload" => Some(Cmd::Reload { id: rest }),
         "console" => match rest {
@@ -817,7 +821,13 @@ mod tests {
             }),
             "the code keeps its inner spacing"
         );
-        assert_eq!(parse("lua"), Some(Cmd::Lua { code: "" }));
+        assert_eq!(
+            parse("lua"),
+            Some(Cmd::Console {
+                action: console::Action::Open
+            }),
+            "/lua alone opens the console"
+        );
     }
 
     #[test]
@@ -1440,14 +1450,14 @@ mod flows {
     }
 
     #[test]
-    fn lua_alone_replies_the_usage_and_runs_nothing() {
+    fn lua_alone_opens_the_console_window_and_runs_nothing() {
+        let _console = console_state();
         let mut fake = owned_by(Some(7), Vec::new());
         assert!(serve(&mut fake, 7, "lua"));
         assert!(fake.lua_sources.is_empty());
-        assert_eq!(
-            fake.replies,
-            vec![Text::translate("horizon.dev_tools.lua.usage", vec![])]
-        );
+        assert!(crate::console::state().open);
+        assert!(fake.replies.is_empty(), "opening says nothing");
+        *crate::console::state() = crate::console::State::default();
     }
 
     #[test]
