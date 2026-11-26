@@ -594,7 +594,7 @@ fn tag_of_label(file: &str) -> Option<&str> {
 }
 
 /// `eh-v0.1.0` → `0.1.0`, `eh-nightly-2026-11-05` → `Nightly 2026-11-05`.
-fn release_name(tag: &str) -> String {
+pub fn release_name(tag: &str) -> String {
     if let Some(date) = tag.strip_prefix(NIGHTLY_PREFIX) {
         return format!("Nightly {date}");
     }
@@ -745,11 +745,17 @@ pub fn launcher_digest(tag: &str, api: Api) -> Result<String, String> {
 /// what the Play button offers as an update for a version a source installed. A version no source
 /// installed (a local build, one of Horizon's) has none here.
 pub fn pending() -> Vec<(String, Release)> {
-    let sources: Vec<Source> = load()
+    pending_in(load(), &github_mods::api)
+}
+
+/// `pending` over the given sources and API: only the sources with an installed build count, and
+/// only a newer release that the API reports for them.
+fn pending_in(sources: Vec<Source>, api: Api) -> Vec<(String, Release)> {
+    let sources: Vec<Source> = sources
         .into_iter()
         .filter(|s| s.installed.is_some())
         .collect();
-    updates(&sources, &github_mods::api)
+    updates(&sources, api)
         .into_iter()
         .filter_map(|(source, latest)| Some((source.installed?.version, latest.ok()?)))
         .collect()
@@ -1476,5 +1482,52 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0.repo, "c/d");
         assert_eq!(found[0].1.as_ref().unwrap().tag, "eh-v0.1.0");
+    }
+
+    #[test]
+    fn pending_offers_only_a_newer_release_of_an_installed_source() {
+        if platform().is_none() {
+            return;
+        }
+        let installed = |tag: &str, version: &str| Installed {
+            tag: tag.into(),
+            version: version.into(),
+        };
+        let source = |repo: &str, installed: Option<Installed>| Source {
+            repo: repo.into(),
+            auto_update: false,
+            installed,
+        };
+        let sources = vec![
+            // Installed, a newer release is out: offered, with its version.
+            source("a/newer", Some(installed("eh-v0.1.0", "build-a"))),
+            // Installed, already on the newest release: nothing to offer.
+            source("b/same", Some(installed("eh-v0.2.0", "build-b"))),
+            // Not installed from it: never offered, however new its release.
+            source("c/none", None),
+            // Installed, but its API call fails: no offer.
+            source("d/broken", Some(installed("eh-v0.1.0", "build-d"))),
+        ];
+        let api = |path: &str| -> Result<Option<serde_json::Value>, String> {
+            let repo = path
+                .trim_start_matches("repos/")
+                .trim_end_matches("/releases/latest");
+            let p = platform().unwrap_or("linux-x86_64");
+            let tag = match repo {
+                "a/newer" | "c/none" => "eh-v0.2.0",
+                "b/same" => "eh-v0.2.0",
+                "d/broken" => return Err("offline".into()),
+                _ => return Ok(None),
+            };
+            Ok(Some(serde_json::json!({ "tag_name": tag, "assets": [{
+                "name": format!("event-horizon-{p}.tar.gz"),
+                "browser_download_url": format!("https://github.com/{repo}/releases/download/{tag}/event-horizon-{p}.tar.gz"),
+            }]})))
+        };
+        let found = pending_in(sources, &api);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].0, "build-a");
+        assert_eq!(found[0].1.tag, "eh-v0.2.0");
+        assert_eq!(found[0].1.repo, "a/newer");
     }
 }
