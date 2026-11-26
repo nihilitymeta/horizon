@@ -304,8 +304,8 @@ LevelRef: 145 members
   handle:LevelRef::epoch bound, cost 1
   handle:LevelRef::explode skipped: powerful (needs manifest power): name contains `explo`
   handle:LevelRef::explosion_destroy_blocks skipped: powerful (needs manifest power): name contains `explo`
-  handle:LevelRef::explosion_resistance skipped: powerful (needs manifest power): name contains `explo`
-  handle:LevelRef::explosion_resistances skipped: powerful (needs manifest power): name contains `explo`
+  handle:LevelRef::explosion_resistance bound, cost 10
+  handle:LevelRef::explosion_resistances skipped: unconvertible arg: &ResistanceCells
   handle:LevelRef::find_closest_biome skipped: unconvertible arg: BiomeSearch
   handle:LevelRef::find_nearest_structure skipped: unconvertible arg: StructureSearch
   handle:LevelRef::fluid_can_be_replaced_with skipped: unconvertible arg: FluidKey
@@ -392,7 +392,7 @@ LevelRef: 145 members
   handle:LevelRef::spawn_item skipped: powerful (needs manifest power): name contains `spawn`
   handle:LevelRef::spawn_item_with_motion skipped: powerful (needs manifest power): name contains `spawn`
   handle:LevelRef::spawn_limits bound, cost 1
-  handle:LevelRef::spawn_mob skipped: powerful (needs manifest power): name contains `spawn`
+  handle:LevelRef::spawn_mob bound, cost 10, gated: spawn
   handle:LevelRef::strike_lightning bound, cost 10, gated: world
   handle:LevelRef::update_neighbors skipped: unconvertible arg: NeighbourUpdate
   handle:LevelRef::weather skipped: unconvertible return: Option<(f32, f32)>
@@ -768,13 +768,13 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 547 of 724; heavy 28
+summary: bound 549 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 63
-  skipped, unconvertible arg: 52
+  skipped, powerful (needs manifest power): 60
+  skipped, unconvertible arg: 53
   skipped, unconvertible return: 39
-  gated: spawn 3
+  gated: spawn 4
   gated: world 20
 heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

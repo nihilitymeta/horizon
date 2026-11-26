@@ -124,6 +124,9 @@ const POWERFUL_ARG_TYPES: &[&str] = &[
 fn powerful(member: &MemberIr) -> Option<String> {
     let name = member.name.as_str();
     let owner = member.owner.as_str();
+    if READS_WITHOUT_POWER.contains(&format!("{owner}::{name}").as_str()) {
+        return None;
+    }
     let rule = if POWERFUL_OWNERS
         .iter()
         .any(|powerful| owner.contains(powerful))
@@ -191,6 +194,14 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("LevelRef::award_experience", "spawn"),
     ("LevelRef::set_respawn_data", "spawn"),
     ("PlayerRef::respawn", "spawn"),
+    ("LevelRef::spawn_mob", "spawn"),
+];
+
+/// The explosion reads that carry a power's name part but need no power: a `&mut dyn ServerHost`
+/// signature the rule would otherwise deny, `(Family::name)`. They bind as ordinary reads.
+const READS_WITHOUT_POWER: &[&str] = &[
+    "LevelRef::explosion_resistance",
+    "LevelRef::explosion_resistances",
 ];
 
 /// The manifest names a gated write may need: the names `Power::from_name` gives, without the
@@ -1517,6 +1528,26 @@ mod tests {
                 "{signature}: {reason}"
             );
         }
+    }
+
+    /// The two explosion reads carry the `explo` name part but need no power: `powerful` leaves them
+    /// alone, while another `explo` write stays powerful.
+    #[test]
+    fn the_explosion_reads_need_no_power_and_another_explosion_write_does() {
+        let read = members(&[(
+            "LevelRef",
+            "explosion_resistance",
+            "fn explosion_resistance(self, _: &mut dyn ServerHost, _: [i32; 3]) -> Option<bool>",
+        )])
+        .remove(0);
+        assert_eq!(powerful(&read), None);
+        let write = members(&[(
+            "LevelRef",
+            "explosion_clear",
+            "fn explosion_clear(self, _: &mut dyn ServerHost) -> bool",
+        )])
+        .remove(0);
+        assert!(powerful(&write).is_some());
     }
 
     /// The `EntityRef` members of [`GATED_WRITES`] bind behind their power; the same name on a family

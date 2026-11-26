@@ -808,6 +808,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("epoch", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::epoch", this, args)
         });
+        methods.add_function("explosion_resistance", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::explosion_resistance", this, args)
+        });
         methods.add_function("fluid_flow", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::fluid_flow", this, args)
         });
@@ -963,6 +966,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         });
         methods.add_function("spawn_limits", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::spawn_limits", this, args)
+        });
+        methods.add_function("spawn_mob", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::spawn_mob", this, args)
         });
         methods.add_function("strike_lightning", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::strike_lightning", this, args)
@@ -3876,6 +3882,20 @@ fn level_ref_epoch(lua: &mlua::Lua, _host: &mut crate::hostcall::TurnHost<'_>, t
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out.get(), lua)
 }
 
+fn level_ref_explosion_resistance(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::explosion_resistance", args, 6)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::explosion_resistance")?;
+    let a0: [i32; 3] = args.get(0)?;
+    let a1: Option<mod_api::EntityRef> = args.opt_handle(1)?;
+    let a2: [f64; 3] = args.get(2)?;
+    let a3: f32 = args.get(3)?;
+    let a4: bool = args.get(4)?;
+    let a5: mod_api::ExplosionInteraction = args.get(5)?;
+    let out = this.explosion_resistance(server, a0, a1, a2, a3, a4, a5);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn level_ref_fluid_flow(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("LevelRef::fluid_flow", args, 1)?;
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::fluid_flow")?;
@@ -4353,6 +4373,17 @@ fn level_ref_spawn_limits(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<
     let read = crate::handles::read_of(host)?;
     let out = this.spawn_limits(read);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_spawn_mob(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::spawn_mob", args, 3)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::spawn_mob")?;
+    let a0: String = args.get(0)?;
+    let a1: [f64; 3] = args.get(1)?;
+    let a2: mod_api::SpawnReason = args.get(2)?;
+    let out = this.spawn_mob(server, &a0, a1, a2);
+    crate::handles::family_opt_out(lua, out)
 }
 
 fn level_ref_strike_lightning(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
@@ -6742,6 +6773,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::entities_in" => 100,
         "LevelRef::entity_ticking" => 1,
         "LevelRef::epoch" => 1,
+        "LevelRef::explosion_resistance" => 10,
         "LevelRef::fluid_flow" => 1,
         "LevelRef::fluid_height" => 1,
         "LevelRef::fluid_height_for_camera" => 1,
@@ -6794,6 +6826,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::signal" => 1,
         "LevelRef::spawn_flags" => 1,
         "LevelRef::spawn_limits" => 1,
+        "LevelRef::spawn_mob" => 10,
         "LevelRef::strike_lightning" => 10,
         "LevelRef::world_border" => 1,
         "LivingRef::absorption" => 1,
@@ -7303,6 +7336,7 @@ pub fn run(
         "LevelRef::entities_in" => level_ref_entities_in(lua, host, this, args),
         "LevelRef::entity_ticking" => level_ref_entity_ticking(lua, host, this, args),
         "LevelRef::epoch" => level_ref_epoch(lua, host, this, args),
+        "LevelRef::explosion_resistance" => level_ref_explosion_resistance(lua, host, this, args),
         "LevelRef::fluid_flow" => level_ref_fluid_flow(lua, host, this, args),
         "LevelRef::fluid_height" => level_ref_fluid_height(lua, host, this, args),
         "LevelRef::fluid_height_for_camera" => level_ref_fluid_height_for_camera(lua, host, this, args),
@@ -7355,6 +7389,7 @@ pub fn run(
         "LevelRef::signal" => level_ref_signal(lua, host, this, args),
         "LevelRef::spawn_flags" => level_ref_spawn_flags(lua, host, this, args),
         "LevelRef::spawn_limits" => level_ref_spawn_limits(lua, host, this, args),
+        "LevelRef::spawn_mob" => level_ref_spawn_mob(lua, host, this, args),
         "LevelRef::strike_lightning" => level_ref_strike_lightning(lua, host, this, args),
         "LevelRef::world_border" => level_ref_world_border(lua, host, this, args),
         "LivingRef::absorption" => living_ref_absorption(lua, host, this, args),

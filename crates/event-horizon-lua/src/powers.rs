@@ -16,7 +16,7 @@
 //! - Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are NOT gated, and stay
 //!   that way.
 
-use mlua::Error;
+use mlua::{Error, MultiValue, Value};
 
 use crate::host::warn_once;
 use crate::manifest::Power;
@@ -96,6 +96,39 @@ pub fn required(op: &str) -> Option<Power> {
         .map(|(_, power)| *power)
 }
 
+/// The placeholder cap on an explosion's power (the radius argument of the explosion writes): a call
+/// above it is refused before the host sees it. It is a placeholder, not a balance decision; the design
+/// sets the real number. A refused call costs one unit, as a power refusal does.
+pub const MAX_EXPLOSION_POWER: f64 = 16.0;
+
+/// The explosion writes the cap checks, `(op, index of the power among the Lua arguments)`. Each is
+/// listed only so the cap applies once the op binds: `explode` and `explosion_destroy_blocks` do not
+/// convert from Lua yet (docs/lua-modding.md, the `explosions` row), so no mod reaches the check today.
+const EXPLOSION_POWER_ARGS: &[(&str, usize)] = &[
+    ("LevelRef::explode", 2),
+    ("LevelRef::explosion_destroy_blocks", 3),
+];
+
+/// The guard of a gated call, run after its power check passed and before the host is called. It
+/// refuses with a plain Lua error when a rule of the guard says no. The rule: an explosion whose power
+/// is above [`MAX_EXPLOSION_POWER`] (or NaN). Any other call passes; a missing or non-numeric power is
+/// left to the host's own conversion.
+pub(crate) fn guard(op: &str, args: &MultiValue) -> Result<(), Error> {
+    let Some((_, index)) = EXPLOSION_POWER_ARGS.iter().find(|(name, _)| *name == op) else {
+        return Ok(());
+    };
+    let Some(power) = args.get(*index).and_then(Value::as_f64) else {
+        return Ok(());
+    };
+    if power.is_nan() || power > MAX_EXPLOSION_POWER {
+        let method = op.rsplit("::").next().unwrap_or(op);
+        return Err(Error::runtime(format!(
+            "horizon: {method} refused: power {power} is above the cap of {MAX_EXPLOSION_POWER}"
+        )));
+    }
+    Ok(())
+}
+
 /// The refusal of a gated call of mod `owner` that needs `power` and does not hold it: the one warning
 /// for this mod and power, and the Lua error the call raises. The error names the method and the power,
 /// never the arguments.
@@ -156,7 +189,7 @@ mod tests {
     ];
 
     /// The first wave, written out by hand (not read from the generator): each op and its power.
-    const FIRST_WAVE: [(&str, Power); 23] = [
+    const FIRST_WAVE: [(&str, Power); 24] = [
         ("BossBarRef::remove", Power::World),
         ("BossBarRef::remove_player", Power::World),
         ("EntityRef::discard", Power::World),
@@ -179,6 +212,7 @@ mod tests {
         ("MobRef::remove_target_goal", Power::World),
         ("LevelRef::award_experience", Power::Spawn),
         ("LevelRef::set_respawn_data", Power::Spawn),
+        ("LevelRef::spawn_mob", Power::Spawn),
         ("PlayerRef::respawn", Power::Spawn),
     ];
 
@@ -191,6 +225,11 @@ mod tests {
         for op in [
             "EntityRef::set_glowing",
             "LevelRef::explode",
+            "LevelRef::explosion_destroy_blocks",
+            "LevelRef::set_game_rule",
+            "LevelRef::spawn_item",
+            "LevelRef::spawn_item_with_motion",
+            "LevelRef::pop_resource",
             "PlayerRef::disconnect",
             "EntityRef::remove",
             "EntityRef::merge_nbt",
@@ -198,7 +237,6 @@ mod tests {
             "EntityRef::run_command",
             "PlayerRef::give_stack",
             "LevelRef::add_water_ticket",
-            "LevelRef::explosion_resistance",
         ] {
             assert_eq!(required(op), None, "{op} stays denied");
         }
@@ -242,6 +280,39 @@ mod tests {
             [Power::Spawn, Power::World],
             "in rank order, not request order"
         );
+    }
+
+    /// The explosion cap refuses a power above [`MAX_EXPLOSION_POWER`] and passes one at it. The rule is
+    /// checked on the guard itself: no explosion write binds yet, so no mod reaches it through Lua.
+    #[test]
+    fn an_explosion_above_the_cap_is_refused_and_one_at_it_passes() {
+        let args = |power: Value| MultiValue::from_vec(vec![Value::Nil, Value::Nil, power]);
+        let refusal = guard("LevelRef::explode", &args(Value::Number(17.0)))
+            .expect_err("power 17 is above the cap");
+        assert_eq!(
+            refusal.to_string(),
+            "runtime error: horizon: explode refused: power 17 is above the cap of 16"
+        );
+        assert!(guard("LevelRef::explode", &args(Value::Number(16.0))).is_ok());
+        assert!(guard("LevelRef::explode", &args(Value::Integer(16))).is_ok());
+        assert!(guard("LevelRef::explode", &args(Value::Number(f64::NAN))).is_err());
+        // The power of explosion_destroy_blocks is its fourth argument.
+        let blocks = MultiValue::from_vec(vec![
+            Value::Nil,
+            Value::Nil,
+            Value::Nil,
+            Value::Number(17.5),
+        ]);
+        let refusal = guard("LevelRef::explosion_destroy_blocks", &blocks)
+            .expect_err("power 17.5 is above the cap");
+        assert!(
+            refusal.to_string().contains(
+                "horizon: explosion_destroy_blocks refused: power 17.5 is above the cap of 16"
+            ),
+            "{refusal}"
+        );
+        // Any other op passes, whatever its numbers.
+        assert!(guard("LevelRef::strike_lightning", &args(Value::Number(99.0))).is_ok());
     }
 
     /// `has_ops` is true exactly for the powers the generated table gates.

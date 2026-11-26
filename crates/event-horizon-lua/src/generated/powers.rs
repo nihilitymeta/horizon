@@ -22,6 +22,7 @@ pub const GATED: &[(&str, crate::manifest::Power)] = &[
     ("LevelRef::set_world_border_damage", crate::manifest::Power::World),
     ("LevelRef::set_world_border_size", crate::manifest::Power::World),
     ("LevelRef::set_world_border_warning", crate::manifest::Power::World),
+    ("LevelRef::spawn_mob", crate::manifest::Power::Spawn),
     ("LevelRef::strike_lightning", crate::manifest::Power::World),
     ("LivingRef::random_teleport", crate::manifest::Power::World),
     ("MobRef::remove_goal", crate::manifest::Power::World),

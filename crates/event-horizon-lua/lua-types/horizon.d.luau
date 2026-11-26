@@ -4022,6 +4022,7 @@ export type LevelRef = {
 	entities_in: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }) -> {EntityRef}?,
 	entity_ticking: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
 	epoch: (LevelRef) -> WorldEpoch,
+	explosion_resistance: (LevelRef, { x: number, y: number, z: number }, EntityRef?, { x: number, y: number, z: number }, number, boolean, ExplosionInteraction) -> ExplosionResistance?,
 	fluid_flow: (LevelRef, { x: number, y: number, z: number }) -> Vec3?,
 	fluid_height: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	fluid_height_for_camera: (LevelRef, { x: number, y: number, z: number }) -> number?,
@@ -4085,6 +4086,8 @@ export type LevelRef = {
 	signal: (LevelRef, { x: number, y: number, z: number }, Direction) -> number?,
 	spawn_flags: (LevelRef) -> SpawnFlags?,
 	spawn_limits: (LevelRef) -> SpawnLimits?,
+	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
+	spawn_mob: (LevelRef, string, { x: number, y: number, z: number }, SpawnReason) -> EntityRef?,
 	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
 	strike_lightning: (LevelRef, { x: number, y: number, z: number }, boolean) -> boolean,
 	world_border: (LevelRef) -> {number}?,
@@ -4509,6 +4512,13 @@ export type EntityRayHit = {
 export type EntityReach = "interact" | "container" | "attack"
 
 export type EquipmentSlot = "main_hand" | "off_hand" | "feet" | "legs" | "chest" | "head" | "body" | "saddle"
+
+export type ExplosionInteraction = "none" | "block" | "mob" | "tnt" | "trigger"
+
+export type ExplosionResistance =
+	| { tag: "unavailable" }
+	| { tag: "no_resistance" }
+	| { tag: "resists", [number]: number }
 
 export type ExplosionStart = {
 	dimension: string,

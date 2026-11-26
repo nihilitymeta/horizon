@@ -88,6 +88,7 @@ ItemEntityRef::set_target
 LevelRef::block_tick
 LevelRef::bone_meal
 LevelRef::check_light
+LevelRef::explosion_resistance
 LevelRef::fluid_tick
 LevelRef::global_level_event
 LevelRef::level_event
@@ -200,6 +201,7 @@ LevelRef::remove_block world
 LevelRef::request_save world
 LevelRef::set_clock_time world
 LevelRef::set_respawn_data spawn
+LevelRef::spawn_mob spawn
 LevelRef::set_weather world
 LevelRef::set_weather_levels world
 LevelRef::set_world_border_center world

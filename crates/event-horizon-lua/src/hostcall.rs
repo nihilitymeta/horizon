@@ -351,6 +351,16 @@ pub(crate) fn scoped<R>(
                     spent += 1;
                     return Err(crate::powers::refuse(&op, &void.owner, power));
                 }
+                // The guard's own rules refuse a call the power check let through, before the host sees it. Like
+                // a power refusal it is a plain error and costs one unit.
+                if let Err(refusal) = crate::powers::guard(&op, &args) {
+                    if spent + 1 > TURN_BUDGET {
+                        void.spent.set(true);
+                        return Err(Error::runtime(SPENT));
+                    }
+                    spent += 1;
+                    return Err(refusal);
+                }
                 if spent + cost > TURN_BUDGET {
                     void.spent.set(true);
                     return Err(Error::runtime(SPENT));
@@ -831,6 +841,30 @@ mod tests {
         fn level_award_experience(&mut self, _: LevelRef, _: f64, _: f64, _: f64, _: u32) -> bool {
             self.writes += 1;
             true
+        }
+        /// Counts the spawn as a write; the mob handle stays nil, as a kind the test world has no mob for.
+        fn level_spawn_mob(
+            &mut self,
+            _: LevelRef,
+            _: &str,
+            _: [f64; 3],
+            _: mod_api::SpawnReason,
+        ) -> Option<EntityRef> {
+            self.writes += 1;
+            None
+        }
+        /// A read: the test world has no blast to resist, so every cell answers no resistance.
+        fn level_explosion_resistance(
+            &mut self,
+            _: LevelRef,
+            _: [i32; 3],
+            _: Option<EntityRef>,
+            _: [f64; 3],
+            _: f32,
+            _: bool,
+            _: mod_api::ExplosionInteraction,
+        ) -> Option<mod_api::ExplosionResistance> {
+            Some(mod_api::ExplosionResistance::NoResistance)
         }
     }
 
@@ -2775,6 +2809,11 @@ mod tests {
                 "lv:award_experience(1.0, 2.0, 3.0, 5)",
                 Power::Spawn,
             ),
+            (
+                "spawn_mob",
+                "lv:spawn_mob(\"minecraft:zombie\", {x = 1.0, y = 2.0, z = 3.0}, \"command\")",
+                Power::Spawn,
+            ),
         ] {
             let id = format!("pw_{method}_both");
             let (lines, fake) = run_gated(gated_level(root.path(), &id, call, &[power], &[power]));
@@ -2796,6 +2835,16 @@ mod tests {
                 assert_eq!(fake.writes, 0, "{id}: the host is not called");
             }
         }
+    }
+
+    /// `explosion_resistance` is a read: a mod with no powers calls it and the host answers, with no refusal.
+    #[test]
+    fn explosion_resistance_needs_no_power() {
+        let root = tempfile::tempdir().unwrap();
+        let call = "lv:explosion_resistance({x = 0, y = 64, z = 0}, nil, {x = 0.5, y = 64.5, z = 0.5}, 4.0, false, \"none\")";
+        let (lines, fake) = run_gated(gated_level(root.path(), "pw_resist_bare", call, &[], &[]));
+        assert_eq!(lines, ["true nil"]);
+        assert_eq!(fake.writes, 0, "a read writes nothing");
     }
 
     /// Every gated write of the table, called through the real dispatcher by a mod with no powers, is
@@ -2820,7 +2869,7 @@ mod tests {
             out
         })
         .unwrap();
-        assert_eq!(refusals.len(), 23);
+        assert_eq!(refusals.len(), 24);
         for (op, power, err) in refusals {
             let method = op.rsplit("::").next().unwrap_or(op);
             assert!(

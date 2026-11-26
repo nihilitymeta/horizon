@@ -3443,6 +3443,22 @@ impl ToLuaValue for mod_api::ExplosionInteraction {
     }
 }
 
+const EXPLOSION_INTERACTION_NAMES: &[&str] = &["none", "block", "mob", "tnt", "trigger"];
+
+impl FromLuaValue for mod_api::ExplosionInteraction {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "none" => Ok(mod_api::ExplosionInteraction::None),
+            "block" => Ok(mod_api::ExplosionInteraction::Block),
+            "mob" => Ok(mod_api::ExplosionInteraction::Mob),
+            "tnt" => Ok(mod_api::ExplosionInteraction::Tnt),
+            "trigger" => Ok(mod_api::ExplosionInteraction::Trigger),
+            _ => Err(ConvertError::unknown_variant(&name, EXPLOSION_INTERACTION_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::ExplosionPrimeEvent {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -9501,6 +9517,36 @@ impl ToLuaValue for mod_api::SpawnReason {
     }
 }
 
+const SPAWN_REASON_NAMES: &[&str] = &["natural", "chunk_generation", "spawner", "trial_spawner", "reinforcement", "patrol", "structure", "event", "command", "spawn_item_use", "mob_summoned", "conversion", "breeding", "triggered", "jockey", "dispenser", "bucket", "load", "dimension_travel"];
+
+impl FromLuaValue for mod_api::SpawnReason {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "natural" => Ok(mod_api::SpawnReason::Natural),
+            "chunk_generation" => Ok(mod_api::SpawnReason::ChunkGeneration),
+            "spawner" => Ok(mod_api::SpawnReason::Spawner),
+            "trial_spawner" => Ok(mod_api::SpawnReason::TrialSpawner),
+            "reinforcement" => Ok(mod_api::SpawnReason::Reinforcement),
+            "patrol" => Ok(mod_api::SpawnReason::Patrol),
+            "structure" => Ok(mod_api::SpawnReason::Structure),
+            "event" => Ok(mod_api::SpawnReason::Event),
+            "command" => Ok(mod_api::SpawnReason::Command),
+            "spawn_item_use" => Ok(mod_api::SpawnReason::SpawnItemUse),
+            "mob_summoned" => Ok(mod_api::SpawnReason::MobSummoned),
+            "conversion" => Ok(mod_api::SpawnReason::Conversion),
+            "breeding" => Ok(mod_api::SpawnReason::Breeding),
+            "triggered" => Ok(mod_api::SpawnReason::Triggered),
+            "jockey" => Ok(mod_api::SpawnReason::Jockey),
+            "dispenser" => Ok(mod_api::SpawnReason::Dispenser),
+            "bucket" => Ok(mod_api::SpawnReason::Bucket),
+            "load" => Ok(mod_api::SpawnReason::Load),
+            "dimension_travel" => Ok(mod_api::SpawnReason::DimensionTravel),
+            _ => Err(ConvertError::unknown_variant(&name, SPAWN_REASON_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::SpawnSource {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -11510,6 +11556,12 @@ mod unit_enum_tests {
     }
 
     #[test]
+    fn explosion_interaction_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::EXPLOSION_INTERACTION_NAMES, vec![mod_api::ExplosionInteraction::None, mod_api::ExplosionInteraction::Block, mod_api::ExplosionInteraction::Mob, mod_api::ExplosionInteraction::Tnt, mod_api::ExplosionInteraction::Trigger]);
+    }
+
+    #[test]
     fn game_mode_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::GAME_MODE_NAMES, vec![mod_api::GameMode::Survival, mod_api::GameMode::Creative, mod_api::GameMode::Adventure, mod_api::GameMode::Spectator]);
@@ -11561,6 +11613,12 @@ mod unit_enum_tests {
     fn sound_source_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::SOUND_SOURCE_NAMES, vec![mod_api::SoundSource::Master, mod_api::SoundSource::Music, mod_api::SoundSource::Records, mod_api::SoundSource::Weather, mod_api::SoundSource::Blocks, mod_api::SoundSource::Hostile, mod_api::SoundSource::Neutral, mod_api::SoundSource::Players, mod_api::SoundSource::Ambient, mod_api::SoundSource::Voice, mod_api::SoundSource::Ui]);
+    }
+
+    #[test]
+    fn spawn_reason_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::SPAWN_REASON_NAMES, vec![mod_api::SpawnReason::Natural, mod_api::SpawnReason::ChunkGeneration, mod_api::SpawnReason::Spawner, mod_api::SpawnReason::TrialSpawner, mod_api::SpawnReason::Reinforcement, mod_api::SpawnReason::Patrol, mod_api::SpawnReason::Structure, mod_api::SpawnReason::Event, mod_api::SpawnReason::Command, mod_api::SpawnReason::SpawnItemUse, mod_api::SpawnReason::MobSummoned, mod_api::SpawnReason::Conversion, mod_api::SpawnReason::Breeding, mod_api::SpawnReason::Triggered, mod_api::SpawnReason::Jockey, mod_api::SpawnReason::Dispenser, mod_api::SpawnReason::Bucket, mod_api::SpawnReason::Load, mod_api::SpawnReason::DimensionTravel]);
     }
 
     #[test]

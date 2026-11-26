@@ -305,7 +305,6 @@ mod tests {
         let denied = [
             "EntityRef::run_command",
             "EntityRef::merge_nbt",
-            "LevelRef::spawn_mob",
             "LevelRef::explode",
             "LevelRef::set_game_rule",
             "EntityRef::remove",
