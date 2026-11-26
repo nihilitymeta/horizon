@@ -84,6 +84,11 @@
     "category": "immutable cache",
     "reason": "Empty or set-once resolved registry lookup returned when no installed Parts inventory supplies one."
   },
+  "parts/owned_namespaces.rs::GRANTS": {
+    "type": "std::sync::Mutex<Vec<(String,String)>>",
+    "category": "dispatch table",
+    "reason": "Event Horizon's Lua host grants a namespace to the mod that owns it, because Lua mods' ids are found at runtime and cannot be listed in the package inventory. Append-only, and a real package of the same id always wins."
+  },
   "parts/shared.rs::GAME_PARTS": {
     "type": "RefCell<GamePartsLookup>",
     "category": "Parts lookup table",

@@ -64,7 +64,7 @@ as the game registers it (`commands.rs`, `USAGES`).
 | `/blockinfo` | Lists the watched blocks. |
 | `/blockinfo <x> <y> <z>` | Opens a block window for that block in the owner's dimension. Coordinates may be absolute, negative, or relative with `~`. |
 | `/blockinfo clear` | Closes every block window. |
-| `/lua` | Prints the usage line. It does not open the console. |
+| `/lua` | Opens the Lua console window, as `/console` does. |
 | `/lua <code>` | Runs a Lua chunk in the console's sandbox and prints its output: the last 20 printed lines, its returned value, or its error. |
 | `/console` | Opens the Lua console window. |
 | `/console close` | Closes the console window. |

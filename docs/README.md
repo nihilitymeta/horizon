@@ -38,6 +38,7 @@ To play, use [the launcher](../launcher/README.md); the project site is [playhor
 - [The modding book](modding/src/introduction.md): content mods (data) and native mods (Rust), how to make, install and publish them. [Native mods](modding/src/how-to/native-mods.md): how the launcher builds them. [Hook counterparts](https://github.com/horizon-rust/horizon/tree/main/crates/horizon-mod-vocab/src/hooks): the NeoForge and Fabric catalog conventions.
 - [Lua mods](lua-modding.md): Event Horizon's sandboxed Luau mods: the `.hlua` package and its manifest, discovery and load order, the time and memory limits, write powers granted by the owner, the Mods screen, and how to check a mod.
 - [Developer tools](dev-tools.md): the in-game windows and owner-only commands for mod makers (`/inspect`, `/goals`, `/nav`, `/watch`, `/blockinfo`, `/lua`, `/console`, `/luareload`), how to turn them on, and the Lua console.
+- [Taking a new upstream version](event-horizon-sync.md): finding the pin, the by-hand merge, regenerating the Lua bindings, the contract hashes and the checks to run.
 - [Upgrading a 26.2 data pack](datapack-upgrade.md): `horizon-port-pack upgrade-datapack` rewrites a 26.2 worldgen pack in 26.3's formats, and how the rewrite is checked against vanilla.
 - [Modpacks](modpacks.md): porting whole packs (ATM10 and smaller): import, inventory, carry-over, an agent per mod with a harness against the Java original, coverage, and how "10x" is measured.
 - [Launcher](../launcher/README.md): installs, updates and starts builds; its CLI and MCP server; releasing it.

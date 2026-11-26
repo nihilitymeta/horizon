@@ -64,6 +64,7 @@
     "launcher/src/backend.rs github.com",
     "launcher/src/backend.rs playhorizon.dev",
     "launcher/src/backend.rs raw.githubusercontent.com",
+    "launcher/src/game_sources.rs github.com",
     "launcher/src/browser.rs modrinth.com",
     "launcher/src/browser/curseforge.rs api.curseforge.com",
     "launcher/src/browser/download.rs cdn.modrinth.com",
