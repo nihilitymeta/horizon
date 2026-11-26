@@ -31,6 +31,10 @@ pub const WEBSITE: &str = "https://playhorizon.dev";
 pub const MINECRAFT_WEBSITE: &str = "https://minecraft.net";
 pub const MINECRAFT_ISSUES: &str = "https://bugs.mojang.com";
 
+/// The front of a GitHub repository's address: the launcher reads a source's repository and its release
+/// links against it (`https://github.com/<owner>/<repo>/...`).
+pub const GITHUB_REPOSITORIES: &str = "https://github.com/";
+
 /// Horizon's license and issue tracker, offered by the official build's Mods screen.
 pub const LICENSE: &str = "https://github.com/horizon-rust/horizon/blob/main/LICENSE";
 pub const ISSUES: &str = "https://github.com/horizon-rust/horizon/issues";

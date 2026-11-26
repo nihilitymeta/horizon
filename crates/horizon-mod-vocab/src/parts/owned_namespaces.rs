@@ -63,7 +63,6 @@ pub fn grant_namespace(owner: &str, namespace: &str) -> Result<(), String> {
     }
 }
 
-
 /// `name` with its namespace: a bare name is in mod `owner`'s own, for a declared id and
 /// for the block and item references a declaration names (`block_item`, `pick_item`,
 /// `wall_block`, `base_block`, `crafting_remainder`, `Item::block`) alike.

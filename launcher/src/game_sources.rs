@@ -150,12 +150,12 @@ pub fn repo_of(text: &str) -> Result<String, String> {
     let link = if text.starts_with("https://") {
         text.to_owned()
     } else {
-        format!("https://github.com/{text}")
+        format!("{}{text}", horizon_addresses::GITHUB_REPOSITORIES)
     };
     let link = github_mods::parse(&link)?;
     if link.target != Target::Latest {
         return Err(trf(
-            "{text}: name the repository (https://github.com/<owner>/<repo>): its newest release is installed.",
+            "{text}: name the repository (<owner>/<repo>, or its GitHub link): its newest release is installed.",
             &[("text", text)],
         ));
     }
@@ -212,7 +212,7 @@ pub(crate) fn asset(repo: &str, release: &serde_json::Value, ends: &[String]) ->
 fn html_repo(release: &serde_json::Value) -> Option<String> {
     let link = release["html_url"].as_str()?;
     let (repo, _tag) = link
-        .strip_prefix("https://github.com/")?
+        .strip_prefix(horizon_addresses::GITHUB_REPOSITORIES)?
         .split_once("/releases/tag/")?;
     let (owner, name) = repo.split_once('/')?;
     let plain = |part: &str| {
@@ -235,7 +235,7 @@ fn in_repo(url: &str, repo: &str) -> bool {
         return false;
     }
     let Some((of, path)) = url
-        .strip_prefix("https://github.com/")
+        .strip_prefix(horizon_addresses::GITHUB_REPOSITORIES)
         .and_then(|rest| rest.split_once("/releases/download/"))
     else {
         return false;
