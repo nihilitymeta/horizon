@@ -2612,7 +2612,7 @@ mod tests {
     /// carries a stack traceback after the message, so the check is that the message is there.
     fn assert_refused(line: &str, id: &str) {
         let message = format!(
-            "horizon: set_glowing needs the \"world\" power; the owner has not granted it to {id}"
+            "horizon: set_glowing needs the \"world\" power; it is not in effect for {id} (the mod must request it and the owner must grant it)"
         );
         assert!(
             line.starts_with("false runtime error: ") && line.contains(&message),
@@ -2708,7 +2708,7 @@ mod tests {
         assert_eq!(
             captured_with_prefix("pw_warn_once"),
             [
-                "pw_warn_once: a host call needs the \"world\" power, which the owner has not granted; refused"
+                "pw_warn_once: a host call needs the \"world\" power, which is not in effect (the mod did not request it, or the owner has not granted it); refused"
             ]
         );
     }
@@ -2749,7 +2749,7 @@ mod tests {
     /// The refusal of `method`, which needs `power`, for mod `id`, as its handler's pcall logs it.
     fn assert_refused_method(line: &str, id: &str, method: &str, power: &str) {
         let message = format!(
-            "horizon: {method} needs the \"{power}\" power; the owner has not granted it to {id}"
+            "horizon: {method} needs the \"{power}\" power; it is not in effect for {id} (the mod must request it and the owner must grant it)"
         );
         assert!(
             line.starts_with("false runtime error: ") && line.contains(&message),
@@ -2823,7 +2823,7 @@ mod tests {
             let method = op.rsplit("::").next().unwrap_or(op);
             assert!(
                 err.contains(&format!(
-                    "horizon: {method} needs the \"{power}\" power; the owner has not granted it to pw_every_bare"
+                    "horizon: {method} needs the \"{power}\" power; it is not in effect for pw_every_bare (the mod must request it and the owner must grant it)"
                 )),
                 "{op}: {err}"
             );

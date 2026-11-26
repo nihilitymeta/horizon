@@ -105,11 +105,11 @@ pub(crate) fn refuse(op: &str, owner: &str, power: Power) -> Error {
     warn_once(
         owner,
         &format!(
-            "{owner}: a host call needs the \"{name}\" power, which the owner has not granted; refused"
+            "{owner}: a host call needs the \"{name}\" power, which is not in effect (the mod did not request it, or the owner has not granted it); refused"
         ),
     );
     Error::runtime(format!(
-        "horizon: {method} needs the \"{name}\" power; the owner has not granted it to {owner}"
+        "horizon: {method} needs the \"{name}\" power; it is not in effect for {owner} (the mod must request it and the owner must grant it)"
     ))
 }
 

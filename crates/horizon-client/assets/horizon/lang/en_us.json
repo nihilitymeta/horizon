@@ -326,7 +326,7 @@
   "horizon.mods.powers.unavailable": "Not available",
   "horizon.mods.powers.granted": "Granted",
   "horizon.mods.powers.not_granted": "Not granted",
-  "horizon.mods.power.refused": "The mod called a function that needs a power the owner has not granted it: %1$s.",
+  "horizon.mods.power.refused": "The mod called a function that needs a power that is not in effect for it (not requested, or not granted): %1$s.",
   "horizon.mods.settings": "Settings",
   "horizon.mods.in_world": " (leave the world to change)",
   "horizon.mods.open_folder": "Open Mods Folder",
