@@ -385,6 +385,7 @@ fn powers_are_known_names_listed_once() {
         "world",
         "game_rules",
         "transactions",
+        "inventory",
         "network",
         "files",
     ];
@@ -393,7 +394,19 @@ fn powers_are_known_names_listed_once() {
         all.map(|p| format!("\"{p}\"")).join(", ")
     )))
     .unwrap();
-    assert_eq!(m.powers.len(), 10);
+    assert_eq!(m.powers.len(), 11);
+}
+
+/// `inventory` is a known power: it parses from its name, is listed in rank order after `transactions`
+/// and before `network`, and a manifest asking for it holds it in `powers`.
+#[test]
+fn inventory_is_a_known_power_in_rank_order() {
+    assert_eq!(Power::from_name("inventory"), Some(Power::Inventory));
+    assert_eq!(Power::Inventory.name(), "inventory");
+    assert!(Power::Transactions.rank() < Power::Inventory.rank());
+    assert!(Power::Inventory.rank() < Power::Network.rank());
+    let m = parse(&with("powers = [\"inventory\"]\n")).unwrap();
+    assert_eq!(m.powers, vec![Power::Inventory]);
 }
 
 #[test]

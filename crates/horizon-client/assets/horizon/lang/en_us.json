@@ -314,6 +314,8 @@
   "horizon.mods.power.game_rules.description": "Not available yet: this build does not unlock anything for this power.",
   "horizon.mods.power.transactions.label": "Move items",
   "horizon.mods.power.transactions.description": "Not available yet: this build does not unlock anything for this power.",
+  "horizon.mods.power.inventory.label": "Inventory",
+  "horizon.mods.power.inventory.description": "Changes players' and mobs' items: gives, drops and sets stacks, in inventories, ender chests and hands.",
   "horizon.mods.power.network.label": "Network",
   "horizon.mods.power.network.description": "Reserved: the sandbox has neither.",
   "horizon.mods.power.files.label": "Files",

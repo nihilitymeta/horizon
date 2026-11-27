@@ -12,8 +12,10 @@
 //!   which `pcall` can catch: the turn is not voided, the refusal costs one budget unit, the host is
 //!   not called, and the warning is written once per mod and power, never with the arguments.
 //! - The gated table is generated (`generated/powers.rs`, from `GATED_WRITES` in the generator): the
-//!   `world` and `spawn` writes, then `explosions` (`explode`, `explosion_destroy_blocks`, with the power
-//!   cap in [`guard`]) and `game_rules` (`set_game_rule`). Every other write stays denied.
+//!   `world` and `spawn` writes (the item spawns among them, capped in [`guard`]), then `explosions`
+//!   (`explode`, `explosion_destroy_blocks`, with the power cap in [`guard`]), `game_rules`
+//!   (`set_game_rule`) and `inventory` (the player's and the living's item writes). Every other write
+//!   stays denied.
 //! - Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are NOT gated, and stay
 //!   that way.
 
@@ -41,6 +43,7 @@ impl Power {
             Power::World => "horizon.mods.power.world",
             Power::GameRules => "horizon.mods.power.game_rules",
             Power::Transactions => "horizon.mods.power.transactions",
+            Power::Inventory => "horizon.mods.power.inventory",
             Power::Network => "horizon.mods.power.network",
             Power::Files => "horizon.mods.power.files",
         }
@@ -97,6 +100,27 @@ pub fn required(op: &str) -> Option<Power> {
         .map(|(_, power)| *power)
 }
 
+/// The most item and mob spawns one hook turn may cause, over `spawn_mob`, `spawn_item`,
+/// `spawn_item_with_motion` and `pop_resource`: the 65th is refused before the host sees it. A placeholder
+/// like [`MAX_EXPLOSIONS_PER_TURN`]: the balance number is a maintainer decision.
+pub const MAX_SPAWNS_PER_TURN: u32 = 64;
+
+/// The spawn writes the cap counts (`Family::method`); each is gated under `spawn`.
+const SPAWN_OPS: &[&str] = &[
+    "LevelRef::spawn_mob",
+    "LevelRef::spawn_item",
+    "LevelRef::spawn_item_with_motion",
+    "LevelRef::pop_resource",
+];
+
+/// What one hook turn has done so far, counted by [`guard`]: the explosions and the spawns. One value per
+/// turn, held by the turn's scope; a refused call is not counted.
+#[derive(Debug, Default)]
+pub(crate) struct TurnCounts {
+    pub explosions: u32,
+    pub spawns: u32,
+}
+
 /// The cap on an explosion's power (the `power` argument of the explosion writes, a Lua number): a call
 /// above it is refused before the host sees it. It is the placeholder the write-powers design named; the
 /// balance number is a maintainer decision. A refused call costs one unit, as a power refusal does.
@@ -118,8 +142,19 @@ const EXPLOSION_POWER_ARGS: &[(&str, usize)] = &[
 /// refuses with a plain Lua error when a rule of the guard says no. The rule for an explosion: its power
 /// must be a Lua number (an integer or a float), finite, and at most [`MAX_EXPLOSION_POWER`]. A missing
 /// argument, a string (even one that looks like a number), NaN, infinity or a larger power is refused
-/// before the host sees the call. Any other call passes.
-pub(crate) fn guard(op: &str, args: &MultiValue, explosions: &mut u32) -> Result<(), Error> {
+/// before the host sees the call. The explosions of a turn are capped at [`MAX_EXPLOSIONS_PER_TURN`],
+/// the spawns at [`MAX_SPAWNS_PER_TURN`]. Any other call passes.
+pub(crate) fn guard(op: &str, args: &MultiValue, counts: &mut TurnCounts) -> Result<(), Error> {
+    let method = op.rsplit("::").next().unwrap_or(op);
+    if SPAWN_OPS.contains(&op) {
+        if counts.spawns >= MAX_SPAWNS_PER_TURN {
+            return Err(Error::runtime(format!(
+                "horizon: {method} refused: at most {MAX_SPAWNS_PER_TURN} spawns per turn"
+            )));
+        }
+        counts.spawns += 1;
+        return Ok(());
+    }
     let Some((_, index)) = EXPLOSION_POWER_ARGS.iter().find(|(name, _)| *name == op) else {
         return Ok(());
     };
@@ -128,7 +163,6 @@ pub(crate) fn guard(op: &str, args: &MultiValue, explosions: &mut u32) -> Result
         Some(Value::Number(value)) => Some(*value),
         _ => None,
     };
-    let method = op.rsplit("::").next().unwrap_or(op);
     match power {
         Some(power) if power.is_finite() && (0.0..=MAX_EXPLOSION_POWER).contains(&power) => {}
         _ => {
@@ -137,8 +171,8 @@ pub(crate) fn guard(op: &str, args: &MultiValue, explosions: &mut u32) -> Result
             )));
         }
     }
-    *explosions += 1;
-    if *explosions > MAX_EXPLOSIONS_PER_TURN {
+    counts.explosions += 1;
+    if counts.explosions > MAX_EXPLOSIONS_PER_TURN {
         return Err(Error::runtime(format!(
             "horizon: {method} refused: at most {MAX_EXPLOSIONS_PER_TURN} explosions per turn"
         )));
@@ -192,7 +226,7 @@ impl Drop for TestGate {
 mod tests {
     use super::*;
 
-    const ALL: [Power; 10] = [
+    const ALL: [Power; 11] = [
         Power::Commands,
         Power::Nbt,
         Power::Spawn,
@@ -201,12 +235,13 @@ mod tests {
         Power::World,
         Power::GameRules,
         Power::Transactions,
+        Power::Inventory,
         Power::Network,
         Power::Files,
     ];
 
-    /// The first wave, written out by hand (not read from the generator): each op and its power.
-    const FIRST_WAVE: [(&str, Power); 27] = [
+    /// The gated writes, written out by hand (not read from the generator): each op and its power.
+    const GATED: [(&str, Power); 34] = [
         ("BossBarRef::remove", Power::World),
         ("BossBarRef::remove_player", Power::World),
         ("EntityRef::discard", Power::World),
@@ -230,16 +265,23 @@ mod tests {
         ("LevelRef::award_experience", Power::Spawn),
         ("LevelRef::set_respawn_data", Power::Spawn),
         ("LevelRef::spawn_mob", Power::Spawn),
+        ("LevelRef::spawn_item", Power::Spawn),
+        ("LevelRef::spawn_item_with_motion", Power::Spawn),
+        ("LevelRef::pop_resource", Power::Spawn),
         ("PlayerRef::respawn", Power::Spawn),
         ("LevelRef::explode", Power::Explosions),
         ("LevelRef::explosion_destroy_blocks", Power::Explosions),
         ("LevelRef::set_game_rule", Power::GameRules),
+        ("PlayerRef::give_stack", Power::Inventory),
+        ("PlayerRef::set_inventory_slot", Power::Inventory),
+        ("PlayerRef::set_ender_chest_slot", Power::Inventory),
+        ("LivingRef::set_hand_item", Power::Inventory),
     ];
 
     #[test]
-    fn the_generated_table_gates_exactly_the_first_wave() {
-        assert_eq!(table().len(), FIRST_WAVE.len());
-        for (op, power) in FIRST_WAVE {
+    fn the_generated_table_gates_exactly_the_gated_writes() {
+        assert_eq!(table().len(), GATED.len());
+        for (op, power) in GATED {
             assert_eq!(required(op), Some(power), "{op}");
         }
         for op in [
@@ -247,16 +289,19 @@ mod tests {
             "PlayerRef::award_recipes",
             "PlayerRef::reset_recipes",
             "PlayerRef::send_map",
-            "LevelRef::spawn_item",
-            "LevelRef::spawn_item_with_motion",
-            "LevelRef::pop_resource",
             "PlayerRef::disconnect",
             "EntityRef::remove",
             "EntityRef::merge_nbt",
             "PlayerRef::set_nickname",
             "EntityRef::run_command",
-            "PlayerRef::give_stack",
             "LevelRef::add_water_ticket",
+            "LevelRef::destroy_block",
+            "LevelRef::block_drops",
+            "LevelRef::roll_loot",
+            "PlayerRef::drop_stack",
+            "LivingRef::set_equipment",
+            "PlayerRef::award_recipes",
+            "PlayerRef::send_map",
         ] {
             assert_eq!(required(op), None, "{op} stays denied");
         }
@@ -310,7 +355,13 @@ mod tests {
         let args = |power: Value| MultiValue::from_vec(vec![Value::Nil, Value::Nil, power]);
         let message =
             "runtime error: horizon: explode refused: power must be a number from 0 to 16";
-        let ok = |power: Value| guard("LevelRef::explode", &args(power), &mut 0);
+        let ok = |power: Value| {
+            guard(
+                "LevelRef::explode",
+                &args(power),
+                &mut TurnCounts::default(),
+            )
+        };
         assert!(ok(Value::Number(16.0)).is_ok());
         assert!(ok(Value::Integer(16)).is_ok());
         assert!(ok(Value::Integer(3)).is_ok());
@@ -337,14 +388,14 @@ mod tests {
             guard(
                 "LevelRef::explosion_destroy_blocks",
                 &blocks(Value::Number(16.0)),
-                &mut 0
+                &mut TurnCounts::default()
             )
             .is_ok()
         );
         let refusal = guard(
             "LevelRef::explosion_destroy_blocks",
             &blocks(Value::Number(17.5)),
-            &mut 0,
+            &mut TurnCounts::default(),
         )
         .expect_err("power 17.5 is above the cap");
         assert!(
@@ -358,7 +409,7 @@ mod tests {
             guard(
                 "LevelRef::strike_lightning",
                 &args(Value::Number(99.0)),
-                &mut 0
+                &mut TurnCounts::default()
             )
             .is_ok()
         );
@@ -369,7 +420,7 @@ mod tests {
     #[test]
     fn a_turn_may_cause_only_so_many_explosions() {
         let args = |power: Value| MultiValue::from_vec(vec![Value::Nil, Value::Nil, power]);
-        let mut count = 0;
+        let mut count = TurnCounts::default();
         for _ in 0..MAX_EXPLOSIONS_PER_TURN {
             assert!(guard("LevelRef::explode", &args(Value::Number(4.0)), &mut count).is_ok());
         }
@@ -379,9 +430,32 @@ mod tests {
             refusal.to_string(),
             "runtime error: horizon: explode refused: at most 4 explosions per turn"
         );
-        let mut count = 0;
+        let mut count = TurnCounts::default();
         assert!(guard("LevelRef::explode", &args(Value::Number(99.0)), &mut count).is_err());
-        assert_eq!(count, 0, "a refused power is not counted");
+        assert_eq!(count.explosions, 0, "a refused power is not counted");
+    }
+
+    /// One turn may spawn at most `MAX_SPAWNS_PER_TURN` times over the four spawn writes: the next is refused
+    /// for any of them, and a refused spawn is not counted. Explosions are counted apart.
+    #[test]
+    fn a_turn_may_spawn_only_so_many_times() {
+        let args = MultiValue::new();
+        let mut counts = TurnCounts::default();
+        for i in 0..MAX_SPAWNS_PER_TURN {
+            let op = SPAWN_OPS[i as usize % SPAWN_OPS.len()];
+            assert!(guard(op, &args, &mut counts).is_ok(), "spawn {i}");
+        }
+        for op in SPAWN_OPS {
+            let method = op.rsplit("::").next().unwrap_or(op);
+            let refusal = guard(op, &args, &mut counts).expect_err(op);
+            assert_eq!(
+                refusal.to_string(),
+                format!("runtime error: horizon: {method} refused: at most 64 spawns per turn"),
+                "{op}"
+            );
+        }
+        assert_eq!(counts.spawns, MAX_SPAWNS_PER_TURN);
+        assert_eq!(counts.explosions, 0);
     }
 
     /// `has_ops` is true exactly for the powers the generated table gates.
@@ -391,6 +465,7 @@ mod tests {
         assert!(has_ops(Power::Spawn));
         assert!(has_ops(Power::Explosions));
         assert!(has_ops(Power::GameRules));
+        assert!(has_ops(Power::Inventory));
         for power in [
             Power::Commands,
             Power::Nbt,
@@ -440,6 +515,7 @@ mod key_tests {
             Power::World,
             Power::GameRules,
             Power::Transactions,
+            Power::Inventory,
             Power::Network,
             Power::Files,
         ] {

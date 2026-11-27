@@ -351,7 +351,7 @@ LevelRef: 145 members
   handle:LevelRef::place_fluid skipped: powerful (needs manifest power): argument `&Transaction`
   handle:LevelRef::play_fluid_effects skipped: powerful (needs manifest power): argument `&Transaction`
   handle:LevelRef::play_sound bound, cost 10
-  handle:LevelRef::pop_resource skipped: powerful (needs manifest power): name contains `pop_resource`
+  handle:LevelRef::pop_resource bound, cost 10, gated: spawn
   handle:LevelRef::raid bound, cost 1
   handle:LevelRef::raid_at bound, cost 1
   handle:LevelRef::raids bound, cost 100
@@ -389,8 +389,8 @@ LevelRef: 145 members
   handle:LevelRef::should_tick_blocks_at bound, cost 1
   handle:LevelRef::signal bound, cost 1
   handle:LevelRef::spawn_flags bound, cost 1
-  handle:LevelRef::spawn_item skipped: powerful (needs manifest power): name contains `spawn`
-  handle:LevelRef::spawn_item_with_motion skipped: powerful (needs manifest power): name contains `spawn`
+  handle:LevelRef::spawn_item bound, cost 10, gated: spawn
+  handle:LevelRef::spawn_item_with_motion bound, cost 10, gated: spawn
   handle:LevelRef::spawn_limits bound, cost 1
   handle:LevelRef::spawn_mob bound, cost 10, gated: spawn
   handle:LevelRef::strike_lightning bound, cost 10, gated: world
@@ -454,7 +454,7 @@ LivingRef: 73 members
   handle:LivingRef::set_arrow_removal_ticks bound, cost 10
   handle:LivingRef::set_attribute_base bound, cost 10
   handle:LivingRef::set_equipment skipped: powerful (needs manifest power): argument `Option<item::item_stack::ItemStack>`
-  handle:LivingRef::set_hand_item skipped: powerful (needs manifest power): argument `Option<item::item_stack::ItemStack>`
+  handle:LivingRef::set_hand_item bound, cost 10, gated: inventory
   handle:LivingRef::set_health bound, cost 10
   handle:LivingRef::set_is_jumping bound, cost 10
   handle:LivingRef::set_item_use_remaining bound, cost 10
@@ -633,7 +633,7 @@ PlayerRef: 112 members
   handle:PlayerRef::game_mode bound, cost 1
   handle:PlayerRef::give_experience_points skipped: powerful (needs manifest power): name contains `give`
   handle:PlayerRef::give_levels skipped: powerful (needs manifest power): name contains `give`
-  handle:PlayerRef::give_stack skipped: powerful (needs manifest power): name contains `give`
+  handle:PlayerRef::give_stack bound, cost 10, gated: inventory
   handle:PlayerRef::has_discovered_recipe bound, cost 1
   handle:PlayerRef::has_enough_food bound, cost 1
   handle:PlayerRef::has_infinite_materials bound, cost 1
@@ -678,14 +678,14 @@ PlayerRef: 112 members
   handle:PlayerRef::send_payload skipped: unconvertible arg: &PayloadId
   handle:PlayerRef::set_abilities skipped: unconvertible arg: PlayerAbilities
   handle:PlayerRef::set_chunk_areas skipped: unconvertible arg: &[ChunkArea]
-  handle:PlayerRef::set_ender_chest_slot skipped: powerful (needs manifest power): argument `Option<item::item_stack::ItemStack>`
+  handle:PlayerRef::set_ender_chest_slot bound, cost 10, gated: inventory
   handle:PlayerRef::set_exhaustion bound, cost 10
   handle:PlayerRef::set_exp_cooldown bound, cost 10
   handle:PlayerRef::set_experience_levels bound, cost 10
   handle:PlayerRef::set_experience_points bound, cost 10
   handle:PlayerRef::set_food_level bound, cost 10
   handle:PlayerRef::set_game_mode skipped: powerful (needs manifest power): name contains `set_game_mode`
-  handle:PlayerRef::set_inventory_slot skipped: powerful (needs manifest power): argument `Option<item::item_stack::ItemStack>`
+  handle:PlayerRef::set_inventory_slot bound, cost 10, gated: inventory
   handle:PlayerRef::set_item_cooldown bound, cost 10
   handle:PlayerRef::set_last_death_location skipped: unconvertible arg: Option<GlobalPos>
   handle:PlayerRef::set_nickname skipped: powerful (needs manifest power): name contains `nickname`
@@ -768,15 +768,16 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 555 of 724; heavy 28
+summary: bound 562 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 60
+  skipped, powerful (needs manifest power): 53
   skipped, unconvertible arg: 47
   skipped, unconvertible return: 39
   gated: explosions 2
   gated: game_rules 1
-  gated: spawn 4
+  gated: inventory 4
+  gated: spawn 7
   gated: world 20
 heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

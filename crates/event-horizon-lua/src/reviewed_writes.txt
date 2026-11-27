@@ -199,11 +199,14 @@ LevelRef::block_random_tick world
 LevelRef::explode explosions
 LevelRef::explosion_destroy_blocks explosions
 LevelRef::invalidate_capabilities world
+LevelRef::pop_resource spawn
 LevelRef::remove_block world
 LevelRef::request_save world
 LevelRef::set_clock_time world
 LevelRef::set_game_rule game_rules
 LevelRef::set_respawn_data spawn
+LevelRef::spawn_item spawn
+LevelRef::spawn_item_with_motion spawn
 LevelRef::spawn_mob spawn
 LevelRef::set_weather world
 LevelRef::set_weather_levels world
@@ -213,6 +216,10 @@ LevelRef::set_world_border_size world
 LevelRef::set_world_border_warning world
 LevelRef::strike_lightning world
 LivingRef::random_teleport world
+LivingRef::set_hand_item inventory
 MobRef::remove_goal world
 MobRef::remove_target_goal world
+PlayerRef::give_stack inventory
 PlayerRef::respawn spawn
+PlayerRef::set_ender_chest_slot inventory
+PlayerRef::set_inventory_slot inventory

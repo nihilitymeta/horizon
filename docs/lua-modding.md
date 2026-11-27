@@ -136,13 +136,14 @@ A disabled, skipped or refused mod holds no power at all.
 | Power | What it gates in this build |
 |---|---|
 | `world` | 20 writes: removing entities and block-entity bars, `remove_block`, weather, clock time, world border, lightning, saving, random ticks, teleports, and removing mob goals |
-| `spawn` | 4 writes: `award_experience`, `set_respawn_data`, `PlayerRef::respawn`, and `spawn_mob` (a mob joins the level, as a natural spawn does). Still denied: `spawn_item`, `spawn_item_with_motion` and `pop_resource`, whose item stack argument does not convert from Lua |
+| `spawn` | 7 writes: `award_experience`, `set_respawn_data`, `PlayerRef::respawn`, `spawn_mob` (a mob joins the level, as a natural spawn does), and the item spawns `spawn_item`, `spawn_item_with_motion` and `pop_resource` (an item stack `{id, count, nbt}`). One hook turn may cause at most 64 spawns over the four spawn writes (`MAX_SPAWNS_PER_TURN`, a placeholder): the 65th is refused. |
+| `inventory` (changes players' and mobs' items) | 4 writes: `PlayerRef::give_stack(stack)`, `PlayerRef::set_inventory_slot(slot, stack)`, `PlayerRef::set_ender_chest_slot(slot, stack)` and `LivingRef::set_hand_item(hand, stack)`. An item stack is `{id, count, nbt}`. Still denied: `PlayerRef::drop_stack` (its result is the stack that did not fit, which no handle returns yet) and `LivingRef::set_equipment` (its `EquipmentSlot` argument has no conversion from Lua yet) |
 | `explosions` | 2 writes: `level:explode(source, center, power, fire, interaction, settings)` and `level:explosion_destroy_blocks(positions, source, center, power, fire, interaction)`. The power is a Lua number from 0 to 16 (`MAX_EXPLOSION_POWER`, a placeholder cap): a missing, non-number (a string, even `"999"`), negative, NaN, infinite or larger power is refused before the host sees the call. One hook turn may cause at most 4 explosions over both writes (`MAX_EXPLOSIONS_PER_TURN`, also a placeholder): the fifth is refused. The read `explosion_resistance` needs no power. Still denied: `explosion_resistances` (its `ResistanceCells` argument does not convert) |
 | `game_rules` | 1 write: `level:set_game_rule(name, value)`. It changes the world's saved rules, and a changed rule stays changed after the mod is removed. The value is a boolean, a whole number, or `{tag = "bool", true}` / `{tag = "int", 7}` |
 | `commands`, `nbt`, `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
 | `network`, `files` | reserved: they can be requested and granted, but they are never effective |
 
-The gated list is generated (`generated/powers.rs`). Every other write stays denied.
+The gated list is generated (`generated/powers.rs`). Every other write stays denied, among them the item writes that take a stack and are loot or world operations: `LevelRef::destroy_block`, `LevelRef::block_drops` and `LevelRef::roll_loot`.
 Denied until the maintainer decides, although their slice argument now converts:
 `PlayerRef::award_recipes`, `PlayerRef::reset_recipes` and `PlayerRef::send_map`
 (`DENIED_UNTIL_DECIDED` in the generator).

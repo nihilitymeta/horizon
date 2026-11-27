@@ -4057,6 +4057,8 @@ export type LevelRef = {
 	neighbor_changed: (LevelRef, { x: number, y: number, z: number }, BlockStateSpec) -> boolean,
 	online_players: (LevelRef) -> {PlayerRef}?,
 	play_sound: (LevelRef, string, { x: number, y: number, z: number }, SoundSource, number, number) -> boolean,
+	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
+	pop_resource: (LevelRef, { x: number, y: number, z: number }, ItemStackSpec) -> EntityRef?,
 	raid: (LevelRef, number) -> RaidRef?,
 	raid_at: (LevelRef, { x: number, y: number, z: number }) -> RaidRef?,
 	raids: (LevelRef) -> {RaidRef}?,
@@ -4092,6 +4094,10 @@ export type LevelRef = {
 	should_tick_blocks_at: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
 	signal: (LevelRef, { x: number, y: number, z: number }, Direction) -> number?,
 	spawn_flags: (LevelRef) -> SpawnFlags?,
+	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
+	spawn_item: (LevelRef, number, number, number, ItemStackSpec, number) -> EntityRef?,
+	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
+	spawn_item_with_motion: (LevelRef, number, number, number, ItemStackSpec, { x: number, y: number, z: number }, number) -> EntityRef?,
 	spawn_limits: (LevelRef) -> SpawnLimits?,
 	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
 	spawn_mob: (LevelRef, string, { x: number, y: number, z: number }, SpawnReason) -> EntityRef?,
@@ -4140,6 +4146,8 @@ export type LivingRef = {
 	set_arrow_count: (LivingRef, number) -> boolean,
 	set_arrow_removal_ticks: (LivingRef, number) -> boolean,
 	set_attribute_base: (LivingRef, string, number) -> boolean,
+	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
+	set_hand_item: (LivingRef, Hand, ItemStackSpec?) -> boolean,
 	set_health: (LivingRef, number) -> boolean,
 	set_is_jumping: (LivingRef, boolean) -> boolean,
 	set_item_use_remaining: (LivingRef, number) -> boolean,
@@ -4291,6 +4299,8 @@ export type PlayerRef = {
 	feed: (PlayerRef, number, number) -> boolean,
 	food: (PlayerRef) -> PlayerFood?,
 	game_mode: (PlayerRef) -> GameMode?,
+	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
+	give_stack: (PlayerRef, ItemStackSpec) -> (),
 	has_discovered_recipe: (PlayerRef, string) -> boolean?,
 	has_enough_food: (PlayerRef) -> boolean?,
 	has_infinite_materials: (PlayerRef) -> boolean?,
@@ -4318,11 +4328,15 @@ export type PlayerRef = {
 	respawn: (PlayerRef) -> (),
 	sees: (PlayerRef, PlayerRef) -> boolean,
 	selected_slot: (PlayerRef) -> number?,
+	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
+	set_ender_chest_slot: (PlayerRef, number, ItemStackSpec?) -> (),
 	set_exhaustion: (PlayerRef, number) -> boolean,
 	set_exp_cooldown: (PlayerRef, number) -> boolean,
 	set_experience_levels: (PlayerRef, number) -> boolean,
 	set_experience_points: (PlayerRef, number) -> boolean,
 	set_food_level: (PlayerRef, number) -> boolean,
+	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
+	set_inventory_slot: (PlayerRef, number, ItemStackSpec?) -> (),
 	set_item_cooldown: (PlayerRef, string, number) -> boolean,
 	set_saturation: (PlayerRef, number) -> boolean,
 	set_selected_slot: (PlayerRef, number) -> boolean,

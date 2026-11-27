@@ -904,6 +904,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("play_sound", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::play_sound", this, args)
         });
+        methods.add_function("pop_resource", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::pop_resource", this, args)
+        });
         methods.add_function("raid", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::raid", this, args)
         });
@@ -975,6 +978,12 @@ impl crate::handles::Family for mod_api::LevelRef {
         });
         methods.add_function("spawn_flags", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::spawn_flags", this, args)
+        });
+        methods.add_function("spawn_item", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::spawn_item", this, args)
+        });
+        methods.add_function("spawn_item_with_motion", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::spawn_item_with_motion", this, args)
         });
         methods.add_function("spawn_limits", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::spawn_limits", this, args)
@@ -1110,6 +1119,9 @@ impl crate::handles::Family for mod_api::LivingRef {
         });
         methods.add_function("set_attribute_base", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LivingRef::set_attribute_base", this, args)
+        });
+        methods.add_function("set_hand_item", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LivingRef::set_hand_item", this, args)
         });
         methods.add_function("set_health", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LivingRef::set_health", this, args)
@@ -1558,6 +1570,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         methods.add_function("game_mode", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::game_mode", this, args)
         });
+        methods.add_function("give_stack", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::give_stack", this, args)
+        });
         methods.add_function("has_discovered_recipe", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::has_discovered_recipe", this, args)
         });
@@ -1636,6 +1651,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         methods.add_function("selected_slot", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::selected_slot", this, args)
         });
+        methods.add_function("set_ender_chest_slot", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::set_ender_chest_slot", this, args)
+        });
         methods.add_function("set_exhaustion", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::set_exhaustion", this, args)
         });
@@ -1650,6 +1668,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         });
         methods.add_function("set_food_level", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::set_food_level", this, args)
+        });
+        methods.add_function("set_inventory_slot", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::set_inventory_slot", this, args)
         });
         methods.add_function("set_item_cooldown", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::set_item_cooldown", this, args)
@@ -4205,6 +4226,16 @@ fn level_ref_play_sound(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn level_ref_pop_resource(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::pop_resource", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::pop_resource")?;
+    let a0: [i32; 3] = args.get(0)?;
+    let a1: mod_api::ItemStack = args.stack(1, &*server)?;
+    let out = crate::handles::ok_or_raise(this.pop_resource(server, a0, a1))?;
+    crate::handles::family_opt_out(lua, out)
+}
+
 fn level_ref_raid(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("LevelRef::raid", args, 1)?;
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::raid")?;
@@ -4431,6 +4462,33 @@ fn level_ref_spawn_flags(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'
     let read = crate::handles::read_of(host)?;
     let out = this.spawn_flags(read);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_spawn_item(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::spawn_item", args, 5)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::spawn_item")?;
+    let a0: f64 = args.get(0)?;
+    let a1: f64 = args.get(1)?;
+    let a2: f64 = args.get(2)?;
+    let a3: mod_api::ItemStack = args.stack(3, &*server)?;
+    let a4: u32 = args.get(4)?;
+    let out = crate::handles::ok_or_raise(this.spawn_item(server, a0, a1, a2, a3, a4))?;
+    crate::handles::family_opt_out(lua, out)
+}
+
+fn level_ref_spawn_item_with_motion(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::spawn_item_with_motion", args, 6)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::spawn_item_with_motion")?;
+    let a0: f64 = args.get(0)?;
+    let a1: f64 = args.get(1)?;
+    let a2: f64 = args.get(2)?;
+    let a3: mod_api::ItemStack = args.stack(3, &*server)?;
+    let a4: [f64; 3] = args.get(4)?;
+    let a5: u32 = args.get(5)?;
+    let out = crate::handles::ok_or_raise(this.spawn_item_with_motion(server, a0, a1, a2, a3, a4, a5))?;
+    crate::handles::family_opt_out(lua, out)
 }
 
 fn level_ref_spawn_limits(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
@@ -4783,6 +4841,16 @@ fn living_ref_set_attribute_base(lua: &mlua::Lua, host: &mut crate::hostcall::Tu
     let a0: String = args.get(0)?;
     let a1: f64 = args.get(1)?;
     let out = this.set_attribute_base(server, &a0, a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn living_ref_set_hand_item(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LivingRef::set_hand_item", args, 2)?;
+    let this: mod_api::LivingRef = crate::handles::receiver(this, "LivingRef::set_hand_item")?;
+    let a0: mod_api::Hand = args.get(0)?;
+    let a1: Option<mod_api::ItemStack> = args.opt_stack(1, &*server)?;
+    let out = crate::handles::ok_or_raise(this.set_hand_item(server, a0, a1))?;
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -5893,6 +5961,15 @@ fn player_ref_game_mode(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn player_ref_give_stack(_lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::give_stack", args, 1)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::give_stack")?;
+    let a0: mod_api::ItemStack = args.stack(0, &*server)?;
+    crate::handles::ok_or_raise(this.give_stack(server, a0))?;
+    Ok(mlua::Value::Nil)
+}
+
 fn player_ref_has_discovered_recipe(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("PlayerRef::has_discovered_recipe", args, 1)?;
     let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::has_discovered_recipe")?;
@@ -6118,6 +6195,16 @@ fn player_ref_selected_slot(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHos
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn player_ref_set_ender_chest_slot(_lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::set_ender_chest_slot", args, 2)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::set_ender_chest_slot")?;
+    let a0: u32 = args.get(0)?;
+    let a1: Option<mod_api::ItemStack> = args.opt_stack(1, &*server)?;
+    crate::handles::ok_or_raise(this.set_ender_chest_slot(server, a0, a1))?;
+    Ok(mlua::Value::Nil)
+}
+
 fn player_ref_set_exhaustion(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let server = crate::handles::server_of(host)?;
     let args = crate::handles::Args::new("PlayerRef::set_exhaustion", args, 1)?;
@@ -6161,6 +6248,16 @@ fn player_ref_set_food_level(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHo
     let a0: i32 = args.get(0)?;
     let out = this.set_food_level(server, a0);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn player_ref_set_inventory_slot(_lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::set_inventory_slot", args, 2)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::set_inventory_slot")?;
+    let a0: u32 = args.get(0)?;
+    let a1: Option<mod_api::ItemStack> = args.opt_stack(1, &*server)?;
+    crate::handles::ok_or_raise(this.set_inventory_slot(server, a0, a1))?;
+    Ok(mlua::Value::Nil)
 }
 
 fn player_ref_set_item_cooldown(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
@@ -6892,6 +6989,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::neighbor_changed" => 10,
         "LevelRef::online_players" => 100,
         "LevelRef::play_sound" => 10,
+        "LevelRef::pop_resource" => 10,
         "LevelRef::raid" => 1,
         "LevelRef::raid_at" => 1,
         "LevelRef::raids" => 100,
@@ -6916,6 +7014,8 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::should_tick_blocks_at" => 1,
         "LevelRef::signal" => 1,
         "LevelRef::spawn_flags" => 1,
+        "LevelRef::spawn_item" => 10,
+        "LevelRef::spawn_item_with_motion" => 10,
         "LevelRef::spawn_limits" => 1,
         "LevelRef::spawn_mob" => 10,
         "LevelRef::strike_lightning" => 10,
@@ -6958,6 +7058,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LivingRef::set_arrow_count" => 10,
         "LivingRef::set_arrow_removal_ticks" => 10,
         "LivingRef::set_attribute_base" => 10,
+        "LivingRef::set_hand_item" => 10,
         "LivingRef::set_health" => 10,
         "LivingRef::set_is_jumping" => 10,
         "LivingRef::set_item_use_remaining" => 10,
@@ -7089,6 +7190,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::feed" => 10,
         "PlayerRef::food" => 1,
         "PlayerRef::game_mode" => 1,
+        "PlayerRef::give_stack" => 10,
         "PlayerRef::has_discovered_recipe" => 1,
         "PlayerRef::has_enough_food" => 1,
         "PlayerRef::has_infinite_materials" => 1,
@@ -7115,11 +7217,13 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::respawn" => 10,
         "PlayerRef::sees" => 1,
         "PlayerRef::selected_slot" => 1,
+        "PlayerRef::set_ender_chest_slot" => 10,
         "PlayerRef::set_exhaustion" => 10,
         "PlayerRef::set_exp_cooldown" => 10,
         "PlayerRef::set_experience_levels" => 10,
         "PlayerRef::set_experience_points" => 10,
         "PlayerRef::set_food_level" => 10,
+        "PlayerRef::set_inventory_slot" => 10,
         "PlayerRef::set_item_cooldown" => 10,
         "PlayerRef::set_saturation" => 10,
         "PlayerRef::set_selected_slot" => 10,
@@ -7461,6 +7565,7 @@ pub fn run(
         "LevelRef::neighbor_changed" => level_ref_neighbor_changed(lua, host, this, args),
         "LevelRef::online_players" => level_ref_online_players(lua, host, this, args),
         "LevelRef::play_sound" => level_ref_play_sound(lua, host, this, args),
+        "LevelRef::pop_resource" => level_ref_pop_resource(lua, host, this, args),
         "LevelRef::raid" => level_ref_raid(lua, host, this, args),
         "LevelRef::raid_at" => level_ref_raid_at(lua, host, this, args),
         "LevelRef::raids" => level_ref_raids(lua, host, this, args),
@@ -7485,6 +7590,8 @@ pub fn run(
         "LevelRef::should_tick_blocks_at" => level_ref_should_tick_blocks_at(lua, host, this, args),
         "LevelRef::signal" => level_ref_signal(lua, host, this, args),
         "LevelRef::spawn_flags" => level_ref_spawn_flags(lua, host, this, args),
+        "LevelRef::spawn_item" => level_ref_spawn_item(lua, host, this, args),
+        "LevelRef::spawn_item_with_motion" => level_ref_spawn_item_with_motion(lua, host, this, args),
         "LevelRef::spawn_limits" => level_ref_spawn_limits(lua, host, this, args),
         "LevelRef::spawn_mob" => level_ref_spawn_mob(lua, host, this, args),
         "LevelRef::strike_lightning" => level_ref_strike_lightning(lua, host, this, args),
@@ -7527,6 +7634,7 @@ pub fn run(
         "LivingRef::set_arrow_count" => living_ref_set_arrow_count(lua, host, this, args),
         "LivingRef::set_arrow_removal_ticks" => living_ref_set_arrow_removal_ticks(lua, host, this, args),
         "LivingRef::set_attribute_base" => living_ref_set_attribute_base(lua, host, this, args),
+        "LivingRef::set_hand_item" => living_ref_set_hand_item(lua, host, this, args),
         "LivingRef::set_health" => living_ref_set_health(lua, host, this, args),
         "LivingRef::set_is_jumping" => living_ref_set_is_jumping(lua, host, this, args),
         "LivingRef::set_item_use_remaining" => living_ref_set_item_use_remaining(lua, host, this, args),
@@ -7658,6 +7766,7 @@ pub fn run(
         "PlayerRef::feed" => player_ref_feed(lua, host, this, args),
         "PlayerRef::food" => player_ref_food(lua, host, this, args),
         "PlayerRef::game_mode" => player_ref_game_mode(lua, host, this, args),
+        "PlayerRef::give_stack" => player_ref_give_stack(lua, host, this, args),
         "PlayerRef::has_discovered_recipe" => player_ref_has_discovered_recipe(lua, host, this, args),
         "PlayerRef::has_enough_food" => player_ref_has_enough_food(lua, host, this, args),
         "PlayerRef::has_infinite_materials" => player_ref_has_infinite_materials(lua, host, this, args),
@@ -7684,11 +7793,13 @@ pub fn run(
         "PlayerRef::respawn" => player_ref_respawn(lua, host, this, args),
         "PlayerRef::sees" => player_ref_sees(lua, host, this, args),
         "PlayerRef::selected_slot" => player_ref_selected_slot(lua, host, this, args),
+        "PlayerRef::set_ender_chest_slot" => player_ref_set_ender_chest_slot(lua, host, this, args),
         "PlayerRef::set_exhaustion" => player_ref_set_exhaustion(lua, host, this, args),
         "PlayerRef::set_exp_cooldown" => player_ref_set_exp_cooldown(lua, host, this, args),
         "PlayerRef::set_experience_levels" => player_ref_set_experience_levels(lua, host, this, args),
         "PlayerRef::set_experience_points" => player_ref_set_experience_points(lua, host, this, args),
         "PlayerRef::set_food_level" => player_ref_set_food_level(lua, host, this, args),
+        "PlayerRef::set_inventory_slot" => player_ref_set_inventory_slot(lua, host, this, args),
         "PlayerRef::set_item_cooldown" => player_ref_set_item_cooldown(lua, host, this, args),
         "PlayerRef::set_saturation" => player_ref_set_saturation(lua, host, this, args),
         "PlayerRef::set_selected_slot" => player_ref_set_selected_slot(lua, host, this, args),

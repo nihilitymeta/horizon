@@ -172,7 +172,7 @@ fn is_server_write(member: &MemberIr) -> bool {
             == "&mut dyn ServerHost"
     })
 }
-/// The first wave of gated writes (issue 74, P2): `(Family::name, power)`. Each is a server write that
+/// The gated writes (issue 74, P2, and write powers v2): `(Family::name, power)`. Each is a server write that
 /// [`powerful`] would deny, bound behind its manifest power (`powers.rs` checks it at the call). Exactly
 /// these: [`check_gated`] fails the generator when a listed write does not bind, and when a write a rule
 /// denies binds without being listed.
@@ -201,9 +201,16 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("LevelRef::set_respawn_data", "spawn"),
     ("PlayerRef::respawn", "spawn"),
     ("LevelRef::spawn_mob", "spawn"),
+    ("LevelRef::spawn_item", "spawn"),
+    ("LevelRef::spawn_item_with_motion", "spawn"),
+    ("LevelRef::pop_resource", "spawn"),
     ("LevelRef::explode", "explosions"),
     ("LevelRef::explosion_destroy_blocks", "explosions"),
     ("LevelRef::set_game_rule", "game_rules"),
+    ("PlayerRef::give_stack", "inventory"),
+    ("PlayerRef::set_inventory_slot", "inventory"),
+    ("PlayerRef::set_ender_chest_slot", "inventory"),
+    ("LivingRef::set_hand_item", "inventory"),
 ];
 
 /// The writes the slice argument arm (`&[T]`) newly binds that the lead has not decided. Each is an
@@ -235,6 +242,7 @@ const GATEABLE_POWERS: &[(&str, &str)] = &[
     ("world", "World"),
     ("game_rules", "GameRules"),
     ("transactions", "Transactions"),
+    ("inventory", "Inventory"),
 ];
 
 /// The power a gated write of `allowlist` needs, or `None` when `op` (`Family::name`) is not listed.
@@ -1978,5 +1986,30 @@ mod tests {
     #[test]
     fn the_powerful_table_leaves_an_ordinary_write_bound() {
         assert!(one("fn set_velocity(self, _: &mut dyn ServerHost, _: [f64; 3]) -> bool").is_ok());
+    }
+
+    /// pw-5: `inventory` is a gateable power, and the stack writes it binds are gated under it (with the item
+    /// spawns under `spawn`). `drop_stack` stays out: its result is an item stack, which no handle returns.
+    #[test]
+    fn the_stack_writes_are_gated_under_inventory_and_spawn() {
+        assert!(GATEABLE_POWERS.contains(&("inventory", "Inventory")));
+        for op in [
+            "PlayerRef::give_stack",
+            "PlayerRef::set_inventory_slot",
+            "PlayerRef::set_ender_chest_slot",
+            "LivingRef::set_hand_item",
+        ] {
+            assert_eq!(power_in(GATED_WRITES, op), Some("inventory"), "{op}");
+        }
+        for op in [
+            "LevelRef::spawn_item",
+            "LevelRef::spawn_item_with_motion",
+            "LevelRef::pop_resource",
+        ] {
+            assert_eq!(power_in(GATED_WRITES, op), Some("spawn"), "{op}");
+        }
+        assert_eq!(power_in(GATED_WRITES, "PlayerRef::drop_stack"), None);
+        assert_eq!(power_in(GATED_WRITES, "LevelRef::destroy_block"), None);
+        assert_eq!(power_in(GATED_WRITES, "LevelRef::roll_loot"), None);
     }
 }

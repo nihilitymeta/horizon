@@ -86,12 +86,13 @@ pub enum Power {
     World,
     GameRules,
     Transactions,
+    Inventory,
     Network,
     Files,
 }
 
 /// The names a manifest may ask for, with their powers.
-const POWERS: [(&str, Power); 10] = [
+const POWERS: [(&str, Power); 11] = [
     ("commands", Power::Commands),
     ("nbt", Power::Nbt),
     ("spawn", Power::Spawn),
@@ -100,6 +101,7 @@ const POWERS: [(&str, Power); 10] = [
     ("world", Power::World),
     ("game_rules", Power::GameRules),
     ("transactions", Power::Transactions),
+    ("inventory", Power::Inventory),
     ("network", Power::Network),
     ("files", Power::Files),
 ];

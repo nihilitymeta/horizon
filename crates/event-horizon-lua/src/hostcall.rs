@@ -332,7 +332,7 @@ pub(crate) fn scoped<R>(
     }
     lua.scope(|scope| {
         let mut spent = 0u32;
-        let mut explosions = 0u32;
+        let mut counts = crate::powers::TurnCounts::default();
         let calls = scope.create_function_mut(
             move |lua: &Lua, (op, this, args): (String, AnyUserData, MultiValue)| {
                 if void.panic.borrow().is_some() {
@@ -357,7 +357,7 @@ pub(crate) fn scoped<R>(
                 }
                 // The guard's own rules refuse a call the power check let through, before the host sees it. Like
                 // a power refusal it is a plain error and costs one unit.
-                if let Err(refusal) = crate::powers::guard(&op, &args, &mut explosions) {
+                if let Err(refusal) = crate::powers::guard(&op, &args, &mut counts) {
                     if spent + 1 > TURN_BUDGET {
                         void.spent.set(true);
                         return Err(Error::runtime(SPENT));
@@ -718,12 +718,15 @@ mod tests {
     use std::time::Duration;
 
     use mod_api::__private::game::{BackendMutRefOf, BackendRefOf};
-    use mod_api::prelude::{EntitiesBackend, EntitiesBackendMut, LevelsBackend, LevelsBackendMut};
+    use mod_api::prelude::{
+        EntitiesBackend, EntitiesBackendMut, LevelsBackend, LevelsBackendMut, LivingBackendMut,
+        PlayersBackendMut,
+    };
     use mod_api::{
         Backend, BackendMut, BackendMutRef, BackendRef, BlockState, ChunkRef, ClientHost,
         DimensionKey, DisplayRef, DragonRef, EntityRef, FishingHookRef, Host, ItemEntityRef,
-        ItemStack, LevelRef, LivingRef, MerchantRef, MinecartRef, MobRef, ProjectileRef, RaidRef,
-        ServerHost, WorldEpoch,
+        ItemStack, LevelRef, LivingRef, MerchantRef, MinecartRef, MobRef, PlayerRef, ProjectileRef,
+        RaidRef, ServerHost, WorldEpoch,
     };
 
     use crate::handles::Token;
@@ -810,7 +813,7 @@ mod tests {
         }
     }
 
-    host_double!(Fake, levels);
+    host_double!(Fake, levels, players, living);
 
     impl EntitiesBackend for Fake {
         fn entity_position(&self, entity: EntityRef) -> Option<[f64; 3]> {
@@ -910,6 +913,40 @@ mod tests {
             self.radius = Some(radius);
             Ok(positions.len() as u32)
         }
+        fn level_spawn_item(
+            &mut self,
+            _: LevelRef,
+            _: f64,
+            _: f64,
+            _: f64,
+            _: ItemStack,
+            _: u32,
+        ) -> Result<Option<EntityRef>, mod_api::StackWriteError> {
+            self.writes += 1;
+            Ok(None)
+        }
+        fn level_spawn_item_with_motion(
+            &mut self,
+            _: LevelRef,
+            _: f64,
+            _: f64,
+            _: f64,
+            _: ItemStack,
+            _: [f64; 3],
+            _: u32,
+        ) -> Result<Option<EntityRef>, mod_api::StackWriteError> {
+            self.writes += 1;
+            Ok(None)
+        }
+        fn level_pop_resource(
+            &mut self,
+            _: LevelRef,
+            _: [i32; 3],
+            _: ItemStack,
+        ) -> Result<Option<EntityRef>, mod_api::StackWriteError> {
+            self.writes += 1;
+            Ok(None)
+        }
         fn level_set_game_rule(
             &mut self,
             _: LevelRef,
@@ -932,6 +969,49 @@ mod tests {
             _: mod_api::ExplosionInteraction,
         ) -> Option<mod_api::ExplosionResistance> {
             Some(mod_api::ExplosionResistance::NoResistance)
+        }
+    }
+
+    /// The stack writes of pw-5: counted as writes; the double keeps no items, so each takes the stack it is
+    /// given and answers as the game does for a stack it can place.
+    impl PlayersBackendMut for Fake {
+        fn player_give_stack(
+            &mut self,
+            _: PlayerRef,
+            _: ItemStack,
+        ) -> Result<(), mod_api::PlayerDataRefusal> {
+            self.writes += 1;
+            Ok(())
+        }
+        fn player_set_inventory_slot(
+            &mut self,
+            _: PlayerRef,
+            _: u32,
+            _: Option<ItemStack>,
+        ) -> Result<(), mod_api::PlayerDataRefusal> {
+            self.writes += 1;
+            Ok(())
+        }
+        fn player_set_ender_chest_slot(
+            &mut self,
+            _: PlayerRef,
+            _: u32,
+            _: Option<ItemStack>,
+        ) -> Result<(), mod_api::PlayerDataRefusal> {
+            self.writes += 1;
+            Ok(())
+        }
+    }
+
+    impl LivingBackendMut for Fake {
+        fn living_set_hand_item(
+            &mut self,
+            _: LivingRef,
+            _: mod_api::Hand,
+            _: Option<ItemStack>,
+        ) -> Result<bool, mod_api::StackWriteError> {
+            self.writes += 1;
+            Ok(true)
         }
     }
 
@@ -2750,6 +2830,7 @@ mod tests {
     /// Fires `m` once with a fake server host; returns the mod's log lines and the host.
     fn run_gated(m: LuaMod) -> (Vec<String>, Fake) {
         let host = LuaHost::new(vec![m]);
+        let _phase = mod_api::__private::PhaseOwner::new(mod_api::__private::ModPhase::World);
         let mut fake = Fake::at([0.0; 3]);
         fire_real(&host, TurnHost::Server(&mut fake), 0);
         (host.mods()[0].log_lines(), fake)
@@ -2980,7 +3061,7 @@ mod tests {
             out
         })
         .unwrap();
-        assert_eq!(refusals.len(), 27);
+        assert_eq!(refusals.len(), crate::powers::table().len());
         for (op, power, err) in refusals {
             let method = op.rsplit("::").next().unwrap_or(op);
             assert!(
@@ -3179,5 +3260,181 @@ mod tests {
         assert_refused_method(&lines[0], "pw_rule_bare", "set_game_rule", "game_rules");
         assert_eq!(fake.writes, 0);
         assert_eq!(fake.rule, None);
+    }
+
+    /// `{id = id, count = count}` as a Lua table: an item stack argument.
+    fn stack_table(lua: &Lua, id: &str, count: i64) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.raw_set("id", id)?;
+        table.raw_set("count", count)?;
+        Ok(Value::Table(table))
+    }
+
+    /// The inventory writes (pw-5), called directly through the dispatcher with a receiver of the right
+    /// family: without the power the call is refused with the power message and the host is not called;
+    /// granted, the stack argument is read and the host is called once.
+    #[test]
+    fn an_inventory_write_needs_its_power_before_its_stack_is_read() {
+        let root = tempfile::tempdir().unwrap();
+        let player = mod_api::__private::game::player_ref(me(), 1);
+        for op in [
+            "PlayerRef::give_stack",
+            "PlayerRef::set_inventory_slot",
+            "PlayerRef::set_ender_chest_slot",
+            "LivingRef::set_hand_item",
+        ] {
+            let id = format!("pw_inv_{}", op.replace("::", "_"));
+            let method = op.rsplit("::").next().unwrap_or(op);
+            let call = |requested: &[Power], granted: &[Power]| {
+                direct_call(
+                    root.path(),
+                    &id,
+                    requested,
+                    granted,
+                    op,
+                    |lua| {
+                        if op.starts_with("Living") {
+                            lua.create_userdata(Token(mod_api::LivingRef::new(me())))
+                        } else {
+                            lua.create_userdata(Token(player))
+                        }
+                    },
+                    |lua| {
+                        let stack = stack_table(lua, "minecraft:ender_pearl", 1)?;
+                        Ok(match op {
+                            "PlayerRef::give_stack" => MultiValue::from_vec(vec![stack]),
+                            "LivingRef::set_hand_item" => MultiValue::from_vec(vec![
+                                Value::String(lua.create_string("main")?),
+                                stack,
+                            ]),
+                            _ => MultiValue::from_vec(vec![Value::Integer(0), stack]),
+                        })
+                    },
+                )
+            };
+            for (requested, granted) in [
+                (&[][..], &[][..]),
+                (&[][..], &[Power::Inventory][..]),
+                (&[Power::Inventory][..], &[][..]),
+            ] {
+                let (result, fake) = call(requested, granted);
+                let err = result.expect_err(op);
+                assert!(
+                    err.contains(&format!("horizon: {method} needs the \"inventory\" power")),
+                    "{op}: {err}"
+                );
+                assert_eq!(fake.writes, 0, "{op}: the host is not called");
+            }
+            // Granted: the gate passes, so the refusal is not the power's. The stack is then read by the
+            // conversion, which this double cannot finish (the platform's load phase refuses the item lookup),
+            // so the host is not called.
+            let (result, fake) = call(&[Power::Inventory], &[Power::Inventory]);
+            let err = result.expect_err(op);
+            assert!(
+                !err.contains("needs the"),
+                "{op}: the power check passed: {err}"
+            );
+            assert_eq!(fake.writes, 0, "{op}: the host is not called");
+        }
+    }
+
+    /// `direct_call`: calls `op` through the real dispatcher for mod `id` holding `requested` and
+    /// `granted` (its effective powers), with the receiver and arguments the closures build. Returns the
+    /// error text, or `Ok` for a call that ran, and the host double.
+    fn direct_call(
+        root: &Path,
+        id: &str,
+        requested: &[Power],
+        granted: &[Power],
+        op: &'static str,
+        this: impl Fn(&Lua) -> mlua::Result<AnyUserData>,
+        args: impl Fn(&Lua) -> mlua::Result<MultiValue>,
+    ) -> (Result<(), String>, Fake) {
+        let m = gated_level(root, id, "", requested, granted);
+        // Loading the mod resets the load phase, so the World phase is entered after it.
+        let _phase = mod_api::__private::PhaseOwner::new(mod_api::__private::ModPhase::World);
+        let void = Void::for_mod(&m);
+        let lua = Lua::new();
+        let mut fake = Fake::at([0.0; 3]);
+        let outcome = {
+            let mut host = TurnHost::Server(&mut fake);
+            scoped(&lua, &mut host, &void, |lua| -> Result<(), String> {
+                let this = this(lua).map_err(|e| e.to_string())?;
+                let args = args(lua).map_err(|e| e.to_string())?;
+                host_call(lua, op, this, args)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            })
+            .expect("the scope runs")
+        };
+        (outcome, fake)
+    }
+
+    /// The item spawns (pw-5) through Lua: without the spawn power each is refused with the power message and
+    /// the host is not called; granted, the host is called once with the stack.
+    #[test]
+    fn an_item_spawn_needs_the_spawn_power_before_its_stack_is_read() {
+        let root = tempfile::tempdir().unwrap();
+        let stack = "{id = \"minecraft:ender_pearl\", count = 1}";
+        for (method, call) in [
+            (
+                "spawn_item",
+                format!("lv:spawn_item(1.0, 2.0, 3.0, {stack}, 10)"),
+            ),
+            (
+                "spawn_item_with_motion",
+                format!(
+                    "lv:spawn_item_with_motion(1.0, 2.0, 3.0, {stack}, {{x = 0.0, y = 0.1, z = 0.0}}, 10)"
+                ),
+            ),
+            (
+                "pop_resource",
+                format!("lv:pop_resource({{x = 1, y = 2, z = 3}}, {stack})"),
+            ),
+        ] {
+            let id = format!("pw_spawn_{method}");
+            let (lines, fake) = run_gated(gated_level(root.path(), &id, &call, &[], &[]));
+            assert_refused_method(&lines[0], &id, method, "spawn");
+            assert_eq!(fake.writes, 0, "{method}: the host is not called");
+            let granted_id = format!("{id}_granted");
+            let (lines, fake) = run_gated(gated_level(
+                root.path(),
+                &granted_id,
+                &call,
+                &[Power::Spawn],
+                &[Power::Spawn],
+            ));
+            assert!(
+                !lines[0].contains("needs the"),
+                "{method}, granted: {}",
+                lines[0]
+            );
+            assert_eq!(
+                fake.writes, 0,
+                "{method}: granted, the stack read stops before the host"
+            );
+        }
+    }
+
+    /// The spawn cap (pw-5), through Lua: the 65th spawn of a turn is refused and the host saw 64. The mixed
+    /// count of stack spawns is in the guard's unit test (`a_turn_may_spawn_only_so_many_times`).
+    #[test]
+    fn a_turn_may_spawn_only_sixty_four_times_through_lua() {
+        let root = tempfile::tempdir().unwrap();
+        let spawn = "for i = 1, 65 do lv:spawn_mob(\"minecraft:zombie\", {x = 1.0, y = 2.0, z = 3.0}, \"command\") end";
+        let (lines, fake) = run_gated(gated_level(
+            root.path(),
+            "pw_spawn_cap",
+            spawn,
+            &[Power::Spawn],
+            &[Power::Spawn],
+        ));
+        assert!(
+            lines[0].starts_with("false runtime error: ")
+                && lines[0].contains("horizon: spawn_mob refused: at most 64 spawns per turn"),
+            "{}",
+            lines[0]
+        );
+        assert_eq!(fake.writes, 64, "the host saw 64 spawns");
     }
 }
