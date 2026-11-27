@@ -2347,7 +2347,7 @@ fn servers(action: ServersCmd, as_json: bool) -> Result<(), String> {
             let tag = backend::resolve_version(version.as_deref())?;
             servers::set_up(&tag)?;
             println!(
-                "Servers run Horizon {}",
+                "Servers run Event Horizon {}",
                 servers::runtime_release().unwrap_or(tag)
             );
         }
@@ -3720,7 +3720,7 @@ fn modpack(action: ModpackCmd, as_json: bool) -> Result<i32, String> {
                     );
                 } else {
                     println!(
-                        "{} {}  ({}, from Horizon's registry)\n  {}",
+                        "{} {}  ({}, from Event Horizon's registry)\n  {}",
                         p.name,
                         p.version,
                         p.id,

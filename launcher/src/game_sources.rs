@@ -413,6 +413,17 @@ fn selects(selected: Option<&str>, before: Option<&Installed>) -> bool {
     }
 }
 
+/// Whether the installed versions hold game files a source's build can be imported onto: a
+/// release, a Nightly, or the local unsigned developer base the player selected. A developer base
+/// counts only when selected, as `build_import` takes one only when it is selected or named.
+fn has_game_files(installed: &[String], selected: Option<&str>) -> bool {
+    installed.iter().any(|v| {
+        backend::is_game_tag(v)
+            || crate::nightly::date_of(v).is_some()
+            || (crate::developer_install::is_developer(v) && selected == Some(v.as_str()))
+    })
+}
+
 /// Installs `release` and records it as its source's; selects it as [`selects`] says, or always
 /// when `select`. Horizon's newest release is installed first when there are no game files yet.
 /// Returns the version it made.
@@ -423,10 +434,7 @@ pub fn install(release: &Release, select: bool) -> Result<String, String> {
         .and_then(|s| s.installed);
     let settings = backend::Settings::load();
     let select = select || selects(settings.selected.as_deref(), before.as_ref());
-    let has_game_files = backend::installed()
-        .iter()
-        .any(|v| backend::is_game_tag(v) || crate::nightly::date_of(v).is_some());
-    if !has_game_files {
+    if !has_game_files(&backend::installed(), settings.selected.as_deref()) {
         backend::install_tag("latest", true, |_| {})?;
     }
     let file = fetch(release, MAX_ARCHIVE)?;
@@ -801,6 +809,20 @@ pub fn update_automatic() -> Vec<Result<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_files_count_a_release_a_nightly_or_the_selected_developer_base() {
+        let owned = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        let dev = "developer-abc123";
+        assert!(has_game_files(&owned(&["v0.1.0"]), None));
+        assert!(has_game_files(&owned(&["nightly-2026-11-05"]), Some(dev)));
+        assert!(has_game_files(&owned(&[dev, "v0.1.0"]), Some(dev)));
+        // A developer base the player did not select is never picked up implicitly.
+        assert!(!has_game_files(&owned(&[dev]), None));
+        assert!(!has_game_files(&owned(&[dev]), Some("v0.1.0")));
+        assert!(!has_game_files(&owned(&[]), None));
+        assert!(!has_game_files(&owned(&["launcher@0.2.40"]), None));
+    }
 
     #[test]
     fn one_automatic_pass_at_a_time_and_the_claim_is_released() {
