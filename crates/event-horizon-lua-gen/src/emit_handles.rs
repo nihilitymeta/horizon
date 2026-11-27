@@ -304,6 +304,9 @@ enum Arg {
     OptHandle { ty: String },
     /// A block state, read with `Args::state` through the host.
     State,
+    /// An item stack, read with `Args::stack` (or `Args::opt_stack` when `optional`) through the
+    /// host: `ItemStack`, `&ItemStack`, `Option<ItemStack>` or `Option<&ItemStack>`.
+    Stack { optional: bool, by_ref: bool },
     /// An optional string, `Option<&str>`: read as `Option<String>`, passed as `Option<&str>`.
     OptStr,
     /// A borrowed slice, `&[T]`: read as an owned `Vec<T>` and passed by reference. `strs` marks
@@ -735,6 +738,9 @@ fn classify(
     if !host && args.contains(&Arg::State) {
         return Err("unconvertible arg: BlockState needs a host".to_owned());
     }
+    if !host && args.iter().any(|arg| matches!(arg, Arg::Stack { .. })) {
+        return Err("unconvertible arg: ItemStack needs a host".to_owned());
+    }
     // `Result<T, E>` binds as its `Ok` value: an `Err` raises (see `ok_or_raise`).
     let (value_text, refusal) = match ok_type(member.ret.as_deref().unwrap_or("()")) {
         Some(ok) => (ok, true),
@@ -849,8 +855,20 @@ fn arg_of(text: &str, families: &[&str], plain: &Plain) -> Result<Arg, String> {
         }
     })?;
     // `Option<&str>` loses its reference in `map_type`, so it is recognised by its text.
-    if text.split_whitespace().collect::<String>() == "Option<&str>" {
+    let squashed = text.split_whitespace().collect::<String>();
+    if squashed == "Option<&str>" {
         return Ok(Arg::OptStr);
+    }
+    // `Option<&ItemStack>` loses its reference the same way: the text says it was borrowed.
+    if let Some(inner) = squashed
+        .strip_prefix("Option<")
+        .and_then(|rest| rest.strip_suffix('>'))
+        && is_item_stack_text(inner.trim_start_matches('&'))
+    {
+        return Ok(Arg::Stack {
+            optional: true,
+            by_ref: inner.starts_with('&'),
+        });
     }
     match mapped.access {
         Access::RefMut => return Err(format!("other: &mut argument: {text}")),
@@ -862,6 +880,10 @@ fn arg_of(text: &str, families: &[&str], plain: &Plain) -> Result<Arg, String> {
                 }),
                 TypeIr::Named(name) if name == "Identifier" => Ok(Arg::Get {
                     ty: path_of(name),
+                    by_ref: true,
+                }),
+                TypeIr::Named(name) if is_item_stack_text(name) => Ok(Arg::Stack {
+                    optional: false,
                     by_ref: true,
                 }),
                 TypeIr::List(elem) => {
@@ -886,10 +908,25 @@ fn arg_of(text: &str, families: &[&str], plain: &Plain) -> Result<Arg, String> {
             _ => Err(unconvertible()),
         },
         TypeIr::Named(name) if name == "BlockState" => Ok(Arg::State),
+        TypeIr::Named(name) if is_item_stack_text(name) => Ok(Arg::Stack {
+            optional: false,
+            by_ref: false,
+        }),
+        TypeIr::Option(inner) if matches!(&**inner, TypeIr::Named(name) if is_item_stack_text(name)) => {
+            Ok(Arg::Stack {
+                optional: true,
+                by_ref: false,
+            })
+        }
         ty => spelling(ty, plain)
             .map(|ty| Arg::Get { ty, by_ref: false })
             .ok_or_else(unconvertible),
     }
+}
+
+/// Whether a type path names the game's item stack: `ItemStack` or `item::item_stack::ItemStack`.
+fn is_item_stack_text(name: &str) -> bool {
+    name.rsplit("::").next() == Some("ItemStack")
 }
 
 fn is_named(ty: &TypeIr, name: &str) -> bool {
@@ -1059,12 +1096,25 @@ fn operation(family: &str, bound: &Bound) -> String {
             Arg::Handle { .. } => (format!("args.handle({index})?"), name.clone()),
             Arg::OptHandle { .. } => (format!("args.opt_handle({index})?"), name.clone()),
             Arg::State => (format!("args.state({index}, {read_host})?"), name.clone()),
+            Arg::Stack { optional, by_ref } => {
+                let read = if *optional { "opt_stack" } else { "stack" };
+                let pass = match (optional, by_ref) {
+                    (true, true) => format!("{name}.as_ref()"),
+                    (false, true) => format!("&{name}"),
+                    _ => name.clone(),
+                };
+                (format!("args.{read}({index}, {read_host})?"), pass)
+            }
             Arg::OptStr => (format!("args.get({index})?"), format!("{name}.as_deref()")),
         };
         let ty = match arg {
             Arg::Get { ty, .. } | Arg::Handle { ty } | Arg::Slice { ty, .. } => ty.clone(),
             Arg::OptHandle { ty } => format!("Option<{ty}>"),
             Arg::State => "mod_api::BlockState".to_owned(),
+            Arg::Stack { optional: true, .. } => "Option<mod_api::ItemStack>".to_owned(),
+            Arg::Stack {
+                optional: false, ..
+            } => "mod_api::ItemStack".to_owned(),
             Arg::OptStr => "Option<String>".to_owned(),
         };
         let _ = writeln!(body, "    let {name}: {ty} = {line};");
@@ -1246,6 +1296,66 @@ mod tests {
                 by_ref: false
             }]
         );
+    }
+
+    #[test]
+    fn an_item_stack_argument_in_each_spelling_binds_as_a_stack() {
+        let by_value = one("fn f(self, _: &dyn Host, _: ItemStack) -> Option<bool>").unwrap();
+        assert_eq!(
+            by_value.args,
+            [Arg::Stack {
+                optional: false,
+                by_ref: false
+            }]
+        );
+        let borrowed =
+            one("fn f(self, _: &dyn Host, _: &item::item_stack::ItemStack) -> Option<bool>")
+                .unwrap();
+        assert_eq!(
+            borrowed.args,
+            [Arg::Stack {
+                optional: false,
+                by_ref: true
+            }]
+        );
+        let optional =
+            one("fn f(self, _: &dyn Host, _: Option<ItemStack>) -> Option<bool>").unwrap();
+        assert_eq!(
+            optional.args,
+            [Arg::Stack {
+                optional: true,
+                by_ref: false
+            }]
+        );
+        let optional_ref = one(
+            "fn f(self, _: &dyn Host, _: Option<&item::item_stack::ItemStack>) -> Option<bool>",
+        )
+        .unwrap();
+        assert_eq!(
+            optional_ref.args,
+            [Arg::Stack {
+                optional: true,
+                by_ref: true
+            }]
+        );
+        assert!(!optional_ref.write, "a read takes the read host");
+    }
+
+    #[test]
+    fn a_write_taking_an_item_stack_is_still_denied() {
+        for signature in [
+            "fn f(self, _: &mut dyn ServerHost, _: ItemStack) -> Option<bool>",
+            "fn f(self, _: &mut dyn ServerHost, _: Option<&ItemStack>) -> Option<bool>",
+        ] {
+            let err = one(signature).unwrap_err();
+            assert!(err.starts_with("powerful"), "{signature}: {err}");
+        }
+    }
+
+    #[test]
+    fn an_item_stack_argument_without_a_host_is_unconvertible() {
+        let err = one("fn f(self, _: ItemStack) -> Option<bool>").unwrap_err();
+        assert!(err.contains("ItemStack needs a host"), "{err}");
     }
 
     #[test]

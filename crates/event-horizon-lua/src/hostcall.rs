@@ -722,8 +722,8 @@ mod tests {
     use mod_api::{
         Backend, BackendMut, BackendMutRef, BackendRef, BlockState, ChunkRef, ClientHost,
         DimensionKey, DisplayRef, DragonRef, EntityRef, FishingHookRef, Host, ItemEntityRef,
-        LevelRef, LivingRef, MerchantRef, MinecartRef, MobRef, ProjectileRef, RaidRef, ServerHost,
-        WorldEpoch,
+        ItemStack, LevelRef, LivingRef, MerchantRef, MinecartRef, MobRef, ProjectileRef, RaidRef,
+        ServerHost, WorldEpoch,
     };
 
     use crate::handles::Token;
@@ -784,6 +784,10 @@ mod tests {
         radius: Option<f32>,
         /// The rule and value of the last `set_game_rule` the host was asked for.
         rule: Option<(String, mod_api::GameRuleValue)>,
+        /// How many times the host was asked for a block's break speed with a tool.
+        tool_calls: Cell<u32>,
+        /// The count of the tool stack the last break-speed question carried (None: no tool).
+        tool_count: Cell<Option<u32>>,
     }
 
     impl Fake {
@@ -796,6 +800,8 @@ mod tests {
                 calls: Cell::new(0),
                 radius: None,
                 rule: None,
+                tool_calls: Cell::new(0),
+                tool_count: Cell::new(None),
             }
         }
 
@@ -830,6 +836,17 @@ mod tests {
         fn level_block_state(&self, _: LevelRef, _: [i32; 3]) -> Option<BlockState> {
             self.counted();
             None
+        }
+        /// Records the tool it was asked with, and answers a fixed speed.
+        fn level_block_break_speed(
+            &self,
+            _: LevelRef,
+            _: [i32; 3],
+            tool: Option<&ItemStack>,
+        ) -> Option<f32> {
+            self.tool_calls.set(self.tool_calls.get() + 1);
+            self.tool_count.set(tool.map(ItemStack::count));
+            Some(0.5)
         }
     }
 
@@ -1004,6 +1021,50 @@ mod tests {
         let host = LuaHost::new(vec![m]);
         fire(&host, TurnHost::Read(&Fake::at([1.0, 2.0, 3.0])), 0);
         assert_eq!(host.mods()[0].log_lines(), ["table 1 2 3", "nil"]);
+    }
+
+    #[test]
+    fn a_malformed_item_stack_id_is_refused_and_the_host_is_not_asked() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_stack_bad",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               local ok, err = pcall(function() return event.level:block_break_speed({x = 1, y = 2, z = 3}, {id = \"Not An Id!\", count = 1}) end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let fake = Fake::at([0.0; 3]);
+        fire(&host, TurnHost::Read(&fake), 0);
+        let lines = host.mods()[0].log_lines();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].starts_with("false "), "{lines:?}");
+        assert!(lines[0].contains("not a valid identifier"), "{lines:?}");
+        assert_eq!(
+            fake.tool_calls.get(),
+            0,
+            "a refused argument never reaches the host"
+        );
+    }
+
+    #[test]
+    fn an_optional_item_stack_with_count_zero_reaches_the_host_as_no_tool() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_stack_empty",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               horizon.log(tostring(event.level:block_break_speed({x = 1, y = 2, z = 3}, {id = \"minecraft:no_such_item\", count = 0})))\n\
+               horizon.log(tostring(event.level:block_break_speed({x = 1, y = 2, z = 3}, nil)))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let fake = Fake::at([0.0; 3]);
+        fire(&host, TurnHost::Read(&fake), 0);
+        assert_eq!(host.mods()[0].log_lines(), ["0.5", "0.5"]);
+        assert_eq!(fake.tool_calls.get(), 2);
+        assert_eq!(fake.tool_count.get(), None);
     }
 
     #[test]

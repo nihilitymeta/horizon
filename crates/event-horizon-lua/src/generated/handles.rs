@@ -727,6 +727,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("biome_properties", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::biome_properties", this, args)
         });
+        methods.add_function("block_break_speed", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::block_break_speed", this, args)
+        });
         methods.add_function("block_face_sturdy", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::block_face_sturdy", this, args)
         });
@@ -1183,6 +1186,9 @@ impl crate::handles::Family for mod_api::MenuRef {
         methods.add_function("slot_gives", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "MenuRef::slot_gives", this, args)
         });
+        methods.add_function("slot_holds", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "MenuRef::slot_holds", this, args)
+        });
     }
 }
 
@@ -1593,6 +1599,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         });
         methods.add_function("may_fly", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::may_fly", this, args)
+        });
+        methods.add_function("may_use_item_at", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::may_use_item_at", this, args)
         });
         methods.add_function("name", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::name", this, args)
@@ -3643,6 +3652,16 @@ fn level_ref_biome_properties(lua: &mlua::Lua, host: &mut crate::hostcall::TurnH
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn level_ref_block_break_speed(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let args = crate::handles::Args::new("LevelRef::block_break_speed", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::block_break_speed")?;
+    let read = crate::handles::read_of(host)?;
+    let a0: [i32; 3] = args.get(0)?;
+    let a1: Option<mod_api::ItemStack> = args.opt_stack(1, read)?;
+    let out = this.block_break_speed(read, a0, a1.as_ref());
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn level_ref_block_face_sturdy(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("LevelRef::block_face_sturdy", args, 3)?;
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::block_face_sturdy")?;
@@ -4958,6 +4977,16 @@ fn menu_ref_slot_gives(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn menu_ref_slot_holds(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let args = crate::handles::Args::new("MenuRef::slot_holds", args, 2)?;
+    let this: mod_api::MenuRef = crate::handles::receiver(this, "MenuRef::slot_holds")?;
+    let read = crate::handles::read_of(host)?;
+    let a0: usize = args.get(0)?;
+    let a1: mod_api::ItemStack = args.stack(1, read)?;
+    let out = this.slot_holds(read, a0, &a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn merchant_ref_entity(lua: &mlua::Lua, _host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     crate::handles::Args::new("MerchantRef::entity", args, 0)?;
     let this: mod_api::MerchantRef = crate::handles::receiver(this, "MerchantRef::entity")?;
@@ -5980,6 +6009,17 @@ fn player_ref_may_fly(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>,
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn player_ref_may_use_item_at(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let args = crate::handles::Args::new("PlayerRef::may_use_item_at", args, 3)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::may_use_item_at")?;
+    let read = crate::handles::read_of(host)?;
+    let a0: [i32; 3] = args.get(0)?;
+    let a1: mod_api::BlockFace = args.get(1)?;
+    let a2: mod_api::ItemStack = args.stack(2, read)?;
+    let out = this.may_use_item_at(read, a0, a1, &a2);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn player_ref_name(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     crate::handles::Args::new("PlayerRef::name", args, 0)?;
     let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::name")?;
@@ -6793,6 +6833,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::biome_effects" => 1,
         "LevelRef::biome_in_tag" => 1,
         "LevelRef::biome_properties" => 1,
+        "LevelRef::block_break_speed" => 1,
         "LevelRef::block_face_sturdy" => 1,
         "LevelRef::block_floor_height" => 1,
         "LevelRef::block_property" => 1,
@@ -6939,6 +6980,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "MenuRef::kind" => 1,
         "MenuRef::slot_count" => 1,
         "MenuRef::slot_gives" => 1,
+        "MenuRef::slot_holds" => 1,
         "MerchantRef::entity" => 1,
         "MerchantRef::level" => 1,
         "MerchantRef::profession" => 1,
@@ -7061,6 +7103,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::level" => 1,
         "PlayerRef::may_build" => 1,
         "PlayerRef::may_fly" => 1,
+        "PlayerRef::may_use_item_at" => 1,
         "PlayerRef::name" => 1,
         "PlayerRef::needs_food" => 1,
         "PlayerRef::open_menu" => 10,
@@ -7359,6 +7402,7 @@ pub fn run(
         "LevelRef::biome_effects" => level_ref_biome_effects(lua, host, this, args),
         "LevelRef::biome_in_tag" => level_ref_biome_in_tag(lua, host, this, args),
         "LevelRef::biome_properties" => level_ref_biome_properties(lua, host, this, args),
+        "LevelRef::block_break_speed" => level_ref_block_break_speed(lua, host, this, args),
         "LevelRef::block_face_sturdy" => level_ref_block_face_sturdy(lua, host, this, args),
         "LevelRef::block_floor_height" => level_ref_block_floor_height(lua, host, this, args),
         "LevelRef::block_property" => level_ref_block_property(lua, host, this, args),
@@ -7505,6 +7549,7 @@ pub fn run(
         "MenuRef::kind" => menu_ref_kind(lua, host, this, args),
         "MenuRef::slot_count" => menu_ref_slot_count(lua, host, this, args),
         "MenuRef::slot_gives" => menu_ref_slot_gives(lua, host, this, args),
+        "MenuRef::slot_holds" => menu_ref_slot_holds(lua, host, this, args),
         "MerchantRef::entity" => merchant_ref_entity(lua, host, this, args),
         "MerchantRef::level" => merchant_ref_level(lua, host, this, args),
         "MerchantRef::profession" => merchant_ref_profession(lua, host, this, args),
@@ -7627,6 +7672,7 @@ pub fn run(
         "PlayerRef::level" => player_ref_level(lua, host, this, args),
         "PlayerRef::may_build" => player_ref_may_build(lua, host, this, args),
         "PlayerRef::may_fly" => player_ref_may_fly(lua, host, this, args),
+        "PlayerRef::may_use_item_at" => player_ref_may_use_item_at(lua, host, this, args),
         "PlayerRef::name" => player_ref_name(lua, host, this, args),
         "PlayerRef::needs_food" => player_ref_needs_food(lua, host, this, args),
         "PlayerRef::open_menu" => player_ref_open_menu(lua, host, this, args),

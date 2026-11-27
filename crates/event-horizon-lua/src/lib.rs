@@ -69,6 +69,8 @@ mod setting_api_tests;
 pub mod settings;
 #[cfg(test)]
 mod settings_tests;
+#[cfg(test)]
+mod stack_args_tests;
 pub mod stacks;
 pub mod state;
 #[cfg(test)]

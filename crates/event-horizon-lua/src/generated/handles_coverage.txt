@@ -263,7 +263,7 @@ LevelRef: 145 members
   handle:LevelRef::biome_properties bound, cost 1
   handle:LevelRef::biome_spawners skipped: unconvertible return: Option<Vec<BiomeSpawners>>
   handle:LevelRef::block skipped: unconvertible return: Option<BlockKey>
-  handle:LevelRef::block_break_speed skipped: unconvertible arg: Option<&item::item_stack::ItemStack>
+  handle:LevelRef::block_break_speed bound, cost 1
   handle:LevelRef::block_drops skipped: powerful (needs manifest power): argument `Option<&item::item_stack::ItemStack>`
   handle:LevelRef::block_event skipped: unconvertible arg: BlockKey
   handle:LevelRef::block_face_sturdy bound, cost 1
@@ -273,7 +273,7 @@ LevelRef: 145 members
   handle:LevelRef::block_shape bound, cost 100
   handle:LevelRef::block_state bound, cost 1
   handle:LevelRef::block_tick bound, cost 10
-  handle:LevelRef::block_transform skipped: unconvertible arg: &item::item_stack::ItemStack
+  handle:LevelRef::block_transform skipped: unconvertible arg: BlockHit
   handle:LevelRef::bone_meal bound, cost 10
   handle:LevelRef::brightness bound, cost 1
   handle:LevelRef::can_see_sky bound, cost 1
@@ -488,7 +488,7 @@ MenuRef: 15 members
   handle:MenuRef::slot_boxes skipped: other: host kind &dyn ClientHost
   handle:MenuRef::slot_count bound, cost 1
   handle:MenuRef::slot_gives bound, cost 1
-  handle:MenuRef::slot_holds skipped: unconvertible arg: &item::item_stack::ItemStack
+  handle:MenuRef::slot_holds bound, cost 1
   handle:MenuRef::slot_kinds skipped: other: host kind &dyn ClientHost
 
 MerchantRef: 14 members
@@ -651,7 +651,7 @@ PlayerRef: 112 members
   handle:PlayerRef::level bound, cost 1
   handle:PlayerRef::may_build bound, cost 1
   handle:PlayerRef::may_fly bound, cost 1
-  handle:PlayerRef::may_use_item_at skipped: unconvertible arg: &item::item_stack::ItemStack
+  handle:PlayerRef::may_use_item_at bound, cost 1
   handle:PlayerRef::name bound, cost 1
   handle:PlayerRef::needs_food bound, cost 1
   handle:PlayerRef::open_menu bound, cost 10
@@ -768,12 +768,12 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 552 of 724; heavy 28
+summary: bound 555 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
   skipped, powerful (needs manifest power): 60
-  skipped, unconvertible arg: 50
+  skipped, unconvertible arg: 47
   skipped, unconvertible return: 39
   gated: explosions 2
   gated: game_rules 1

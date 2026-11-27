@@ -506,6 +506,17 @@ that file rather than a list copied here:
 - `OnHook` lists every hook name and its event type;
 - the `*Event`, `*Ref` and `*Record` types give the fields of each event and handle.
 
+An item stack argument is a table `{id = "namespace:path", count = 3, nbt = {...}}`
+(`nbt` is optional and holds the component patch). The host makes the stack when the
+call runs, and a call with a bad one raises a Lua error before the host sees it. The
+argument is refused when it is nil and the parameter is required, when `id` is not a
+valid identifier or names no item, when the item refuses the `nbt` patch, when `count`
+is not a whole number, when `count` is 0 for a required stack, or when `count` is above
+the item's maximum stack size. An optional stack (`nil` or `count = 0`) is passed as
+none. Only reads take item stacks in this build: `LevelRef:block_break_speed`,
+`MenuRef:slot_holds` and `PlayerRef:may_use_item_at`. Every write that takes a stack
+stays denied.
+
 To check a mod, run the checker on its folder or archive:
 
 ```

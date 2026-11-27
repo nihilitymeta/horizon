@@ -3994,6 +3994,7 @@ export type LevelRef = {
 	biome_effects: (LevelRef, string) -> BiomeEffects?,
 	biome_in_tag: (LevelRef, string, string) -> boolean?,
 	biome_properties: (LevelRef, string) -> BiomeProperties?,
+	block_break_speed: (LevelRef, { x: number, y: number, z: number }, ItemStackSpec?) -> number?,
 	block_face_sturdy: (LevelRef, { x: number, y: number, z: number }, BlockFace, SupportType) -> boolean?,
 	block_floor_height: (LevelRef, { x: number, y: number, z: number }) -> number?,
 	block_property: (LevelRef, { x: number, y: number, z: number }, string) -> string?,
@@ -4164,6 +4165,7 @@ export type MenuRef = {
 	kind: (MenuRef) -> string??,
 	slot_count: (MenuRef) -> number?,
 	slot_gives: (MenuRef, number) -> boolean?,
+	slot_holds: (MenuRef, number, ItemStackSpec) -> number?,
 }
 
 export type MerchantRef = {
@@ -4303,6 +4305,7 @@ export type PlayerRef = {
 	level: (PlayerRef) -> LevelRef?,
 	may_build: (PlayerRef) -> boolean?,
 	may_fly: (PlayerRef) -> boolean?,
+	may_use_item_at: (PlayerRef, { x: number, y: number, z: number }, BlockFace, ItemStackSpec) -> boolean?,
 	name: (PlayerRef) -> string?,
 	needs_food: (PlayerRef) -> boolean?,
 	open_menu: (PlayerRef, BlockEntityRef) -> boolean,

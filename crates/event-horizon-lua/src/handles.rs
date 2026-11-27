@@ -9,10 +9,10 @@
 
 use std::fmt::{Debug, Display};
 
-use event_horizon_lua_convert::item::BlockStateSpec;
+use event_horizon_lua_convert::item::{BlockStateSpec, ItemStackSpec};
 use event_horizon_lua_convert::scalar::FromLuaValue;
 use mlua::{AnyUserData, Error, Lua, MetaMethod, MultiValue, UserData, UserDataMethods, Value};
-use mod_api::{BlockState, Host, ServerHost};
+use mod_api::{BlockState, Host, ItemStack, ServerHost};
 
 use crate::host::LOG_TARGET;
 use crate::hostcall::{NOT_HERE, TurnHost};
@@ -146,6 +146,32 @@ impl Args {
     pub fn state(&self, index: usize, host: &dyn Host) -> mlua::Result<BlockState> {
         let spec: BlockStateSpec = self.get(index)?;
         stacks::state_from_spec(host, &spec).map_err(|why| self.refuse(index, why))
+    }
+
+    /// The argument at `index` as an item stack table `{id, count, nbt}` the host can make. Nil is
+    /// refused, and so is a count of 0: a non-optional argument has no empty stack. A count above
+    /// the item's maximum, an unknown id or a refused patch is refused too. The host is never
+    /// called with a value that did not convert.
+    pub fn stack(&self, index: usize, host: &dyn Host) -> mlua::Result<ItemStack> {
+        if self.value(index).is_nil() {
+            return Err(self.refuse(index, "must be an item stack table, not nil"));
+        }
+        self.opt_stack(index, host)?.ok_or_else(|| {
+            self.refuse(
+                index,
+                "a count of 0 is not an item stack: use a count of 1 or more",
+            )
+        })
+    }
+
+    /// The argument at `index` as an item stack, or nil for none. A nil argument and a count of 0
+    /// are both None; every other failure is refused as [`Args::stack`] refuses it.
+    pub fn opt_stack(&self, index: usize, host: &dyn Host) -> mlua::Result<Option<ItemStack>> {
+        if self.value(index).is_nil() {
+            return Ok(None);
+        }
+        let spec: ItemStackSpec = self.get(index)?;
+        stacks::stack_from_spec(host, &spec).map_err(|why| self.refuse(index, why))
     }
 }
 
