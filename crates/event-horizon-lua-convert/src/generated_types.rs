@@ -3301,6 +3301,25 @@ impl ToLuaValue for mod_api::EquipmentSlot {
     }
 }
 
+const EQUIPMENT_SLOT_NAMES: &[&str] = &["main_hand", "off_hand", "feet", "legs", "chest", "head", "body", "saddle"];
+
+impl FromLuaValue for mod_api::EquipmentSlot {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "main_hand" => Ok(mod_api::EquipmentSlot::MainHand),
+            "off_hand" => Ok(mod_api::EquipmentSlot::OffHand),
+            "feet" => Ok(mod_api::EquipmentSlot::Feet),
+            "legs" => Ok(mod_api::EquipmentSlot::Legs),
+            "chest" => Ok(mod_api::EquipmentSlot::Chest),
+            "head" => Ok(mod_api::EquipmentSlot::Head),
+            "body" => Ok(mod_api::EquipmentSlot::Body),
+            "saddle" => Ok(mod_api::EquipmentSlot::Saddle),
+            _ => Err(ConvertError::unknown_variant(&name, EQUIPMENT_SLOT_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::EquipmentSlotGroup {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let name = match self {
@@ -11553,6 +11572,12 @@ mod unit_enum_tests {
     fn entity_reach_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::ENTITY_REACH_NAMES, vec![mod_api::EntityReach::Interact, mod_api::EntityReach::Container, mod_api::EntityReach::Attack]);
+    }
+
+    #[test]
+    fn equipment_slot_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::EQUIPMENT_SLOT_NAMES, vec![mod_api::EquipmentSlot::MainHand, mod_api::EquipmentSlot::OffHand, mod_api::EquipmentSlot::Feet, mod_api::EquipmentSlot::Legs, mod_api::EquipmentSlot::Chest, mod_api::EquipmentSlot::Head, mod_api::EquipmentSlot::Body, mod_api::EquipmentSlot::Saddle]);
     }
 
     #[test]

@@ -240,6 +240,7 @@ pub(crate) fn load_mods(
             Ok(mut m) => {
                 m.set_dev(scanned.dev);
                 m.set_powers(scanned.powers.clone());
+                m.set_limits(scanned.limits);
                 match grant_namespace(&m) {
                     Ok(()) => {
                         match assets::publish(game_dir, &scanned.package) {

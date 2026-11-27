@@ -386,6 +386,7 @@ fn powers_are_known_names_listed_once() {
         "game_rules",
         "transactions",
         "inventory",
+        "players",
         "network",
         "files",
     ];
@@ -394,7 +395,7 @@ fn powers_are_known_names_listed_once() {
         all.map(|p| format!("\"{p}\"")).join(", ")
     )))
     .unwrap();
-    assert_eq!(m.powers.len(), 11);
+    assert_eq!(m.powers.len(), 12);
 }
 
 /// `inventory` is a known power: it parses from its name, is listed in rank order after `transactions`
@@ -407,6 +408,18 @@ fn inventory_is_a_known_power_in_rank_order() {
     assert!(Power::Inventory.rank() < Power::Network.rank());
     let m = parse(&with("powers = [\"inventory\"]\n")).unwrap();
     assert_eq!(m.powers, vec![Power::Inventory]);
+}
+
+/// `players` is a known power, listed after `inventory` and before `network`, and a manifest asking for it
+/// holds it. The count cap (`MAX_POWERS`) is checked with the other manifest caps.
+#[test]
+fn players_is_a_known_power_in_rank_order() {
+    assert_eq!(Power::from_name("players"), Some(Power::Players));
+    assert_eq!(Power::Players.name(), "players");
+    assert!(Power::Inventory.rank() < Power::Players.rank());
+    assert!(Power::Players.rank() < Power::Network.rank());
+    let m = parse(&with("powers = [\"players\"]\n")).unwrap();
+    assert_eq!(m.powers, vec![Power::Players]);
 }
 
 #[test]

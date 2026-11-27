@@ -216,10 +216,12 @@ LevelRef::set_world_border_size world
 LevelRef::set_world_border_warning world
 LevelRef::strike_lightning world
 LivingRef::random_teleport world
+LivingRef::set_equipment inventory
 LivingRef::set_hand_item inventory
 MobRef::remove_goal world
 MobRef::remove_target_goal world
 PlayerRef::give_stack inventory
 PlayerRef::respawn spawn
+PlayerRef::drop_stack inventory
 PlayerRef::set_ender_chest_slot inventory
 PlayerRef::set_inventory_slot inventory

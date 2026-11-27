@@ -136,14 +136,15 @@ A disabled, skipped or refused mod holds no power at all.
 | Power | What it gates in this build |
 |---|---|
 | `world` | 20 writes: removing entities and block-entity bars, `remove_block`, weather, clock time, world border, lightning, saving, random ticks, teleports, and removing mob goals |
-| `spawn` | 7 writes: `award_experience`, `set_respawn_data`, `PlayerRef::respawn`, `spawn_mob` (a mob joins the level, as a natural spawn does), and the item spawns `spawn_item`, `spawn_item_with_motion` and `pop_resource` (an item stack `{id, count, nbt}`). One hook turn may cause at most 64 spawns over the four spawn writes (`MAX_SPAWNS_PER_TURN`, a placeholder): the 65th is refused. |
-| `inventory` (changes players' and mobs' items) | 4 writes: `PlayerRef::give_stack(stack)`, `PlayerRef::set_inventory_slot(slot, stack)`, `PlayerRef::set_ender_chest_slot(slot, stack)` and `LivingRef::set_hand_item(hand, stack)`. An item stack is `{id, count, nbt}`. Still denied: `PlayerRef::drop_stack` (its result is the stack that did not fit, which no handle returns yet) and `LivingRef::set_equipment` (its `EquipmentSlot` argument has no conversion from Lua yet) |
-| `explosions` | 2 writes: `level:explode(source, center, power, fire, interaction, settings)` and `level:explosion_destroy_blocks(positions, source, center, power, fire, interaction)`. The power is a Lua number from 0 to 16 (`MAX_EXPLOSION_POWER`, a placeholder cap): a missing, non-number (a string, even `"999"`), negative, NaN, infinite or larger power is refused before the host sees the call. One hook turn may cause at most 4 explosions over both writes (`MAX_EXPLOSIONS_PER_TURN`, also a placeholder): the fifth is refused. The read `explosion_resistance` needs no power. Still denied: `explosion_resistances` (its `ResistanceCells` argument does not convert) |
+| `spawn` | 7 writes: `award_experience`, `set_respawn_data`, `PlayerRef::respawn`, `spawn_mob` (a mob joins the level, as a natural spawn does), and the item spawns `spawn_item`, `spawn_item_with_motion` and `pop_resource` (an item stack `{id, count, nbt}`). One hook turn may cause at most `spawns_per_turn` spawns over the four spawn writes (default 64, owner ceiling 1024, see Owner limits below): the next one is refused |
+| `inventory` (changes players' and mobs' items) | 6 writes: `PlayerRef::give_stack(stack)`, `PlayerRef::set_inventory_slot(slot, stack)`, `PlayerRef::set_ender_chest_slot(slot, stack)`, `LivingRef::set_hand_item(hand, stack)`, `PlayerRef::drop_stack(stack, thrown_by_player)`, which throws the stack from the player's eyes as an item and returns nil, or returns the stack back when the drop was refused (`{id, count, nbt}`), and `LivingRef::set_equipment(slot, stack)`, where `slot` is one of `main_hand`, `off_hand`, `head`, `chest`, `legs`, `feet`, `body`, `saddle` and a nil stack clears the slot. An item stack is `{id, count, nbt}`. Still denied: `LivingRef::hurt_and_break` (an equipment slot, and it breaks an item) and `LivingRef::drop` (it takes a stack and returns an entity, not yet decided) |
+| `explosions` | 2 writes: `level:explode(source, center, power, fire, interaction, settings)` and `level:explosion_destroy_blocks(positions, source, center, power, fire, interaction)`. The power is a Lua number from 0 to `explosion_power` (default 16, owner ceiling 64): a missing, non-number (a string, even `"999"`), negative, NaN, infinite or larger power is refused before the host sees the call. One hook turn may cause at most `explosions_per_turn` explosions over both writes (default 4, owner ceiling 64): the fifth is refused. The read `explosion_resistance` needs no power. Still denied: `explosion_resistances` (its `ResistanceCells` argument does not convert) |
 | `game_rules` | 1 write: `level:set_game_rule(name, value)`. It changes the world's saved rules, and a changed rule stays changed after the mod is removed. The value is a boolean, a whole number, or `{tag = "bool", true}` / `{tag = "int", 7}` |
+| `players` | no write yet. `PlayerRef::disconnect` (remove a player with a reason they see) is denied: a mod may never remove the host or an operator, and the host API cannot yet tell the host from another player in a turn. The power can be requested and granted, and it gates nothing in this build |
 | `commands`, `nbt`, `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
 | `network`, `files` | reserved: they can be requested and granted, but they are never effective |
 
-The gated list is generated (`generated/powers.rs`). Every other write stays denied, among them the item writes that take a stack and are loot or world operations: `LevelRef::destroy_block`, `LevelRef::block_drops` and `LevelRef::roll_loot`.
+The gated list is generated (`generated/powers.rs`). Every other write stays denied, among them the writes that are loot or world operations: `LevelRef::destroy_block`, `LevelRef::block_drops` and `LevelRef::roll_loot`.
 Denied until the maintainer decides, although their slice argument now converts:
 `PlayerRef::award_recipes`, `PlayerRef::reset_recipes` and `PlayerRef::send_map`
 (`DENIED_UNTIL_DECIDED` in the generator).
@@ -159,6 +160,23 @@ Known limits of the power check:
   power, without the arguments. Nothing is shown on screen.
 - `[grants]` allows at most 64 mods, and each up to 16 powers. A longer list for one
   mod refuses that mod's list as a whole.
+
+### Owner limits (`enabled.toml` `[limits]`)
+
+The owner may change the caps the guard applies to the gated writes:
+
+```toml
+[limits]
+explosion_power = 16        # the most power one explosion may have (default 16, owner ceiling 64)
+explosions_per_turn = 4     # the most explosions one hook turn may cause (default 4, ceiling 64)
+spawns_per_turn = 64        # the most item and mob spawns one hook turn may cause (default 64, ceiling 1024)
+```
+
+A value that is missing, negative, not a whole number (for the two counts), not a
+number (for the power), or above its ceiling is the default instead, and the file gets
+one notice in the log for all of them. A missing `[limits]` table is the defaults. The
+ceilings are constants in the code: an owner cannot set a value above them, and a mod
+can never read or change these numbers (`powers.rs`, `Limits`; `enabled.rs`).
 
 ### Showing errors on screen
 

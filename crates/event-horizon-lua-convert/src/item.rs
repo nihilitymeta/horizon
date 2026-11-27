@@ -516,4 +516,26 @@ mod tests {
         let props: Table = table.raw_get("props").expect("props");
         assert_eq!(props.raw_get::<String>("a").expect("a"), "b");
     }
+
+    /// An equipment slot reads from its lowercase name, and the names written for a slot read back.
+    #[test]
+    fn equipment_slot_reads_its_lowercase_name_only() {
+        let lua = Lua::new();
+        for (source, slot) in [
+            ("'main_hand'", mod_api::EquipmentSlot::MainHand),
+            ("'off_hand'", mod_api::EquipmentSlot::OffHand),
+            ("'head'", mod_api::EquipmentSlot::Head),
+            ("'saddle'", mod_api::EquipmentSlot::Saddle),
+        ] {
+            let read =
+                <mod_api::EquipmentSlot as FromLuaValue>::from_lua_value(&eval(&lua, source));
+            assert!(read.is_ok(), "{source}");
+            assert_eq!(read.ok(), Some(slot), "{source}");
+        }
+        for source in ["'MainHand'", "'hand'", "'Head'", "7", "nil"] {
+            let read =
+                <mod_api::EquipmentSlot as FromLuaValue>::from_lua_value(&eval(&lua, source));
+            assert!(read.is_err(), "{source} must be refused");
+        }
+    }
 }

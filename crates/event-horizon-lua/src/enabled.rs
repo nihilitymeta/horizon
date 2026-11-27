@@ -12,6 +12,11 @@
 //! as a whole, and at most 64 mods may hold grants; each problem is counted in the same one notice.
 //! A `[grants]` that is not a table ignores the grants only: the `[mods]` states still apply.
 //!
+//! A `[limits]` table holds the owner's caps on the gated writes (see `powers.rs`): `explosion_power`
+//! (a number, default 16, ceiling 64), `explosions_per_turn` (default 4, ceiling 64) and `spawns_per_turn`
+//! (default 64, ceiling 1024). A value that is missing, negative, not a number of its kind, or above its
+//! ceiling is the default instead, and counts in the same notice. A mod never reads or changes them.
+//!
 //! A `[display]` table, `errors = "owner"`, asks for one chat line to the owner per mod with a problem
 //! (see `display.rs`). `"off"` is the default; an absent, invalid or unknown value reads as `"off"` and
 //! counts in the same notice.
@@ -32,6 +37,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::discover::DIR;
 use crate::display::Errors;
 use crate::manifest::{Power, valid_id};
+use crate::powers::{
+    EXPLOSION_POWER_CEILING, EXPLOSIONS_PER_TURN_CEILING, Limits, SPAWNS_PER_TURN_CEILING,
+};
 
 /// The file's name, under the `lua-mods` folder.
 pub const FILE: &str = "enabled.toml";
@@ -41,6 +49,8 @@ pub const MAX_ENABLED: u64 = 64 * 1024;
 const TABLE: &str = "mods";
 /// The table that holds the grants: `id = ["power", ...]`.
 const GRANTS: &str = "grants";
+/// The table that holds the owner's limits on the gated writes (see `powers.rs`).
+const LIMITS: &str = "limits";
 /// The table that holds the display settings: `errors = "off" | "owner"` (see `display.rs`).
 const DISPLAY: &str = "display";
 /// The most mods that may hold grants in one file; the rest are ignored (and counted).
@@ -51,12 +61,14 @@ pub const MAX_GRANTS_PER_MOD: usize = 16;
 /// What the file said. `states` holds only the valid boolean entries; `grants` only the valid grants,
 /// each list in `Power::rank` order without repeats; `notice` is set when anything was ignored, for one
 /// warning in the log.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Enabled {
     pub states: HashMap<String, bool>,
     pub grants: HashMap<String, Vec<Power>>,
     /// The `[display] errors` setting; `Errors::Off` unless the file asks for `"owner"`.
     pub display: Errors,
+    /// The `[limits]` the file sets; the defaults for each one it leaves out or gets wrong.
+    pub limits: Limits,
     pub notice: Option<String>,
 }
 
@@ -76,6 +88,7 @@ impl Enabled {
             states: HashMap::new(),
             grants: HashMap::new(),
             display: Errors::Off,
+            limits: Limits::default(),
             notice: Some(format!("enabled.toml {what}; every mod is enabled")),
         }
     }
@@ -117,11 +130,19 @@ fn parse(table: &toml::Table) -> Enabled {
     let mut states = HashMap::new();
     let mut grants = HashMap::new();
     let mut display = Errors::Off;
+    let mut limits = Limits::default();
     let mut ignored = 0usize;
     for (key, value) in table {
         if key == GRANTS {
             match value {
                 toml::Value::Table(mods) => ignored += parse_grants(mods, &mut grants),
+                _ => ignored += 1,
+            }
+            continue;
+        }
+        if key == LIMITS {
+            match value {
+                toml::Value::Table(caps) => ignored += parse_limits(caps, &mut limits),
                 _ => ignored += 1,
             }
             continue;
@@ -156,8 +177,42 @@ fn parse(table: &toml::Table) -> Enabled {
         states,
         grants,
         display,
+        limits,
         notice,
     }
+}
+
+/// The `[limits]` table into `out`: each cap the file gives in its range, the rest left at the default.
+/// Returns how many entries were ignored. A cap is a whole number from 0 to its ceiling, except the
+/// explosion power, which is a number (an integer or a float) from 0 to its ceiling.
+fn parse_limits(caps: &toml::Table, out: &mut Limits) -> usize {
+    let mut ignored = 0;
+    for (key, value) in caps {
+        match (key.as_str(), value) {
+            ("explosion_power", toml::Value::Float(power))
+                if power.is_finite() && (0.0..=EXPLOSION_POWER_CEILING).contains(power) =>
+            {
+                out.explosion_power = *power;
+            }
+            ("explosion_power", toml::Value::Integer(power))
+                if (0..=EXPLOSION_POWER_CEILING as i64).contains(power) =>
+            {
+                out.explosion_power = *power as f64;
+            }
+            ("explosions_per_turn", toml::Value::Integer(count))
+                if (0..=i64::from(EXPLOSIONS_PER_TURN_CEILING)).contains(count) =>
+            {
+                out.explosions_per_turn = *count as u32;
+            }
+            ("spawns_per_turn", toml::Value::Integer(count))
+                if (0..=i64::from(SPAWNS_PER_TURN_CEILING)).contains(count) =>
+            {
+                out.spawns_per_turn = *count as u32;
+            }
+            _ => ignored += 1,
+        }
+    }
+    ignored
 }
 
 /// The `[display]` table's `errors` setting into `out`; returns how many entries were ignored. Only

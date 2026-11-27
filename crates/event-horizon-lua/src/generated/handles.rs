@@ -1120,6 +1120,9 @@ impl crate::handles::Family for mod_api::LivingRef {
         methods.add_function("set_attribute_base", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LivingRef::set_attribute_base", this, args)
         });
+        methods.add_function("set_equipment", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LivingRef::set_equipment", this, args)
+        });
         methods.add_function("set_hand_item", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LivingRef::set_hand_item", this, args)
         });
@@ -1551,6 +1554,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         });
         methods.add_function("discovered_recipes", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::discovered_recipes", this, args)
+        });
+        methods.add_function("drop_stack", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::drop_stack", this, args)
         });
         methods.add_function("entity", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::entity", this, args)
@@ -4844,6 +4850,16 @@ fn living_ref_set_attribute_base(lua: &mlua::Lua, host: &mut crate::hostcall::Tu
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn living_ref_set_equipment(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LivingRef::set_equipment", args, 2)?;
+    let this: mod_api::LivingRef = crate::handles::receiver(this, "LivingRef::set_equipment")?;
+    let a0: mod_api::EquipmentSlot = args.get(0)?;
+    let a1: Option<mod_api::ItemStack> = args.opt_stack(1, &*server)?;
+    let out = crate::handles::ok_or_raise(this.set_equipment(server, a0, a1))?;
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn living_ref_set_hand_item(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let server = crate::handles::server_of(host)?;
     let args = crate::handles::Args::new("LivingRef::set_hand_item", args, 2)?;
@@ -5909,6 +5925,16 @@ fn player_ref_discovered_recipes(lua: &mlua::Lua, host: &mut crate::hostcall::Tu
     let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::discovered_recipes")?;
     let read = crate::handles::read_of(host)?;
     let out = this.discovered_recipes(read);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn player_ref_drop_stack(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::drop_stack", args, 2)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::drop_stack")?;
+    let a0: mod_api::ItemStack = args.stack(0, &*server)?;
+    let a1: bool = args.get(1)?;
+    let out = crate::handles::ok_or_raise(this.drop_stack(server, a0, a1))?;
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -7058,6 +7084,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LivingRef::set_arrow_count" => 10,
         "LivingRef::set_arrow_removal_ticks" => 10,
         "LivingRef::set_attribute_base" => 10,
+        "LivingRef::set_equipment" => 10,
         "LivingRef::set_hand_item" => 10,
         "LivingRef::set_health" => 10,
         "LivingRef::set_is_jumping" => 10,
@@ -7184,6 +7211,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::destroy_block" => 10,
         "PlayerRef::dimension" => 1,
         "PlayerRef::discovered_recipes" => 100,
+        "PlayerRef::drop_stack" => 10,
         "PlayerRef::entity" => 1,
         "PlayerRef::exp_cooldown" => 1,
         "PlayerRef::experience" => 1,
@@ -7634,6 +7662,7 @@ pub fn run(
         "LivingRef::set_arrow_count" => living_ref_set_arrow_count(lua, host, this, args),
         "LivingRef::set_arrow_removal_ticks" => living_ref_set_arrow_removal_ticks(lua, host, this, args),
         "LivingRef::set_attribute_base" => living_ref_set_attribute_base(lua, host, this, args),
+        "LivingRef::set_equipment" => living_ref_set_equipment(lua, host, this, args),
         "LivingRef::set_hand_item" => living_ref_set_hand_item(lua, host, this, args),
         "LivingRef::set_health" => living_ref_set_health(lua, host, this, args),
         "LivingRef::set_is_jumping" => living_ref_set_is_jumping(lua, host, this, args),
@@ -7760,6 +7789,7 @@ pub fn run(
         "PlayerRef::destroy_block" => player_ref_destroy_block(lua, host, this, args),
         "PlayerRef::dimension" => player_ref_dimension(lua, host, this, args),
         "PlayerRef::discovered_recipes" => player_ref_discovered_recipes(lua, host, this, args),
+        "PlayerRef::drop_stack" => player_ref_drop_stack(lua, host, this, args),
         "PlayerRef::entity" => player_ref_entity(lua, host, this, args),
         "PlayerRef::exp_cooldown" => player_ref_exp_cooldown(lua, host, this, args),
         "PlayerRef::experience" => player_ref_experience(lua, host, this, args),

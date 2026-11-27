@@ -131,6 +131,9 @@ pub struct LuaMod {
     /// The powers in effect for the mod: requested by its manifest and granted by the enabled-state file
     /// (`powers.rs`). Set once at load (`set_powers`); empty until then, so a mod has none by default.
     powers: Vec<Power>,
+    /// The owner's limits on the guard of the gated writes (`[limits]` in enabled.toml, `powers.rs`); the
+    /// defaults until `set_limits`.
+    limits: crate::powers::Limits,
     /// The state the mod runs in. A swap replaces it under the write lock (`swap_state`); `lua()`
     /// hands out a handle to the state as it is then.
     lua: RwLock<Lua>,
@@ -296,6 +299,16 @@ impl LuaMod {
         &self.powers
     }
 
+    /// Records the owner's limits for the mod, as the scan read them (`discover::ScannedMod`).
+    pub(crate) fn set_limits(&mut self, limits: crate::powers::Limits) {
+        self.limits = limits;
+    }
+
+    /// The owner's limits in effect for the mod's turns (`powers::guard`).
+    pub(crate) fn limits(&self) -> crate::powers::Limits {
+        self.limits
+    }
+
     /// Whether the mod was started from a dev path, so `reload` may re-read its folder.
     pub(crate) fn is_dev(&self) -> bool {
         self.dev
@@ -383,6 +396,7 @@ impl LuaMod {
             fingerprint: built.fingerprint,
             dev: false,
             powers: Vec::new(),
+            limits: crate::powers::Limits::default(),
             lua: RwLock::new(built.lua),
             log,
             turn: Turn::default(),

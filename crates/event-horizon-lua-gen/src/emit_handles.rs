@@ -118,6 +118,7 @@ const POWERFUL_ARG_TYPES: &[&str] = &[
     "ItemStack",
     "PermissionLevel",
     "MerchantOffer",
+    "EquipmentSlot",
 ];
 /// The reason a powerful write is skipped: the category `powerful (needs manifest power)`, then
 /// the rule that matched. [`reason_category`] keeps the category.
@@ -211,6 +212,8 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("PlayerRef::set_inventory_slot", "inventory"),
     ("PlayerRef::set_ender_chest_slot", "inventory"),
     ("LivingRef::set_hand_item", "inventory"),
+    ("PlayerRef::drop_stack", "inventory"),
+    ("LivingRef::set_equipment", "inventory"),
 ];
 
 /// The writes the slice argument arm (`&[T]`) newly binds that the lead has not decided. Each is an
@@ -243,6 +246,7 @@ const GATEABLE_POWERS: &[(&str, &str)] = &[
     ("game_rules", "GameRules"),
     ("transactions", "Transactions"),
     ("inventory", "Inventory"),
+    ("players", "Players"),
 ];
 
 /// The power a gated write of `allowlist` needs, or `None` when `op` (`Family::name`) is not listed.
@@ -760,8 +764,17 @@ fn classify(
         _ => {
             let mapped =
                 map_type(value_text).map_err(|_| format!("unconvertible return: {value_text}"))?;
-            let ret = ret_of(&mapped.ty, families, plain)
-                .ok_or_else(|| format!("unconvertible return: {value_text}"))?;
+            // An optional item stack converts to its Lua table (`loot.rs`), but only for a write: the stack
+            // a write returns (`drop_stack`) is new to Lua, and the reads that return one are a decision for
+            // the lead (they show what a mod may see of a player's items), so they stay skipped.
+            let stack_result = write
+                && matches!(&mapped.ty, TypeIr::Option(inner)
+                    if matches!(&**inner, TypeIr::Named(name) if is_item_stack_text(name)));
+            let ret = match ret_of(&mapped.ty, families, plain) {
+                Some(ret) => ret,
+                None if stack_result => Ret::Value,
+                None => return Err(format!("unconvertible return: {value_text}")),
+            };
             (ret, Some(mapped.ty))
         }
     };
@@ -1989,10 +2002,12 @@ mod tests {
     }
 
     /// pw-5: `inventory` is a gateable power, and the stack writes it binds are gated under it (with the item
-    /// spawns under `spawn`). `drop_stack` stays out: its result is an item stack, which no handle returns.
+    /// spawns under `spawn`), and `drop_stack` and `set_equipment` under `inventory`. `hurt_and_break` (an
+    /// equipment slot, no gate) stays denied.
     #[test]
     fn the_stack_writes_are_gated_under_inventory_and_spawn() {
         assert!(GATEABLE_POWERS.contains(&("inventory", "Inventory")));
+        assert!(GATEABLE_POWERS.contains(&("players", "Players")));
         for op in [
             "PlayerRef::give_stack",
             "PlayerRef::set_inventory_slot",
@@ -2008,7 +2023,15 @@ mod tests {
         ] {
             assert_eq!(power_in(GATED_WRITES, op), Some("spawn"), "{op}");
         }
-        assert_eq!(power_in(GATED_WRITES, "PlayerRef::drop_stack"), None);
+        assert_eq!(
+            power_in(GATED_WRITES, "PlayerRef::drop_stack"),
+            Some("inventory")
+        );
+        assert_eq!(
+            power_in(GATED_WRITES, "LivingRef::set_equipment"),
+            Some("inventory")
+        );
+        assert_eq!(power_in(GATED_WRITES, "LivingRef::hurt_and_break"), None);
         assert_eq!(power_in(GATED_WRITES, "LevelRef::destroy_block"), None);
         assert_eq!(power_in(GATED_WRITES, "LevelRef::roll_loot"), None);
     }

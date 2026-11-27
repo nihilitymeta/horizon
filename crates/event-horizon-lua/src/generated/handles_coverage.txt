@@ -422,13 +422,13 @@ LivingRef: 73 members
   handle:LivingRef::effect_blend_factor skipped: other: host kind &dyn ClientHost
   handle:LivingRef::effects skipped: unconvertible return: Option<Vec<ActiveEffect>>
   handle:LivingRef::entity bound, cost 1
-  handle:LivingRef::equipment skipped: unconvertible arg: EquipmentSlot
+  handle:LivingRef::equipment skipped: unconvertible return: Option<item::item_stack::ItemStack>
   handle:LivingRef::gliding_ticks bound, cost 1
   handle:LivingRef::hand_item skipped: unconvertible return: Option<item::item_stack::ItemStack>
   handle:LivingRef::has_line_of_sight bound, cost 1
   handle:LivingRef::heal bound, cost 10
   handle:LivingRef::health bound, cost 1
-  handle:LivingRef::hurt_and_break skipped: unconvertible arg: EquipmentSlot
+  handle:LivingRef::hurt_and_break skipped: powerful (needs manifest power): argument `EquipmentSlot`
   handle:LivingRef::id bound, cost 1
   handle:LivingRef::in_melee_range bound, cost 1
   handle:LivingRef::is_blocking bound, cost 1
@@ -453,7 +453,7 @@ LivingRef: 73 members
   handle:LivingRef::set_arrow_count bound, cost 10
   handle:LivingRef::set_arrow_removal_ticks bound, cost 10
   handle:LivingRef::set_attribute_base bound, cost 10
-  handle:LivingRef::set_equipment skipped: powerful (needs manifest power): argument `Option<item::item_stack::ItemStack>`
+  handle:LivingRef::set_equipment bound, cost 10, gated: inventory
   handle:LivingRef::set_hand_item bound, cost 10, gated: inventory
   handle:LivingRef::set_health bound, cost 10
   handle:LivingRef::set_is_jumping bound, cost 10
@@ -623,7 +623,7 @@ PlayerRef: 112 members
   handle:PlayerRef::dimension bound, cost 1
   handle:PlayerRef::disconnect skipped: powerful (needs manifest power): name contains `disconnect`
   handle:PlayerRef::discovered_recipes bound, cost 100
-  handle:PlayerRef::drop_stack skipped: powerful (needs manifest power): argument `item::item_stack::ItemStack`
+  handle:PlayerRef::drop_stack bound, cost 10, gated: inventory
   handle:PlayerRef::ender_chest skipped: unconvertible return: Option<Vec<(u32, item::item_stack::ItemStack)>>
   handle:PlayerRef::entity bound, cost 1
   handle:PlayerRef::exp_cooldown bound, cost 1
@@ -752,7 +752,7 @@ UnspawnedMobRef: 7 members
   handle:UnspawnedMobRef::attribute_base bound, cost 1
   handle:UnspawnedMobRef::attribute_value bound, cost 1
   handle:UnspawnedMobRef::custom_name bound, cost 1
-  handle:UnspawnedMobRef::equipment skipped: unconvertible arg: EquipmentSlot
+  handle:UnspawnedMobRef::equipment skipped: unconvertible return: Option<item::item_stack::ItemStack>
   handle:UnspawnedMobRef::kind bound, cost 1
   handle:UnspawnedMobRef::position bound, cost 1
   handle:UnspawnedMobRef::tags bound, cost 100
@@ -768,16 +768,16 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 562 of 724; heavy 28
+summary: bound 564 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 53
-  skipped, unconvertible arg: 47
-  skipped, unconvertible return: 39
+  skipped, powerful (needs manifest power): 52
+  skipped, unconvertible arg: 44
+  skipped, unconvertible return: 41
   gated: explosions 2
   gated: game_rules 1
-  gated: inventory 4
+  gated: inventory 6
   gated: spawn 7
   gated: world 20
 heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

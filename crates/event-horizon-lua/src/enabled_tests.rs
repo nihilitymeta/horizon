@@ -400,3 +400,96 @@ fn an_invalid_display_value_reads_as_off_with_one_notice() {
     assert_eq!(enabled.display, Errors::Off);
     assert!(enabled.notice.is_some());
 }
+
+/// `[limits]` is absent by default: the defaults, and no notice.
+#[test]
+fn absent_limits_are_the_defaults_with_no_notice() {
+    use crate::powers::Limits;
+    let root = tempfile::tempdir().unwrap();
+    let enabled = read(root.path());
+    assert_eq!(enabled.limits, Limits::default());
+    assert_eq!(enabled.limits.explosion_power, 16.0);
+    assert_eq!(enabled.limits.explosions_per_turn, 4);
+    assert_eq!(enabled.limits.spawns_per_turn, 64);
+    assert!(enabled.notice.is_none());
+    put(root.path(), "[mods]\nfoo = true\n");
+    assert_eq!(read(root.path()).limits, Limits::default());
+}
+
+/// Each key of `[limits]` is read in its range: a lowered and a raised value both take.
+#[test]
+fn each_limit_is_read_within_its_range() {
+    let root = tempfile::tempdir().unwrap();
+    put(
+        root.path(),
+        "[limits]\nexplosion_power = 2.5\nexplosions_per_turn = 1\nspawns_per_turn = 512\n",
+    );
+    let enabled = read(root.path());
+    assert_eq!(enabled.limits.explosion_power, 2.5);
+    assert_eq!(enabled.limits.explosions_per_turn, 1);
+    assert_eq!(enabled.limits.spawns_per_turn, 512);
+    assert!(enabled.notice.is_none());
+    put(
+        root.path(),
+        "[limits]\nexplosion_power = 64\nexplosions_per_turn = 64\nspawns_per_turn = 1024\n",
+    );
+    let enabled = read(root.path());
+    assert_eq!(
+        enabled.limits.explosion_power, 64.0,
+        "the ceiling itself is allowed"
+    );
+    assert_eq!(enabled.limits.explosions_per_turn, 64);
+    assert_eq!(enabled.limits.spawns_per_turn, 1024);
+    assert!(enabled.notice.is_none());
+}
+
+/// A value that is negative, not a number of its kind, or above its ceiling falls back to its default, and
+/// the file gets one notice for them; the valid keys beside it still take.
+#[test]
+fn an_invalid_or_above_ceiling_limit_falls_back_to_the_default_with_one_notice() {
+    use crate::powers::Limits;
+    let root = tempfile::tempdir().unwrap();
+    put(
+        root.path(),
+        "[limits]\n\
+         explosion_power = 65\n\
+         explosions_per_turn = -1\n\
+         spawns_per_turn = 2.5\n\
+         bogus = 1\n",
+    );
+    let enabled = read(root.path());
+    assert_eq!(
+        enabled.limits,
+        Limits::default(),
+        "every bad value is the default"
+    );
+    let notice = enabled.notice.expect("one notice for the file");
+    assert!(notice.contains("4 entries"), "{notice}");
+
+    put(
+        root.path(),
+        "[limits]\nexplosion_power = \"16\"\nspawns_per_turn = 1025\nexplosions_per_turn = 5\n",
+    );
+    let enabled = read(root.path());
+    assert_eq!(
+        enabled.limits.explosion_power, 16.0,
+        "a string is not a number"
+    );
+    assert_eq!(
+        enabled.limits.spawns_per_turn, 64,
+        "above the ceiling is the default"
+    );
+    assert_eq!(
+        enabled.limits.explosions_per_turn, 5,
+        "a valid key beside them still takes"
+    );
+    assert!(enabled.notice.is_some());
+
+    put(root.path(), "limits = 3\n");
+    let enabled = read(root.path());
+    assert_eq!(enabled.limits, Limits::default());
+    assert!(
+        enabled.notice.is_some(),
+        "a [limits] that is not a table is one notice"
+    );
+}

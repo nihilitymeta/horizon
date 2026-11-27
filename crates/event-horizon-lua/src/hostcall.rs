@@ -270,6 +270,8 @@ pub(crate) struct Void {
     owner: String,
     /// The powers the mod holds in effect; a gated call needs its power here.
     powers: Vec<Power>,
+    /// The owner's limits the guard checks a gated call against (`powers::Limits`).
+    limits: crate::powers::Limits,
 }
 
 impl Void {
@@ -281,6 +283,7 @@ impl Void {
             synced: Cell::new(0),
             owner: m.id().to_owned(),
             powers: m.powers().to_vec(),
+            limits: m.limits(),
         }
     }
 
@@ -357,7 +360,7 @@ pub(crate) fn scoped<R>(
                 }
                 // The guard's own rules refuse a call the power check let through, before the host sees it. Like
                 // a power refusal it is a plain error and costs one unit.
-                if let Err(refusal) = crate::powers::guard(&op, &args, &mut counts) {
+                if let Err(refusal) = crate::powers::guard(&op, &args, &mut counts, &void.limits) {
                     if spent + 1 > TURN_BUDGET {
                         void.spent.set(true);
                         return Err(Error::runtime(SPENT));
@@ -3282,6 +3285,8 @@ mod tests {
             "PlayerRef::set_inventory_slot",
             "PlayerRef::set_ender_chest_slot",
             "LivingRef::set_hand_item",
+            "PlayerRef::drop_stack",
+            "LivingRef::set_equipment",
         ] {
             let id = format!("pw_inv_{}", op.replace("::", "_"));
             let method = op.rsplit("::").next().unwrap_or(op);
@@ -3303,8 +3308,15 @@ mod tests {
                         let stack = stack_table(lua, "minecraft:ender_pearl", 1)?;
                         Ok(match op {
                             "PlayerRef::give_stack" => MultiValue::from_vec(vec![stack]),
+                            "PlayerRef::drop_stack" => {
+                                MultiValue::from_vec(vec![stack, Value::Boolean(true)])
+                            }
                             "LivingRef::set_hand_item" => MultiValue::from_vec(vec![
                                 Value::String(lua.create_string("main")?),
+                                stack,
+                            ]),
+                            "LivingRef::set_equipment" => MultiValue::from_vec(vec![
+                                Value::String(lua.create_string("head")?),
                                 stack,
                             ]),
                             _ => MultiValue::from_vec(vec![Value::Integer(0), stack]),
@@ -3336,6 +3348,65 @@ mod tests {
             );
             assert_eq!(fake.writes, 0, "{op}: the host is not called");
         }
+    }
+
+    /// The owner's limits through Lua: a lowered `explosions_per_turn` refuses the second explosion, and a raised
+    /// `explosion_power` lets a power of 20 reach the host, which the default 16 refuses.
+    #[test]
+    fn the_owner_limits_reach_the_guard_through_lua() {
+        let root = tempfile::tempdir().unwrap();
+        let call = "for i = 1, 2 do lv:explode(nil, {x = 0.0, y = 64.0, z = 0.0}, 4.0, false, \"none\", {}) end";
+        let mut m = gated_level(
+            root.path(),
+            "pw_low_cap",
+            call,
+            &[Power::Explosions],
+            &[Power::Explosions],
+        );
+        m.set_limits(crate::powers::Limits {
+            explosions_per_turn: 1,
+            ..crate::powers::Limits::default()
+        });
+        let (lines, fake) = run_gated(m);
+        assert!(
+            lines[0].contains("horizon: explode refused: at most 1 explosions per turn"),
+            "{}",
+            lines[0]
+        );
+        assert_eq!(fake.writes, 1, "the host sees one explosion");
+
+        let call = "lv:explode(nil, {x = 0.0, y = 64.0, z = 0.0}, 20.0, false, \"none\", {})";
+        let refused = gated_level(
+            root.path(),
+            "pw_default_power",
+            call,
+            &[Power::Explosions],
+            &[Power::Explosions],
+        );
+        let (lines, fake) = run_gated(refused);
+        assert!(
+            lines[0].contains("horizon: explode refused: power must be a number from 0 to 16"),
+            "{}",
+            lines[0]
+        );
+        assert_eq!(fake.writes, 0);
+        let mut raised = gated_level(
+            root.path(),
+            "pw_raised_power",
+            call,
+            &[Power::Explosions],
+            &[Power::Explosions],
+        );
+        raised.set_limits(crate::powers::Limits {
+            explosion_power: 32.0,
+            ..crate::powers::Limits::default()
+        });
+        let (lines, fake) = run_gated(raised);
+        assert_eq!(lines[0].trim(), "true nil", "{}", lines[0]);
+        assert_eq!(
+            fake.writes, 1,
+            "the raised cap lets the host see the explosion"
+        );
     }
 
     /// `direct_call`: calls `op` through the real dispatcher for mod `id` holding `requested` and

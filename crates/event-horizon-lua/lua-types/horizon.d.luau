@@ -4147,6 +4147,8 @@ export type LivingRef = {
 	set_arrow_removal_ticks: (LivingRef, number) -> boolean,
 	set_attribute_base: (LivingRef, string, number) -> boolean,
 	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
+	set_equipment: (LivingRef, EquipmentSlot, ItemStackSpec?) -> boolean,
+	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
 	set_hand_item: (LivingRef, Hand, ItemStackSpec?) -> boolean,
 	set_health: (LivingRef, number) -> boolean,
 	set_is_jumping: (LivingRef, boolean) -> boolean,
@@ -4293,6 +4295,8 @@ export type PlayerRef = {
 	destroy_block: (PlayerRef, { x: number, y: number, z: number }, boolean) -> boolean,
 	dimension: (PlayerRef) -> string?,
 	discovered_recipes: (PlayerRef) -> {string}?,
+	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
+	drop_stack: (PlayerRef, ItemStackSpec, boolean) -> ItemStackSpec?,
 	entity: (PlayerRef) -> EntityRef,
 	exp_cooldown: (PlayerRef) -> number?,
 	experience: (PlayerRef) -> PlayerExperience?,
