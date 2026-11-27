@@ -213,3 +213,21 @@ fn warn_is_not_in_the_console_vm() {
     let result = run("return warn == nil");
     assert_eq!(result.value.as_deref(), Some("true"), "{result:?}");
 }
+
+#[test]
+fn mc_profile_in_the_vm_gives_the_profiler_rows() {
+    let _g = crate::profile::tests::guard();
+    crate::profile::profile_reset();
+    crate::profile::profile_enable(true);
+    let _ = crate::profile::timed("profile_vm", "hook_v", || {
+        Err::<(), mlua::Error>(mlua::Error::runtime("boom"))
+    });
+    crate::profile::profile_enable(false);
+    let result = run(
+        "for _, r in ipairs(mc.profile()) do if r.mod == 'profile_vm' then \
+         print(r.hook, r.calls, r.errors, type(r.total_ms), type(r.max_ms)) end end",
+    );
+    crate::profile::profile_reset();
+    assert_eq!(result.error, None);
+    assert_eq!(result.lines, ["hook_v\t1\t1\tnumber\tnumber"]);
+}

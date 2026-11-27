@@ -492,7 +492,10 @@ pub(crate) fn run_hosted(
     let outcome = scoped(&m.lua(), host, &void, |lua| {
         let mut failed = false;
         for handler in handlers {
-            if let Err(err) = crate::host::call_handler(lua, handler, event) {
+            let called = crate::profile::timed(m.id(), hook, || {
+                crate::host::call_handler(lua, handler, event)
+            });
+            if let Err(err) = called {
                 // A panicking host call already has its line; the handler's error is its echo.
                 if void.panic_message().is_none() {
                     warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));

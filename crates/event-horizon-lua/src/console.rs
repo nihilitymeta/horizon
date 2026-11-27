@@ -5,6 +5,8 @@
 //! has no mod's state. It has one VM, made once by [`state::new_state`] and shared by every run, and
 //! no chunk it runs reaches a mod's state or the other way round.
 //!
+//! `mc.profile()` returns the Lua profiler's rows (see [`profile_table`]).
+//!
 //! `mc.cmd(line)` runs a server command through `ServerHost::run_command_with_output`, which runs it
 //! as the server console (level 4), and returns the command's feedback lines. This runner does NOT
 //! check who may call it: the caller (the `/lua` command, chunk 5e-b) must gate on the strict owner
@@ -23,6 +25,7 @@ use mlua::{Error as LuaError, Function, Lua, MultiValue, Value};
 use mod_api::ServerHost;
 
 use crate::budget;
+use crate::profile;
 use crate::state::new_state;
 
 /// The time one run may take on the server thread. A run past it stops with an error.
@@ -180,8 +183,33 @@ fn setup(printed: Arc<Mutex<Printed>>) -> mlua::Result<Lua> {
         Ok(())
     })?;
     lua.globals().raw_set("print", print)?;
-    lua.globals().raw_set("mc", lua.create_table()?)?;
+    let mc = lua.create_table()?;
+    mc.raw_set(
+        "profile",
+        lua.create_function(|lua, ()| profile_table(lua))?,
+    )?;
+    lua.globals().raw_set("mc", mc)?;
     Ok(lua)
+}
+
+/// `mc.profile()`: the profiler's rows as a list of tables `{mod, hook, calls, total_ms, max_ms,
+/// errors}`, the most total time first (the rows `/luaprofile` shows, all of them). The times are
+/// milliseconds.
+pub fn profile_table(lua: &Lua) -> mlua::Result<mlua::Table> {
+    let mut rows = profile::profile_snapshot();
+    rows.sort_by_key(|row| std::cmp::Reverse(row.total_ns));
+    let out = lua.create_table()?;
+    for (i, row) in rows.iter().enumerate() {
+        let t = lua.create_table()?;
+        t.raw_set("mod", row.mod_id.as_str())?;
+        t.raw_set("hook", row.hook.as_str())?;
+        t.raw_set("calls", row.calls)?;
+        t.raw_set("total_ms", row.total_ns as f64 / 1_000_000.0)?;
+        t.raw_set("max_ms", row.max_ns as f64 / 1_000_000.0)?;
+        t.raw_set("errors", row.errors)?;
+        out.raw_set(i + 1, t)?;
+    }
+    Ok(out)
 }
 
 /// Runs one chunk with `host` bound to `mc.cmd`. The binding and the function are gone when it ends.

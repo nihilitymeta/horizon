@@ -64,6 +64,7 @@ mod nbt_merge;
 mod nbt_merge_tests;
 pub mod package;
 pub mod powers;
+pub mod profile;
 pub mod provider;
 pub mod quarantine;
 pub mod ratelimit;

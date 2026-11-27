@@ -5,6 +5,8 @@
 //! VM ([`event_horizon_lua::console`]); `/console` opens, closes or clears the console window
 //! ([`crate::console`]), whose queued chunks the server tick runs. `/luareload <id>` reloads a dev-path
 //! Lua mod's scripts ([`event_horizon_lua::reload`]); `/luareload` alone lists the ids that reload.
+//! `/luaprofile` shows the Lua handlers' time and error counts ([`event_horizon_lua::profile`]), and
+//! `clear` and `off` reset them and turn recording off.
 //!
 //! The owner's rule: every one of these commands is the world's owner's, strictly. The sender's
 //! uuid must be the one the host names as the single-player owner; any other player (a guest of
@@ -12,6 +14,7 @@
 //! runner is never reached for a refused sender.
 use crate::console;
 use event_horizon_lua::console as runner;
+use event_horizon_lua::profile::ModProfile;
 use event_horizon_observe::{self as observe, BlockKey, View};
 use horizon_client::{data_cmd, lang, nbt_path::NbtPath};
 use mod_api::text::TextStyle;
@@ -23,6 +26,8 @@ use mod_api::{
 const LUA_LINES: usize = 20;
 /// The longest line a reply shows, in characters; a longer one is cut and ends in an ellipsis.
 const LUA_LINE_CHARS: usize = 256;
+/// The most rows `/luaprofile` shows: the slowest by total time.
+const PROFILE_ROWS: usize = 10;
 
 /// A translated line: the language file's `key`, its arguments as plain text.
 fn tr(key: &str, args: &[String]) -> Text {
@@ -59,6 +64,9 @@ pub const USAGES: &[&str] = &[
     "console clear",
     "luareload",
     "luareload <rest:text>",
+    "luaprofile",
+    "luaprofile clear",
+    "luaprofile off",
     "blockinfo",
     "blockinfo clear",
     "blockinfo <rest:text>",
@@ -73,6 +81,8 @@ enum Cmd<'a> {
     Console { action: console::Action },
     /// `/luareload <id>`: reloads a dev mod's scripts; empty `id` lists the reloadable ids.
     Reload { id: &'a str },
+    /// `/luaprofile`, `/luaprofile clear`, `/luaprofile off`.
+    Profile { action: ProfileAction },
     /// `/inspect` alone: what is watched.
     List,
     /// `/inspect|goals|senses|nav <targets>` and `… clear`.
@@ -91,6 +101,19 @@ enum Cmd<'a> {
     MobaiLog { stop: bool, targets: &'a str },
     /// `/blockinfo`, `/blockinfo clear`, `/blockinfo <x> <y> <z>`.
     Block { action: BlockAction },
+}
+
+/// What `/luaprofile` does with its line.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum ProfileAction {
+    /// `/luaprofile` alone: turns recording on and shows the slowest rows.
+    Show,
+    /// `/luaprofile clear`: every counter is reset; recording stays as it is.
+    Clear,
+    /// `/luaprofile off`: recording stops; the counters are kept.
+    Off,
+    /// Any other remainder: the usage line.
+    Usage,
 }
 
 /// What `/blockinfo` does with its line.
@@ -166,6 +189,12 @@ pub trait Reads {
     fn reload(&mut self, id: &str) -> ReloadOutcome;
     /// The ids the game's `reload` may reload (the dev-path mods), in load order.
     fn reloadable(&self) -> Vec<String>;
+    /// Turns the Lua profiler's recording on or off.
+    fn profile_enable(&mut self, on: bool);
+    /// The Lua profiler's rows so far.
+    fn profile_snapshot(&self) -> Vec<ModProfile>;
+    /// Clears the Lua profiler's counters.
+    fn profile_reset(&mut self);
     /// A line of feedback to the sender.
     fn reply(&mut self, line: Text);
 }
@@ -270,6 +299,15 @@ impl Reads for Live<'_> {
     }
     fn reloadable(&self) -> Vec<String> {
         event_horizon_lua::reload::reloadable()
+    }
+    fn profile_enable(&mut self, on: bool) {
+        event_horizon_lua::profile::profile_enable(on);
+    }
+    fn profile_snapshot(&self) -> Vec<ModProfile> {
+        event_horizon_lua::profile::profile_snapshot()
+    }
+    fn profile_reset(&mut self) {
+        event_horizon_lua::profile::profile_reset();
     }
     fn reply(&mut self, line: Text) {
         self.replies.push(line);
@@ -390,6 +428,14 @@ fn parse(line: &str) -> Option<Cmd<'_>> {
         }),
         "lua" => Some(Cmd::Lua { code: rest }),
         "luareload" => Some(Cmd::Reload { id: rest }),
+        "luaprofile" => Some(Cmd::Profile {
+            action: match rest {
+                "" => ProfileAction::Show,
+                "clear" => ProfileAction::Clear,
+                "off" => ProfileAction::Off,
+                _ => ProfileAction::Usage,
+            },
+        }),
         "console" => match rest {
             "" => Some(Cmd::Console {
                 action: console::Action::Open,
@@ -420,6 +466,7 @@ fn run(reads: &mut dyn Reads, cmd: Cmd<'_>) {
     match cmd {
         Cmd::Lua { code } => lua(reads, code),
         Cmd::Reload { id } => reload(reads, id),
+        Cmd::Profile { action } => luaprofile(reads, action),
         Cmd::Console { action } => console::act(action),
         Cmd::List => list(reads),
         Cmd::View {
@@ -482,6 +529,52 @@ fn lua(reads: &mut dyn Reads, code: &str) {
     if let Some(error) = &run.error {
         reads.reply(red(Text::literal(cut(error))));
     }
+}
+
+/// `/luaprofile`: turns recording on and replies the slowest [`PROFILE_ROWS`] rows by total time, as
+/// `mod.hook: N calls, X ms total, Y ms max, E errors`; `clear` resets the counters, `off` stops recording.
+fn luaprofile(reads: &mut dyn Reads, action: ProfileAction) {
+    match action {
+        ProfileAction::Usage => reads.reply(tr("horizon.dev_tools.profile.usage", &[])),
+        ProfileAction::Clear => {
+            reads.profile_reset();
+            reads.reply(tr("horizon.dev_tools.profile.cleared", &[]));
+        }
+        ProfileAction::Off => {
+            reads.profile_enable(false);
+            reads.reply(tr("horizon.dev_tools.profile.off", &[]));
+        }
+        ProfileAction::Show => {
+            reads.profile_enable(true);
+            let mut rows = reads.profile_snapshot();
+            rows.sort_by(|a, b| {
+                b.total_ns
+                    .cmp(&a.total_ns)
+                    .then_with(|| a.mod_id.cmp(&b.mod_id))
+                    .then_with(|| a.hook.cmp(&b.hook))
+            });
+            if rows.is_empty() {
+                reads.reply(tr("horizon.dev_tools.profile.none", &[]));
+                return;
+            }
+            for row in rows.iter().take(PROFILE_ROWS) {
+                let args = [
+                    row.mod_id.clone(),
+                    row.hook.clone(),
+                    row.calls.to_string(),
+                    millis(row.total_ns),
+                    millis(row.max_ns),
+                    row.errors.to_string(),
+                ];
+                reads.reply(tr("horizon.dev_tools.profile.row", &args));
+            }
+        }
+    }
+}
+
+/// Nanoseconds as milliseconds, to three places.
+fn millis(ns: u64) -> String {
+    format!("{:.3}", ns as f64 / 1_000_000.0)
 }
 
 /// `/luareload`: the ids that reload when `id` is empty, else the reload of `id`, replied as its outcome.
@@ -796,6 +889,37 @@ mod tests {
     }
 
     #[test]
+    fn luaprofile_parses_its_three_forms_and_refuses_the_rest() {
+        assert_eq!(
+            parse("luaprofile"),
+            Some(Cmd::Profile {
+                action: ProfileAction::Show
+            })
+        );
+        assert_eq!(
+            parse("luaprofile clear"),
+            Some(Cmd::Profile {
+                action: ProfileAction::Clear
+            })
+        );
+        assert_eq!(
+            parse("luaprofile off"),
+            Some(Cmd::Profile {
+                action: ProfileAction::Off
+            })
+        );
+        assert_eq!(
+            parse("luaprofile now"),
+            Some(Cmd::Profile {
+                action: ProfileAction::Usage
+            })
+        );
+        assert!(USAGES.contains(&"luaprofile"));
+        assert!(USAGES.contains(&"luaprofile clear"));
+        assert!(USAGES.contains(&"luaprofile off"));
+    }
+
+    #[test]
     fn the_lines_of_other_commands_are_not_ours() {
         for line in [
             "",
@@ -1021,6 +1145,10 @@ mod flows {
         reload_ids: Vec<String>,
         /// The owner's block, for `~` coordinates.
         block_pos: Option<[i32; 3]>,
+        /// The profiler's rows, its recording switch, and how often it was cleared.
+        profile_rows: Vec<ModProfile>,
+        profile_on: bool,
+        profile_resets: usize,
     }
 
     impl Reads for Fake {
@@ -1053,6 +1181,16 @@ mod flows {
         fn reloadable(&self) -> Vec<String> {
             self.reload_ids.clone()
         }
+        fn profile_enable(&mut self, on: bool) {
+            self.profile_on = on;
+        }
+        fn profile_snapshot(&self) -> Vec<ModProfile> {
+            self.profile_rows.clone()
+        }
+        fn profile_reset(&mut self) {
+            self.profile_resets += 1;
+            self.profile_rows.clear();
+        }
         fn reply(&mut self, line: Text) {
             self.replies.push(line);
         }
@@ -1083,6 +1221,65 @@ mod flows {
             selected,
             ..Fake::default()
         }
+    }
+
+    /// A profiler row for mod `mod_{i}` with `i` milliseconds of total time.
+    fn profile_row(i: u64) -> ModProfile {
+        ModProfile {
+            mod_id: format!("mod_{i}"),
+            hook: "hook".to_owned(),
+            calls: i,
+            total_ns: i * 1_000_000,
+            max_ns: 500_000,
+            errors: 0,
+        }
+    }
+
+    #[test]
+    fn luaprofile_is_the_owners_and_shows_the_slowest_ten() {
+        let mut fake = owned_by(Some(7), vec![]);
+        fake.profile_rows = (1..=12).map(profile_row).collect();
+        assert!(serve(&mut fake, 8, "luaprofile"));
+        assert!(!fake.profile_on, "a guest turns nothing on");
+        assert_eq!(fake.replies.len(), 1);
+
+        fake.replies.clear();
+        assert!(serve(&mut fake, 7, "luaprofile"));
+        assert!(
+            fake.profile_on,
+            "the owner's /luaprofile turns recording on"
+        );
+        assert_eq!(fake.replies.len(), PROFILE_ROWS);
+        let row = |args: [&str; 6]| {
+            Text::translate(
+                "horizon.dev_tools.profile.row",
+                args.iter().map(|a| Text::literal(*a)).collect(),
+            )
+        };
+        assert_eq!(
+            fake.replies[0],
+            row(["mod_12", "hook", "12", "12.000", "0.500", "0"])
+        );
+        assert_eq!(
+            fake.replies[9],
+            row(["mod_3", "hook", "3", "3.000", "0.500", "0"])
+        );
+    }
+
+    #[test]
+    fn luaprofile_clear_and_off_reset_and_stop() {
+        let mut fake = owned_by(Some(7), vec![]);
+        fake.profile_rows = vec![profile_row(1)];
+        assert!(serve(&mut fake, 7, "luaprofile"));
+        assert!(fake.profile_on);
+
+        assert!(serve(&mut fake, 7, "luaprofile clear"));
+        assert_eq!(fake.profile_resets, 1);
+        assert!(fake.profile_rows.is_empty());
+        assert!(fake.profile_on, "clear keeps recording as it was");
+
+        assert!(serve(&mut fake, 7, "luaprofile off"));
+        assert!(!fake.profile_on);
     }
 
     #[test]

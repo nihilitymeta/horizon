@@ -71,6 +71,9 @@ as the game registers it (`commands.rs`, `USAGES`).
 | `/console clear` | Clears the console's output. |
 | `/luareload` | Lists the dev-path Lua mods that can be reloaded. |
 | `/luareload <id>` | Reloads that mod's scripts from its folder. |
+| `/luaprofile` | Turns the Lua profiler on and prints the 10 slowest handlers by total time. |
+| `/luaprofile clear` | Resets the profiler's counts. Recording stays as it was. |
+| `/luaprofile off` | Turns the profiler off. The counts are kept until `clear`. |
 
 The `targets` argument is a selector that names the entities (`commands.rs`,
 `selector`). The commands that take `<rest>` read the rest of the line.
@@ -93,6 +96,18 @@ not a mod. You type a chunk in the window or with `/lua <code>`:
 - In the console, `mc.cmd(line)` runs a server command as the server console, at
   level 4. The `/lua` command checks the owner before it runs a chunk
   (`crates/event-horizon-lua/src/console.rs`, module notes).
+
+## Profiling
+
+`/luaprofile` counts, for each mod and hook, the handler calls, their total and longest
+time in milliseconds, and the calls that failed (a handler error or an over-budget stop).
+Each row is one line in chat: `mod.hook: N calls, X ms total, Y ms max, E errors`.
+Recording is off until the first `/luaprofile`, so no mod pays for it in normal play; while
+it is off a handler call reads no clock. A mod keeps at most 256 hooks, and a hook past that
+is not counted (`crates/event-horizon-lua/src/profile.rs`).
+
+In the Lua console, `mc.profile()` returns every row as a list of tables, most total time
+first: `{mod, hook, calls, total_ms, max_ms, errors}`.
 
 ## Reloading a dev mod
 

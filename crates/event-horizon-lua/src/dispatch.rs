@@ -471,7 +471,9 @@ impl LuaHost {
             };
             for handler in &handlers {
                 match contained(m.id(), hook, || {
-                    call_handler(&m.lua(), handler, event.table())
+                    crate::profile::timed(m.id(), hook, || {
+                        call_handler(&m.lua(), handler, event.table())
+                    })
                 }) {
                     Some(Err(err)) => {
                         warn_problem(m.id(), &format!("{}: {hook}: {}", m.id(), Escaped(err)));
@@ -812,7 +814,10 @@ pub(crate) fn replace_in_reporting(
                 let mut found: Option<Value> = None;
                 let mut failed = false;
                 for handler in &handlers {
-                    match call_handler_value(lua, handler, event.table()) {
+                    let called = crate::profile::timed(m.id(), hook, || {
+                        call_handler_value(lua, handler, event.table())
+                    });
+                    match called {
                         Ok(value) => {
                             if found.is_none() && !matches!(value, Value::Nil) {
                                 found = Some(value);
