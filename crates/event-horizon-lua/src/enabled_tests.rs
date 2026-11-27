@@ -412,6 +412,7 @@ fn absent_limits_are_the_defaults_with_no_notice() {
     assert_eq!(enabled.limits.explosions_per_turn, 4);
     assert_eq!(enabled.limits.spawns_per_turn, 64);
     assert_eq!(enabled.limits.maps_per_turn, 8);
+    assert_eq!(enabled.limits.kicks_per_turn, 1);
     assert!(enabled.notice.is_none());
     put(root.path(), "[mods]\nfoo = true\n");
     assert_eq!(read(root.path()).limits, Limits::default());
@@ -423,17 +424,18 @@ fn each_limit_is_read_within_its_range() {
     let root = tempfile::tempdir().unwrap();
     put(
         root.path(),
-        "[limits]\nexplosion_power = 2.5\nexplosions_per_turn = 1\nspawns_per_turn = 512\nmaps_per_turn = 2\n",
+        "[limits]\nexplosion_power = 2.5\nexplosions_per_turn = 1\nspawns_per_turn = 512\nmaps_per_turn = 2\nkicks_per_turn = 3\n",
     );
     let enabled = read(root.path());
     assert_eq!(enabled.limits.explosion_power, 2.5);
     assert_eq!(enabled.limits.explosions_per_turn, 1);
     assert_eq!(enabled.limits.spawns_per_turn, 512);
     assert_eq!(enabled.limits.maps_per_turn, 2);
+    assert_eq!(enabled.limits.kicks_per_turn, 3);
     assert!(enabled.notice.is_none());
     put(
         root.path(),
-        "[limits]\nexplosion_power = 64\nexplosions_per_turn = 64\nspawns_per_turn = 1024\nmaps_per_turn = 64\n",
+        "[limits]\nexplosion_power = 64\nexplosions_per_turn = 64\nspawns_per_turn = 1024\nmaps_per_turn = 64\nkicks_per_turn = 8\n",
     );
     let enabled = read(root.path());
     assert_eq!(
@@ -443,6 +445,40 @@ fn each_limit_is_read_within_its_range() {
     assert_eq!(enabled.limits.explosions_per_turn, 64);
     assert_eq!(enabled.limits.spawns_per_turn, 1024);
     assert_eq!(enabled.limits.maps_per_turn, 64);
+    assert_eq!(
+        enabled.limits.kicks_per_turn, 8,
+        "the kick ceiling itself is allowed"
+    );
+    assert!(enabled.notice.is_none());
+}
+
+/// `kicks_per_turn` is a whole number from 0 to its ceiling of 8: 9, a negative, or a string is the default
+/// (1) and counts in the one notice.
+#[test]
+fn kicks_per_turn_is_read_within_zero_to_eight() {
+    let root = tempfile::tempdir().unwrap();
+    put(root.path(), "[limits]\nkicks_per_turn = 9\n");
+    let enabled = read(root.path());
+    assert_eq!(
+        enabled.limits.kicks_per_turn, 1,
+        "above the ceiling is the default"
+    );
+    assert!(enabled.notice.is_some());
+    put(root.path(), "[limits]\nkicks_per_turn = -1\n");
+    assert_eq!(
+        read(root.path()).limits.kicks_per_turn,
+        1,
+        "negative is the default"
+    );
+    put(root.path(), "[limits]\nkicks_per_turn = \"2\"\n");
+    assert_eq!(
+        read(root.path()).limits.kicks_per_turn,
+        1,
+        "a string is the default"
+    );
+    put(root.path(), "[limits]\nkicks_per_turn = 0\n");
+    let enabled = read(root.path());
+    assert_eq!(enabled.limits.kicks_per_turn, 0, "zero is allowed");
     assert!(enabled.notice.is_none());
 }
 

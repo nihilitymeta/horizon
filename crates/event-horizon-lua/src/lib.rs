@@ -23,6 +23,7 @@ mod data_maps;
 #[cfg(test)]
 mod data_maps_tests;
 pub mod declare;
+mod disconnect;
 pub mod discover;
 #[cfg(test)]
 mod discover_tests;

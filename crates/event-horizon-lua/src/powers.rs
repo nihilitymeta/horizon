@@ -126,6 +126,13 @@ pub const DEFAULT_MAPS_PER_TURN: u32 = 8;
 /// The most map pictures per turn an owner may set (`maps_per_turn`); a hard ceiling in code.
 pub const MAPS_PER_TURN_CEILING: u32 = 64;
 
+/// The most `disconnect` calls one hook turn may make by default: the second is refused before the host sees it.
+/// The owner may change it (`[limits] kicks_per_turn`); `disconnect.rs` holds the rules of the call itself.
+pub const DEFAULT_KICKS_PER_TURN: u32 = 1;
+
+/// The most disconnects per turn an owner may set (`kicks_per_turn`); a hard ceiling in code.
+pub const KICKS_PER_TURN_CEILING: u32 = 8;
+
 /// The bytes of one map picture (`send_map`): 128 x 128 colours, a longer or shorter one is refused.
 pub const MAP_BYTES: usize = 16 * 1024;
 
@@ -135,13 +142,15 @@ pub const RECIPE_IDS_PER_CALL: usize = 64;
 /// The most characters one recipe id may have.
 pub const RECIPE_ID_CHARS: usize = 128;
 
-/// What one hook turn has done so far, counted by [`guard`]: the explosions, the spawns and the map pictures.
-/// One value per turn, held by the turn's scope; a refused call is not counted.
+/// What one hook turn has done so far, counted by [`guard`] and `disconnect::check`: the explosions, the
+/// spawns, the map pictures and the disconnects. One value per turn, held by the turn's scope; a refused call
+/// is not counted.
 #[derive(Debug, Default)]
 pub(crate) struct TurnCounts {
     pub explosions: u32,
     pub spawns: u32,
     pub maps: u32,
+    pub kicks: u32,
 }
 
 /// The default cap on an explosion's power (the `power` argument of the explosion writes, a Lua number): a
@@ -171,6 +180,8 @@ pub struct Limits {
     pub spawns_per_turn: u32,
     /// The most map pictures one hook turn may send.
     pub maps_per_turn: u32,
+    /// The most `disconnect` calls one hook turn may make.
+    pub kicks_per_turn: u32,
 }
 
 impl Default for Limits {
@@ -180,6 +191,7 @@ impl Default for Limits {
             explosions_per_turn: DEFAULT_EXPLOSIONS_PER_TURN,
             spawns_per_turn: DEFAULT_SPAWNS_PER_TURN,
             maps_per_turn: DEFAULT_MAPS_PER_TURN,
+            kicks_per_turn: DEFAULT_KICKS_PER_TURN,
         }
     }
 }
@@ -207,10 +219,10 @@ pub(crate) fn guard(
     limits: &Limits,
     commands: &CommandPolicy,
 ) -> Result<(), Error> {
-    if op == "EntityRef::run_command" {
-        return crate::command_guard::check(args, commands);
-    }
     let method = op.rsplit("::").next().unwrap_or(op);
+    if op == "EntityRef::run_command" || op == "EntityRef::run_command_with_output" {
+        return crate::command_guard::check(args, commands, method);
+    }
     if RECIPE_OPS.contains(&op) {
         return check_recipe_ids(method, args);
     }
@@ -415,7 +427,7 @@ mod tests {
     ];
 
     /// The gated writes, written out by hand (not read from the generator): each op and its power.
-    const GATED: [(&str, Power); 42] = [
+    const GATED: [(&str, Power); 44] = [
         ("BossBarRef::remove", Power::World),
         ("BossBarRef::remove_player", Power::World),
         ("EntityRef::discard", Power::World),
@@ -458,6 +470,8 @@ mod tests {
         ("PlayerRef::award_recipes", Power::Players),
         ("PlayerRef::reset_recipes", Power::Players),
         ("PlayerRef::send_map", Power::Players),
+        ("PlayerRef::disconnect", Power::Players),
+        ("EntityRef::run_command_with_output", Power::Commands),
     ];
 
     #[test]
@@ -468,7 +482,6 @@ mod tests {
         }
         for op in [
             "EntityRef::set_glowing",
-            "PlayerRef::disconnect",
             "EntityRef::remove",
             "PlayerRef::set_nickname",
             "LevelRef::add_water_ticket",
@@ -476,7 +489,6 @@ mod tests {
             "LevelRef::block_drops",
             "LevelRef::roll_loot",
             "LivingRef::hurt_and_break",
-            "EntityRef::run_command_with_output",
         ] {
             assert_eq!(required(op), None, "{op} stays denied");
         }
@@ -692,12 +704,14 @@ mod tests {
             explosions_per_turn: 1,
             spawns_per_turn: 2,
             maps_per_turn: 1,
+            kicks_per_turn: 1,
         };
         let high = Limits {
             explosion_power: 64.0,
             explosions_per_turn: 10,
             spawns_per_turn: 100,
             maps_per_turn: 10,
+            kicks_per_turn: 8,
         };
         let refusal = guard(
             "LevelRef::explode",

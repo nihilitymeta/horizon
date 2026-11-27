@@ -214,6 +214,8 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("PlayerRef::award_recipes", "players"),
     ("PlayerRef::reset_recipes", "players"),
     ("PlayerRef::send_map", "players"),
+    ("PlayerRef::disconnect", "players"),
+    ("EntityRef::run_command_with_output", "commands"),
 ];
 
 /// The explosion reads that carry a power's name part but need no power: a `&mut dyn ServerHost`
@@ -753,6 +755,8 @@ fn classify(
     let (ret, ret_ty) = match value_text {
         "()" => (Ret::Unit, None),
         "WorldEpoch" => (Ret::Epoch, None),
+        // The command's result converts by hand (`event-horizon-lua-convert/src/command_result.rs`, pw-10).
+        "command::CommandResult" => (Ret::Value, None),
         _ => {
             let mapped =
                 map_type(value_text).map_err(|_| format!("unconvertible return: {value_text}"))?;
@@ -1997,17 +2001,26 @@ mod tests {
         );
     }
 
-    /// pw-8: `run_command` is gated under `commands`, and its `CommandResult` twin stays out until the
-    /// generator can convert that result (`generated/handles_coverage.txt` shows the reason).
+    /// pw-8: `run_command` is gated under `commands`. pw-10: its `CommandResult` twin is gated under the same
+    /// power, its result converted by hand in `event-horizon-lua-convert`.
     #[test]
-    fn run_command_is_gated_under_commands_and_its_result_twin_stays_out() {
+    fn run_command_and_its_result_twin_are_gated_under_commands() {
         assert_eq!(
             power_in(GATED_WRITES, "EntityRef::run_command"),
             Some("commands")
         );
         assert_eq!(
             power_in(GATED_WRITES, "EntityRef::run_command_with_output"),
-            None
+            Some("commands")
+        );
+    }
+
+    /// pw-10: `disconnect` is gated under `players`; `hurt_and_break` and `destroy_block` stay denied.
+    #[test]
+    fn disconnect_is_gated_under_players() {
+        assert_eq!(
+            power_in(GATED_WRITES, "PlayerRef::disconnect"),
+            Some("players")
         );
     }
 

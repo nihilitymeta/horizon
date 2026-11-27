@@ -356,7 +356,6 @@ mod tests {
         let denied = [
             "BlockEntityRef::replace_data",
             "EntityRef::remove",
-            "PlayerRef::disconnect",
             "PlayerRef::set_game_mode",
             "PlayerRef::award_stat",
             "PlayerRef::reset_stat",

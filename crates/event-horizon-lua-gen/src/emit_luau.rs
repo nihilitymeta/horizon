@@ -270,6 +270,19 @@ fn part_table(name: &str, shapes: &[EventShape], mapper: &mut Mapper<'_>) -> Str
 
 /// One handle family's type: a method per bound member, the receiver first. A host argument is
 /// left out: the host is the turn's, not the mod's.
+/// The Luau type of one argument the Rust type does not give: `(op, index among the explicit arguments, type)`.
+/// `send_map`'s picture is a Lua string or a table of bytes (`powers.rs`, pw-9), and `&[u8]` maps to `{number}`
+/// alone, so the type names both forms.
+const ARG_TYPE_OVERRIDES: &[(&str, usize, &str)] =
+    &[("PlayerRef::send_map", 1, "string | {number}")];
+
+/// The Luau type of a method's result the Rust type does not name: `(op, type)`. The command result is a table
+/// of `success` and `feedback` lines (`event-horizon-lua-convert/src/command_result.rs`).
+const RET_TYPE_OVERRIDES: &[(&str, &str)] = &[(
+    "EntityRef::run_command_with_output",
+    "{ success: boolean, feedback: {string} }",
+)];
+
 fn family_type(
     family: &str,
     members: &[&MemberIr],
@@ -297,12 +310,26 @@ fn family_type(
         }));
         let mut args = vec![family.to_owned()];
         let mut notes = String::new();
-        for param in &member.params[skip..] {
+        for (index, param) in member.params[skip..].iter().enumerate() {
+            if let Some((_, _, ty)) = ARG_TYPE_OVERRIDES
+                .iter()
+                .find(|(override_op, at, _)| *override_op == op && *at == index)
+            {
+                args.push((*ty).to_owned());
+                continue;
+            }
             let (ty, note) = mapper.typed(&param.rust_type);
             args.push(ty);
             notes.push_str(&note);
         }
         let ret = match member.ret.as_deref() {
+            _ if RET_TYPE_OVERRIDES.iter().any(|(over, _)| *over == op) => {
+                let (_, ty) = RET_TYPE_OVERRIDES
+                    .iter()
+                    .find(|(over, _)| *over == op)
+                    .expect("found above");
+                (*ty).to_owned()
+            }
             None | Some("()") => "()".to_owned(),
             Some(text) => {
                 let value = crate::emit_handles::ok_type(text).unwrap_or(text);
@@ -803,6 +830,43 @@ mod tests {
             "export type PlayerRef = {\n\
              \t-- needs the \"world\" power (granted by the owner in lua-mods/enabled.toml)\n\
              \tset_name: (PlayerRef, string) -> (),\n\
+             }\n\n"
+        );
+    }
+
+    /// The command result's Luau type names its two fields, not `any`.
+    #[test]
+    fn the_command_result_is_a_table_of_success_and_feedback() {
+        let families = ["EntityRef".to_owned()];
+        let mut m = mapper(&families);
+        let run = parse_signature(
+            "EntityRef",
+            "run_command_with_output",
+            "fn run_command_with_output(self, _: &mut dyn ServerHost, _: &str, _: PermissionLevel) -> command::CommandResult",
+        )
+        .expect("a signature");
+        let text = family_type("EntityRef", &[&run], &[], &mut m);
+        assert!(
+            text.contains("-> { success: boolean, feedback: {string} },"),
+            "{text}"
+        );
+    }
+
+    /// `send_map`'s picture argument is typed as a string or a byte table, not `{number}` alone.
+    #[test]
+    fn the_send_map_picture_is_a_string_or_a_byte_table() {
+        let families = ["PlayerRef".to_owned()];
+        let mut m = mapper(&families);
+        let send = parse_signature(
+            "PlayerRef",
+            "send_map",
+            "fn send_map(self, _: &mut dyn ServerHost, _: i32, _: &[u8]) -> bool",
+        )
+        .expect("a signature");
+        assert_eq!(
+            family_type("PlayerRef", &[&send], &[], &mut m),
+            "export type PlayerRef = {\n\
+             \tsend_map: (PlayerRef, number, string | {number}) -> boolean,\n\
              }\n\n"
         );
     }

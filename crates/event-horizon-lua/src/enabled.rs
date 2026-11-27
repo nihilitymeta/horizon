@@ -14,8 +14,9 @@
 //!
 //! A `[limits]` table holds the owner's caps on the gated writes (see `powers.rs`): `explosion_power`
 //! (a number, default 16, ceiling 64), `explosions_per_turn` (default 4, ceiling 64) and `spawns_per_turn`
-//! (default 64, ceiling 1024) and `maps_per_turn` (default 8, ceiling 64). A value that is missing, negative, not a number of its kind, or above its
-//! ceiling is the default instead, and counts in the same notice. A mod never reads or changes them.
+//! (default 64, ceiling 1024), `maps_per_turn` (default 8, ceiling 64) and `kicks_per_turn` (default 1,
+//! ceiling 8). A value that is missing, negative, not a number of its kind, or above its ceiling is the default
+//! instead, and counts in the same notice. A mod never reads or changes them.
 //!
 //! A `[command_allow]` table, `id = ["name", ...]`, holds the command names a mod may run under the
 //! `commands` power (see `command_guard.rs`). A mod with no entry runs the built-in default set; an
@@ -46,8 +47,8 @@ use crate::discover::DIR;
 use crate::display::Errors;
 use crate::manifest::{Power, valid_id};
 use crate::powers::{
-    EXPLOSION_POWER_CEILING, EXPLOSIONS_PER_TURN_CEILING, Limits, MAPS_PER_TURN_CEILING,
-    SPAWNS_PER_TURN_CEILING,
+    EXPLOSION_POWER_CEILING, EXPLOSIONS_PER_TURN_CEILING, KICKS_PER_TURN_CEILING, Limits,
+    MAPS_PER_TURN_CEILING, SPAWNS_PER_TURN_CEILING,
 };
 
 /// The file's name, under the `lua-mods` folder.
@@ -273,6 +274,11 @@ fn parse_limits(caps: &toml::Table, out: &mut Limits) -> usize {
                 if (0..=i64::from(MAPS_PER_TURN_CEILING)).contains(count) =>
             {
                 out.maps_per_turn = *count as u32;
+            }
+            ("kicks_per_turn", toml::Value::Integer(count))
+                if (0..=i64::from(KICKS_PER_TURN_CEILING)).contains(count) =>
+            {
+                out.kicks_per_turn = *count as u32;
             }
             _ => ignored += 1,
         }

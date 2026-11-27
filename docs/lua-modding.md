@@ -140,16 +140,16 @@ A disabled, skipped or refused mod holds no power at all.
 | `inventory` (changes players' and mobs' items) | 6 writes: `PlayerRef::give_stack(stack)`, `PlayerRef::set_inventory_slot(slot, stack)`, `PlayerRef::set_ender_chest_slot(slot, stack)`, `LivingRef::set_hand_item(hand, stack)`, `PlayerRef::drop_stack(stack, thrown_by_player)`, which throws the stack from the player's eyes as an item and returns nil, or returns the stack back when the drop was refused (`{id, count, nbt}`), and `LivingRef::set_equipment(slot, stack)`, where `slot` is one of `main_hand`, `off_hand`, `head`, `chest`, `legs`, `feet`, `body`, `saddle` and a nil stack clears the slot. A `LivingRef` comes from a mob (`mob:living()`); the engine API has no `LivingRef` for a player, so a mod cannot set a player's armor or hands this way (use `give_stack` and the inventory slot writes). An item stack is `{id, count, nbt}`. Still denied: `LivingRef::hurt_and_break` (an equipment slot, and it breaks an item) and `LivingRef::drop` (it takes a stack and returns an entity, not yet decided) |
 | `explosions` | 2 writes: `level:explode(source, center, power, fire, interaction, settings)` and `level:explosion_destroy_blocks(positions, source, center, power, fire, interaction)`. The power is a Lua number from 0 to `explosion_power` (default 16, owner ceiling 64): a missing, non-number (a string, even `"999"`), negative, NaN, infinite or larger power is refused before the host sees the call. One hook turn may cause at most `explosions_per_turn` explosions over both writes (default 4, owner ceiling 64): the fifth is refused. The read `explosion_resistance` needs no power. Still denied: `explosion_resistances` (its `ResistanceCells` argument does not convert) |
 | `game_rules` | 1 write: `level:set_game_rule(name, value)`. It changes the world's saved rules, and a changed rule stays changed after the mod is removed. The value is a boolean, a whole number, or `{tag = "bool", true}` / `{tag = "int", 7}` |
-| `players` (changes players' recipes and maps) | 3 writes: `PlayerRef::award_recipes(ids)` and `PlayerRef::reset_recipes(ids)`, where `ids` is a list of recipe ids (strings), which unlock the recipes in the player's book (as `/recipe give`) or take them out (as `/recipe take`), each returning the number of recipe displays changed, or nil for a player the host cannot reach. The guard refuses a list of more than 64 ids, an empty id, an id of more than 128 characters, and an id with a control character (`horizon: award_recipes refused: <reason>`). `PlayerRef::send_map(map_id, colors)` sends a player the picture of a map: `colors` is a Lua string or an array table of integers 0 to 255, exactly 16384 bytes (128 x 128 colours, row by row), and `map_id` is the map's id (use ids far from the world's own). It returns false for a player not here, or a picture of the wrong length. The guard refuses a picture of more than 16384 bytes, or a table entry outside 0 to 255, and at most `maps_per_turn` pictures per hook turn (default 8, see Owner limits below). Still denied: `PlayerRef::disconnect` (remove a player with a reason they see): a mod may never remove the host or an operator, and the host API cannot yet tell the host from another player in a turn. Also still denied: the other player writes, such as `award_stat` and `set_game_mode` |
+| `players` (changes players' recipes and maps) | 3 writes: `PlayerRef::award_recipes(ids)` and `PlayerRef::reset_recipes(ids)`, where `ids` is a list of recipe ids (strings), which unlock the recipes in the player's book (as `/recipe give`) or take them out (as `/recipe take`), each returning the number of recipe displays changed, or nil for a player the host cannot reach. The guard refuses a list of more than 64 ids, an empty id, an id of more than 128 characters, and an id with a control character (`horizon: award_recipes refused: <reason>`). `PlayerRef::send_map(map_id, colors)` sends a player the picture of a map: `colors` is a Lua string or an array table of integers 0 to 255, exactly 16384 bytes (128 x 128 colours, row by row), and `map_id` is the map's id (use ids far from the world's own). It returns false for a player not here, or a picture of the wrong length. The guard refuses a picture of more than 16384 bytes, or a table entry outside 0 to 255, and at most `maps_per_turn` pictures per hook turn (default 8, see Owner limits below). `PlayerRef::disconnect(reason)` removes the player from the server, with a reason they see: it returns true when the host removed them. A reason must be one plain string (a component table is refused). The host receives `[<mod id>] <reason>`, cut to 200 characters, and a turn makes at most `kicks_per_turn` disconnects (default 1, see Owner limits below). A player at permission level 2 or above (an operator) is refused (`horizon: disconnect refused: that player cannot be removed by a mod`), and so is a player whose level cannot be read. Read the disconnect note below before granting this power. Still denied: the other player writes, such as `award_stat` and `set_game_mode` |
 | `nbt` | 2 writes: `EntityRef:merge_nbt(table)` (a raw merge into a saved entity; returns true when its data changed) and `BlockEntityRef:merge_data(table)` (a raw merge into a saved block entity). A merge adds and changes keys; it cannot remove one, so `{}` changes nothing. Refused by the guard: any merge into a player (`horizon: merge_nbt refused: players cannot be changed with raw NBT`), and a table whose top-level keys include `UUID`, `id`, `Pos`, `Passengers`, `Inventory`, `EnderItems` or `horizon:attachments` (a block entity merge also refuses `x`, `y`, `z`) (`horizon: merge_data refused: key Pos cannot be merged`; case-sensitive, top level only). Still denied: `replace_data`, `set_lock`, `EntityRef:nbt` (a raw read), `set_persistent_data` on a player, and every raw NBT write to a player |
-| `commands` | 1 write: `entity:run_command(line, level)`, which runs a game command as the entity (the player, or a mob). `level` is `"all"`, `"moderators"` or `"gamemasters"` (the level cap is 2: `"admins"` and `"owners"` are refused). The line is checked against the command allowlist below before the host sees it. Still denied: `run_command_with_output` (its result is not yet a Lua value) and the console-level command runner |
+| `commands` | 1 write: `entity:run_command(line, level)`, which runs a game command as the entity (the player, or a mob). `level` is `"all"`, `"moderators"` or `"gamemasters"` (the level cap is 2: `"admins"` and `"owners"` are refused). The line is checked against the command allowlist below before the host sees it. `entity:run_command_with_output(line, level)` takes the same arguments and the same checks, and returns a table `{success = boolean, feedback = {string, ...}}` with the command's messages: at most 64 lines of 1024 characters each, and a final `"..."` entry when lines were cut or dropped. Still denied: the console-level command runner |
 | `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
 | `network`, `files` | reserved: they can be requested and granted, but they are never effective |
 
 The gated list is generated (`generated/powers.rs`). Every other write stays denied, among them the writes that are loot or world operations: `LevelRef::destroy_block`, `LevelRef::block_drops` and `LevelRef::roll_loot`.
-Denied until the maintainer decides, although their slice argument now converts:
-`PlayerRef::award_recipes`, `PlayerRef::reset_recipes` and `PlayerRef::send_map`
-(`DENIED_UNTIL_DECIDED` in the generator).
+Gated under `players`: `PlayerRef::award_recipes`, `PlayerRef::reset_recipes`,
+`PlayerRef::send_map` and `PlayerRef::disconnect`. Gated under `commands`:
+`EntityRef::run_command` and `EntityRef::run_command_with_output`.
 Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are not
 gated.
 
@@ -182,6 +182,7 @@ explosion_power = 16        # the most power one explosion may have (default 16,
 explosions_per_turn = 4     # the most explosions one hook turn may cause (default 4, ceiling 64)
 spawns_per_turn = 64        # the most item and mob spawns one hook turn may cause (default 64, ceiling 1024)
 maps_per_turn = 8           # the most map pictures (`send_map`) one hook turn may send (default 8, ceiling 64)
+kicks_per_turn = 1          # the most players one hook turn may disconnect (default 1, ceiling 8)
 ```
 
 A value that is missing, negative, not a whole number (for the counts), not a
@@ -189,6 +190,19 @@ number (for the power), or above its ceiling is the default instead, and the fil
 one notice in the log for all of them. A missing `[limits]` table is the defaults. The
 ceilings are constants in the code: an owner cannot set a value above them, and a mod
 can never read or change these numbers (`powers.rs`, `Limits`; `enabled.rs`).
+
+### Disconnect (the `players` power)
+
+`PlayerRef::disconnect` is the one write that removes a player, so it needs the owner's grant
+like every gated write. The guard (`disconnect.rs`) refuses a player at permission level 2 or
+above, a reason that is not one plain string, and a second disconnect in one turn (with
+`kicks_per_turn` at its default of 1). It cannot tell the host from another player, and it
+does not have to: in a singleplayer world without cheats the host has permission level 0, so
+a mod granted `players` can remove the host, the way Bukkit's `kick` removes anyone not
+protected by a permission level. The host API itself refuses the single-player owner
+(its doc says `/kick` refuses the owner), which is the only host protection the call has;
+that is INFERRED from the host's documentation, not from a test here. Grant `players`
+only to a mod you trust with that.
 
 ### Command allowlist (`enabled.toml` `[command_allow]`)
 
@@ -217,6 +231,7 @@ The refusals are plain Lua errors that `pcall` can catch, and the host is not ca
 - `horizon: run_command refused: "<name>" is not an allowed command for <mod>; the owner may list it under [command_allow]`
 - `horizon: run_command refused: no command` (an empty line, or only a slash)
 - `horizon: run_command refused: the command line is not valid`
+- `run_command_with_output` refuses with the same messages, under its own name.
 
 ### Showing errors on screen
 

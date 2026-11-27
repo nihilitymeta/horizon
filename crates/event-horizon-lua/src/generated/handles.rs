@@ -547,6 +547,9 @@ impl crate::handles::Family for mod_api::EntityRef {
         methods.add_function("run_command", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::run_command", this, args)
         });
+        methods.add_function("run_command_with_output", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "EntityRef::run_command_with_output", this, args)
+        });
         methods.add_function("set_air_supply", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::set_air_supply", this, args)
         });
@@ -1563,6 +1566,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         });
         methods.add_function("dimension", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::dimension", this, args)
+        });
+        methods.add_function("disconnect", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::disconnect", this, args)
         });
         methods.add_function("discovered_recipes", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::discovered_recipes", this, args)
@@ -3253,6 +3259,16 @@ fn entity_ref_run_command(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<
     let a0: String = args.get(0)?;
     let a1: mod_api::PermissionLevel = args.get(1)?;
     let out = this.run_command(server, &a0, a1);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn entity_ref_run_command_with_output(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("EntityRef::run_command_with_output", args, 2)?;
+    let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::run_command_with_output")?;
+    let a0: String = args.get(0)?;
+    let a1: mod_api::PermissionLevel = args.get(1)?;
+    let out = this.run_command_with_output(server, &a0, a1);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -5976,6 +5992,15 @@ fn player_ref_dimension(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn player_ref_disconnect(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::disconnect", args, 1)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::disconnect")?;
+    let a0: mod_api::Text = args.get(0)?;
+    let out = crate::handles::ok_or_raise(this.disconnect(server, a0))?;
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn player_ref_discovered_recipes(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     crate::handles::Args::new("PlayerRef::discovered_recipes", args, 0)?;
     let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::discovered_recipes")?;
@@ -6981,6 +7006,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "EntityRef::root_vehicle" => 1,
         "EntityRef::rotation" => 1,
         "EntityRef::run_command" => 10,
+        "EntityRef::run_command_with_output" => 10,
         "EntityRef::set_air_supply" => 10,
         "EntityRef::set_custom_name" => 10,
         "EntityRef::set_custom_name_visible" => 10,
@@ -7290,6 +7316,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::counts_for_sleep" => 1,
         "PlayerRef::destroy_block" => 10,
         "PlayerRef::dimension" => 1,
+        "PlayerRef::disconnect" => 10,
         "PlayerRef::discovered_recipes" => 100,
         "PlayerRef::drop_stack" => 10,
         "PlayerRef::entity" => 1,
@@ -7565,6 +7592,7 @@ pub fn run(
         "EntityRef::root_vehicle" => entity_ref_root_vehicle(lua, host, this, args),
         "EntityRef::rotation" => entity_ref_rotation(lua, host, this, args),
         "EntityRef::run_command" => entity_ref_run_command(lua, host, this, args),
+        "EntityRef::run_command_with_output" => entity_ref_run_command_with_output(lua, host, this, args),
         "EntityRef::set_air_supply" => entity_ref_set_air_supply(lua, host, this, args),
         "EntityRef::set_custom_name" => entity_ref_set_custom_name(lua, host, this, args),
         "EntityRef::set_custom_name_visible" => entity_ref_set_custom_name_visible(lua, host, this, args),
@@ -7874,6 +7902,7 @@ pub fn run(
         "PlayerRef::counts_for_sleep" => player_ref_counts_for_sleep(lua, host, this, args),
         "PlayerRef::destroy_block" => player_ref_destroy_block(lua, host, this, args),
         "PlayerRef::dimension" => player_ref_dimension(lua, host, this, args),
+        "PlayerRef::disconnect" => player_ref_disconnect(lua, host, this, args),
         "PlayerRef::discovered_recipes" => player_ref_discovered_recipes(lua, host, this, args),
         "PlayerRef::drop_stack" => player_ref_drop_stack(lua, host, this, args),
         "PlayerRef::entity" => player_ref_entity(lua, host, this, args),

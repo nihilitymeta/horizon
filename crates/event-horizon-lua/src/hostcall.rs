@@ -385,6 +385,29 @@ pub(crate) fn scoped<R>(
                     spent += 1;
                     return Err(refusal);
                 }
+                // The disconnect's rules (the target's level, one plain reason, the turn's count). The host receives the
+                // reason it rewrites: the mod's id in front, cut to 200 characters.
+                let args = match crate::disconnect::check(
+                    &op,
+                    &this,
+                    &args,
+                    &turn_host,
+                    &void.owner,
+                    &mut counts,
+                    &void.limits,
+                    lua,
+                ) {
+                    Ok(Some(rewritten)) => rewritten,
+                    Ok(None) => args,
+                    Err(refusal) => {
+                        if spent + 1 > TURN_BUDGET {
+                            void.spent.set(true);
+                            return Err(Error::runtime(SPENT));
+                        }
+                        spent += 1;
+                        return Err(refusal);
+                    }
+                };
                 if spent + cost > TURN_BUDGET {
                     void.spent.set(true);
                     return Err(Error::runtime(SPENT));
@@ -776,7 +799,7 @@ mod tests {
             }
             impl Backend for $ty {}
             mod_api::impl_host_areas!($ty);
-            mod_api::impl_backend_areas!($ty, except(entities, levels));
+            mod_api::impl_backend_areas!($ty, except(entities, levels $(, $skip)*));
             impl ServerHost for $ty {
                 fn backend_mut(&mut self) -> Option<BackendMutRef<'_>> {
                     Some(BackendMutRefOf::of(self))
@@ -809,6 +832,10 @@ mod tests {
         rule: Option<(String, mod_api::GameRuleValue)>,
         /// The line and level of each command the host was asked to run as `ME`.
         commands: Vec<(String, mod_api::PermissionLevel)>,
+        /// The permission level the host reports for a player (pw-10 `disconnect`); `None` is an unreadable one.
+        level: Option<u8>,
+        /// The plain reason of each disconnect the host was asked for (pw-10).
+        kicks: Vec<String>,
         /// The op (`award` or `reset`) and the recipe ids of each recipe write the host was asked for (pw-9).
         recipes: Vec<(&'static str, Vec<String>)>,
         /// The map id and bytes of each picture the host was asked to send (pw-9).
@@ -830,6 +857,8 @@ mod tests {
                 radius: None,
                 rule: None,
                 commands: Vec::new(),
+                level: Some(0),
+                kicks: Vec::new(),
                 recipes: Vec::new(),
                 maps: Vec::new(),
                 tool_calls: Cell::new(0),
@@ -1003,7 +1032,28 @@ mod tests {
 
     /// The stack writes of pw-5: counted as writes; the double keeps no items, so each takes the stack it is
     /// given and answers as the game does for a stack it can place.
+    // The areas `host_double!` skips for reads are implemented here: the players read answers the level.
+    impl mod_api::prelude::PlayersBackend for Fake {
+        fn player_permission_level(&self, _: PlayerRef) -> Option<u8> {
+            self.level
+        }
+    }
+    impl mod_api::prelude::PlayersClientBackend for Fake {}
+    impl mod_api::prelude::LivingBackend for Fake {}
+    impl mod_api::prelude::LivingClientBackend for Fake {}
+
     impl PlayersBackendMut for Fake {
+        fn player_disconnect(
+            &mut self,
+            _: PlayerRef,
+            reason: mod_api::Text,
+        ) -> Result<bool, mod_api::text::TextFormError> {
+            self.writes += 1;
+            if let mod_api::text::TextContent::Literal(text) = reason.content {
+                self.kicks.push(text);
+            }
+            Ok(true)
+        }
         fn player_award_recipes(&mut self, _: PlayerRef, recipes: &[&str]) -> Option<i32> {
             self.writes += 1;
             self.recipes
@@ -1062,6 +1112,19 @@ mod tests {
     }
 
     impl EntitiesBackendMut for Fake {
+        /// pw-10: the output form records the line and level like `entity_run_command`, and answers one feedback line.
+        fn entity_run_command_with_output(
+            &mut self,
+            entity: EntityRef,
+            line: &str,
+            level: mod_api::PermissionLevel,
+        ) -> mod_api::CommandResult {
+            if !is_me(entity) {
+                return mod_api::CommandResult::default();
+            }
+            self.commands.push((line.to_owned(), level));
+            mod_api::CommandResult::new(true, vec![format!("ran {line}")])
+        }
         /// Records the line and level as the host would run them, and answers success for `ME`.
         fn entity_run_command(
             &mut self,

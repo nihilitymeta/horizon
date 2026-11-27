@@ -317,7 +317,7 @@
   "horizon.mods.power.inventory.label": "Inventory",
   "horizon.mods.power.inventory.description": "Changes players' and mobs' items: gives, drops and sets stacks, in inventories, ender chests and hands.",
   "horizon.mods.power.players.label": "Players",
-  "horizon.mods.power.players.description": "Changes players' recipes and maps, and removes players from the server, with a reason they see. The host and operators are never removed.",
+  "horizon.mods.power.players.description": "Changes players' recipes and maps, and removes players from the server, with a reason they see. Operators are never removed.",
   "horizon.mods.power.network.label": "Network",
   "horizon.mods.power.network.description": "Reserved: the sandbox has neither.",
   "horizon.mods.power.files.label": "Files",

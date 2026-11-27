@@ -3952,6 +3952,8 @@ export type EntityRef = {
 	rotation: (EntityRef) -> { x: number, y: number }?,
 	-- needs the "commands" power (granted by the owner in lua-mods/enabled.toml)
 	run_command: (EntityRef, string, PermissionLevel) -> boolean,
+	-- needs the "commands" power (granted by the owner in lua-mods/enabled.toml)
+	run_command_with_output: (EntityRef, string, PermissionLevel) -> { success: boolean, feedback: {string} },
 	set_air_supply: (EntityRef, number) -> boolean,
 	set_custom_name: (EntityRef, Text?) -> boolean,
 	set_custom_name_visible: (EntityRef, boolean) -> boolean,
@@ -4319,6 +4321,8 @@ export type PlayerRef = {
 	counts_for_sleep: (PlayerRef) -> boolean?,
 	destroy_block: (PlayerRef, { x: number, y: number, z: number }, boolean) -> boolean,
 	dimension: (PlayerRef) -> string?,
+	-- needs the "players" power (granted by the owner in lua-mods/enabled.toml)
+	disconnect: (PlayerRef, Text) -> boolean,
 	discovered_recipes: (PlayerRef) -> {string}?,
 	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
 	drop_stack: (PlayerRef, ItemStackSpec, boolean) -> ItemStackSpec?,
@@ -4360,7 +4364,7 @@ export type PlayerRef = {
 	sees: (PlayerRef, PlayerRef) -> boolean,
 	selected_slot: (PlayerRef) -> number?,
 	-- needs the "players" power (granted by the owner in lua-mods/enabled.toml)
-	send_map: (PlayerRef, number, {number}) -> boolean,
+	send_map: (PlayerRef, number, string | {number}) -> boolean,
 	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
 	set_ender_chest_slot: (PlayerRef, number, ItemStackSpec?) -> (),
 	set_exhaustion: (PlayerRef, number) -> boolean,

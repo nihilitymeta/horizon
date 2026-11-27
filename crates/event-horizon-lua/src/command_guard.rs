@@ -73,12 +73,12 @@ pub(crate) struct CommandPolicy {
     pub allow: Option<Vec<String>>,
 }
 
-/// The guard of `EntityRef::run_command`: `args` are the Lua arguments after the handle, the line
-/// then the level. Any other call passes.
-pub(crate) fn check(args: &MultiValue, policy: &CommandPolicy) -> Result<(), Error> {
+/// The guard of `EntityRef::run_command` and `EntityRef::run_command_with_output` (`method` names which, in a
+/// refusal): `args` are the Lua arguments after the handle, the line then the level. Any other call passes.
+pub(crate) fn check(args: &MultiValue, policy: &CommandPolicy, method: &str) -> Result<(), Error> {
     let line = string_arg(args, 0);
     let level = string_arg(args, 1);
-    check_text(line.as_deref(), level.as_deref(), policy).map_err(Error::runtime)
+    check_text_for(method, line.as_deref(), level.as_deref(), policy).map_err(Error::runtime)
 }
 
 /// The string at `index` of the Lua arguments, or `None` for a missing argument or another type.
@@ -89,12 +89,24 @@ fn string_arg(args: &MultiValue, index: usize) -> Option<String> {
     }
 }
 
-/// The rules of [`check`] on the Rust text of the arguments; `Err` carries the refusal text.
+/// The rules of [`check`] on the Rust text of the arguments, for `run_command`; `Err` carries the refusal text.
+#[cfg(test)]
 pub(crate) fn check_text(
     line: Option<&str>,
     level: Option<&str>,
     policy: &CommandPolicy,
 ) -> Result<(), String> {
+    check_text_for("run_command", line, level, policy)
+}
+
+/// [`check_text`] for the named method, which the refusal text names.
+pub(crate) fn check_text_for(
+    method: &str,
+    line: Option<&str>,
+    level: Option<&str>,
+    policy: &CommandPolicy,
+) -> Result<(), String> {
+    let refuse = |reason: &str| refusal_text(method, reason);
     match level {
         Some(name) if ALLOWED_LEVELS.contains(&name) => {}
         Some("admins" | "owners") => return Err(refuse("permission level is capped at 2")),
@@ -127,9 +139,9 @@ pub(crate) fn check_text(
     Ok(())
 }
 
-/// The refusal text of `run_command`, with its reason.
-fn refuse(reason: &str) -> String {
-    format!("horizon: run_command refused: {reason}")
+/// The refusal text of a command write, with its reason.
+fn refusal_text(method: &str, reason: &str) -> String {
+    format!("horizon: {method} refused: {reason}")
 }
 
 /// Whether one name of an owner's `[command_allow]` list is valid: not empty, at most

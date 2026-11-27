@@ -192,6 +192,7 @@ RaidRef::stop
 BossBarRef::remove world
 BossBarRef::remove_player world
 EntityRef::run_command commands
+EntityRef::run_command_with_output commands
 EntityRef::discard world
 EntityRef::remove_tag world
 EntityRef::teleport_to_level world
@@ -229,5 +230,6 @@ PlayerRef::set_inventory_slot inventory
 BlockEntityRef::merge_data nbt
 EntityRef::merge_nbt nbt
 PlayerRef::award_recipes players
+PlayerRef::disconnect players
 PlayerRef::reset_recipes players
 PlayerRef::send_map players
