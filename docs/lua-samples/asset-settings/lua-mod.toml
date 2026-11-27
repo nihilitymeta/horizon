@@ -1,0 +1,12 @@
+id = "asset_settings_sample"
+name = "Asset and Settings Sample"
+version = "1.0.0"
+side = "both"
+description = "One toggle setting that changes a command's reply, and one lang file the mod ships."
+entries = ["main.luau"]
+
+[[settings]]
+key = "loud"
+type = "toggle"
+label = "Shout the greeting"
+default = false

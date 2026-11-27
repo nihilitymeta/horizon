@@ -649,6 +649,8 @@ when the log shows both mods loaded, the table-load, condition and function hook
 and the zombie's drops hold the gated emerald and the doubled diamonds. It needs a display (it
 re-runs itself under `xvfb-run` when there is none) and the prepared resources.
 
+Four small sample mods to copy and start from are in [`lua-samples/`](lua-samples/README.md).
+
     python3 tools/lua_host_e2e.py [--bin-dir DIR] [--resources DIR] [--out DIR] [--keep]
 
 `--bin-dir` holds `horizon-client`, `horizon-ctl` and `horizon-native-mods/` (default

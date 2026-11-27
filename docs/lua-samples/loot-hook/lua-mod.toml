@@ -1,0 +1,6 @@
+id = "loot_hook_sample"
+name = "Loot Hook Sample"
+version = "1.0.0"
+side = "server"
+description = "Adds one diamond to the simple dungeon chest loot table through container_loot_filled."
+entries = ["main.luau"]

@@ -1,0 +1,6 @@
+id = "loot_drops_sample"
+name = "Loot Drops Sample"
+version = "1.0.0"
+side = "server"
+description = "Adds one bone to the drops of a zombie that a player killed."
+entries = ["main.luau"]
