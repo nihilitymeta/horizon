@@ -102,6 +102,8 @@ pub enum TurnHost<'a> {
     },
     /// A hook that gets no host. Its handles raise `no host call outside a hook`.
     None,
+    /// A loot hook: no host, but the tag service its event carries (`horizon.tag_contains` reads it).
+    Tags(&'a dyn mod_api::Tags),
 }
 
 /// The side a hook call fired on. A hook given a [`HostSide`] (or a server or client host) fires on
@@ -131,6 +133,7 @@ impl<'a> TurnHost<'a> {
             TurnHost::Read(_)
             | TurnHost::Goal { .. }
             | TurnHost::Behavior { .. }
+            | TurnHost::Tags(_)
             | TurnHost::None => None,
         }
     }
@@ -144,7 +147,7 @@ impl<'a> TurnHost<'a> {
             TurnHost::Read(host) => Some(*host),
             TurnHost::Goal { host, .. } => Some(*host),
             TurnHost::Behavior { host, .. } => Some(*host),
-            TurnHost::None => None,
+            TurnHost::Tags(_) | TurnHost::None => None,
         }
     }
 
@@ -177,6 +180,7 @@ impl<'a> TurnHost<'a> {
             TurnHost::Client(host) => TurnHost::Client(&mut **host),
             TurnHost::ClientRead(host) => TurnHost::ClientRead(*host),
             TurnHost::Read(host) => TurnHost::Read(*host),
+            TurnHost::Tags(tags) => TurnHost::Tags(*tags),
             TurnHost::Goal {
                 host,
                 actions,
@@ -545,6 +549,9 @@ fn op_cost(op: &str) -> mlua::Result<u32> {
     if op == crate::data_maps::DATA_MAP_OP {
         return Ok(crate::data_maps::DATA_MAP_COST);
     }
+    if let Some(cost) = crate::tags_lua::cost(op) {
+        return Ok(cost);
+    }
     if let Some(cost) = crate::attachments::cost(op) {
         return Ok(cost);
     }
@@ -573,6 +580,9 @@ fn run_op(
     if op == crate::data_maps::DATA_MAP_OP {
         return crate::data_maps::data_map_op(lua, host, args);
     }
+    if crate::tags_lua::is_op(op) {
+        return crate::tags_lua::run(lua, host, op, args);
+    }
     if crate::attachments::cost(op).is_some() {
         return crate::attachments::run(lua, host, op, &this, args, void);
     }
@@ -593,6 +603,9 @@ fn op_cost(op: &str) -> mlua::Result<u32> {
     }
     if op == crate::data_maps::DATA_MAP_OP {
         return Ok(crate::data_maps::DATA_MAP_COST);
+    }
+    if let Some(cost) = crate::tags_lua::cost(op) {
+        return Ok(cost);
     }
     if let Some(cost) = crate::attachments::cost(op) {
         return Ok(cost);
@@ -623,6 +636,9 @@ fn run_op(
     }
     if op == crate::data_maps::DATA_MAP_OP {
         return crate::data_maps::data_map_op(lua, host, args);
+    }
+    if crate::tags_lua::is_op(op) {
+        return crate::tags_lua::run(lua, host, op, args);
     }
     if crate::attachments::cost(op).is_some() {
         return crate::attachments::run(lua, host, op, &this, args, void);
@@ -939,7 +955,7 @@ mod tests {
             _: mod_api::SpawnReason,
         ) -> Option<EntityRef> {
             self.writes += 1;
-            None
+            Some(me())
         }
         /// Counts the blast as a write and keeps its radius; the test world has no blocks or entities to hit.
         fn level_explode(
@@ -1039,7 +1055,12 @@ mod tests {
         }
     }
     impl mod_api::prelude::PlayersClientBackend for Fake {}
-    impl mod_api::prelude::LivingBackend for Fake {}
+    impl mod_api::prelude::LivingBackend for Fake {
+        /// The test world's only living entity is `ME`; any other entity is not living.
+        fn entity_living(&self, entity: EntityRef) -> Option<LivingRef> {
+            (entity == me()).then(|| LivingRef::new(entity))
+        }
+    }
     impl mod_api::prelude::LivingClientBackend for Fake {}
 
     impl PlayersBackendMut for Fake {
@@ -1100,6 +1121,15 @@ mod tests {
     }
 
     impl LivingBackendMut for Fake {
+        fn living_set_equipment(
+            &mut self,
+            _: LivingRef,
+            _: mod_api::EquipmentSlot,
+            _: Option<ItemStack>,
+        ) -> Result<bool, mod_api::StackWriteError> {
+            self.writes += 1;
+            Ok(true)
+        }
         fn living_set_hand_item(
             &mut self,
             _: LivingRef,
@@ -3390,6 +3420,64 @@ mod tests {
         table.raw_set("id", id)?;
         table.raw_set("count", count)?;
         Ok(Value::Table(table))
+    }
+
+    /// A mob `spawn_mob` returned is an entity; its `living()` is the living handle that `set_equipment`
+    /// takes, and the write reaches the host once (the spawn is the other write the fake counts).
+    #[test]
+    fn a_spawned_mobs_living_handle_takes_set_equipment_once() {
+        let root = tempfile::tempdir().unwrap();
+        let call = "local m = lv:spawn_mob(\"minecraft:zombie\", {x = 1.0, y = 2.0, z = 3.0}, \"command\"); \
+                    m:living():set_equipment(\"head\", nil)";
+        let (lines, fake) = run_gated(gated_level(
+            root.path(),
+            "pw_living_equip",
+            call,
+            &[Power::Spawn, Power::Inventory],
+            &[Power::Spawn, Power::Inventory],
+        ));
+        assert_eq!(lines, ["true nil"]);
+        assert_eq!(fake.writes, 2, "one spawn and one equipment write");
+    }
+
+    /// `living()` answers a living entity with its handle and a non-living one with nil, through the
+    /// Lua handle: the host decides which is living, the handle forwards its answer.
+    #[test]
+    fn entity_living_is_a_handle_for_a_living_entity_and_nil_for_another() {
+        let root = tempfile::tempdir().unwrap();
+        let m = load(
+            root.path(),
+            "hc_living_nil",
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               horizon.log(tostring(event.entity:living() ~= nil) .. \" \" .. tostring(event.other:living()) .. \" \" .. tostring(event.player:entity():living() ~= nil))\n\
+             end)",
+        );
+        let host = LuaHost::new(vec![m]);
+        let other = EntityRef::new(WorldEpoch::new(1), 2);
+        let build = move |lua: &Lua, _: &TurnHost<'_>| {
+            let data = lua.create_table()?;
+            data.raw_set("entity", lua.create_userdata(Token(me()))?)?;
+            data.raw_set("other", lua.create_userdata(Token(other))?)?;
+            data.raw_set(
+                "player",
+                lua.create_userdata(Token(mod_api::__private::game::player_ref(me(), 1)))?,
+            )?;
+            data.raw_set("n", 0)?;
+            new_event(lua, data, &["cancelled", "result"])
+        };
+        crate::host::tests::lift_handler_budget();
+        let fake = Fake::at([0.0; 3]);
+        let _phase = mod_api::__private::PhaseOwner::new(mod_api::__private::ModPhase::World);
+        host.dispatch_turns(
+            HOOK,
+            TurnHost::Read(&fake),
+            &|| false,
+            &build,
+            &mut |_, _, _| true,
+        )
+        .unwrap();
+        // A player's living handle is its entity's: `player:entity():living()`.
+        assert_eq!(host.mods()[0].log_lines(), ["true nil true"]);
     }
 
     /// The inventory writes (pw-5), called directly through the dispatcher with a receiver of the right

@@ -1,4 +1,4 @@
-# Handle coverage (issue 74, H2) from surface 2f592c9f087329694313223be0b54592, by event-horizon-lua-gen: do not edit.
+# Handle coverage (issue 74, H2) from surface c9c3d86a5c6a047b43bb6a54dbd411ec, by event-horizon-lua-gen: do not edit.
 # families: BlockEntityRef, BossBarRef, ChunkRef, DisplayRef, DragonRef, EntityRef, FishingHookRef, ItemEntityRef, LevelRef, LivingRef, MenuRef, MerchantRef, MinecartRef, MobRef, OriginalPlayerRef, PlayerRef, ProjectileRef, RaidRef, UnspawnedMobRef
 # not generated (no member binds): InstanceGroupRef, SoundRef
 
@@ -116,7 +116,7 @@ DragonRef: 6 members
   handle:DragonRef::previously_killed bound, cost 1
   handle:DragonRef::set_phase bound, cost 10
 
-EntityRef: 114 members
+EntityRef: 115 members
   handle:EntityRef::add_tag bound, cost 10
   handle:EntityRef::added_to_level bound, cost 1
   handle:EntityRef::air_supply bound, cost 1
@@ -170,6 +170,7 @@ EntityRef: 114 members
   handle:EntityRef::leash_to bound, cost 10
   handle:EntityRef::leash_to_knot bound, cost 10
   handle:EntityRef::level bound, cost 1
+  handle:EntityRef::living bound, cost 1
   handle:EntityRef::max_air_supply bound, cost 1
   handle:EntityRef::merge_nbt bound, cost 10, gated: nbt
   handle:EntityRef::name bound, cost 1
@@ -768,7 +769,7 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 572 of 724; heavy 28
+summary: bound 573 of 725; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13

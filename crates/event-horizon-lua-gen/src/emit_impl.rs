@@ -1318,6 +1318,13 @@ fn turn_expr(host_name: Option<&str>, host_ty: Option<&str>) -> Option<String> {
 
 /// The `TurnHost` argument of a method's dispatch call.
 fn turn_text(method: &Method<'_>) -> String {
+    // The two loot hooks have no host, but their events carry the tag service `horizon.tag_contains` reads.
+    if matches!(
+        method.hook.name.as_str(),
+        "loot_condition" | "loot_function"
+    ) {
+        return "crate::hostcall::TurnHost::Tags(event.tags)".to_owned();
+    }
     match &method.turn {
         Some(variant) => format!("crate::hostcall::TurnHost::{variant}"),
         None => "crate::hostcall::TurnHost::None".to_owned(),

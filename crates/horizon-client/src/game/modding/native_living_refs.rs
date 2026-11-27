@@ -134,6 +134,10 @@ impl Game<'_> {
         let living = LivingRef::new(entity);
         self.native_living_read_target(living).map(|_| living)
     }
+    /// The entity's living handle, as `living` answers it (`LivingHost::entity_living`).
+    pub(super) fn entity_living(&self, entity: EntityRef) -> Option<LivingRef> {
+        self.living(entity)
+    }
     /// What a living handle names for a read that works on both sides: the
     /// server's entity, or on a client the local player (`Minecraft.player`),
     /// whose state is the client's copy of what the server sent.

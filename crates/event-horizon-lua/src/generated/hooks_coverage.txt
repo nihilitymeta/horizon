@@ -1,4 +1,4 @@
-# Hook coverage (issue 74, H3) from surface 2f592c9f087329694313223be0b54592, by event-horizon-lua-gen: do not edit.
+# Hook coverage (issue 74, H3) from surface c9c3d86a5c6a047b43bb6a54dbd411ec, by event-horizon-lua-gen: do not edit.
 # hooks: 749, emitted: 410, skipped: 339
 # skipped, answer: ArmPose: 1
 # skipped, answer: Minimap: 1

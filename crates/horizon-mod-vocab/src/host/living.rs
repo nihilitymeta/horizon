@@ -20,6 +20,12 @@ pub trait LivingHost {
 #[horizon_mod_api_macros::host_area]
 pub trait LivingBackend {
     /// Side: both.
+    /// The entity as a living entity, as `living` answers it. The handle `EntityRef::living` reads
+    /// it, so a mob that `spawn_mob` returned, or a player's entity, gets the living handle that
+    /// `LivingRef::set_equipment` and the other living reads take. None as for `living`.
+    #[access(WorldOnly)]
+    fn entity_living(&self, entity: EntityRef) -> Option<LivingRef>;
+    /// Side: both.
     /// The entity's instance of `effect` (`LivingEntity.getEffect`): its id
     /// namespaced as the registry has it, the ticks left (-1 infinite), the
     /// amplifier and the flags. The effect is a registration-slot key resolved at load.

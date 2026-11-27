@@ -166,3 +166,20 @@ is a finding about the branch as it was, and the sync report should say so.
 3. Put the `dropped_upstream.py --markdown` table and the surface diff (section 5) in the PR body.
 4. Land the sync branch with a merge commit, not a squash or a rebase. The upstream parent must stay in
    the history, because `tools/merge_base.py` reads it to find the sync on the next run.
+
+## Edits to upstream-owned files
+
+Our changes to files upstream owns are kept as small and additive as possible, so a sync conflicts
+little. Each one is listed here with why it is there; a sync that touches one of these files checks
+the matching line first.
+
+- `crates/horizon-mod-vocab/src/host/living.rs`: `LivingBackend::entity_living`, one declaration after
+  the trait opens. It gives the `EntityRef::living` handle its backend, so a Lua mod can reach a living
+  handle from an entity (`spawn_mob` returns one).
+- `crates/horizon-client/src/game/modding/native_living_refs.rs`: `Game::entity_living`, a forwarder to
+  `living`, which implements `entity_living` for the game.
+
+Everything else on the Lua side (`crates/event-horizon-lua/`, `event-horizon-lua-gen/`,
+`event-horizon-lua-convert/`) is ours and not listed. The loot hooks' `tags` field and the
+`horizon.tag_contains` read need no edit to upstream code: the Lua crate reads the `tags` their events
+already carry.

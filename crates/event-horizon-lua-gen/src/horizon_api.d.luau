@@ -252,7 +252,11 @@ export type ConfigRecord = {
 -- entity_part, menu_part, client_command, config, command, data_map_type, data_pack_file) and `on` work only while the mod
 -- loads; `log`, `none`, `data_map` and the attachment functions work only inside a handler.
 -- `data_map(registry, entry, map)` reads the value an entry has in a data map, as NBT in Lua (nil
--- where it has none); a read costs 1 unit of the turn's budget. The attachment functions keep a
+-- where it has none); a read costs 1 unit of the turn's budget. `tag_contains(kind, tag_id, entry_id)`
+-- says whether an entry is in a tag, and `tag_entries(kind, tag_id)` lists a tag's members in the game's
+-- order (at most 1024; more raises). `kind` is "item", "block" or "fluid"; ids are `namespace:path`, at most
+-- 256 bytes; a malformed id raises, and an entry the game does not know is in no tag. Each read costs 1 unit.
+-- Tags are read in every turn that has a host, and in a loot condition or a loot function too. The attachment functions keep a
 -- value on an entity, a player or a block entity under a name `<mod>:<path>` in the mod's own
 -- namespace: `get` reads it (nil where none), `set` stores a table (true), `remove` drops it (true if
 -- it was there). A holder must be resident in the server's level; a block entity handle must be the
@@ -310,6 +314,8 @@ export type HorizonApi = {
 	data_map_type: (record: DataMapTypeRecord) -> (),
 	data_pack_file: (record: DataPackFileRecord) -> (),
 	data_map: (registry: string, entry: string, map: string) -> any,
+	tag_contains: (kind: string, tag_id: string, entry_id: string) -> boolean,
+	tag_entries: (kind: string, tag_id: string) -> { string },
 	attachment_get: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string) -> any,
 	attachment_set: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string, value: any, opts: AttachmentOpts?) -> boolean,
 	attachment_remove: (holder: EntityRef | PlayerRef | BlockEntityRef, name: string) -> boolean,

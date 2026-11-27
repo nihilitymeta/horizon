@@ -1545,6 +1545,8 @@ fn runtime_table(
         })?,
     )?;
     horizon.raw_set("data_map", crate::data_maps::data_map_function(lua)?)?;
+    horizon.raw_set("tag_contains", crate::tags_lua::contains_function(lua)?)?;
+    horizon.raw_set("tag_entries", crate::tags_lua::entries_function(lua)?)?;
     horizon.raw_set(
         "setting",
         lua.create_function(move |lua, key: Value| setting_api::read(lua, &settings, &key))?,

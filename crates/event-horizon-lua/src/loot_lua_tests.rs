@@ -402,15 +402,25 @@ fn fire_condition(
     data: &serde_json::Value,
     ctx: &mod_api::LootContext,
 ) -> (Vec<String>, bool) {
+    fire_condition_with(source, kind, data, ctx, &NoTags)
+}
+
+/// [`fire_condition`] with the tag service the event carries.
+fn fire_condition_with(
+    source: &str,
+    kind: &str,
+    data: &serde_json::Value,
+    ctx: &mod_api::LootContext,
+    tags: &dyn mod_api::Tags,
+) -> (Vec<String>, bool) {
     let root = tempfile::tempdir().unwrap();
     let host = LuaHost::new(vec![load_one(root.path(), "mymod", source)]);
-    let tags = NoTags;
     let mut event = mod_api::LootConditionEvent {
         kind,
         data,
         ctx,
         holds: false,
-        tags: &tags,
+        tags,
     };
     let _phase = mod_api::__private::PhaseOwner::scope(mod_api::__private::ModPhase::World);
     mod_api::Hooks::loot_condition(&host, &mut event);
@@ -740,4 +750,128 @@ fn an_in_place_edit_of_the_stack_without_assigning_it_is_an_error_and_the_stack_
         stack.clone(),
     );
     assert_eq!(after, stack);
+}
+
+/// The tag service the tag tests read: `test:ingredients` holds the stick and nothing else; any other
+/// well-formed tag is empty. The keys are resolved when the service is made, outside the hook.
+struct IngredientTags {
+    ingredients: mod_api::TagKey,
+    stick: mod_api::ItemKey,
+}
+
+impl IngredientTags {
+    fn new() -> Self {
+        // The item table the other tests in this crate resolve before they read an item key.
+        let mut registries = mod_api::testing::FakeHost::new();
+        let _ = registries
+            .registries
+            .resolve_items([mod_api::Identifier::parse("minecraft:stick").unwrap()]);
+        Self {
+            ingredients: mod_api::__private::tag_key(
+                &mod_api::Identifier::parse("test:ingredients").unwrap(),
+            )
+            .expect("a tag key"),
+            stick: mod_api::__private::item_key("minecraft:stick").expect("the stick"),
+        }
+    }
+}
+
+impl mod_api::Tags for IngredientTags {
+    fn key(&self, id: &mod_api::Identifier) -> Option<mod_api::TagKey> {
+        mod_api::__private::tag_key(id)
+    }
+    fn is_in_tag(&self, item: mod_api::ItemKey, tag: mod_api::TagKey) -> Option<bool> {
+        Some(tag == self.ingredients && item == self.stick)
+    }
+    fn items(&self, tag: mod_api::TagKey) -> Option<Vec<mod_api::ItemKey>> {
+        Some(if tag == self.ingredients {
+            vec![self.stick]
+        } else {
+            Vec::new()
+        })
+    }
+}
+
+/// The condition's data and context: the tag tests do not read them.
+fn tag_condition(source: &str) -> (Vec<String>, bool) {
+    let data = serde_json::json!({});
+    let ctx = mod_api::LootContext::new(7);
+    fire_condition_with(source, "mymod:tagged", &data, &ctx, &IngredientTags::new())
+}
+
+#[test]
+fn a_condition_reads_a_tag_with_tag_contains_and_lists_its_entries() {
+    let (log, holds) = tag_condition(
+        "horizon.on(\"loot_condition\", function(event) if event.kind ~= \"mymod:tagged\" then return end \
+           event.holds = horizon.tag_contains(\"item\", \"test:ingredients\", \"minecraft:stick\") \
+             and #horizon.tag_entries(\"item\", \"test:ingredients\") == 1 end)",
+    );
+    assert!(log.is_empty(), "{log:?}");
+    assert!(holds);
+}
+
+#[test]
+fn tag_contains_is_false_for_an_entry_or_a_tag_that_does_not_hold_it() {
+    let (log, holds) = tag_condition(
+        "horizon.on(\"loot_condition\", function(event) if event.kind ~= \"mymod:tagged\" then return end \
+           local dirt = horizon.tag_contains(\"item\", \"test:ingredients\", \"minecraft:dirt\") \
+           local empty = horizon.tag_contains(\"item\", \"test:empty\", \"minecraft:stick\") \
+           local unknown = horizon.tag_contains(\"item\", \"test:ingredients\", \"mymod:not_an_item\") \
+           horizon.log(tostring(dirt) .. \" \" .. tostring(empty) .. \" \" .. tostring(unknown)) \
+           event.holds = not dirt and not empty and not unknown end)",
+    );
+    assert_eq!(log, ["false false false"]);
+    assert!(holds);
+}
+
+#[test]
+fn tag_contains_refuses_a_malformed_id_or_kind_by_name_without_echoing_it() {
+    let (log, holds) = tag_condition(
+        "horizon.on(\"loot_condition\", function(event) if event.kind ~= \"mymod:tagged\" then return end \
+           local ok1, e1 = pcall(horizon.tag_contains, \"item\", \"Not An Id!\", \"minecraft:stick\") \
+           local ok2, e2 = pcall(horizon.tag_contains, \"item\", \"test:ingredients\", \"BAD ENTRY\") \
+           local ok3, e3 = pcall(horizon.tag_contains, \"entity_type\", \"test:ingredients\", \"minecraft:zombie\") \
+           local long = string.rep(\"a\", 300) \
+           local ok4, e4 = pcall(horizon.tag_contains, \"item\", \"test:\" .. long, \"minecraft:stick\") \
+           horizon.log(tostring(ok1) .. \" \" .. tostring(e1)) \
+           horizon.log(tostring(ok2) .. \" \" .. tostring(e2)) \
+           horizon.log(tostring(ok3) .. \" \" .. tostring(e3)) \
+           horizon.log(tostring(ok4) .. \" \" .. tostring(e4)) \
+           event.holds = false end)",
+    );
+    assert!(!holds);
+    assert_eq!(log.len(), 4, "{log:?}");
+    assert!(
+        log[0].contains("the tag id is malformed") && !log[0].contains("Not An Id"),
+        "{log:?}"
+    );
+    assert!(
+        log[1].contains("the entry id is malformed") && !log[1].contains("BAD ENTRY"),
+        "{log:?}"
+    );
+    assert!(
+        log[2].contains("kind must be item, block or fluid"),
+        "{log:?}"
+    );
+    assert!(
+        log[3].contains("the tag id is longer than 256 bytes"),
+        "{log:?}"
+    );
+    assert!(log.iter().all(|line| line.starts_with("false ")), "{log:?}");
+}
+
+#[test]
+fn tag_contains_is_not_available_in_a_hook_with_no_host() {
+    // `loot_table_load` gets no host and no tag service: the read raises by name.
+    let mut table = chest_table();
+    let log = fire_table(
+        "horizon.on(\"loot_table_load\", function(event) local ok, err = pcall(horizon.tag_contains, \"item\", \"test:ingredients\", \"minecraft:stick\") horizon.log(tostring(ok) .. \" \" .. tostring(err)) end)",
+        "minecraft:chests/simple_dungeon",
+        &mut table,
+    );
+    assert_eq!(log.len(), 1, "{log:?}");
+    assert!(
+        log[0].starts_with("false ") && log[0].contains("not available in this hook"),
+        "{log:?}"
+    );
 }
