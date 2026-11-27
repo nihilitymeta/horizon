@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "I pa përgatitur. Hyni fillimisht me llogarinë Microsoft që zotëron Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Nuk është shqyrtuar nga regjistri Horizon",
   "Not yet": "Ende jo",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ende jo: {ready} janë moda përmbajtjeje që Porti mund t'i barti, {blocked} kanë nevojë për mbështetje modash që Horizon nuk e ka ende (makina, meny, sjellje, mobs, dimensione, veçori klienti), {later} nuk janë renditur ende (të paidentifikuar, ose në pritje të modave apo punëve të tjera).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ende jo: {ready} janë moda përmbajtjeje që Porti mund t'i barti, {blocked} kanë nevojë për mbështetje modash që Horizon nuk e ka ende (makina, meny, sjellje, mobs, dimensione, veçori klienti), {later} nuk janë renditur ende (të paidentifikuar, ose në pritje të modave apo punëve të tjera).",
   "Nothing": "Asgjë",
   "Nothing equipped": "Asgjë e pajisur",
   "Nothing found for {target}.": "Asgjë nuk u gjet për {target}.",

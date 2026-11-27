@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Niet voorbereid. Meld u eerst aan met het Microsoft-account dat eigenaar is van Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Niet beoordeeld door het Horizon-register",
   "Not yet": "Nog niet",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Nog niet: {ready} zijn inhoudsmods die Port kan overzetten, {blocked} hebben modondersteuning nodig die Horizon nog niet heeft (machines, menu's, gedrag, mobs, dimensies, clientfuncties), {later} zijn nog niet ingedeeld (niet geïdentificeerd of wachten op andere mods of ander werk).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Nog niet: {ready} zijn inhoudsmods die Port kan overzetten, {blocked} hebben modondersteuning nodig die Horizon nog niet heeft (machines, menu's, gedrag, mobs, dimensies, clientfuncties), {later} zijn nog niet ingedeeld (niet geïdentificeerd of wachten op andere mods of ander werk).",
   "Nothing": "Niets",
   "Nothing equipped": "Niets uitgerust",
   "Nothing found for {target}.": "Niets gevonden voor {target}.",

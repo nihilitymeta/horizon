@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Әҙерләнмәгән. Minecraft {version} хужаһы булған Microsoft иҫәп яҙмаһы менән тәүҙә инергә.",
   "Not reviewed by the Horizon registry": "Horizon реестры тарафынан тикшерелмәгән",
   "Not yet": "Әлегә юҡ .",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Әлегә юҡ: {ready} — Порт күсерә алған контент модтар, {blocked} — Horizon-да әлегә булмаған мод ярҙамы кәрәк (машиналар, менюлар, тәртип, мобтар, үлсәмдәр, клиент мөмкинлектәре), {later} — әле тәртипкә һалынмаған (билдәләнмәгән йәки башҡа модтарҙы йәки башҡа эште көтә).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Әлегә юҡ: {ready} — Порт күсерә алған контент модтар, {blocked} — Horizon-да әлегә булмаған мод ярҙамы кәрәк (машиналар, менюлар, тәртип, мобтар, үлсәмдәр, клиент мөмкинлектәре), {later} — әле тәртипкә һалынмаған (билдәләнмәгән йәки башҡа модтарҙы йәки башҡа эште көтә).",
   "Nothing": "Бер ни ҙә .",
   "Nothing equipped": "Бер нәмә лә йыһазландырылмаған .",
   "Nothing found for {target}.": "{target} өсөн бер нәмә лә табылманы.",

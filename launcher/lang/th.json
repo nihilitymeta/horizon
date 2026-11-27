@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "ยังไม่ได้เตรียม ลงชื่อเข้าใช้ด้วยบัญชี Microsoft ที่มี Minecraft {version} ก่อน",
   "Not reviewed by the Horizon registry": "ยังไม่ผ่านการตรวจจากรีจิสทรีของ Horizon",
   "Not yet": "ยังไม่ได้",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ยังไม่ได้: {ready} ม็อดเป็นม็อดเนื้อหาที่พอร์ตมาได้ {blocked} ม็อดต้องใช้การรองรับที่ Horizon ยังไม่มี (เครื่องจักร เมนู การทำงาน ม็อบ มิติ ฟีเจอร์ฝั่งไคลเอนต์) และ {later} ม็อดยังไม่ได้จัดกลุ่ม (ยังระบุไม่ได้ หรือรอม็อดอื่นหรืองานอื่นอยู่)",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ยังไม่ได้: {ready} ม็อดเป็นม็อดเนื้อหาที่พอร์ตมาได้ {blocked} ม็อดต้องใช้การรองรับที่ Horizon ยังไม่มี (เครื่องจักร เมนู การทำงาน ม็อบ มิติ ฟีเจอร์ฝั่งไคลเอนต์) และ {later} ม็อดยังไม่ได้จัดกลุ่ม (ยังระบุไม่ได้ หรือรอม็อดอื่นหรืองานอื่นอยู่)",
   "Nothing": "ไม่มี",
   "Nothing equipped": "ยังไม่ได้ใส่อะไร",
   "Nothing found for {target}.": "ไม่พบสิ่งใดสำหรับ {target}",

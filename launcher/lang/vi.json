@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Chưa chuẩn bị. Trước tiên hãy đăng nhập bằng tài khoản Microsoft sở hữu Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Chưa được cơ quan đăng ký Horizon xem xét",
   "Not yet": "Chưa",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Chưa được: {ready} là mod nội dung mà Port có thể chuyển sang, {blocked} cần hỗ trợ mod mà Horizon chưa có (máy móc, menu, hành vi, mob, chiều không gian, tính năng phía client), {later} chưa được phân loại (chưa xác định, hoặc đang chờ mod khác hay việc khác).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Chưa được: {ready} là mod nội dung mà Port có thể chuyển sang, {blocked} cần hỗ trợ mod mà Horizon chưa có (máy móc, menu, hành vi, mob, chiều không gian, tính năng phía client), {later} chưa được phân loại (chưa xác định, hoặc đang chờ mod khác hay việc khác).",
   "Nothing": "không có gì",
   "Nothing equipped": "Không có gì được trang bị",
   "Nothing found for {target}.": "Không tìm thấy gì cho {target}.",

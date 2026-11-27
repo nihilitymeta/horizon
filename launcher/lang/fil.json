@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Hindi pinaghandaan. Mag-sign in muna gamit ang Microsoft account na nagmamay-ari ng Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Hindi nasuri ng Horizon registry",
   "Not yet": "hindi pa",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Hindi pa: {ready} ang mga content mod na kayang dalhin ng Port, {blocked} ang nangangailangan ng mod support na wala pa sa Horizon (mga makina, menu, behaviour, mob, dimension, client feature), {later} ang hindi pa naayos (hindi pa natukoy, o naghihintay sa ibang mod o ibang gawain).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Hindi pa: {ready} ang mga content mod na kayang dalhin ng Port, {blocked} ang nangangailangan ng mod support na wala pa sa Horizon (mga makina, menu, behaviour, mob, dimension, client feature), {later} ang hindi pa naayos (hindi pa natukoy, o naghihintay sa ibang mod o ibang gawain).",
   "Nothing": "wala",
   "Nothing equipped": "Walang gamit",
   "Nothing found for {target}.": "Walang nahanap para sa {target}.",

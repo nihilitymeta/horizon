@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Není připraven. Nejprve se přihlaste pomocí účtu Microsoft, který vlastní Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Nekontrolováno registrem Horizon",
   "Not yet": "Ještě ne",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Zatím ne: {ready} jsou obsahové mody, které funkce Převést dokáže přenést, {blocked} vyžadují podporu modů, kterou Horizon dosud nemá (stroje, nabídky, chování, moby, dimenze, klientské funkce) a {later} dosud nejsou roztříděny (nejsou identifikovány nebo čekají na jiné mody či další práce).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Zatím ne: {ready} jsou obsahové mody, které funkce Převést dokáže přenést, {blocked} vyžadují podporu modů, kterou Horizon dosud nemá (stroje, nabídky, chování, moby, dimenze, klientské funkce) a {later} dosud nejsou roztříděny (nejsou identifikovány nebo čekají na jiné mody či další práce).",
   "Nothing": "Nic",
   "Nothing equipped": "Nic vybaveného",
   "Nothing found for {target}.": "Pro {target} nebylo nic nalezeno.",

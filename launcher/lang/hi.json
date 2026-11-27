@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "तैयार नहीं है। पहले उस माइक्रोसॉफ्ट खाते से साइन इन करें जिसके पास Minecraft {version} है।",
   "Not reviewed by the Horizon registry": "Horizon रजिस्ट्री द्वारा समीक्षित नहीं",
   "Not yet": "अभी नहीं",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "अभी नहीं: {ready} ऐसे कंटेंट मॉड्स हैं जिन्हें Port स्थानांतरित कर सकता है, {blocked} को ऐसा मॉड समर्थन चाहिए जो Horizon में अभी नहीं है (मशीन, मेन्यू, व्यवहार, मॉब्स, आयाम, क्लाइंट सुविधाएँ), {later} अभी वर्गीकृत नहीं हैं (पहचाने नहीं गए, या अन्य मॉड्स या अन्य काम की प्रतीक्षा में)।",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "अभी नहीं: {ready} ऐसे कंटेंट मॉड्स हैं जिन्हें Port स्थानांतरित कर सकता है, {blocked} को ऐसा मॉड समर्थन चाहिए जो Horizon में अभी नहीं है (मशीन, मेन्यू, व्यवहार, मॉब्स, आयाम, क्लाइंट सुविधाएँ), {later} अभी वर्गीकृत नहीं हैं (पहचाने नहीं गए, या अन्य मॉड्स या अन्य काम की प्रतीक्षा में)।",
   "Nothing": "कुछ नहीं",
   "Nothing equipped": "कुछ नहीं पहना",
   "Nothing found for {target}.": "{target} के लिए कुछ नहीं मिला।",

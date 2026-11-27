@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Ei valmisteltu. Kirjaudu ensin sisään Microsoft-tilillä, joka omistaa Minecraftin {version}.",
   "Not reviewed by the Horizon registry": "Ei tarkistettu Horizon-rekisterissä",
   "Not yet": "Ei vielä",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ei vielä: {ready} on sisältömodeja, jotka Port voi siirtää, {blocked} tarvitsee moditukea, jota Horizonissa ei vielä ole (koneet, valikot, toiminta, mobit, ulottuvuudet, asiakasominaisuudet), {later} ei ole vielä lajiteltu (tunnistamatta tai odottaa muita modeja tai muuta työtä).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ei vielä: {ready} on sisältömodeja, jotka Port voi siirtää, {blocked} tarvitsee moditukea, jota Horizonissa ei vielä ole (koneet, valikot, toiminta, mobit, ulottuvuudet, asiakasominaisuudet), {later} ei ole vielä lajiteltu (tunnistamatta tai odottaa muita modeja tai muuta työtä).",
   "Nothing": "Ei mitään",
   "Nothing equipped": "Ei mitään varustettua",
   "Nothing found for {target}.": "Mitään ei löytynyt haulle {target}.",

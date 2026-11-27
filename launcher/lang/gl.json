@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Non preparado. Inicia sesión primeiro coa conta de Microsoft que posúe Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Non revisado polo rexistro Horizon",
   "Not yet": "Aínda non",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Aínda non: {ready} son mods de contido que Port pode trasladar, {blocked} necesitan compatibilidade de mods que Horizon aínda non ten (máquinas, menús, comportamento, turbas, dimensións, funcións de cliente), {later} aínda non están clasificados (sen identificar ou á espera doutros mods ou outro traballo).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Aínda non: {ready} son mods de contido que Port pode trasladar, {blocked} necesitan compatibilidade de mods que Horizon aínda non ten (máquinas, menús, comportamento, turbas, dimensións, funcións de cliente), {later} aínda non están clasificados (sen identificar ou á espera doutros mods ou outro traballo).",
   "Nothing": "Nada",
   "Nothing equipped": "Nada equipado",
   "Nothing found for {target}.": "Non se atopou nada para {target}.",

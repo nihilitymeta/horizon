@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Nu este pregătit. Conectați-vă mai întâi cu contul Microsoft care deține Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Nu a fost examinat de registrul Horizon",
   "Not yet": "Nu încă",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Încă nu: {ready} sunt moduri de conținut pe care Port le poate prelua, {blocked} au nevoie de suport pentru moduri pe care Horizon nu îl are încă (mașini, meniuri, comportament, mobi, dimensiuni, funcții de client), {later} nu sunt încă sortate (neidentificate sau în așteptarea altor moduri ori a altor lucrări).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Încă nu: {ready} sunt moduri de conținut pe care Port le poate prelua, {blocked} au nevoie de suport pentru moduri pe care Horizon nu îl are încă (mașini, meniuri, comportament, mobi, dimensiuni, funcții de client), {later} nu sunt încă sortate (neidentificate sau în așteptarea altor moduri ori a altor lucrări).",
   "Nothing": "Nimic",
   "Nothing equipped": "Nimic echipat",
   "Nothing found for {target}.": "Nu s-a găsit nimic pentru {target}.",

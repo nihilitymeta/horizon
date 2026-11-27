@@ -63,7 +63,7 @@ fn headline_counts_the_reports_own_rows_and_tiers() {
     );
     let lines = s.lines();
     assert!(lines[0].starts_with("3 of 8 mods that need porting come over"));
-    assert!(lines[1].starts_with("Not yet: 1 are content mods Port can carry over, 2 need mod support Horizon does not have yet"), "{}", lines[1]);
+    assert!(lines[1].starts_with("Not yet: 1 are content mods Port can carry over, 2 need mod support Event Horizon does not have yet"), "{}", lines[1]);
     assert!(lines[1].contains("2 are not sorted yet"), "{}", lines[1]);
     assert!(lines[2].starts_with("Partial means"));
     assert_eq!(lines.len(), 3);

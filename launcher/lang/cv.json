@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Хатӗрленмен. Малтан Minecraft {version} тытакан Microsoft аккаунтпа кӗрӗр.",
   "Not reviewed by the Horizon registry": "Horizon реестрӗнче пӑхса тухман",
   "Not yet": "Хальлӗхе ҫук-ха",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Халӗ мар: {ready} — Порт куҫарма пултаракан контент модӗсем, {blocked} Horizon'та халӗ ҫук мод-поддержка кирлӗ (машинӑсем, менюсем, поведени, мобсем, измеренисем, клиент функцисем), {later} халӗ уйӑрман (палӑртман е ытти модсемпе е ытти ĕҫсем тӑрӑх кӗтеҫҫӗ).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Халӗ мар: {ready} — Порт куҫарма пултаракан контент модӗсем, {blocked} Horizon'та халӗ ҫук мод-поддержка кирлӗ (машинӑсем, менюсем, поведени, мобсем, измеренисем, клиент функцисем), {later} халӗ уйӑрман (палӑртман е ытти модсемпе е ытти ĕҫсем тӑрӑх кӗтеҫҫӗ).",
   "Nothing": "Нимӗн те",
   "Nothing equipped": "Нимӗн те хатӗрлемен",
   "Nothing found for {target}.": "{target} валли нимӗн те тупаймарӗҫ.",

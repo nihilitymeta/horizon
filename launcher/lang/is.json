@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Ekki undirbúin. Skráðu þig fyrst inn með Microsoft reikningnum sem á Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Ekki skoðað af Horizon skrásetning",
   "Not yet": "Ekki enn",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ekki enn: {ready} eru efnismod sem Port getur flutt yfir, {blocked} þurfa modstuðning sem Horizon hefur ekki enn (vélar, valmyndir, hegðun, mobs, víddir, eiginleika biðlarans), {later} eru ekki flokkuð enn (ekki auðkennd, eða bíða annarra moda eða annarrar vinnu).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ekki enn: {ready} eru efnismod sem Port getur flutt yfir, {blocked} þurfa modstuðning sem Horizon hefur ekki enn (vélar, valmyndir, hegðun, mobs, víddir, eiginleika biðlarans), {later} eru ekki flokkuð enn (ekki auðkennd, eða bíða annarra moda eða annarrar vinnu).",
   "Nothing": "Ekkert",
   "Nothing equipped": "Ekkert búið",
   "Nothing found for {target}.": "Ekkert fannst fyrir {target}.",

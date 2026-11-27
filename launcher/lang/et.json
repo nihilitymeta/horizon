@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Ei ole ette valmistatud. Logige esmalt sisse Microsofti kontoga, mis omab Minecrafti {version}.",
   "Not reviewed by the Horizon registry": "Horizoni register pole üle vaadanud",
   "Not yet": "Veel mitte",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Veel mitte: {ready} on sisumodifikatsioonid, mille Port saab üle kanda, {blocked} vajavad moditoetust, mida Horizonil veel pole (masinad, menüüd, käitumine, mobid, mõõtmed, kliendifunktsioonid), {later} ei ole veel sorteeritud (pole tuvastatud või ootavad teisi modifikatsioone või muud tööd).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Veel mitte: {ready} on sisumodifikatsioonid, mille Port saab üle kanda, {blocked} vajavad moditoetust, mida Horizonil veel pole (masinad, menüüd, käitumine, mobid, mõõtmed, kliendifunktsioonid), {later} ei ole veel sorteeritud (pole tuvastatud või ootavad teisi modifikatsioone või muud tööd).",
   "Nothing": "Mitte midagi",
   "Nothing equipped": "Pole midagi varustatud",
   "Nothing found for {target}.": "Päringule {target} ei leitud midagi.",

@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Nincs felkészülve. Először jelentkezzen be azzal a Microsoft-fiókkal, amely a Minecraft {version} tulajdonosa.",
   "Not reviewed by the Horizon registry": "A Horizon nyilvántartó nem vizsgálta felül",
   "Not yet": "Még nem",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Még nem: {ready} olyan tartalommod, amelyet a Port át tud emelni, {blocked} olyan modtámogatást igényel, amivel a Horizon még nem rendelkezik (gépek, menük, viselkedés, mobok, dimenziók, kliensfunkciók), {later} pedig még nincs besorolva (nincs azonosítva, vagy más modokra, illetve munkára vár).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Még nem: {ready} olyan tartalommod, amelyet a Port át tud emelni, {blocked} olyan modtámogatást igényel, amivel a Horizon még nem rendelkezik (gépek, menük, viselkedés, mobok, dimenziók, kliensfunkciók), {later} pedig még nincs besorolva (nincs azonosítva, vagy más modokra, illetve munkára vár).",
   "Nothing": "Semmit",
   "Nothing equipped": "Semmi felszerelve",
   "Nothing found for {target}.": "Semmi sem található a következőhöz: {target}.",

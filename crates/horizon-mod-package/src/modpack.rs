@@ -70,7 +70,7 @@ impl Manifest {
         let m: Manifest = toml::from_str(text).map_err(|e| format!("{MANIFEST}: {e}"))?;
         if m.format != FORMAT {
             return Err(format!(
-                "{MANIFEST}: format {}; this Horizon reads {FORMAT}",
+                "{MANIFEST}: format {}; this Event Horizon reads {FORMAT}",
                 m.format
             ));
         }

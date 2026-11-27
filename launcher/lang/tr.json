@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Hazırlanmadı. Önce Minecraft {version} sürümüne sahip olan Microsoft hesabıyla oturum açın.",
   "Not reviewed by the Horizon registry": "Horizon kayıt defteri tarafından incelenmedi",
   "Not yet": "Henüz değil",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Henüz değil: {ready} tanesi Uyarla'nın aktarabileceği içerik modu, {blocked} tanesi Horizon'ın henüz sahip olmadığı mod desteği gerektiriyor (makineler, menüler, davranış, yaratıklar, boyutlar, istemci özellikleri), {later} tanesi henüz sınıflandırılmadı (tanımlanmadı ya da başka modları veya başka işleri bekliyor).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Henüz değil: {ready} tanesi Uyarla'nın aktarabileceği içerik modu, {blocked} tanesi Horizon'ın henüz sahip olmadığı mod desteği gerektiriyor (makineler, menüler, davranış, yaratıklar, boyutlar, istemci özellikleri), {later} tanesi henüz sınıflandırılmadı (tanımlanmadı ya da başka modları veya başka işleri bekliyor).",
   "Nothing": "Hiçbiri",
   "Nothing equipped": "Hiçbir şey kuşanılmadı",
   "Nothing found for {target}.": "{target} için hiçbir şey bulunamadı.",

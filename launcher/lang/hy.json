@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Պատրաստված չէ: Մուտք գործեք Microsoft-ի հաշիվ, որը պատկանում է Minecraft {version}-ին:",
   "Not reviewed by the Horizon registry": "Չի վերանայվել Horizon ռեգիստրի կողմից",
   "Not yet": "Դեռ ոչ",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Դեռ ոչ. {ready}-ը բովանդակային ռեժիմներ են, որոնք Port-ը կարող է տեղափոխել, {blocked}-ին պետք է ռեժիմների աջակցություն, որը Horizon-ը դեռ չունի (մեքենաներ, մենյուներ, վարք, արարածներ, չափումներ, հաճախորդի հնարավորություններ), {later}-ը դեռ դասակարգված չեն (չեն ճանաչվել կամ սպասում են այլ ռեժիմների կամ այլ աշխատանքի)։",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Դեռ ոչ. {ready}-ը բովանդակային ռեժիմներ են, որոնք Port-ը կարող է տեղափոխել, {blocked}-ին պետք է ռեժիմների աջակցություն, որը Horizon-ը դեռ չունի (մեքենաներ, մենյուներ, վարք, արարածներ, չափումներ, հաճախորդի հնարավորություններ), {later}-ը դեռ դասակարգված չեն (չեն ճանաչվել կամ սպասում են այլ ռեժիմների կամ այլ աշխատանքի)։",
   "Nothing": "Ոչինչ",
   "Nothing equipped": "Ոչինչ սարքավորված",
   "Nothing found for {target}.": "{target}-ի համար ոչինչ չի գտնվել:",

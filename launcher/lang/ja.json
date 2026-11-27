@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "未準備です。まずMinecraft {version}を所有するMicrosoftアカウントでサインインしてください。",
   "Not reviewed by the Horizon registry": "Horizonレジストリで未審査",
   "Not yet": "未対応",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "未対応：{ready}個は移植機能が移行できるコンテンツMod、{blocked}個はHorizonにまだないModサポート（機械、メニュー、動作、モブ、ディメンション、クライアント機能）が必要、{later}個は未分類（未特定、または他のModや作業待ち）です。",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "未対応：{ready}個は移植機能が移行できるコンテンツMod、{blocked}個はHorizonにまだないModサポート（機械、メニュー、動作、モブ、ディメンション、クライアント機能）が必要、{later}個は未分類（未特定、または他のModや作業待ち）です。",
   "Nothing": "なし",
   "Nothing equipped": "何も装備していません",
   "Nothing found for {target}.": "{target} に関する結果が見つかりません。",

@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Не подготовлено. Сначала войдите в аккаунт Microsoft, у которого есть Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Не проверено реестром Horizon",
   "Not yet": "Ещё нет",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ещё нет: {ready} — контентные моды, которые может перенести Port, {blocked} нуждаются в поддержке модов, которой у Horizon ещё нет (машины, меню, поведение, мобы, измерения, клиентские функции), {later} ещё не разобраны (не идентифицированы или ожидают других модов или работ).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ещё нет: {ready} — контентные моды, которые может перенести Port, {blocked} нуждаются в поддержке модов, которой у Horizon ещё нет (машины, меню, поведение, мобы, измерения, клиентские функции), {later} ещё не разобраны (не идентифицированы или ожидают других модов или работ).",
   "Nothing": "Ничего",
   "Nothing equipped": "Ничего не надето",
   "Nothing found for {target}.": "Ничего не найдено для {target}.",

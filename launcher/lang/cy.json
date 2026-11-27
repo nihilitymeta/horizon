@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Heb ei baratoi. Mewngofnodwch gyda'r cyfrif Microsoft sy'n berchen ar Minecraft {version} yn gyntaf.",
   "Not reviewed by the Horizon registry": "Heb ei adolygu gan y gofrestrfa Horizon",
   "Not yet": "Ddim eto",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Dim eto: mae {ready} yn mods cynnwys y gall Port eu cludo drosodd, mae {blocked} angen cefnogaeth mods nad yw Horizon yn ei chael eto (peiriannau, bwydlenni, ymddygiad, creaduriaid, dimensiynau, nodweddion cleient), nid yw {later} wedi'u didoli eto (heb eu hadnabod, neu'n aros ar mods eraill neu waith arall).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Dim eto: mae {ready} yn mods cynnwys y gall Port eu cludo drosodd, mae {blocked} angen cefnogaeth mods nad yw Horizon yn ei chael eto (peiriannau, bwydlenni, ymddygiad, creaduriaid, dimensiynau, nodweddion cleient), nid yw {later} wedi'u didoli eto (heb eu hadnabod, neu'n aros ar mods eraill neu waith arall).",
   "Nothing": "Dim byd",
   "Nothing equipped": "Dim offer",
   "Nothing found for {target}.": "Dim wedi'i ddarganfod am {target}.",

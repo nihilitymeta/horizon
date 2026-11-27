@@ -594,7 +594,7 @@ impl Manifest {
         }
         if m.api != API {
             return Err(format!(
-                "unsupported content API {}; this Horizon reads {API}",
+                "unsupported content API {}; this Event Horizon reads {API}",
                 m.api
             ));
         }

@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Бэлтгэлгүй. Эхлээд Minecraft {version} эзэмшдэг Microsoft бүртгэлээр нэвтэрнэ үү.",
   "Not reviewed by the Horizon registry": "Horizon бүртгэлээс хянаагүй",
   "Not yet": "Одоохондоо үгүй",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Хараахан болоогүй: {ready} нь Порт шилжүүлж чадах агуулгын мод, {blocked} нь Horizon-д хараахан байхгүй модыг дэмжих боломж (машин, цэс, зан төлөв, моб, хэмжээс, клиент боломж) шаарддаг, {later} нь хараахан эрэмбэлэгдээгүй (тодорхойлогдоогүй эсвэл бусад мод, бусад ажлыг хүлээж байгаа).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Хараахан болоогүй: {ready} нь Порт шилжүүлж чадах агуулгын мод, {blocked} нь Horizon-д хараахан байхгүй модыг дэмжих боломж (машин, цэс, зан төлөв, моб, хэмжээс, клиент боломж) шаарддаг, {later} нь хараахан эрэмбэлэгдээгүй (тодорхойлогдоогүй эсвэл бусад мод, бусад ажлыг хүлээж байгаа).",
   "Nothing": "Юу ч биш",
   "Nothing equipped": "Юу ч тоноглогдоогүй",
   "Nothing found for {target}.": "{target}-д юу ч олдсонгүй.",

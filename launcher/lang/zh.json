@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "未准备。请先登录拥有 Minecraft {version} 的 Microsoft 账户。",
   "Not reviewed by the Horizon registry": "未经 Horizon 注册表审核",
   "Not yet": "暂不",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "尚未完成：{ready} 个是 Port 功能可移植的内容模组，{blocked} 个需要 Horizon 目前尚不具备的模组支持（机器、菜单、行为、生物、维度、客户端功能），{later} 个尚未分类（未识别，或在等待其他模组或其他工作）。",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "尚未完成：{ready} 个是 Port 功能可移植的内容模组，{blocked} 个需要 Horizon 目前尚不具备的模组支持（机器、菜单、行为、生物、维度、客户端功能），{later} 个尚未分类（未识别，或在等待其他模组或其他工作）。",
   "Nothing": "无",
   "Nothing equipped": "未装备",
   "Nothing found for {target}.": "未找到适用于 {target} 的内容。",

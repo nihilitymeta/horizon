@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "ບໍ່ໄດ້ກະກຽມ. ເຂົ້າສູ່ລະບົບດ້ວຍບັນຊີ Microsoft ທີ່ເປັນເຈົ້າຂອງ Minecraft {version} ກ່ອນ.",
   "Not reviewed by the Horizon registry": "ບໍ່ໄດ້ກວດສອບໂດຍ Horizon ທະບຽນ",
   "Not yet": "ຍັງບໍ່ທັນ",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ຍັງບໍ່ທັນ: {ready} ເປັນ content mod ທີ່ Port ນຳມາໄດ້, {blocked} ຕ້ອງການການສະໜັບສະໜູນ mod ທີ່ Horizon ຍັງບໍ່ມີ (ເຄື່ອງຈັກ, ເມນູ, ພຶດຕິກຳ, ມອບ, ມິຕິ, ຄຸນສົມບັດຝັ່ງລູກຄ້າ), {later} ຍັງບໍ່ຖືກຈັດໝວດ (ຍັງບໍ່ຮູ້ຈັກ, ຫຼື ລໍຖ້າ mod ອື່ນ ຫຼື ວຽກອື່ນ).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ຍັງບໍ່ທັນ: {ready} ເປັນ content mod ທີ່ Port ນຳມາໄດ້, {blocked} ຕ້ອງການການສະໜັບສະໜູນ mod ທີ່ Horizon ຍັງບໍ່ມີ (ເຄື່ອງຈັກ, ເມນູ, ພຶດຕິກຳ, ມອບ, ມິຕິ, ຄຸນສົມບັດຝັ່ງລູກຄ້າ), {later} ຍັງບໍ່ຖືກຈັດໝວດ (ຍັງບໍ່ຮູ້ຈັກ, ຫຼື ລໍຖ້າ mod ອື່ນ ຫຼື ວຽກອື່ນ).",
   "Nothing": "ບໍ່ມີຫຍັງ",
   "Nothing equipped": "ບໍ່ມີຫຍັງພ້ອມ",
   "Nothing found for {target}.": "ບໍ່ພົບຫຍັງສຳລັບ {target}.",

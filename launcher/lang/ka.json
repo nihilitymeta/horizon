@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "არ არის მომზადებული. შედით Microsoft-ის ანგარიშით, რომელიც ფლობს Minecraft {version}-ს.",
   "Not reviewed by the Horizon registry": "არ არის განხილული Horizon რეესტრის მიერ",
   "Not yet": "ჯერ არა",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ჯერ არა: {ready} არის კონტენტის მოდი, რომელთა გადატანაც პორტს შეუძლია, {blocked}-ს სჭირდება მოდების მხარდაჭერა, რაც Horizon-ს ჯერ არ აქვს (მანქანები, მენიუები, ქცევა, მობები, განზომილებები, კლიენტის ფუნქციები), {later} ჯერ არ არის დალაგებული (არ არის იდენტიფიცირებული ან ელოდება სხვა მოდებს ან სხვა სამუშაოს).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ჯერ არა: {ready} არის კონტენტის მოდი, რომელთა გადატანაც პორტს შეუძლია, {blocked}-ს სჭირდება მოდების მხარდაჭერა, რაც Horizon-ს ჯერ არ აქვს (მანქანები, მენიუები, ქცევა, მობები, განზომილებები, კლიენტის ფუნქციები), {later} ჯერ არ არის დალაგებული (არ არის იდენტიფიცირებული ან ელოდება სხვა მოდებს ან სხვა სამუშაოს).",
   "Nothing": "არაფერი",
   "Nothing equipped": "არაფერი აღჭურვილი",
   "Nothing found for {target}.": "{target}-სთვის არაფერი მოიძებნა.",

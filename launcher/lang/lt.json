@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Neparengtas. Pirmiausia prisijunkite naudodami „Microsoft“ paskyrą, kuriai priklauso „Minecraft“ {version}.",
   "Not reviewed by the Horizon registry": "Neperžiūrėjo Horizon registras",
   "Not yet": "Dar ne",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Dar ne: {ready} yra turinio modifikacijos, kurias „Portas“ gali perkelti, {blocked} reikia modifikacijų palaikymo, kurio „Horizon“ dar neturi (mašinos, meniu, elgsena, būtybės, dimensijos, kliento funkcijos), {later} dar neišrūšiuotos (neatpažintos arba laukia kitų modifikacijų ar kito darbo).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Dar ne: {ready} yra turinio modifikacijos, kurias „Portas“ gali perkelti, {blocked} reikia modifikacijų palaikymo, kurio „Horizon“ dar neturi (mašinos, meniu, elgsena, būtybės, dimensijos, kliento funkcijos), {later} dar neišrūšiuotos (neatpažintos arba laukia kitų modifikacijų ar kito darbo).",
   "Nothing": "Nieko",
   "Nothing equipped": "Nieko neįrengta",
   "Nothing found for {target}.": "Nieko nerasta {target}.",

@@ -116,7 +116,7 @@ impl Imported {
         ));
         if s.ready + s.blocked + s.later > 0 {
             lines.push(trf(
-                "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).",
+                "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).",
                 &[
                     ("ready", &n(s.ready)),
                     ("blocked", &n(s.blocked)),

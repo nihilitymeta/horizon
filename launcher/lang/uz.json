@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Tayyorlanmagan. Avval Minecraft {version} egasi bo'lgan Microsoft hisob qaydnomasi bilan tizimga kiring.",
   "Not reviewed by the Horizon registry": "Horizon reestri tomonidan ko'rib chiqilmagan",
   "Not yet": "Hali emas",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Hali emas: {ready} tasi Port ko'chirishi mumkin bo'lgan kontent modlar, {blocked} tasiga Horizon'da hali yo'q mod yordami kerak (mashinalar, menyular, xatti-harakat, moblar, o'lchamlar, mijoz imkoniyatlari), {later} tasi hali saralanmagan (aniqlanmagan yoki boshqa modlar yoki boshqa ishlarni kutmoqda).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Hali emas: {ready} tasi Port ko'chirishi mumkin bo'lgan kontent modlar, {blocked} tasiga Horizon'da hali yo'q mod yordami kerak (mashinalar, menyular, xatti-harakat, moblar, o'lchamlar, mijoz imkoniyatlari), {later} tasi hali saralanmagan (aniqlanmagan yoki boshqa modlar yoki boshqa ishlarni kutmoqda).",
   "Nothing": "Hech narsa",
   "Nothing equipped": "Hech narsa jihozlanmagan",
   "Nothing found for {target}.": "{target} uchun hech narsa topilmadi.",

@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Не підготовлено. Спершу увійдіть з обліковим записом Microsoft, який має Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Не перевірено реєстром Horizon",
   "Not yet": "Ще ні",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ще ні: {ready} — це контентні моди, які «Портувати» може перенести, {blocked} потребують підтримки модів, якої Horizon ще не має (механізми, меню, поведінка, моби, виміри, клієнтські можливості), {later} ще не розсортовано (не визначено або очікують на інші моди чи іншу роботу).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ще ні: {ready} — це контентні моди, які «Портувати» може перенести, {blocked} потребують підтримки модів, якої Horizon ще не має (механізми, меню, поведінка, моби, виміри, клієнтські можливості), {later} ще не розсортовано (не визначено або очікують на інші моди чи іншу роботу).",
   "Nothing": "Нічого",
   "Nothing equipped": "Нічого не вдягнено",
   "Nothing found for {target}.": "Нічого не знайдено для {target}.",

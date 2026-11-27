@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "தயாராக இல்லை. முதலில் Minecraft {version} ஐ வைத்திருக்கும் Microsoft கணக்கில் உள்நுழையவும்.",
   "Not reviewed by the Horizon registry": "Horizon பதிவேட்டால் மதிப்பாய்வு செய்யப்படவில்லை",
   "Not yet": "இன்னும் இல்லை",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "இன்னும் இல்லை: {ready} என்பவை போர்ட் கொண்டு வரக்கூடிய உள்ளடக்க மோட்கள், {blocked} க்கு Horizon இன்னும் கொண்டிராத மோட் ஆதரவு தேவை (இயந்திரங்கள், மெனுக்கள், நடத்தை, மொப்கள், பரிமாணங்கள், கிளையண்ட் அம்சங்கள்), {later} இன்னும் வகைப்படுத்தப்படவில்லை (அடையாளம் காணப்படவில்லை அல்லது பிற மோட்கள் அல்லது பிற வேலைக்காகக் காத்திருக்கின்றன).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "இன்னும் இல்லை: {ready} என்பவை போர்ட் கொண்டு வரக்கூடிய உள்ளடக்க மோட்கள், {blocked} க்கு Horizon இன்னும் கொண்டிராத மோட் ஆதரவு தேவை (இயந்திரங்கள், மெனுக்கள், நடத்தை, மொப்கள், பரிமாணங்கள், கிளையண்ட் அம்சங்கள்), {later} இன்னும் வகைப்படுத்தப்படவில்லை (அடையாளம் காணப்படவில்லை அல்லது பிற மோட்கள் அல்லது பிற வேலைக்காகக் காத்திருக்கின்றன).",
   "Nothing": "ஒன்றுமில்லை",
   "Nothing equipped": "எதுவும் பொருத்தப்படவில்லை",
   "Nothing found for {target}.": "{target}க்கு எதுவும் கிடைக்கவில்லை.",

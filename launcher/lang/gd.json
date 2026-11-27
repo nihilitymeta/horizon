@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Gun ullachadh. Clàraich a-steach leis a’ chunntas Microsoft aig a bheil Minecraft {version} an toiseach.",
   "Not reviewed by the Horizon registry": "Gun ath-sgrùdadh leis a’ chlàr Horizon",
   "Not yet": "Chan eil fhathast",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Chan ann fhathast: 's e {ready} mòdan susbaint as urrainn do Port giùlan a-nall, feumaidh {blocked} taic mhòdan nach eil aig Horizon fhathast (inneal, clàran-bìdh, giùlan, mobs, tomhasan, feartan cliaint), agus chan eil {later} air an seòrsachadh fhathast (gun aithneachadh, no a' feitheamh ri mòdan eile no obair eile).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Chan ann fhathast: 's e {ready} mòdan susbaint as urrainn do Port giùlan a-nall, feumaidh {blocked} taic mhòdan nach eil aig Horizon fhathast (inneal, clàran-bìdh, giùlan, mobs, tomhasan, feartan cliaint), agus chan eil {later} air an seòrsachadh fhathast (gun aithneachadh, no a' feitheamh ri mòdan eile no obair eile).",
   "Nothing": "Chan eil dad",
   "Nothing equipped": "Chan eil dad uidheamaichte",
   "Nothing found for {target}.": "Chan eil dad ri lorg airson {target}.",

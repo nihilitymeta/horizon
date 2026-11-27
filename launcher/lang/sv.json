@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Inte förberedd. Logga in med Microsoft-kontot som äger Minecraft {version} först.",
   "Not reviewed by the Horizon registry": "Ej granskad av Horizon-registret",
   "Not yet": "Inte än",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ännu inte: {ready} är innehållsmods som Port kan föra över, {blocked} behöver modstöd som Horizon inte har än (maskiner, menyer, beteende, mobbar, dimensioner, klientfunktioner), {later} är inte sorterade än (inte identifierade eller väntar på andra mods eller annat arbete).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Ännu inte: {ready} är innehållsmods som Port kan föra över, {blocked} behöver modstöd som Horizon inte har än (maskiner, menyer, beteende, mobbar, dimensioner, klientfunktioner), {later} är inte sorterade än (inte identifierade eller väntar på andra mods eller annat arbete).",
   "Nothing": "Ingenting",
   "Nothing equipped": "Inget utrustat",
   "Nothing found for {target}.": "Inget hittades för {target}.",

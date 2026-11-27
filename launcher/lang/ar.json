@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "غير مجهز. سجّل الدخول بحساب مايكروسوفت الذي يمتلك ماين كرافت {version} أولاً.",
   "Not reviewed by the Horizon registry": "لم يتم مراجعته من قِبل سجل هورايزون",
   "Not yet": "ليس بعد",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ليس بعد: {ready} تعديلات محتوى يمكن لـ Port نقلها، و{blocked} تحتاج إلى دعم تعديلات لا يملكه هورايزون بعد (آلات، قوائم، سلوك، كائنات، أبعاد، ميزات عميل)، و{later} لم تُصنَّف بعد (غير محددة، أو تنتظر تعديلات أخرى أو عملًا آخر).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "ليس بعد: {ready} تعديلات محتوى يمكن لـ Port نقلها، و{blocked} تحتاج إلى دعم تعديلات لا يملكه هورايزون بعد (آلات، قوائم، سلوك، كائنات، أبعاد، ميزات عميل)، و{later} لم تُصنَّف بعد (غير محددة، أو تنتظر تعديلات أخرى أو عملًا آخر).",
   "Nothing": "لا شيء",
   "Nothing equipped": "لا شيء مرتدى",
   "Nothing found for {target}.": "لم يتم العثور على شيء لـ {target}.",

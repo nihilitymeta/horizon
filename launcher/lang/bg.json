@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Не е подготвен. Първо влезте с акаунта в Microsoft, който притежава Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Не е прегледан от регистъра на Horizon",
   "Not yet": "още не",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Все още не: {ready} са модове със съдържание, които Портът може да пренесе, {blocked} се нуждаят от поддръжка на модове, която Horizon още няма (машини, менюта, поведение, мобове, измерения, клиентски функции), {later} още не са подредени (не са разпознати или чакат други модове или друга работа).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Все още не: {ready} са модове със съдържание, които Портът може да пренесе, {blocked} се нуждаят от поддръжка на модове, която Horizon още няма (машини, менюта, поведение, мобове, измерения, клиентски функции), {later} още не са подредени (не са разпознати или чакат други модове или друга работа).",
   "Nothing": "нищо",
   "Nothing equipped": "Нищо оборудвано",
   "Nothing found for {target}.": "Нищо не е намерено за {target}.",

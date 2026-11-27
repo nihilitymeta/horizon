@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Nav sagatavots. Vispirms pierakstieties, izmantojot Microsoft kontu, kuram pieder Minecraft {version}.",
   "Not reviewed by the Horizon registry": "Nav pārskatījis Horizon reģistrs",
   "Not yet": "Vēl nav",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Vēl ne: {ready} ir satura modi, ko Port var pārnest, {blocked} nepieciešams modu atbalsts, kura Horizon vēl nav (iekārtas, izvēlnes, uzvedība, mobi, dimensijas, klienta funkcijas), {later} vēl nav sašķiroti (nav identificēti vai gaida citus modus vai citu darbu).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Vēl ne: {ready} ir satura modi, ko Port var pārnest, {blocked} nepieciešams modu atbalsts, kura Horizon vēl nav (iekārtas, izvēlnes, uzvedība, mobi, dimensijas, klienta funkcijas), {later} vēl nav sašķiroti (nav identificēti vai gaida citus modus vai citu darbu).",
   "Nothing": "Nekas",
   "Nothing equipped": "Nekas nav aprīkots",
   "Nothing found for {target}.": "Vaicājumam {target} nekas netika atrasts.",

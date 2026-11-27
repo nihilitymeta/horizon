@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Ez dago prestatuta. Hasi saioa Minecraft {version} duen Microsoft kontuarekin lehenik.",
   "Not reviewed by the Horizon registry": "Horizon erregistroak ez du berrikusi",
   "Not yet": "Oraindik ez",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Oraindik ez: {ready} Port-ek ekar ditzakeen eduki-modak dira, {blocked}-ek Horizon-ek oraindik ez duen mod-laguntza behar dute (makinak, menuak, portaera, mobak, dimentsioak, bezero-ezaugarriak), {later} oraindik sailkatu gabe daude (identifikatu gabe, edo beste mod edo beste lan batzuen zain).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Oraindik ez: {ready} Port-ek ekar ditzakeen eduki-modak dira, {blocked}-ek Horizon-ek oraindik ez duen mod-laguntza behar dute (makinak, menuak, portaera, mobak, dimentsioak, bezero-ezaugarriak), {later} oraindik sailkatu gabe daude (identifikatu gabe, edo beste mod edo beste lan batzuen zain).",
   "Nothing": "Ezer ez",
   "Nothing equipped": "Ezer hornituta",
   "Nothing found for {target}.": "Ez da ezer aurkitu {target}rentzat.",

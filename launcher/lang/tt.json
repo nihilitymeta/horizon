@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Әзер түгел. Башта Minecraft {version} хуҗасы булган Microsoft счеты белән керегез.",
   "Not reviewed by the Horizon registry": "Horizon реестрында каралмаган",
   "Not yet": "Әле түгел",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Әле түгел: {ready} — Порт күчерә алган эчтәлек модлары, {blocked} — Horizonда әле булмаган мод ярдәмен таләп итә (машиналар, менюлар, тәртип, моблар, үлчәмнәр, клиент мөмкинлекләре), {later} — әле төркемләнмәгән (билгеләнмәгән яки башка модларны яки эшләрне көтә).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Әле түгел: {ready} — Порт күчерә алган эчтәлек модлары, {blocked} — Horizonда әле булмаган мод ярдәмен таләп итә (машиналар, менюлар, тәртип, моблар, үлчәмнәр, клиент мөмкинлекләре), {later} — әле төркемләнмәгән (билгеләнмәгән яки башка модларны яки эшләрне көтә).",
   "Nothing": "Беркем дә",
   "Nothing equipped": "Бернәрсә дә җиһазландырылмаган",
   "Nothing found for {target}.": "{target} өчен бернәрсә дә табылмады.",

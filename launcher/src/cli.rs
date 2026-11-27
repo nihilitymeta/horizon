@@ -1822,10 +1822,10 @@ fn execute(command: Cmd, as_json: bool) -> Result<i32, String> {
             settings.save()?;
             if remove {
                 horizon_launcher::desktop::remove()?;
-                println!("Removed Horizon from the applications menu.");
+                println!("Removed Event Horizon from the applications menu.");
             } else {
                 horizon_launcher::desktop::install(backend::exe_path())?;
-                println!("Horizon is in the applications menu.");
+                println!("Event Horizon is in the applications menu.");
             }
         }
         Cmd::Worlds { action } => worlds(
@@ -1867,7 +1867,9 @@ fn java(action: JavaCmd, as_json: bool) -> Result<(), String> {
             if as_json {
                 json(serde_json::json!(all));
             } else if all.is_empty() {
-                println!("No Java yet. Horizon downloads Mojang's when an instance needs it.");
+                println!(
+                    "No Java yet. Event Horizon downloads Mojang's when an instance needs it."
+                );
             } else {
                 for r in &all {
                     let from = match r.source {
@@ -1952,12 +1954,12 @@ fn update(check: bool, as_json: bool) -> Result<(), String> {
         return Ok(());
     }
     match &updates.horizon {
-        None => println!("Horizon: up to date."),
-        Some(r) if check => println!("Horizon: {} is available.", r.tag),
+        None => println!("Event Horizon: up to date."),
+        Some(r) if check => println!("Event Horizon: {} is available.", r.tag),
         Some(r) => {
             let tag =
                 backend::install_tag(&r.tag, true, progress(format!("Installing {}", r.tag)))?;
-            println!("Horizon: installed {tag}.");
+            println!("Event Horizon: installed {tag}.");
         }
     }
     match &updates.launcher {
@@ -2215,7 +2217,7 @@ fn sources(action: SourcesCmd, as_json: bool) -> Result<(), String> {
         } => {
             let (repo, took_over) = game_sources::add(&repo, !no_auto_update)?;
             if took_over {
-                println!("Horizon's game updates are off (new game versions no longer install themselves); this source updates itself. Turn it back on in settings if you want it.");
+                println!("Event Horizon's game updates are off (new game versions no longer install themselves); this source updates itself. Turn it back on in settings if you want it.");
             }
             println!(
                 "Added {repo}. Install its newest release: horizon-launcher sources update {repo}"

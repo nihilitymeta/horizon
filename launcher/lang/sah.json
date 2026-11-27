@@ -673,7 +673,7 @@
   "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "Бэлэмнэммэтэх. Бастаан Minecraft {version} бас билэр Microsoft аккаунунан киир.",
   "Not reviewed by the Horizon registry": "Horizon реестрынан көрүллүбэтэх",
   "Not yet": "Билиҥҥитэ суох",
-  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Өссө суох: {ready} — Порт көһөрүөн сөп ис хоһоон модтара, {blocked} — Horizon өссө суох мод өйөбүлүн наадалыыллар (массыыналар, менюлар, быһыы-майгы, мобтар, измерениелэр, клиент кыахтара), {later} — өссө наардамматахтар (быһаарыллыбатахтар эбэтэр атын модтары эбэтэр атын үлэни кэтэһэллэр).",
+  "Not yet: {ready} are content mods Port can carry over, {blocked} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {later} are not sorted yet (not identified, or waiting on other mods or other work).": "Өссө суох: {ready} — Порт көһөрүөн сөп ис хоһоон модтара, {blocked} — Horizon өссө суох мод өйөбүлүн наадалыыллар (массыыналар, менюлар, быһыы-майгы, мобтар, измерениелэр, клиент кыахтара), {later} — өссө наардамматахтар (быһаарыллыбатахтар эбэтэр атын модтары эбэтэр атын үлэни кэтэһэллэр).",
   "Nothing": "Туох да суох",
   "Nothing equipped": "Туох да тэрилэ суох",
   "Nothing found for {target}.": "{target} сыанаҕа туох да табыллыбата.",

@@ -490,7 +490,7 @@ pub struct Summary {
     pub partial: usize,
     /// Not yet: content of the data tier, which port can carry over.
     pub ready: usize,
-    /// Not yet: needs mod API Horizon does not have yet (every tier above data).
+    /// Not yet: needs mod API Event Horizon does not have yet (every tier above data).
     pub blocked: usize,
     /// Not yet, for another reason: not identified, or waiting on other mods or other work.
     pub later: usize,
@@ -535,7 +535,7 @@ impl Summary {
         )];
         if self.ready + self.blocked + self.later > 0 {
             lines.push(format!(
-                "Not yet: {} are content mods Port can carry over, {} need mod support Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {} are not sorted yet (not identified, or waiting on other mods or other work).",
+                "Not yet: {} are content mods Port can carry over, {} need mod support Event Horizon does not have yet (machines, menus, behaviour, mobs, dimensions, client features), {} are not sorted yet (not identified, or waiting on other mods or other work).",
                 self.ready, self.blocked, self.later
             ));
         }
