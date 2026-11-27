@@ -2,11 +2,13 @@
 //! Controls, Key Binds, Mouse Settings, Chat Settings, Accessibility,
 //! Language and Resource Packs, laid out like vanilla's HeaderAndFooter /
 //! OptionsList screens and drawn with the shared widgets.
+mod draw;
 mod pack_drop;
 
 use std::time::Instant;
 
 pub use crate::settings::Opt;
+use horizon_hooks::mod_entries::{Fault, PowerView, Provider, SettingView, ViewKind, ViewValue};
 
 #[path = "options_ui_widgets.rs"]
 mod widgets;
@@ -14,7 +16,7 @@ use crate::{
     gamepad::{self, GlyphStyle},
     hdr_calibration::Picture,
     hud::{HudAtlas, HudBatch, rgba},
-    keybinds::{self, CATEGORIES, KeyBinds, all_mappings},
+    keybinds::{self, CATEGORIES, KeyBinds, MAPPINGS},
     lang::{self, LanguageInfo},
     settings::{SOUND_SOURCES, Settings},
     settings_shell as shell,
@@ -27,8 +29,10 @@ pub(crate) use widgets::{button, inactive};
 mod values;
 pub(crate) use values::{chat_delay_label, chat_px, generic, on_off, percent};
 
+mod layout;
 mod shell_pages;
 
+use self::layout::OptionsLayout;
 #[path = "options_ui_wheel.rs"]
 mod wheel;
 pub(crate) use wheel::slider_unsnapped;
@@ -39,28 +43,10 @@ fn tr(key: &str) -> Text {
 
 /// False only in a game built without the `horizon-extras` feature (docs/forking.md), which says
 /// so once at startup: the Options screen then has vanilla's Telemetry Data slot instead of
-/// Horizon Settings (Mods stays), and Credits & Attribution names the official build.
+/// Horizon Settings and Mods, and Credits & Attribution names the official build.
 pub static HORIZON_EXTRAS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 fn horizon_extras() -> bool {
     HORIZON_EXTRAS.load(std::sync::atomic::Ordering::Relaxed)
-}
-/// The last three Options main-screen buttons, after vanilla's: Horizon Settings and Mods with
-/// `horizon-extras`; without it, vanilla's Telemetry Data (greyed: nothing is sent) and Mods.
-/// Credits & Attribution comes last either way.
-fn options_main_tail(extras: bool) -> [(&'static str, Option<Page>); 3] {
-    if extras {
-        [
-            ("horizon.pages.open.horizon_settings", Some(Page::Horizon)),
-            ("horizon.pages.open.mods", Some(Page::Mods)),
-            ("options.credits_and_attribution", Some(Page::Credits)),
-        ]
-    } else {
-        [
-            ("options.telemetry", None),
-            ("horizon.pages.open.mods", Some(Page::Mods)),
-            ("options.credits_and_attribution", Some(Page::Credits)),
-        ]
-    }
 }
 /// `text` cut into lines of at most `width` characters, at spaces where it has them.
 fn wrap(text: &str, width: usize) -> Vec<String> {
@@ -86,21 +72,198 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     }
     lines
 }
+/// Setting `j` of the native mod in row `i` of Options > Mods.
+fn mod_setting(s: &Settings, i: u16, j: u16) -> Option<&crate::mod_list::NativeSetting> {
+    s.mods
+        .installed
+        .get(usize::from(i))?
+        .native
+        .as_ref()?
+        .settings
+        .get(usize::from(j))
+}
+/// A native mod's setting as its row says it: the label, then the value.
+fn mod_setting_label(setting: &crate::mod_list::NativeSetting) -> Text {
+    use crate::mod_list::NativeSettingValue as V;
+    let value = match &setting.value {
+        V::Toggle(on) => on_off(*on),
+        V::Choice { options, index } => options
+            .get(*index)
+            .map_or_else(|| Text::literal(""), |o| tr(o)),
+        V::Range { value, .. } => {
+            let shown = format!("{value:.2}");
+            Text::literal(shown.trim_end_matches('0').trim_end_matches('.'))
+        }
+        V::Color(rgb) => Text::literal(format!("#{rgb:06X}")).with_color(*rgb),
+    };
+    Text::option_name_value(tr(&setting.label), value)
+}
+// A test's stand-in for the Lua mods' provider, per test thread.
+#[cfg(test)]
+thread_local! {
+    static TEST_LUA: std::cell::Cell<Option<&'static dyn Provider>> =
+        const { std::cell::Cell::new(None) };
+}
+/// The provider of the Lua mods' settings: the registered one (`mod_entries::engine`), or a
+/// test's stand-in. `None` without one, and then nothing on the Lua pages changes.
+pub(crate) fn lua_provider() -> Option<&'static dyn Provider> {
+    #[cfg(test)]
+    if let Some(provider) = TEST_LUA.with(std::cell::Cell::get) {
+        return Some(provider);
+    }
+    horizon_hooks::mod_entries::engine::provider()
+}
+/// Setting `j` of the Lua mod at provider entry `i`: the mod's id, and the setting as it is now.
+fn lua_setting(i: usize, j: usize) -> Option<(String, SettingView)> {
+    let provider = lua_provider()?;
+    let (id, _) = provider.lookup(i)?;
+    let setting = provider.settings(&id).into_iter().nth(j)?;
+    Some((id, setting))
+}
+/// A Lua setting's value as its row says it: a choice's option (its translation when the
+/// language has one, else the text the mod gave), a colour in its own colour, a number as is.
+fn lua_value(kind: &ViewKind, value: &ViewValue) -> Text {
+    match (kind, value) {
+        (_, ViewValue::Bool(on)) => on_off(*on),
+        (ViewKind::Choice { options }, ViewValue::Text(option)) if options.contains(option) => {
+            lua_option(option)
+        }
+        (ViewKind::Colour, ViewValue::Text(hex)) => {
+            Text::literal(hex.clone()).with_color(lua_rgb(hex))
+        }
+        (_, ViewValue::Int(n)) => Text::literal(n.to_string()),
+        (_, ViewValue::Float(f)) => {
+            let shown = format!("{f:.2}");
+            Text::literal(shown.trim_end_matches('0').trim_end_matches('.'))
+        }
+        (_, ViewValue::Text(text)) => Text::literal(text.clone()),
+    }
+}
+/// A choice's option: its translation when the language has the key, else the text as given.
+fn lua_option(option: &str) -> Text {
+    if lang::has(option) {
+        tr(option)
+    } else {
+        Text::literal(option)
+    }
+}
+/// `#rrggbb` as `0xRRGGBB`, also from `#rrggbbaa` (the alpha is left out); 0 for text that is
+/// not a colour.
+fn lua_rgb(hex: &str) -> u32 {
+    let digits = hex.strip_prefix('#').unwrap_or(hex);
+    match digits.get(..6) {
+        Some(rgb) if rgb.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            u32::from_str_radix(rgb, 16).unwrap_or(0)
+        }
+        _ => 0,
+    }
+}
+fn lua_number(value: &ViewValue) -> Option<f64> {
+    match value {
+        ViewValue::Int(n) => Some(*n as f64),
+        ViewValue::Float(f) => Some(*f),
+        _ => None,
+    }
+}
+/// A slider's handle place, 0 to 1 (0 for a value that is not a number on a slider).
+fn lua_fraction(view: &SettingView) -> f32 {
+    match (&view.kind, lua_number(&view.value)) {
+        (ViewKind::Slider { min, max, .. }, Some(value)) if max > min => {
+            ((value - min) / (max - min)).clamp(0.0, 1.0) as f32
+        }
+        _ => 0.0,
+    }
+}
+/// The number of steps of a slider, when it has a step.
+fn lua_steps(view: &SettingView) -> Option<u32> {
+    match &view.kind {
+        ViewKind::Slider { min, max, step, .. } if *step > 0.0 => {
+            Some(((max - min) / step).round().max(1.0) as u32)
+        }
+        _ => None,
+    }
+}
+/// A slider moved to `fraction` of its track, as the provider's value: the nearest step, kept
+/// in range, and a whole number for an integer slider.
+fn lua_slid(view: &SettingView, fraction: f32) -> Option<ViewValue> {
+    let ViewKind::Slider {
+        min,
+        max,
+        step,
+        integer,
+    } = view.kind
+    else {
+        return None;
+    };
+    let raw = min + f64::from(fraction.clamp(0.0, 1.0)) * (max - min);
+    let value = if step > 0.0 {
+        (min + ((raw - min) / step).round() * step).clamp(min, max)
+    } else {
+        raw.clamp(min, max)
+    };
+    Some(if integer {
+        ViewValue::Int(value.round() as i64)
+    } else {
+        ViewValue::Float(value)
+    })
+}
+/// What a click on a Lua setting's button makes of its value: a toggle flips, a choice moves to
+/// the next option (wrapping), a colour to the next dye colour (a colour that is not one, to the
+/// first). Text, keybind and slider settings have none: they do not change on a click.
+fn lua_next(view: &SettingView) -> Option<ViewValue> {
+    match (&view.kind, &view.value) {
+        (ViewKind::Toggle, ViewValue::Bool(on)) => Some(ViewValue::Bool(!on)),
+        (ViewKind::Choice { options }, ViewValue::Text(stored)) => {
+            // The option after the stored one, wrapping; a stored value that is not an option
+            // (position -1) moves to the first.
+            let next = options
+                .iter()
+                .position(|option| option == stored)
+                .map_or(0, |i| i + 1);
+            options
+                .get(next % options.len().max(1))
+                .map(|option| ViewValue::Text(option.clone()))
+        }
+        (ViewKind::Colour, ViewValue::Text(hex)) => {
+            let rgb = lua_rgb(hex);
+            let next = crate::mod_list::DYE_COLORS
+                .iter()
+                .position(|c| *c == rgb)
+                .map_or(0, |i| i + 1);
+            let dye = crate::mod_list::DYE_COLORS[next % crate::mod_list::DYE_COLORS.len()];
+            Some(ViewValue::Text(format!("#{dye:06x}")))
+        }
+        _ => None,
+    }
+}
+/// A Lua text or keybind setting being edited. A text setting holds its draft (the stored value
+/// at first, then what is typed) and its `max_length` in characters; a keybind waits for a key.
+#[derive(Clone, Debug, PartialEq)]
+enum LuaEdit {
+    Text {
+        i: usize,
+        j: usize,
+        draft: String,
+        max: usize,
+    },
+    Keybind {
+        i: usize,
+        j: usize,
+    },
+}
+
+/// The name a key binds to on a Lua keybind setting: its keyboard name without the
+/// `key.keyboard.` prefix, in capitals (`key.keyboard.left.shift` -> `LEFT_SHIFT`), which the
+/// settings store accepts (`[A-Za-z0-9_+ ]`).
+fn lua_key_name(key: winit::keyboard::KeyCode) -> Option<String> {
+    let name = keybinds::key_name(key)?.strip_prefix("key.keyboard.")?;
+    Some(name.replace('.', "_").to_uppercase())
+}
+
 /// A music track's name as its row shows it: the file, without its folder
 /// (`minecraft:music/game/calm1` -> `calm1`; the group names the situation).
 fn track_name(id: &str) -> &str {
     id.rsplit('/').next().unwrap_or(id)
-}
-/// The Extras rows a built-in hook mod's settings page shows under its toggle: the settings a
-/// feature has beyond its switch (the switch is the page's toggle, and a key is bound on the Key
-/// Binds screen). Only a feature with such rows is named here; the Mods page itself groups the
-/// registry's features by kind, so a new `registry/<id>.json` needs no line.
-fn mod_items(id: &str) -> &'static [crate::extras::Item] {
-    use crate::extras::Item;
-    match id {
-        "mouse_tweaks" => &[Item::MouseTweaksWheel],
-        _ => &[],
-    }
 }
 pub(crate) enum Kind {
     /// Slider position 0..1.
@@ -244,6 +407,8 @@ impl Opt {
             Opt::DiscreteScroll => "options.discrete_mouse_scroll",
             Opt::AllowCursorChanges => "options.allowCursorChanges",
             Opt::Volume(_) => "soundCategory.master",
+            Opt::ModSetting(..) => "horizon.mods.settings",
+            Opt::LuaSetting(..) => "horizon.mods.settings",
             Opt::SoundDevice => "options.audioDevice",
             Opt::GuiScale => "options.guiScale",
             Opt::ViewBobbing => "options.viewBobbing",
@@ -370,6 +535,12 @@ impl Opt {
     pub(crate) fn kind(self, s: &Settings) -> Kind {
         let unit = |v: f32, lo: f32, hi: f32| Kind::Slider(((v - lo) / (hi - lo)).clamp(0.0, 1.0));
         match self {
+            Opt::ModSetting(i, j) => {
+                Kind::Slider(mod_setting(s, i, j).map_or(0.0, |m| m.value.fraction()))
+            }
+            Opt::LuaSetting(i, j) => {
+                Kind::Slider(lua_setting(i, j).map_or(0.0, |(_, view)| lua_fraction(&view)))
+            }
             Opt::ChatDelay => values::kind(s.file.double("chatDelay")),
             Opt::FovEffects | Opt::DarknessPulsing => {
                 Kind::Slider(s.file.double(self.file_key().unwrap()).sqrt() as f32)
@@ -435,6 +606,11 @@ impl Opt {
     }
     /// OptionInstance's static or value-dependent tooltip translation.
     fn tooltip_key(self, s: &Settings) -> String {
+        if let Opt::ModSetting(i, j) = self {
+            return mod_setting(s, i, j)
+                .and_then(|m| m.tooltip.clone())
+                .unwrap_or_default();
+        }
         let key = match self {
             Opt::InactivityFps => {
                 if s.inactivity_fps_limit == "minimized" {
@@ -507,7 +683,17 @@ impl Opt {
         let Some(pos) = self.slider_position(s) else {
             return;
         };
-        let next_pos = if let Some(steps) = self.slider_steps() {
+        // A mod's range steps by its registered step.
+        let steps = match self {
+            Opt::ModSetting(i, j) => match mod_setting(s, i, j).map(|m| &m.value) {
+                Some(crate::mod_list::NativeSettingValue::Range { min, max, step, .. }) => {
+                    Some(((max - min) / step).round().max(1.0) as u32)
+                }
+                _ => None,
+            },
+            _ => self.slider_steps(),
+        };
+        let next_pos = if let Some(steps) = steps {
             let steps = steps as f32;
             let current = (pos * steps).round();
             let next = if forward {
@@ -528,6 +714,20 @@ impl Opt {
     }
     /// The widget message (OptionInstance.toString / CycleButton full name).
     pub fn label(self, s: &Settings) -> Text {
+        if let Opt::ModSetting(i, j) = self {
+            return mod_setting(s, i, j).map_or_else(|| Text::literal(""), mod_setting_label);
+        }
+        if let Opt::LuaSetting(i, j) = self {
+            return lua_setting(i, j).map_or_else(
+                || Text::literal(""),
+                |(_, view)| {
+                    Text::option_name_value(
+                        Text::literal(view.label.clone()),
+                        lua_value(&view.kind, &view.value),
+                    )
+                },
+            );
+        }
         let c = self.caption();
         match self {
             Opt::ChatDelay => chat_delay_label(s),
@@ -914,6 +1114,29 @@ impl Opt {
     }
     /// Set a slider from its 0..1 position (OptionInstance value sets).
     pub fn set_slider(self, s: &mut Settings, v: f32) {
+        if let Opt::LuaSetting(i, j) = self {
+            // The page's own path (`OptionsUi::lua_slide`) keeps a refusal to show; this one
+            // only sets the value.
+            if let Some((id, view)) = lua_setting(i, j)
+                && let Some(value) = lua_slid(&view, v)
+                && let Some(provider) = lua_provider()
+            {
+                let _ = provider.set(&id, &view.key, value);
+            }
+            return;
+        }
+        if let Opt::ModSetting(i, j) = self {
+            let setting = s
+                .mods
+                .installed
+                .get_mut(usize::from(i))
+                .and_then(|m| m.native.as_mut())
+                .and_then(|page| page.settings.get_mut(usize::from(j)));
+            if let Some(setting) = setting {
+                setting.value.slide(v);
+            }
+            return;
+        }
         if !self.available() {
             return;
         }
@@ -1238,6 +1461,95 @@ impl Opt {
         }
     }
 }
+const PRESETS: [&str; 4] = ["fast", "fancy", "fabulous", "custom"];
+fn preset_index(p: &str) -> usize {
+    PRESETS.iter().position(|x| *x == p).unwrap_or(1)
+}
+/// A slider moved to `v` (OptionInstance.set): the graphics preset applies
+/// its options when its value changes (`Options.applyGraphicsPreset`).
+pub fn set_slider(opt: Opt, s: &mut Settings, v: f32) {
+    let preset = preset_index(&s.graphics_preset);
+    opt.set_slider(s, v);
+    if opt == Opt::Preset && preset_index(&s.graphics_preset) != preset {
+        apply_preset(s);
+    }
+}
+/// A slider pressed or dragged to `v`: apply it live, and tell the game when
+/// a category volume changed (`Options.createSoundSliderOptionInstance`'s
+/// callback, which `OptionInstance.set` runs only for a new value).
+fn drag_slider(opt: Opt, s: &mut Settings, v: f32, events: &mut Vec<Event>) {
+    let volume = |s: &Settings| match opt {
+        Opt::Volume(0) => Some(s.master_volume),
+        Opt::Volume(i) => Some(s.volumes[i]),
+        _ => None,
+    };
+    let before = volume(s);
+    set_slider(opt, s, v);
+    events.push(Event::SliderDrag);
+    if let Opt::ModSetting(i, j) = opt {
+        events.push(Event::NativeSetting(usize::from(i), usize::from(j)));
+    }
+    if let (Opt::Volume(source), Some(after)) = (opt, volume(s))
+        && before != Some(after)
+    {
+        events.push(Event::Volume(source, after));
+    }
+}
+/// GraphicsPreset.apply: the options Fast, Fancy and Fabulous set.
+pub fn apply_preset(s: &mut Settings) {
+    let fabulous = s.graphics_preset == "fabulous";
+    match s.graphics_preset.as_str() {
+        "fast" => {
+            s.biome_blend = 1;
+            s.render_distance = 8;
+            s.prioritize_chunk_updates = 0;
+            s.simulation_distance = 6;
+            s.smooth_lighting = false;
+            s.clouds = "fast".into();
+            s.particles = 1;
+            s.mipmap_levels = 2;
+            s.entity_shadows = false;
+            s.entity_distance = 0.75;
+            s.menu_blur = 2;
+            s.cloud_range = 32;
+            s.cutout_leaves = false;
+            s.improved_transparency = false;
+            s.weather_radius = 5;
+            set_filtering(s, 1, 0);
+        }
+        "fancy" | "fabulous" => {
+            s.biome_blend = 2;
+            s.render_distance = if fabulous { 32 } else { 16 };
+            s.prioritize_chunk_updates = 1;
+            s.simulation_distance = 12;
+            s.smooth_lighting = true;
+            s.clouds = "true".into();
+            s.particles = 0;
+            s.mipmap_levels = 4;
+            s.entity_shadows = true;
+            s.entity_distance = if fabulous { 1.25 } else { 1.0 };
+            s.menu_blur = 5;
+            s.cloud_range = if fabulous { 128 } else { 64 };
+            s.cutout_leaves = true;
+            s.improved_transparency = fabulous;
+            s.weather_radius = 10;
+            // Fabulous takes anisotropic filtering (RGSS on a device with known issues, which
+            // wgpu does not report).
+            set_filtering(
+                s,
+                if fabulous { 2 } else { 1 },
+                if fabulous { 2 } else { 1 },
+            );
+        }
+        _ => {}
+    }
+}
+/// The preset's `maxAnisotropyBit` and `textureFiltering` (0 none, 1 RGSS, 2 anisotropic).
+fn set_filtering(s: &mut Settings, anisotropy_bit: i32, filtering: i32) {
+    use crate::options_file::V;
+    s.file.set("maxAnisotropyBit", V::Int(anisotropy_bit));
+    s.file.set("textureFiltering", V::Int(filtering));
+}
 
 /// `Options.preferredGraphicsBackend`'s tooltip: the restart note once the choice differs from
 /// the startup one, the description, and Vulkan's warning.
@@ -1256,8 +1568,104 @@ fn graphics_api_tooltip(s: &Settings) -> Text {
     Text::literal(lines.join("\n"))
 }
 
-/// `selected_key` while a native mod's key waits (`selected_native_key`).
-const NATIVE_KEY: &str = "horizon.nativeModKey";
+/// `selected_key` while a key a native mod registered waits (`selected_mod_key`).
+const MOD_KEY: &str = "horizon.modKey";
+
+/// The id of mod `i`'s registered key `k` in `mods.installed`, with the mod's id.
+fn mod_mapping(s: &Settings, i: usize, k: usize) -> Option<(String, String)> {
+    let m = s.mods.installed.get(i)?;
+    let mapping = m.native.as_ref()?.mappings.get(k)?;
+    Some((m.id.clone(), mapping.id.clone()))
+}
+
+fn key_conflicts(
+    s: &Settings,
+    owner: &str,
+    id: &str,
+    key: &str,
+    modifiers: u32,
+    context: crate::mod_list::KeyConflictContext,
+    at_default: bool,
+) -> Vec<String> {
+    use crate::mod_list::{KeyConflictContext, bindings_conflict};
+    let binding = (key, modifiers, context, at_default);
+    let mut conflicts = Vec::new();
+    for &(name, _, _) in keybinds::MAPPINGS {
+        if !(owner.is_empty() && name == id)
+            && bindings_conflict(
+                binding,
+                (
+                    s.keys.get(name),
+                    0,
+                    KeyConflictContext::Universal,
+                    s.keys.is_default(name),
+                ),
+            )
+        {
+            conflicts.push(lang::get(name));
+        }
+    }
+    for installed in &s.mods.installed {
+        for mapping in installed.native.iter().flat_map(|page| &page.mappings) {
+            if installed.id == owner && mapping.id == id {
+                continue;
+            }
+            let (other_key, other_modifiers) = s.mods.binding(
+                &installed.id,
+                &mapping.id,
+                (&mapping.key, mapping.modifiers),
+            );
+            if bindings_conflict(
+                binding,
+                (
+                    &other_key,
+                    other_modifiers,
+                    mapping.context,
+                    other_key == mapping.key && other_modifiers == mapping.modifiers,
+                ),
+            ) {
+                conflicts.push(lang::get(&mapping.label));
+            }
+        }
+    }
+    conflicts
+}
+
+/// A native mod's title or key category on Controls: bold and underlined, centred on the row at `y`.
+fn section_title(text: Text, y: f32, w: f32) -> Widget {
+    Widget {
+        x: 0.0,
+        y: y + 7.0,
+        w,
+        h: 9.0,
+        kind: WKind::Text {
+            text: text.with_style(&Style {
+                bold: Some(true),
+                underlined: Some(true),
+                ..Style::default()
+            }),
+            color: u32::MAX,
+            centered: true,
+        },
+        list: false,
+        row: 0,
+    }
+}
+
+/// A registered key's binding as Controls shows it: its modifiers' key names, then its key's.
+fn binding_text(key: &str, modifiers: u32) -> Text {
+    let mut text = Text::empty();
+    for (bit, name) in [
+        (crate::mod_list::SHIFT, "key.keyboard.left.shift"),
+        (crate::mod_list::CONTROL, "key.keyboard.left.control"),
+        (crate::mod_list::ALT, "key.keyboard.left.alt"),
+    ] {
+        if modifiers & bit != 0 {
+            text = text.append(keybinds::display_name(name)).append(" + ");
+        }
+    }
+    text.append(keybinds::display_name(key))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
@@ -1279,8 +1687,8 @@ pub enum Page {
     ModProject,
     /// A native mod's settings page: its index in `mods.installed`.
     NativeMod(usize),
-    /// A Lua mod's settings page (`mod_settings_ui`): its index in `mods.installed`.
-    ModSettings(usize),
+    /// A Lua mod's settings page: its index in the provider's entries (`mod_entries`).
+    LuaMod(usize),
     /// A page a crate registered (`horizon_hooks::pages`): its index in `OptionsUi::pages`.
     Added(usize),
     /// Horizon's shader packs, either kind (`shader_pack_list`).
@@ -1337,22 +1745,28 @@ pub(crate) enum Act {
     Key(&'static str),
     ResetKey(&'static str),
     ResetKeys,
-    ToggleMod(usize),
     /// PvP & HUD's PvP preset (`pvp::apply_preset`).
     PvpPreset,
     /// PvP & HUD's Edit HUD button.
     HudEditor,
-    /// The installed native mod's settings page.
-    ModSettings(usize),
-    /// The installed Lua mod's settings page (`mod_settings_ui`).
-    ModConfig(usize),
     /// A native mod's key (mod, key) waits for a key; a button of its page.
-    #[allow(dead_code)]
-    NativeKey(usize, usize),
-    NativeButton(usize, usize),
-    /// A registered page's row: (page, row).
+    /// A key a native mod registered (mod, mapping) waits for a key, or is reset.
+    ModKey(usize, usize),
+    ResetModKey(usize, usize),
+    /// Setting `.1` of native mod `.0`'s page clicked: a toggle, choice or colour steps on.
+    NativeSetting(usize, usize),
+    /// Setting `.1` of Lua mod `.0` (its provider entry) clicked: a toggle, choice or colour
+    /// steps on, through the provider.
+    LuaSetting(usize, usize),
+    /// Power `.1` of Lua mod `.0` (its provider entry) clicked: Revoke, or the Grant and its confirm.
+    LuaPower(usize, usize),
+    /// Text or keybind setting `.1` of Lua mod `.0` clicked: it starts to be edited.
+    LuaEdit(usize, usize),
+    /// Reset setting `.1` of Lua mod `.0` to its default.
+    LuaReset(usize, usize),
+    /// Reset every setting of Lua mod `.0` to its defaults.
+    LuaResetAll(usize),
     PageRow(usize, usize),
-    OpenModFolder,
     /// Browse mods: the page of listing `.0` of `mod_browser`.
     ModProject(usize),
     /// The open project page's Install or Update.
@@ -1374,6 +1788,7 @@ pub(crate) enum Act {
     /// The Music page: turn this track off, or back on.
     MusicTrackOn(String, bool),
 }
+#[derive(Clone, Debug, PartialEq)]
 enum WKind {
     Button {
         label: Text,
@@ -1396,6 +1811,7 @@ enum WKind {
         code: String,
     },
 }
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Widget {
     x: f32,
     y: f32,
@@ -1468,6 +1884,8 @@ pub enum Event {
     Close,
     /// Settings changed: apply and save them.
     Changed,
+    /// The reduced-debug-info option rebuilt the debug entry list.
+    DebugEntriesChanged,
     /// A slider is being dragged: apply settings live but defer saving.
     SliderDrag,
     /// A category volume slider (`SoundSource` index) moved to a new value,
@@ -1483,6 +1901,10 @@ pub enum Event {
     /// Data Packs' Open Pack Folder: create the folder if needed and open it.
     OpenDataPackFolder(std::path::PathBuf),
     OpenModFolder,
+    /// A link on the Mods screen (Homepage, Issues, a license): confirm and open it.
+    OpenLink(String),
+    /// A click on the Mods screen's mod id or version: copy it.
+    CopyText(String),
     /// Browse mods opened: read the registry's index into `mod_browser`.
     BrowseMods,
     /// Install (or update) the registry's content mod with this id.
@@ -1504,33 +1926,13 @@ pub enum Event {
     /// The options of `shader_packs[.0]`, a Horizon pack, changed: save them (the pack reloads
     /// with them).
     NativePackOptions(usize),
-    /// Native mod `.0`'s page opened: the game asks the mod for its labels
-    /// again (they were made with the list, maybe in another language).
+    /// Native mod `.0`'s page opened: the game reads its settings' kept values again.
     NativeSettings(usize),
-    /// Button `.1` of native mod `.0`'s page was pressed: the game tells the
-    /// mod and refreshes the page.
-    NativeButton(usize, usize),
+    /// Setting `.1` of native mod `.0`'s page changed (`settings.mods`): the game keeps it and
+    /// tells the mod (`setting_changed`).
+    NativeSetting(usize, usize),
     /// Roll the credits (`CreditsAndAttributionScreen.openCreditsScreen`).
     Credits,
-    /// A Lua mod's setting was changed on its page: write it, then read the settings again.
-    ModSetting {
-        mod_id: String,
-        side: crate::mod_settings_ui::Side,
-        key: String,
-        value: serde_json::Value,
-    },
-    /// A Lua mod's setting was reset to its default on its page.
-    ModSettingReset {
-        mod_id: String,
-        side: crate::mod_settings_ui::Side,
-        key: String,
-    },
-    /// Every setting of a Lua mod was reset to its default on its page.
-    ModSettingsResetAll {
-        mod_id: String,
-    },
-    /// A Lua mod's settings page opened: read the settings again (the remote flag may have changed).
-    ModSettingsOpened,
     /// PvP & HUD's Edit HUD: open the HUD editor over the game.
     HudEditor,
     /// Copy how an agent connects (the AI Agent page).
@@ -1569,23 +1971,26 @@ pub struct MusicGroup {
     pub tracks: Vec<MusicTrack>,
 }
 pub struct OptionsUi {
+    frame_draw: Option<draw::FrameDraw>,
     pub stack: Vec<Page>,
     scroll: f32,
     pub(crate) dragging: Option<Opt>,
     /// Shift is held during the click (it resets a shader pack option to its default).
     pub shift: bool,
+    /// The window's modifier keys (GLFW bits) when a key or button is bound: a mod's key keeps them.
+    pub modifiers: u32,
     /// The pressed slider's own position (`AbstractSliderButton.value`) and
     /// when it last moved: the handle follows the pointer while the option
     /// keeps its stepped value, then snaps to it (`resetValue`).
     slider_value: Option<(Opt, f32, Instant)>,
     /// The pointer's last y while a scrollbar is held.
     pub(crate) scrollbar_drag_y: Option<f32>,
-    /// Key Binds: the mapping waiting for a key ([`NATIVE_KEY`]: a native
-    /// mod's, `selected_native_key`).
+    /// Key Binds: the mapping waiting for a key (`MOD_KEY` for a registered mod key).
     pub selected_key: Option<&'static str>,
-    /// The native mod's key waiting: (mod, key) in `mods.installed`, or a registered page's
-    /// (page, row) ([`pages::PAGE_KEY`]).
-    selected_native_key: Option<(usize, usize)>,
+    /// The registered key waiting: (mod, mapping) in `mods.installed`.
+    selected_mod_key: Option<(usize, usize)>,
+    selected_page_key: Option<(usize, usize)>,
+    pending_mod_key: Option<winit::keyboard::KeyCode>,
     /// Bindings: the action waiting for a pad button.
     pub selected_pad_action: Option<&'static str>,
     /// The glyphs menus show (`Glyphs::of`: the setting, else the pad's family, and a Nintendo
@@ -1602,11 +2007,22 @@ pub struct OptionsUi {
     pub mod_browser: crate::mod_browser::ModBrowser,
     /// The project whose page is open (`Page::ModProject`).
     pub mod_project: String,
-    /// The Mods page's line about switches that wait for a restart.
+    /// The line about mods that wait for a restart to switch, for Browse mods' message.
     pub mods_note: Option<String>,
-    /// The content mods that switch with a world open: only assets and data,
-    /// in a world this game serves (docs/design/mod-hotload.md).
-    pub mods_live: std::collections::BTreeSet<String>,
+    /// The Mods screen (`Page::Mods`), made when the page opens.
+    pub mods_screen: Option<crate::mods_screen::ModsScreen>,
+    /// The last change a Lua mod's provider refused: its notice on the Lua page.
+    lua_fault: Option<Fault>,
+    /// The Lua page's powers: the mod's entry, its id and its powers as the provider last
+    /// answered. Read when the page opens and after each change, never per frame.
+    lua_powers: Option<(usize, String, Vec<PowerView>)>,
+    /// The power button waiting for its second click, as `(entry, power)`. Any other action clears it.
+    lua_power_armed: Option<(usize, usize)>,
+    /// A power changed on this page: the restart note shows under the powers.
+    lua_power_changed: bool,
+    /// The Lua text or keybind setting being edited, if any: at most one, and it ends when the
+    /// page changes or a click lands elsewhere.
+    lua_edit: Option<LuaEdit>,
     /// Horizon's `packBrowser` extra: the pack screen's Add button.
     pub pack_browser: bool,
     /// Packs: the packs found and the selection the screen opens with.
@@ -1618,6 +2034,8 @@ pub struct OptionsUi {
     data_pack_dir: Option<std::path::PathBuf>,
     /// The game's resources, for the built-in data pack's icon.
     data_pack_resources: std::path::PathBuf,
+    /// Additional repository entries retained while the folder watcher refreshes.
+    additional_data_pack_infos: Vec<crate::pack_screen::PackInfo>,
     /// The folder's entries when its packs were listed, and when they were
     /// last compared with it.
     data_pack_stamp: (Vec<(String, Option<std::time::SystemTime>)>, Instant),
@@ -1641,8 +2059,6 @@ pub struct OptionsUi {
     controller: shell::Shell<crate::controller_ui::ControllerScreen>,
     /// Horizon Extras, on the settings shell.
     extras: shell::Shell<crate::extras_ui::ExtrasScreen>,
-    /// A Lua mod's settings page (`mod_settings_ui`).
-    mod_settings: shell::Shell<crate::mod_settings_ui::ModSettingsScreen>,
     /// The radial menu's pages, on the settings shell.
     radial: shell::Shell<crate::radial_editor::RadialScreen>,
     /// The list of actions for one of the radial menu's slots.
@@ -1687,7 +2103,18 @@ pub struct OptionsUi {
     /// The PvP & HUD items that take a whole row (`wide_extras`), measured
     /// when the page is drawn.
     wide_extras: Vec<crate::extras::Item>,
+    /// The page layout's revision: every change to an input the layout reads
+    /// (the page, the scroll, the search text, a setting's shown value) bumps
+    /// it, so the layout is made again once and not on every draw or click.
+    rev: u64,
+    /// The page's layout at `layout_key`: shared by the drawing, the hit
+    /// tests and the scroll, so all three read the same rectangles.
+    layout_cache: Option<((f32, f32, u64, u32), std::sync::Arc<OptionsLayout>)>,
+    /// How many layouts were made (the caching test).
+    #[cfg(test)]
+    layouts_built: u32,
 }
+
 impl Default for OptionsUi {
     fn default() -> Self {
         let mut search = ui::EditBox::new(0.0, 0.0, 200.0, 15.0);
@@ -1695,14 +2122,18 @@ impl Default for OptionsUi {
         let mut settings_search = ui::EditBox::new(0.0, 0.0, 200.0, 15.0);
         settings_search.focused = false;
         Self {
+            frame_draw: None,
             stack: vec![Page::Main],
             scroll: 0.0,
             dragging: None,
             shift: false,
+            modifiers: 0,
             slider_value: None,
             scrollbar_drag_y: None,
             selected_key: None,
-            selected_native_key: None,
+            selected_mod_key: None,
+            selected_page_key: None,
+            pending_mod_key: None,
             selected_pad_action: None,
             pad_glyphs: crate::pad_glyph::Glyphs::default(),
             pad_driving: false,
@@ -1713,13 +2144,19 @@ impl Default for OptionsUi {
             mod_browser: Default::default(),
             mod_project: String::new(),
             mods_note: None,
-            mods_live: Default::default(),
+            mods_screen: None,
+            lua_fault: None,
+            lua_powers: None,
+            lua_power_armed: None,
+            lua_power_changed: false,
+            lua_edit: None,
             pack_browser: false,
             pack_infos: Vec::new(),
             pack_selection: Vec::new(),
             pack_screen: None,
             data_pack_dir: None,
             data_pack_resources: Default::default(),
+            additional_data_pack_infos: Vec::new(),
             data_pack_stamp: (Vec::new(), Instant::now()),
             resource_error: None,
             pack_focus: Instant::now(),
@@ -1731,7 +2168,6 @@ impl Default for OptionsUi {
             graphics: Default::default(),
             controller: Default::default(),
             extras: Default::default(),
-            mod_settings: Default::default(),
             radial: Default::default(),
             radial_pick: Default::default(),
             shader: Default::default(),
@@ -1753,6 +2189,10 @@ impl Default for OptionsUi {
             split_guest: false,
             row_bands: Vec::new(),
             wide_extras: Vec::new(),
+            rev: 0,
+            layout_cache: None,
+            #[cfg(test)]
+            layouts_built: 0,
         }
     }
 }
@@ -1796,7 +2236,7 @@ fn pvp_rows() -> Vec<Result<crate::extras::Item, &'static str>> {
 /// half-width button holds (`width` measures text with the screen's font): those take the
 /// whole row, so no label slides past its edges, in any language.
 fn wide_extras(s: &Settings, width: impl Fn(&str) -> f32) -> Vec<crate::extras::Item> {
-    // A button's label keeps 2 px off each edge (`AbstractButton.renderString`'s margin),
+    // A button's label keeps 2 px off each edge (`AbstractButton.extractDefaultLabel`'s margin),
     // past which it slides back and forth.
     let room = 150.0 - 4.0;
     pvp_rows()
@@ -1866,26 +2306,45 @@ fn tooltip_text(s: &Settings, wd: &Widget) -> Option<Text> {
     match act {
         Act::Cycle(opt) if !opt.available() => Some(tr("horizon.options.unavailable")),
         Act::PageRow(page, row) => pages::tooltip(*page, *row),
-        Act::ToggleMod(i) => match s.mods.installed.get(*i) {
-            Some(installed) => {
-                let description = installed
-                    .problem
-                    .as_deref()
-                    .unwrap_or(&installed.description);
-                Some(Text::literal(format!("{}\n{description}", installed.title)))
-            }
-            None => tip,
-        },
-        Act::Key(name) => {
-            let conflicts = s.keys.conflicts(name);
+        Act::ModKey(i, k) => {
+            let installed = s.mods.installed.get(*i)?;
+            let mapping = installed.native.as_ref()?.mappings.get(*k)?;
+            let (key, modifiers) = s.mods.binding(
+                &installed.id,
+                &mapping.id,
+                (&mapping.key, mapping.modifiers),
+            );
+            let conflicts = key_conflicts(
+                s,
+                &installed.id,
+                &mapping.id,
+                &key,
+                modifiers,
+                mapping.context,
+                key == mapping.key && modifiers == mapping.modifiers,
+            );
             if conflicts.is_empty() {
                 return tip;
             }
-            let names = conflicts
-                .iter()
-                .map(|c| lang::get(c))
-                .collect::<Vec<_>>()
-                .join(", ");
+            Some(Text::translate(
+                "controls.keybinds.duplicateKeybinds",
+                &[Text::literal(conflicts.join(", "))],
+            ))
+        }
+        Act::Key(name) => {
+            let conflicts = key_conflicts(
+                s,
+                "",
+                name,
+                s.keys.get(name),
+                0,
+                crate::mod_list::KeyConflictContext::Universal,
+                s.keys.is_default(name),
+            );
+            if conflicts.is_empty() {
+                return tip;
+            }
+            let names = conflicts.join(", ");
             Some(Text::translate(
                 "controls.keybinds.duplicateKeybinds",
                 &[Text::literal(names)],
@@ -1950,6 +2409,26 @@ fn narrate_widget(
                     next,
                     active,
                 };
+            }
+            Act::ModKey(i, k) | Act::ResetModKey(i, k) => {
+                if let Some(installed) = s.mods.installed.get(*i)
+                    && let Some(mapping) = installed
+                        .native
+                        .as_ref()
+                        .and_then(|page| page.mappings.get(*k))
+                {
+                    let title = if matches!(act, Act::ResetModKey(..)) {
+                        t("narrator.controls.reset", &[tr(&mapping.label)])
+                    } else {
+                        let (key, _) = s.mods.binding(
+                            &installed.id,
+                            &mapping.id,
+                            (&mapping.key, mapping.modifiers),
+                        );
+                        bind(tr(&mapping.label), key != "key.keyboard.unknown")
+                    };
+                    n.what = What::Named { title, active };
+                }
             }
             Act::Key(name) => {
                 let bound = s.keys.get(name) != "key.keyboard.unknown";
@@ -2030,23 +2509,61 @@ impl OptionsUi {
     pub fn page(&self) -> Page {
         *self.stack.last().unwrap_or(&Page::Main)
     }
+    /// A Lua power's Grant is waiting for its confirm: Escape (pad B) cancels it, and the page stays.
+    pub fn lua_power_confirm_pending(&self) -> bool {
+        self.lua_power_armed.is_some()
+    }
+    /// A Lua text edit or a keybind wait is open: the keys go to it, not to the focus.
+    pub fn lua_edit_active(&self) -> bool {
+        self.lua_edit.is_some()
+    }
     /// Whether the screen's focus is a search box that takes the keys (an
     /// `EditBox` that `canConsumeInput`): the language list's, the settings
     /// search, or the pack screen's.
     pub fn typing(&self) -> bool {
+        // A Lua text edit or a keybind waiting for its key takes the keys as typing does.
         self.resource_error.is_none()
-            && match self.page() {
-                Page::Language => true,
-                Page::Packs => self
-                    .pack_screen
-                    .as_ref()
-                    .is_some_and(|p| p.search_focused()),
-                Page::ControllerRadialName => self.radial_name_typing(),
-                _ => match self.shell() {
-                    Some(shell) => shell.typing(),
-                    None => self.settings_search_active(),
-                },
+            && (self.lua_edit.is_some()
+                || match self.page() {
+                    Page::Language => true,
+                    Page::Packs => self
+                        .pack_screen
+                        .as_ref()
+                        .is_some_and(|p| p.search_focused()),
+                    Page::Mods => self
+                        .mods_screen
+                        .as_ref()
+                        .is_some_and(|p| p.search_focused()),
+                    Page::ControllerRadialName => self.radial_name_typing(),
+                    _ => match self.shell() {
+                        Some(shell) => shell.typing(),
+                        None => self.settings_search_active(),
+                    },
+                })
+    }
+    /// What the Mods screen asks for: a settings page, a link, a copy, a Lua mod turned on or off.
+    fn mods_action(&mut self, s: &mut Settings, action: crate::mods_screen::Action) -> Vec<Event> {
+        use crate::mods_screen::Action as Do;
+        let mut events = Vec::new();
+        match action {
+            Do::None => {}
+            Do::OpenFolder => events.push(Event::OpenModFolder),
+            Do::Back => events.extend(self.back(s)),
+            Do::Config(i) => {
+                self.push(Page::NativeMod(i));
+                events.push(Event::NativeSettings(i));
             }
+            Do::ConfigLua(i) => self.push(Page::LuaMod(i)),
+            Do::SetLua { index, enabled } => {
+                if let (Some(provider), Some(screen)) = (lua_provider(), self.mods_screen.as_mut())
+                {
+                    screen.toggle_lua(provider, index, enabled);
+                }
+            }
+            Do::Link(url) => events.push(Event::OpenLink(url)),
+            Do::Copy(text) => events.push(Event::CopyText(text)),
+        }
+        events
     }
     /// Jump straight to a page (control socket / tests).
     pub fn show(&mut self, page: Page) {
@@ -2065,9 +2582,12 @@ impl OptionsUi {
         dir: std::path::PathBuf,
         selected: Vec<String>,
         resources: std::path::PathBuf,
+        additional: Vec<crate::pack_screen::PackInfo>,
     ) {
         self.open_at(false, Page::Packs);
         self.pack_infos = crate::datapack::screen_packs(&dir, &resources);
+        self.pack_infos.extend(additional.iter().cloned());
+        self.additional_data_pack_infos = additional;
         self.data_pack_resources = resources;
         self.pack_selection = selected;
         self.data_pack_stamp = (crate::datapack::folder_stamp(&dir), Instant::now());
@@ -2090,6 +2610,8 @@ impl OptionsUi {
             return;
         }
         self.pack_infos = crate::datapack::screen_packs(dir, &self.data_pack_resources);
+        self.pack_infos
+            .extend(self.additional_data_pack_infos.iter().cloned());
         if let Some(p) = self.pack_screen.take() {
             self.pack_selection = p.commit();
             self.packs(atlas, size).changed = p.changed;
@@ -2103,6 +2625,11 @@ impl OptionsUi {
         forward: bool,
         width: f32,
     ) -> Vec<Event> {
+        if let Opt::LuaSetting(i, j) = opt {
+            self.lua_step(i, j, forward, width);
+            self.slider_value = None;
+            return vec![Event::SliderDrag];
+        }
         let volume = |s: &Settings| match opt {
             Opt::Volume(0) => Some(s.master_volume),
             Opt::Volume(i) => Some(s.volumes[i]),
@@ -2112,6 +2639,9 @@ impl OptionsUi {
         opt.step_slider(s, forward, width);
         self.slider_value = None;
         let mut events = vec![Event::Changed, Event::SliderDrag];
+        if let Opt::ModSetting(i, j) = opt {
+            events.push(Event::NativeSetting(usize::from(i), usize::from(j)));
+        }
         if let (Opt::Volume(source), Some(after)) = (opt, volume(s))
             && before_vol != Some(after)
         {
@@ -2121,6 +2651,7 @@ impl OptionsUi {
     }
     /// Open a page whose Done/Escape returns directly to the calling screen.
     pub fn open_at(&mut self, in_world: bool, page: Page) {
+        self.discard_draw();
         self.stack.clear();
         self.data_pack_dir = None;
         self.focus = None;
@@ -2129,9 +2660,19 @@ impl OptionsUi {
         self.push(page);
         self.in_world = in_world;
         self.selected_key = None;
+        self.pending_mod_key = None;
     }
     fn push(&mut self, page: Page) {
+        self.relayout();
+        self.lua_fault = None;
+        self.lua_edit = None;
         self.stack.push(page);
+        self.lua_power_armed = None;
+        self.lua_power_changed = false;
+        self.lua_powers = None;
+        if let Page::LuaMod(i) = page {
+            self.lua_powers_load(i);
+        }
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
         self.focus = None;
@@ -2152,15 +2693,14 @@ impl OptionsUi {
         if page == Page::Packs {
             self.pack_screen = None;
         }
+        if page == Page::Mods {
+            self.mods_screen = None;
+        }
         if let Some(shell) = self.shell_mut() {
             shell.open();
         }
         if let Some(at) = Self::shader_page(page) {
             self.shader.show(at);
-        }
-        if let Page::ModSettings(i) = page {
-            self.mod_settings.screen.index = i;
-            self.mod_settings.show(());
         }
         if let Some(at) = Self::graphics_page(page) {
             self.graphics.show(at);
@@ -2216,6 +2756,7 @@ impl OptionsUi {
             Page::ModBrowser => "horizon.mods.browse.title",
             Page::ModProject => "horizon.mods.browse.project",
             Page::NativeMod(_) => "Mod Settings",
+            Page::LuaMod(_) => "horizon.mods.screen.config.title",
             Page::Added(i) => pages::title(i),
             Page::ShaderPacks => "horizon.pages.shader_packs",
             Page::ShaderOptions => "horizon.pages.shader_options",
@@ -2228,7 +2769,6 @@ impl OptionsUi {
             Page::ControllerRadialName => "horizon.radial.name_title",
             Page::ControllerRadialPick => "horizon.radial.pick_title",
             Page::Extras => "horizon.pages.extras",
-            Page::ModSettings(_) => "horizon.mods.settings",
             Page::Pvp => "horizon.pages.pvp",
             Page::Credits => "credits_and_attribution.screen.title",
             Page::Horizon => "horizon.pages.settings",
@@ -2321,19 +2861,9 @@ impl OptionsUi {
         }
         rows
     }
-    /// A registry project's page: what it is, Install or Update, its switch
-    /// once installed, its description and changelog.
-    /// A content mod's set feeds the block-state tables the open world's
-    /// chunks were decoded with: changing it mid-world remaps their ids
-    /// (Forge/Fabric freeze the registry before a world opens). One with only
-    /// assets and data reloads live, and a native, hook or engine mod toggles
-    /// live through `native_on`, so they stay available.
-    fn mod_frozen(&self, installed: &crate::mod_list::Installed) -> bool {
-        self.in_world
-            && installed.kind == crate::mod_list::ModKind::Content
-            && !self.mods_live.contains(&installed.id)
-    }
-    fn mod_project_rows(&self, s: &Settings) -> Vec<Row> {
+    /// A registry project's page: what it is, Install or Update, its description and
+    /// changelog. An installed mod is on already: the install turned it on.
+    fn mod_project_rows(&self) -> Vec<Row> {
         let b = &self.mod_browser;
         let Some(l) = b.listing(&self.mod_project) else {
             return vec![Row::Note(lang::get("horizon.mods.browse.none"))];
@@ -2397,22 +2927,7 @@ impl OptionsUi {
             tr("horizon.mods.browse.open_page"),
             Act::OpenModPage,
         );
-        let row = s.mods.installed.iter().position(|m| m.id == l.id && !m.dev);
-        match row.filter(|_| l.installed.is_some()) {
-            Some(i) => {
-                let label =
-                    Text::literal(format!("{}: ", lang::get("horizon.mods.browse.enabled")))
-                        .append(on_off(s.mods.is_on(i)));
-                let toggle = button(0.0, 0.0, 150.0, label, Act::ToggleMod(i));
-                let toggle = match self.mod_frozen(&s.mods.installed[i]) {
-                    true => inactive(toggle),
-                    false => toggle,
-                };
-                rows.push(Row::Buttons(install, Some(toggle)));
-                rows.push(Row::Buttons(page, None));
-            }
-            None => rows.push(Row::Buttons(install, Some(page))),
-        }
+        rows.push(Row::Buttons(install, Some(page)));
         if let Some((message, _)) = &b.message {
             rows.extend(wrap(message, 64).into_iter().map(Row::Note));
         }
@@ -2439,6 +2954,397 @@ impl OptionsUi {
         }
         rows
     }
+    /// A native mod's page: its name, its keys as Key Binds rows (the
+    /// player's choice, else the default), then its buttons.
+    fn native_rows(&self, s: &Settings, i: usize) -> Vec<Row> {
+        let Some(m) = s.mods.installed.get(i) else {
+            return Vec::new();
+        };
+        let mut rows = vec![Row::Note(m.title.clone())];
+        let Some(page) = &m.native else {
+            return rows;
+        };
+        for (j, setting) in page.settings.iter().enumerate() {
+            let widget = match (&setting.value, u16::try_from(i), u16::try_from(j)) {
+                (crate::mod_list::NativeSettingValue::Range { .. }, Ok(i), Ok(j)) => Widget {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 310.0,
+                    h: 20.0,
+                    kind: WKind::Slider {
+                        label: mod_setting_label(setting),
+                        value: setting.value.fraction(),
+                        opt: Opt::ModSetting(i, j),
+                    },
+                    list: false,
+                    row: 0,
+                },
+                _ => button(
+                    0.0,
+                    0.0,
+                    310.0,
+                    mod_setting_label(setting),
+                    Act::NativeSetting(i, j),
+                ),
+            };
+            rows.push(Row::Buttons(widget, None));
+        }
+        rows
+    }
+
+    /// A Lua mod's page (Options > Mods > Config): its name, then one row per setting, then Reset
+    /// all. A slider, toggle, choice or colour is a control; a text field or a keybind is a
+    /// button that starts its edit (`lua_begin_edit`). A setting that differs from its default
+    /// has a Reset beside it, and a refused change shows its notice last.
+    fn lua_rows(&self, i: usize) -> Vec<Row> {
+        let Some(provider) = lua_provider() else {
+            return Vec::new();
+        };
+        let Some((id, name)) = provider.lookup(i) else {
+            return Vec::new();
+        };
+        let mut rows = vec![Row::Note(name)];
+        let settings = provider.settings(&id);
+        for (j, view) in settings.iter().enumerate() {
+            let label = Text::literal(view.label.clone());
+            let value = lua_value(&view.kind, &view.value);
+            let control = match &view.kind {
+                ViewKind::Text { .. } | ViewKind::Keybind => {
+                    let shown = match self.lua_editing(i, j) {
+                        Some(LuaEdit::Text { draft, .. }) => {
+                            Text::option_name_value(label, Text::literal(format!("{draft}|")))
+                        }
+                        Some(LuaEdit::Keybind { .. }) => Text::option_name_value(
+                            label,
+                            tr("horizon.mods.screen.config.press_key"),
+                        ),
+                        None => Text::option_name_value(label, value),
+                    };
+                    button(0.0, 0.0, 150.0, shown, Act::LuaEdit(i, j))
+                }
+                ViewKind::Slider { .. } => Widget {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 150.0,
+                    h: 20.0,
+                    kind: WKind::Slider {
+                        label: Text::option_name_value(label, value),
+                        value: lua_fraction(view),
+                        opt: Opt::LuaSetting(i, j),
+                    },
+                    list: false,
+                    row: 0,
+                },
+                ViewKind::Toggle | ViewKind::Choice { .. } | ViewKind::Colour => button(
+                    0.0,
+                    0.0,
+                    150.0,
+                    Text::option_name_value(label, value),
+                    Act::LuaSetting(i, j),
+                ),
+            };
+            let reset = button(
+                0.0,
+                0.0,
+                150.0,
+                tr("horizon.mods.screen.config.reset"),
+                Act::LuaReset(i, j),
+            );
+            let reset = if view.changed { reset } else { inactive(reset) };
+            rows.push(Row::Buttons(control, Some(reset)));
+        }
+        if !settings.is_empty() {
+            rows.push(Row::Buttons(
+                button(
+                    0.0,
+                    0.0,
+                    310.0,
+                    tr("horizon.mods.screen.config.reset_all"),
+                    Act::LuaResetAll(i),
+                ),
+                None,
+            ));
+        }
+        rows.extend(self.lua_power_rows(i));
+        if let Some(fault) = &self.lua_fault {
+            let args: Vec<Text> = fault
+                .args
+                .iter()
+                .map(|(_, value)| Text::literal(value.clone()))
+                .collect();
+            rows.push(Row::Note(Text::translate(fault.key, &args).plain()));
+        }
+        rows
+    }
+    /// The Powers section of Lua mod `i`'s page, when it requests a power: a heading, the note, then
+    /// per power its state, its description and one button (Revoke, Grant, its confirm, or
+    /// Not available). Built from the cached powers, so a repaint asks the provider nothing.
+    fn lua_power_rows(&self, i: usize) -> Vec<Row> {
+        let Some((entry, _, views)) = &self.lua_powers else {
+            return Vec::new();
+        };
+        if *entry != i || views.is_empty() {
+            return Vec::new();
+        }
+        let mut rows = vec![Row::Header("horizon.mods.powers.title")];
+        rows.extend(
+            wrap(&tr("horizon.mods.powers.note").plain(), 56)
+                .into_iter()
+                .map(Row::Note),
+        );
+        for (k, view) in views.iter().enumerate() {
+            let state = if view.granted {
+                "horizon.mods.powers.granted"
+            } else {
+                "horizon.mods.powers.not_granted"
+            };
+            let label = Text::option_name_value(tr(&view.label_key), tr(state));
+            rows.push(Row::Note(label.plain()));
+            rows.extend(
+                wrap(&tr(&view.description_key).plain(), 56)
+                    .into_iter()
+                    .map(Row::Note),
+            );
+            let usable = view.available && !view.reserved;
+            let (text, active) = if view.granted {
+                ("horizon.mods.powers.revoke", true)
+            } else if !usable {
+                ("horizon.mods.powers.unavailable", false)
+            } else if self.lua_power_armed == Some((i, k)) {
+                ("horizon.mods.powers.confirm", true)
+            } else {
+                ("horizon.mods.powers.grant", true)
+            };
+            let control = button(0.0, 0.0, 150.0, tr(text), Act::LuaPower(i, k));
+            let control = if active { control } else { inactive(control) };
+            rows.push(Row::Buttons(control, None));
+        }
+        if self.lua_power_changed {
+            rows.push(Row::Note(tr("horizon.mods.screen.restart").plain()));
+        }
+        rows
+    }
+    /// Reads Lua mod `i`'s powers from the provider into the page. Called when the page opens and
+    /// after each change to a power.
+    fn lua_powers_load(&mut self, i: usize) {
+        self.lua_powers = None;
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let Some((id, _)) = provider.lookup(i) else {
+            return;
+        };
+        let views = provider.powers(&id);
+        self.lua_powers = Some((i, id, views));
+    }
+    /// Ends a pending power confirm, if any, and lays the page out again so its button reads Grant.
+    fn lua_power_disarm(&mut self) -> Option<(usize, usize)> {
+        let armed = self.lua_power_armed.take();
+        if armed.is_some() {
+            self.relayout();
+        }
+        armed
+    }
+    /// A power button clicked. Revoke applies at once. Grant only arms its confirm; a second click
+    /// on the same button, with `armed` taken from before this click, grants.
+    fn lua_power_click(&mut self, i: usize, k: usize, armed: Option<(usize, usize)>) {
+        let Some((entry, id, views)) = &self.lua_powers else {
+            return;
+        };
+        let Some(view) = views.get(k) else {
+            return;
+        };
+        if *entry != i || !(view.granted || (view.available && !view.reserved)) {
+            return;
+        }
+        let (id, name, granted) = (id.clone(), view.name.clone(), view.granted);
+        if granted {
+            self.lua_power_set(i, &id, &name, false);
+        } else if armed == Some((i, k)) {
+            self.lua_power_set(i, &id, &name, true);
+        } else {
+            self.lua_power_armed = Some((i, k));
+            self.relayout();
+        }
+    }
+    /// Grants or revokes a power through the provider. A refusal is shown; an accepted change
+    /// reads the powers again and shows the restart note.
+    fn lua_power_set(&mut self, i: usize, id: &str, power: &str, granted: bool) {
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        match provider.set_power(id, power, granted) {
+            Ok(()) => {
+                self.lua_fault = None;
+                self.lua_power_changed = true;
+                self.lua_powers_load(i);
+            }
+            Err(fault) => self.lua_fault = Some(fault),
+        }
+        self.relayout();
+    }
+    /// Keeps the provider's answer to a change: a refusal is shown, an accepted change clears it,
+    /// and the page is laid out again so its labels show the stored values.
+    fn lua_result(&mut self, result: Result<(), Fault>) {
+        self.lua_fault = result.err();
+        self.relayout();
+    }
+    /// Stores `value` as setting `key` of mod `id`, through the provider.
+    fn lua_store(&mut self, id: &str, key: &str, value: ViewValue) {
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let result = provider.set(id, key, value);
+        self.lua_result(result);
+    }
+    /// A Lua setting's button clicked: its value steps on (see `lua_next`).
+    fn lua_click(&mut self, i: usize, j: usize) {
+        if let Some((id, view)) = lua_setting(i, j)
+            && let Some(value) = lua_next(&view)
+        {
+            self.lua_store(&id, &view.key, value);
+        }
+    }
+    /// A Lua slider moved to `fraction` of its track.
+    fn lua_slide(&mut self, i: usize, j: usize, fraction: f32) {
+        if let Some((id, view)) = lua_setting(i, j)
+            && let Some(value) = lua_slid(&view, fraction)
+        {
+            self.lua_store(&id, &view.key, value);
+        }
+    }
+    /// A Lua slider stepped from the keyboard: one step on, or one tenth of the track's width
+    /// when the slider has no step.
+    fn lua_step(&mut self, i: usize, j: usize, forward: bool, width: f32) {
+        let Some((_, view)) = lua_setting(i, j) else {
+            return;
+        };
+        let position = lua_fraction(&view);
+        let direction = if forward { 1.0 } else { -1.0 };
+        let next = match lua_steps(&view) {
+            Some(steps) => {
+                let steps = steps as f32;
+                ((position * steps).round() + direction) / steps
+            }
+            None => position + direction / (width - 8.0).max(1.0),
+        };
+        self.lua_slide(i, j, next.clamp(0.0, 1.0));
+    }
+    /// Reset Lua setting `j` of mod `i` to its default, through the provider.
+    fn lua_reset(&mut self, i: usize, j: usize) {
+        let Some((id, view)) = lua_setting(i, j) else {
+            return;
+        };
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let result = provider.reset(&id, &view.key);
+        self.lua_result(result);
+    }
+    /// Reset every setting of Lua mod `i` to its defaults, through the provider.
+    fn lua_reset_all(&mut self, i: usize) {
+        let Some(provider) = lua_provider() else {
+            return;
+        };
+        let Some((id, _)) = provider.lookup(i) else {
+            return;
+        };
+        let result = provider.reset_all(&id);
+        self.lua_result(result);
+    }
+    /// The edit of Lua setting `(i, j)`, if it is the one being edited.
+    fn lua_editing(&self, i: usize, j: usize) -> Option<&LuaEdit> {
+        self.lua_edit.as_ref().filter(|edit| match edit {
+            LuaEdit::Text { i: a, j: b, .. } | LuaEdit::Keybind { i: a, j: b } => {
+                (*a, *b) == (i, j)
+            }
+        })
+    }
+    /// A text or keybind setting's button clicked: a text field opens on its stored value, a
+    /// keybind waits for a key. Other kinds have no edit.
+    fn lua_begin_edit(&mut self, i: usize, j: usize) {
+        let Some((_, view)) = lua_setting(i, j) else {
+            return;
+        };
+        self.lua_edit = match (&view.kind, &view.value) {
+            (ViewKind::Text { max_length }, ViewValue::Text(draft)) => Some(LuaEdit::Text {
+                i,
+                j,
+                draft: draft.clone(),
+                max: *max_length,
+            }),
+            (ViewKind::Keybind, _) => Some(LuaEdit::Keybind { i, j }),
+            _ => None,
+        };
+        self.relayout();
+    }
+    /// Ends the edit: with a value it is stored on the edited row through the provider, without
+    /// one it is dropped and the stored value stays.
+    fn lua_finish(&mut self, value: Option<ViewValue>) {
+        let Some(edit) = self.lua_edit.take() else {
+            return;
+        };
+        let (i, j) = match edit {
+            LuaEdit::Text { i, j, .. } | LuaEdit::Keybind { i, j } => (i, j),
+        };
+        match (value, lua_setting(i, j)) {
+            (Some(value), Some((id, view))) => self.lua_store(&id, &view.key, value),
+            _ => self.relayout(),
+        }
+    }
+    /// A click while a Lua setting is edited ends the edit: a text field commits its draft, a
+    /// keybind waiting for a key is cancelled. The click itself does nothing else.
+    fn lua_end_by_click(&mut self) {
+        let value = match &self.lua_edit {
+            Some(LuaEdit::Text { draft, .. }) => Some(ViewValue::Text(draft.clone())),
+            _ => None,
+        };
+        self.lua_finish(value);
+    }
+    /// Typed text into the edited text field, up to its `max_length` in characters.
+    fn lua_type(&mut self, text: &str) {
+        if let Some(LuaEdit::Text { draft, max, .. }) = &mut self.lua_edit {
+            for c in text.chars().filter(|c| !c.is_control()) {
+                if draft.chars().count() < *max {
+                    draft.push(c);
+                }
+            }
+            self.relayout();
+        }
+    }
+    /// A key while a Lua setting is edited. A text field: Enter commits, Escape cancels,
+    /// Backspace erases, other keys type. A keybind: the next key is bound, Escape cancels.
+    /// Returns no events: a commit answers through the provider's result.
+    fn lua_edit_key(&mut self, key: winit::keyboard::KeyCode, text: Option<&str>) -> Vec<Event> {
+        use winit::keyboard::KeyCode as K;
+        match self.lua_edit.clone() {
+            Some(LuaEdit::Keybind { .. }) => {
+                if key == K::Escape {
+                    self.lua_finish(None);
+                } else if let Some(name) = lua_key_name(key) {
+                    self.lua_finish(Some(ViewValue::Text(name)));
+                }
+            }
+            Some(LuaEdit::Text { draft, .. }) => match key {
+                K::Escape => self.lua_finish(None),
+                K::Enter | K::NumpadEnter => self.lua_finish(Some(ViewValue::Text(draft))),
+                K::Backspace => {
+                    if let Some(LuaEdit::Text { draft, .. }) = &mut self.lua_edit {
+                        draft.pop();
+                    }
+                    self.relayout();
+                }
+                _ => {
+                    if let Some(t) = text {
+                        self.lua_type(t);
+                    }
+                }
+            },
+            None => {}
+        }
+        Vec::new()
+    }
+
     fn list_rows(&self, s: &Settings) -> Vec<Row> {
         match self.page() {
             Page::SplitSetup => Vec::new(),
@@ -2728,98 +3634,10 @@ impl OptionsUi {
                 rows
             }
             Page::Font => pairs(&[Opt::ForceUnicode, Opt::JapaneseGlyphs]),
-            Page::Mods => {
-                let browse = button(
-                    0.0,
-                    0.0,
-                    310.0,
-                    tr("horizon.mods.browse"),
-                    Act::Push(Page::ModBrowser),
-                );
-                let mut rows = vec![Row::Buttons(browse, None)];
-                if let Some(note) = &self.mods_note {
-                    rows.extend(wrap(note, 64).into_iter().map(Row::Note));
-                }
-                if s.mods.installed.is_empty() {
-                    rows.push(Row::Header("horizon.mods.empty"));
-                    return rows;
-                }
-                // A section per kind, in the launcher's order (`ModKind::SECTIONS`), so a
-                // feature a registry/<id>.json declares lands in its kind's section with no
-                // line here. Each mod is its toggle, and a Settings button when it has a page.
-                for kind in crate::mod_list::ModKind::SECTIONS {
-                    let mods: Vec<_> = s
-                        .mods
-                        .installed
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, m)| m.kind == kind)
-                        .collect();
-                    if mods.is_empty() {
-                        continue;
-                    }
-                    rows.push(Row::Header(kind.header()));
-                    for (i, m) in mods {
-                        let mut label =
-                            Text::literal(format!("{}: ", m.title)).append(on_off(s.mods.is_on(i)));
-                        if m.problem.as_deref() == Some(crate::mod_list::NOT_BUILT) {
-                            label = label.append(tr("horizon.mods.not_built"));
-                        } else if m.problem.is_some() {
-                            label = label.append(tr("horizon.mods.stopped"));
-                        } else if m.dev {
-                            label = label.append(tr("horizon.mods.dev"));
-                        }
-                        // A content mod's set feeds the block-state tables the
-                        // open world's chunks were decoded with: changing it
-                        // mid-world remaps their ids (Forge/Fabric freeze the
-                        // registry before a world opens). A native, hook or
-                        // engine mod toggles live, so it stays available, as
-                        // does a content mod of assets and data only in a
-                        // world this game serves (`mods_live`, filled by the
-                        // game).
-                        let frozen = self.mod_frozen(m);
-                        if frozen {
-                            label = label.append(tr("horizon.mods.in_world"));
-                        }
-                        let dead = m.dev || m.id.is_empty() || frozen;
-                        // Keys live on the Key Binds screen, so only a mod with settings of
-                        // its own (a native mod's buttons, a hook mod's Extras rows) has a
-                        // settings page worth a second button.
-                        let native_page = m
-                            .native
-                            .as_ref()
-                            .is_some_and(|page| !page.buttons.is_empty())
-                            || !mod_items(&m.id).is_empty();
-                        // A Lua mod with a settings.json has its page too.
-                        let schema = s.mods.config.mods.iter().any(|c| c.mod_id == m.id);
-                        let has_settings = native_page || schema;
-                        let toggle = button(
-                            0.0,
-                            0.0,
-                            if has_settings { 150.0 } else { 310.0 },
-                            label,
-                            Act::ToggleMod(i),
-                        );
-                        let toggle_widget = if dead { inactive(toggle) } else { toggle };
-                        if has_settings {
-                            let act = if native_page {
-                                Act::ModSettings(i)
-                            } else {
-                                Act::ModConfig(i)
-                            };
-                            let settings =
-                                button(0.0, 0.0, 150.0, tr("horizon.mods.settings"), act);
-                            rows.push(Row::Buttons(toggle_widget, Some(settings)));
-                        } else {
-                            rows.push(Row::Buttons(toggle_widget, None));
-                        }
-                    }
-                }
-                rows
-            }
             Page::ModBrowser => self.mod_browser_rows(),
-            Page::ModProject => self.mod_project_rows(s),
+            Page::ModProject => self.mod_project_rows(),
             Page::NativeMod(i) => self.native_rows(s, i),
+            Page::LuaMod(i) => self.lua_rows(i),
             Page::Added(i) => self.added_rows(i),
             _ => {
                 let _ = s;
@@ -2853,496 +3671,6 @@ impl OptionsUi {
             row: 0,
         });
         *y += padding + 18.0;
-    }
-    /// Build every widget of the current page.
-    fn layout(&mut self, s: &Settings, w: f32, h: f32) -> (Vec<Widget>, f32, f32, f32) {
-        let mut out = Vec::new();
-        let mut rows = ListRows::default();
-        let page = self.page();
-        let cx = (w / 2.0).floor();
-        if matches!(
-            page,
-            Page::Video | Page::Controls | Page::KeyBinds | Page::ModBrowser
-        ) {
-            self.settings_search.x = cx - 100.0;
-            self.settings_search.y = 17.0;
-        }
-        let done = |y: f32| button(cx - 100.0, y, 200.0, tr("gui.done"), Act::Done);
-        // (list top, list bottom, content height)
-        let (mut top, mut bottom, mut content) = (33.0, h - 33.0, 0.0);
-        match page {
-            Page::Main => {
-                out.push(Widget {
-                    x: 0.0,
-                    y: 12.0,
-                    w,
-                    h: 9.0,
-                    kind: WKind::Text {
-                        text: tr("options.title"),
-                        color: u32::MAX,
-                        centered: true,
-                    },
-                    list: false,
-                    row: 0,
-                });
-                out.push(option_widget(s, Opt::Fov, cx - 154.0, 29.0, 150.0));
-                out.push(button(
-                    cx + 4.0,
-                    29.0,
-                    150.0,
-                    tr("options.online"),
-                    Act::Push(Page::Online),
-                ));
-                let entries = [
-                    ("options.skinCustomisation", Some(Page::Skin)),
-                    ("options.sounds", Some(Page::Sound)),
-                    // Video Settings... opens Horizon's graphics screen, which holds every
-                    // video option, as Sodium's replaces vanilla's.
-                    ("options.video", Some(Page::Graphics)),
-                    ("options.controls", Some(Page::Controls)),
-                    (
-                        "options.language",
-                        (!self.split_guest).then_some(Page::Language),
-                    ),
-                    ("options.chat", Some(Page::Chat)),
-                    (
-                        "options.resourcepack",
-                        (!self.split_guest).then_some(Page::Packs),
-                    ),
-                    ("options.accessibility", Some(Page::Accessibility)),
-                    // Vanilla's Telemetry Data and Credits slots, see options_main_tail.
-                ];
-                let entries: Vec<(&str, Option<Page>)> = entries
-                    .into_iter()
-                    .chain(options_main_tail(horizon_extras()))
-                    .collect();
-                let rows = entries.len().div_ceil(2) as f32;
-                let gy = (61.0 + 30.0f32).min(h - 33.0 - rows * 24.0);
-                for (i, (key, page)) in entries.iter().enumerate() {
-                    let x = cx - 158.0 + 4.0 + (i % 2) as f32 * 158.0;
-                    let y = gy + (i / 2) as f32 * 24.0;
-                    let b = button(x, y, 150.0, tr(key), page.map_or(Act::None, Act::Push));
-                    out.push(if page.is_some() { b } else { inactive(b) });
-                }
-                out.push(done(h - 27.0));
-                top = 0.0;
-                bottom = 0.0;
-            }
-            Page::Credits => {
-                // CreditsAndAttributionScreen: the title header, three 210-wide
-                // buttons 8 apart (HeaderAndFooterLayout: 30 below the header
-                // unless the footer is closer), Done.
-                out.push(Widget {
-                    x: 0.0,
-                    y: 12.0,
-                    w,
-                    h: 9.0,
-                    kind: WKind::Text {
-                        text: tr(Self::title(page)),
-                        color: u32::MAX,
-                        centered: true,
-                    },
-                    list: false,
-                    row: 0,
-                });
-                let y = (33.0 + 30.0f32).min(h - 33.0 - 76.0);
-                let x = cx - 105.0;
-                out.push(button(
-                    x,
-                    y,
-                    210.0,
-                    tr("credits_and_attribution.button.credits"),
-                    Act::Credits,
-                ));
-                // ConfirmLinkScreen to minecraft.net: Horizon opens no links.
-                for (i, key) in [
-                    "credits_and_attribution.button.attribution",
-                    "credits_and_attribution.button.licenses",
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    let y = y + 28.0 * (i + 1) as f32;
-                    out.push(inactive(button(x, y, 210.0, tr(key), Act::None)));
-                }
-                // horizon-extras: a build without them says where the official one is.
-                if !horizon_extras() {
-                    out.push(Widget {
-                        x: 0.0,
-                        y: (y + 92.0).min(h - 42.0),
-                        w,
-                        h: 9.0,
-                        kind: WKind::Text {
-                            text: tr("horizon.plain.official"),
-                            color: 0xFFA0A0A0,
-                            centered: true,
-                        },
-                        list: false,
-                        row: 0,
-                    });
-                }
-                out.push(done(h - 27.0));
-                top = 0.0;
-                bottom = 0.0;
-            }
-            Page::KeyBinds => {
-                top = 38.0;
-                out.push(Widget {
-                    x: 0.0,
-                    y: 4.0,
-                    w,
-                    h: 9.0,
-                    kind: WKind::Text {
-                        text: tr(Self::title(page)),
-                        color: u32::MAX,
-                        centered: true,
-                    },
-                    list: false,
-                    row: 0,
-                });
-                let mut mappings: Vec<(&str, &str)> = all_mappings()
-                    .filter(|(n, _, _)| crate::keybinds::listed(n))
-                    .map(|(n, _, c)| (*n, *c))
-                    .collect();
-                let query = self.settings_search.value.to_lowercase();
-                mappings.retain(|(name, _)| {
-                    query.is_empty() || lang::get(name).to_lowercase().contains(&query)
-                });
-                mappings.sort_by(|a, b| {
-                    let ca = CATEGORIES.iter().position(|c| *c == a.1).unwrap_or(99);
-                    let cb = CATEGORIES.iter().position(|c| *c == b.1).unwrap_or(99);
-                    ca.cmp(&cb)
-                        .then_with(|| lang::get(a.0).cmp(&lang::get(b.0)))
-                });
-                let row_left = cx - 170.0;
-                let scrollbar_x = row_left + 340.0 + 6.0 + 2.0;
-                // VideoSettingsScreen.addTitle: a changed graphics API needs a restart.
-                if page == Page::Video && s.horizon.api != s.startup_api {
-                    out.push(Widget {
-                        x: 0.0,
-                        y: 15.0,
-                        w,
-                        h: 9.0,
-                        kind: WKind::Text {
-                            text: tr("options.restartRequired"),
-                            color: rgba(223, 80, 80, 255),
-                            centered: true,
-                        },
-                        list: false,
-                        row: 0,
-                    });
-                }
-                let list_start = out.len();
-                let mut y = top + 2.0 - self.scroll;
-                let mut last_category = "";
-                for (name, category) in mappings {
-                    if category != last_category {
-                        last_category = category;
-                        rows.begin(&out, y);
-                        let label =
-                            Text::translate(&format!("key.category.minecraft.{category}"), &[])
-                                .with_style(&Style {
-                                    bold: Some(true),
-                                    underlined: Some(true),
-                                    ..Style::default()
-                                });
-                        out.push(Widget {
-                            x: 0.0,
-                            y: y + 7.0,
-                            w,
-                            h: 9.0,
-                            kind: WKind::Text {
-                                text: label,
-                                color: u32::MAX,
-                                centered: true,
-                            },
-                            list: false,
-                            row: 0,
-                        });
-                        y += 20.0;
-                        rows.end(&mut out, y);
-                    }
-                    rows.begin(&out, y);
-                    out.push(Widget {
-                        x: row_left + 2.0,
-                        y: y + 6.0,
-                        w: 200.0,
-                        h: 9.0,
-                        kind: WKind::Text {
-                            text: tr(name),
-                            color: u32::MAX,
-                            centered: false,
-                        },
-                        list: false,
-                        row: 0,
-                    });
-                    let key = s.keys.get(name).to_owned();
-                    let mut message = keybinds::display_name(&key);
-                    let conflicts = s.keys.conflicts(name);
-                    if !conflicts.is_empty() {
-                        message = Text::literal("[ ")
-                            .append(message.with_color(text::WHITE))
-                            .append(" ]")
-                            .with_color(text::YELLOW);
-                    }
-                    if self.selected_key == Some(name) {
-                        message = Text::literal("> ")
-                            .append(message.with_style(&Style {
-                                color: Some(text::WHITE),
-                                underlined: Some(true),
-                                ..Style::default()
-                            }))
-                            .append(" <")
-                            .with_color(text::YELLOW);
-                    }
-                    let reset_x = scrollbar_x - 50.0 - 10.0;
-                    let change_x = reset_x - 5.0 - 75.0;
-                    let name_static = all_mappings().find(|m| m.0 == name).map_or("", |m| m.0);
-                    out.push(button(change_x, y, 75.0, message, Act::Key(name_static)));
-                    if !conflicts.is_empty() {
-                        out.push(Widget {
-                            x: change_x - 6.0,
-                            y: y + 1.0,
-                            w: 3.0,
-                            h: 18.0,
-                            kind: WKind::Text {
-                                text: Text::empty(),
-                                color: rgba(255, 255, 0, 255),
-                                centered: false,
-                            },
-                            list: false,
-                            row: 0,
-                        });
-                    }
-                    let reset = button(
-                        reset_x,
-                        y,
-                        50.0,
-                        tr("controls.reset"),
-                        Act::ResetKey(name_static),
-                    );
-                    out.push(if s.keys.is_default(name) {
-                        inactive(reset)
-                    } else {
-                        reset
-                    });
-                    y += 20.0;
-                    rows.end(&mut out, y);
-                }
-                content = y + self.scroll - top + 2.0;
-                out[list_start..].iter_mut().for_each(|w| w.list = true);
-                let reset_all = button(
-                    cx - 154.0,
-                    h - 27.0,
-                    150.0,
-                    tr("controls.resetAll"),
-                    Act::ResetKeys,
-                );
-                // KeyBindsScreen.extractRenderState: active only while some
-                // binding differs from its default.
-                out.push(if s.keys.changed_from_defaults() {
-                    reset_all
-                } else {
-                    inactive(reset_all)
-                });
-                out.push(button(cx + 4.0, h - 27.0, 150.0, tr("gui.done"), Act::Done));
-            }
-            Page::Language => {
-                top = 36.0;
-                bottom = h - 53.0;
-                out.push(Widget {
-                    x: 0.0,
-                    y: 4.0,
-                    w,
-                    h: 9.0,
-                    kind: WKind::Text {
-                        text: tr(Self::title(page)),
-                        color: u32::MAX,
-                        centered: true,
-                    },
-                    list: false,
-                    row: 0,
-                });
-                self.language_search.x = cx - 100.0;
-                self.language_search.y = 17.0;
-                let query = self.language_search.value.to_lowercase();
-                let current = self
-                    .language_choice
-                    .clone()
-                    .unwrap_or_else(|| s.language.clone());
-                if std::mem::take(&mut self.center_language)
-                    && let Some(i) = self.languages.iter().position(|l| l.code == current)
-                {
-                    // AbstractSelectionList.centerScrollOn.
-                    self.scroll = (i as f32 * 18.0 + 9.0 - (bottom - top) / 2.0).max(0.0);
-                }
-                let list_start = out.len();
-                let mut y = top + 2.0 - self.scroll;
-                for l in &self.languages {
-                    if !query.is_empty()
-                        && !l.label().to_lowercase().contains(&query)
-                        && !l.code.contains(&query)
-                    {
-                        continue;
-                    }
-                    rows.begin(&out, y);
-                    out.push(Widget {
-                        x: cx - 110.0,
-                        y,
-                        w: 220.0,
-                        h: 18.0,
-                        kind: WKind::LanguageRow {
-                            label: Text::literal(l.label()),
-                            selected: l.code == current,
-                            code: l.code.clone(),
-                        },
-                        list: false,
-                        row: 0,
-                    });
-                    y += 18.0;
-                    rows.end(&mut out, y);
-                }
-                content = y + self.scroll - top + 2.0;
-                out[list_start..].iter_mut().for_each(|w| w.list = true);
-                out.push(Widget {
-                    x: 0.0,
-                    y: h - 45.0,
-                    w,
-                    h: 9.0,
-                    kind: WKind::Text {
-                        text: tr("options.languageAccuracyWarning"),
-                        color: rgba(0xBA, 0xBA, 0xBA, 255),
-                        centered: true,
-                    },
-                    list: false,
-                    row: 0,
-                });
-                out.push(button(
-                    cx - 154.0,
-                    h - 28.0,
-                    150.0,
-                    tr("options.font"),
-                    Act::Push(Page::Font),
-                ));
-                out.push(button(cx + 4.0, h - 28.0, 150.0, tr("gui.done"), Act::Done));
-            }
-            // Drawn by `pack_screen`.
-            Page::Packs => {}
-            _ => {
-                if matches!(page, Page::Video | Page::Controls | Page::ModBrowser) {
-                    top = 38.0;
-                }
-                out.push(Widget {
-                    x: 0.0,
-                    y: if matches!(page, Page::Video | Page::Controls | Page::ModBrowser) {
-                        4.0
-                    } else {
-                        12.0
-                    },
-                    w,
-                    h: 9.0,
-                    kind: WKind::Text {
-                        text: tr(Self::title(page)),
-                        color: u32::MAX,
-                        centered: true,
-                    },
-                    list: false,
-                    row: 0,
-                });
-                let list_start = out.len();
-                let mut y = top + 2.0 - self.scroll;
-                for row in self.list_rows(s) {
-                    rows.begin(&out, y);
-                    match row {
-                        Row::Header(key) => {
-                            let label = tr(key);
-                            self.heading_row(&mut out, label, &mut y, w, top);
-                        }
-                        Row::Heading(key) => {
-                            let label = tr(&key);
-                            self.heading_row(&mut out, label, &mut y, w, top);
-                        }
-                        Row::Note(text) => {
-                            out.push(Widget {
-                                x: 0.0,
-                                y: y + 4.0,
-                                w,
-                                h: 9.0,
-                                kind: WKind::Text {
-                                    text: Text::literal(text),
-                                    color: 0xFFA0A0A0,
-                                    centered: true,
-                                },
-                                list: false,
-                                row: 0,
-                            });
-                            y += 16.0;
-                        }
-                        Row::Big(opt) => {
-                            out.push(option_widget(s, opt, cx - 155.0, y + 2.0, 310.0));
-                            y += 25.0;
-                        }
-                        Row::Pair(a, b) => {
-                            out.push(option_widget(s, a, cx - 155.0, y + 2.0, 150.0));
-                            if let Some(b) = b {
-                                out.push(option_widget(s, b, cx + 5.0, y + 2.0, 150.0));
-                            }
-                            y += 25.0;
-                        }
-                        Row::Buttons(mut a, b) => {
-                            a.x = cx - 155.0;
-                            a.y = y + 2.0;
-                            out.push(a);
-                            if let Some(mut b) = b {
-                                b.x = cx + 5.0;
-                                b.y = y + 2.0;
-                                out.push(b);
-                            }
-                            y += 25.0;
-                        }
-                    }
-                    rows.end(&mut out, y);
-                }
-                content = y + self.scroll - top + 2.0;
-                out[list_start..].iter_mut().for_each(|w| w.list = true);
-                let folder = match page {
-                    Page::Accessibility => {
-                        Some(("options.accessibility.link", Act::AccessibilityHelp))
-                    }
-                    Page::Mods => Some(("horizon.mods.open_folder", Act::OpenModFolder)),
-                    _ => None,
-                };
-                if let Some((label, act)) = folder {
-                    out.push(button(cx - 154.0, h - 27.0, 150.0, tr(label), act));
-                    out.push(button(cx + 4.0, h - 27.0, 150.0, tr("gui.done"), Act::Done));
-                } else {
-                    out.push(done(h - 27.0));
-                }
-            }
-        }
-        // Layout may change the offset (language centering), or the list may
-        // shrink after a resize/search. Correct the rows in this same frame.
-        let previous_scroll = self.scroll;
-        self.clamp_scroll(top, bottom, content);
-        for widget in &mut out {
-            if widget.list {
-                widget.y += previous_scroll - self.scroll;
-            }
-            if let WKind::Button {
-                act: Act::Cycle(Opt::RotateWithMinecarts),
-                active,
-                ..
-            } = &mut widget.kind
-            {
-                *active = self.in_world && self.minecart_improvements;
-            }
-        }
-        self.row_bands = rows
-            .bands
-            .into_iter()
-            .map(|band| band.map(|y| y + previous_scroll - self.scroll))
-            .collect();
-        (out, top, bottom, content)
     }
     fn clamp_scroll(&mut self, top: f32, bottom: f32, content: f32) {
         let max = (content - (bottom - top)).max(0.0);
@@ -3412,348 +3740,6 @@ impl OptionsUi {
             Narratable::container_list(self.row_bands.len(), hovered_row, rect).key(key)
         });
     }
-    /// `output`: that of the renderer the options are drawn for, each draw, so the graphics
-    /// screen's rows and calibration read its offer and report as they are now, not another
-    /// window's, and not one from before the page opened.
-    pub fn draw(
-        &mut self,
-        s: &Settings,
-        output: crate::gfx::EffectiveOutput,
-        batch: &mut HudBatch,
-        atlas: &HudAtlas,
-        cursor: (f32, f32),
-    ) {
-        self.output = output;
-        let (w, h) = (batch.width, batch.height);
-        if let Some(error) = &self.resource_error {
-            ui::menu_background(batch, atlas, 0.0, 0.0, w, h, self.in_world);
-            let title = tr("resourcePack.load_fail");
-            // An alert: its title and its message.
-            crate::widgets::begin_screen(|| {
-                crate::widgets::ScreenInfo::new(
-                    "options/resource_error",
-                    crate::widgets::join_for_narration(&[&title.plain(), error]),
-                )
-            });
-            batch.text_styled(
-                atlas,
-                &title,
-                ((w - atlas.font.width_text(&title)) / 2.0).floor(),
-                30.0,
-                u32::MAX,
-                true,
-            );
-            let lines = atlas.font.split(&Text::literal(error), (w - 50.0).max(1.0));
-            let limit = ((h - 110.0) / 9.0).max(1.0) as usize;
-            for (i, line) in lines.iter().take(limit).enumerate() {
-                batch.text_styled(
-                    atlas,
-                    line,
-                    ((w - atlas.font.width_text(line)) / 2.0).floor(),
-                    60.0 + i as f32 * 9.0,
-                    u32::MAX,
-                    true,
-                );
-            }
-            ui::action_button(
-                batch,
-                atlas,
-                crate::widgets::Action::Done,
-                w / 2.0 - 100.0,
-                h - 28.0,
-                200.0,
-                20.0,
-                &tr("gui.done"),
-                true,
-                ui::hovered(cursor, w / 2.0 - 100.0, h - 28.0, 200.0, 20.0),
-            );
-            return;
-        }
-        // The page is its own screen (OptionsScreen, VideoSettingsScreen...).
-        let page = self.page();
-        crate::widgets::begin_screen(|| {
-            crate::widgets::ScreenInfo::new(
-                format!("options/{page:?}"),
-                tr(Self::title(page)).plain(),
-            )
-        });
-        if self.page() == Page::HdrCalibration
-            && let Some(c) = &self.calibration
-        {
-            c.draw(batch, atlas, cursor);
-            return;
-        }
-        let waiting = self.waiting();
-        let in_world = self.in_world;
-        if self.draw_radial_name(batch, atlas, cursor, in_world) {
-            return;
-        }
-        if let Some(shell) = self.shell_mut() {
-            shell.draw(s, batch, atlas, cursor, in_world, waiting);
-            // The keys lay the screen out at the size it was drawn at.
-            self.size = (batch.width, batch.height);
-            return;
-        }
-        if self.page() == Page::SplitSetup {
-            self.split_setup.on = s.extras.splitscreen;
-            // The controller picks a tile up between presses: the screen's size from the draw.
-            self.split_setup.size = (batch.width, batch.height);
-            self.split_setup.draw(batch, atlas, cursor, self.in_world);
-            return;
-        }
-        if self.page() == Page::SplitProfiles {
-            self.split_profiles
-                .draw(batch, atlas, cursor, self.in_world, self.pad_glyphs);
-            return;
-        }
-        if self.page() == Page::Studio {
-            self.studio.draw(batch, atlas, cursor, self.in_world);
-            return;
-        }
-        if self.page() == Page::Packs {
-            self.watch_data_packs(atlas, (w, h));
-            ui::menu_background(batch, atlas, 0.0, 0.0, w, h, self.in_world);
-            let blink = self.pack_focus.elapsed().as_millis() as u64;
-            let m = crate::screen_draw::Measure(&atlas.font);
-            let mouse = (cursor.0.floor() as i32, cursor.1.floor() as i32);
-            let packs = self.packs(atlas, (w, h));
-            let mut draws = packs.draw(&m, mouse, blink, crate::hud_overlays::now_ms());
-            packs.bind_icons(&mut draws, atlas, &mut batch.patches);
-            crate::screen_draw::paint(batch, atlas, &draws);
-            return;
-        }
-        if self.page() == Page::Pvp {
-            self.wide_extras = wide_extras(s, |t| atlas.font.width(t));
-        }
-        let (widgets, top, bottom, content) = self.layout(s, w, h);
-        self.size = (w, h);
-        let in_world = self.in_world;
-        ui::menu_background(batch, atlas, 0.0, 0.0, w, h, in_world);
-        let list = bottom > top;
-        if list {
-            ui::list_background(batch, atlas, top, bottom, in_world);
-        }
-        let visible = |wd: &Widget| !wd.list || (wd.y < bottom && wd.y + wd.h > top);
-        // The list's narration: the language list is an ObjectSelectionList,
-        // the others ContainerObjectSelectionLists whose rows' widgets are
-        // recorded as they are drawn.
-        let list_key = crate::widgets::key_of(&format!("options/{page:?}/list"));
-        let framebuffer = [(w * batch.scale) as i32, (h * batch.scale) as i32];
-        if list {
-            self.narrate_list(&widgets, list_key, (top, bottom), w, cursor);
-        }
-        let mut tooltip = None;
-        // The widget a keyboard-focused tooltip belongs to: `MenuTooltipPositioner`
-        // keeps it against that widget, not at the pointer.
-        let mut tooltip_rect: Option<[f32; 4]> = None;
-        for (wd_idx, wd) in widgets.iter().enumerate() {
-            if !visible(wd) {
-                continue;
-            }
-            let is_focused = self
-                .focus
-                .as_ref()
-                .is_some_and(|fid| matches_focus(fid, wd_idx, wd));
-            let start = batch.vertices.len();
-            let pointer_over = ui::hovered(cursor, wd.x, wd.y, wd.w, wd.h)
-                && (!wd.list || cursor.1 >= top && cursor.1 < bottom);
-            let hover = pointer_over || is_focused;
-            // The tooltip is the pointer's (`setTooltip`, drawn while hovered);
-            // a keyboard-focused widget keeps it against the widget
-            // (`MenuTooltipPositioner`). Focus a mouse click leaves behind
-            // does not: the description goes when the mouse leaves, like
-            // vanilla's.
-            let tip_hover = pointer_over || (is_focused && self.focus_from_keyboard);
-            if tip_hover && let Some(tip) = tooltip_text(s, wd) {
-                tooltip = Some(match &wd.kind {
-                    // The duplicate keybinds tooltip keeps its own lines.
-                    WKind::Button {
-                        act: Act::Key(_), ..
-                    } => tip
-                        .plain()
-                        .split('\n')
-                        .map(|l| Text::literal(l.to_owned()))
-                        .collect::<Vec<_>>(),
-                    _ => atlas.font.split(&tip, 170.0),
-                });
-                tooltip_rect =
-                    (!pointer_over || self.pad_driving).then_some([wd.x, wd.y, wd.w, wd.h]);
-            }
-            match &wd.kind {
-                WKind::Button { label, active, act } => {
-                    ui::focused_button(
-                        batch,
-                        atlas,
-                        [wd.x, wd.y, wd.w, wd.h],
-                        label,
-                        *active,
-                        pointer_over,
-                        is_focused,
-                        matches!(act, Act::Done).then_some(crate::widgets::Action::Done),
-                    );
-                    crate::widgets::last_narratable(|n| {
-                        narrate_widget(n, s, wd, hover, list_key, framebuffer);
-                    });
-                }
-                WKind::Slider { label, value, opt } => {
-                    let dragging = self.dragging == Some(*opt);
-                    let shown = self.slider_shown(*opt, *value);
-                    ui::slider_ext(
-                        batch,
-                        atlas,
-                        wd.x,
-                        wd.y,
-                        wd.w,
-                        label,
-                        shown,
-                        hover || dragging,
-                        is_focused,
-                        self.can_change_value && is_focused,
-                        true,
-                        dragging,
-                    );
-                    crate::widgets::last_narratable(|n| {
-                        narrate_widget(n, s, wd, hover, list_key, framebuffer);
-                    });
-                }
-                WKind::Text {
-                    text,
-                    color,
-                    centered,
-                } => {
-                    if text.is_empty() {
-                        batch.fill(atlas, wd.x, wd.y, wd.w, wd.h, *color);
-                    } else if *centered {
-                        let tw = atlas.font.width_text(text);
-                        // A list's header row (OptionsList.HeaderEntry,
-                        // KeyBindsList.CategoryEntry): a FocusableTextWidget
-                        // narrating its text, 4 pixels of padding round it.
-                        if wd.list && *color == u32::MAX {
-                            crate::widgets::narratable(|| {
-                                let x = wd.x + ((wd.w - tw) / 2.0).floor();
-                                crate::widgets::Narratable::text(
-                                    text.plain(),
-                                    [x - 4.0, wd.y - 4.0, tw + 8.0, 17.0],
-                                )
-                                .key(crate::widgets::key_of(&(list_key, wd.row)))
-                                .child_of(list_key, wd.row)
-                            });
-                        }
-                        batch.text_styled(
-                            atlas,
-                            text,
-                            wd.x + ((wd.w - tw) / 2.0).floor(),
-                            wd.y,
-                            *color,
-                            true,
-                        );
-                    } else {
-                        batch.text_styled(atlas, text, wd.x, wd.y, *color, true);
-                    }
-                }
-                WKind::LanguageRow {
-                    label, selected, ..
-                } => {
-                    let rect = [wd.x, wd.y, wd.w, wd.h];
-                    crate::widgets::record_as(
-                        &label.plain(),
-                        rect,
-                        true,
-                        crate::widgets::Kind::Row,
-                    );
-                    crate::widgets::target_as(rect, crate::widgets::Kind::Row);
-                    if *selected || is_focused {
-                        batch.fill(atlas, wd.x, wd.y, wd.w, wd.h, u32::MAX);
-                        batch.fill(
-                            atlas,
-                            wd.x + 1.0,
-                            wd.y + 1.0,
-                            wd.w - 2.0,
-                            wd.h - 2.0,
-                            rgba(0, 0, 0, 255),
-                        );
-                    }
-                    let tw = atlas.font.width_text(label);
-                    batch.text_styled(
-                        atlas,
-                        label,
-                        wd.x + ((wd.w - tw) / 2.0).floor(),
-                        wd.y + 2.0 + 7.0 - 4.0,
-                        u32::MAX,
-                        true,
-                    );
-                }
-            }
-            if wd.list && (wd.y < top || wd.y + wd.h > bottom) {
-                batch.clip_since(start, 0.0, top, w, bottom);
-            }
-        }
-        if list {
-            ui::separators(batch, atlas, top, bottom, in_world);
-            let sx = self.scrollbar_x(w);
-            ui::scrollbar(batch, atlas, sx, top, bottom, content, self.scroll);
-        }
-        if self.page() == Page::Language {
-            let mut search = self.language_search.clone();
-            if self.focus == Some(FocusId::Search) {
-                search.focused = true;
-            }
-            search.draw(batch, atlas, None);
-            // LanguageSelectScreen's header search box (no message), added
-            // before the list.
-            crate::widgets::last_narratable(|n| n.order = -1);
-            if search.value.is_empty() && !search.focused {
-                batch.text_styled(
-                    atlas,
-                    &tr("gui.language.search").with_color(text::GRAY).italic(),
-                    search.text_x(),
-                    search.text_y(),
-                    u32::MAX,
-                    true,
-                );
-            }
-            self.language_search = search;
-        }
-        if matches!(
-            self.page(),
-            Page::Video | Page::Controls | Page::KeyBinds | Page::ModBrowser
-        ) {
-            let mut search = self.settings_search.clone();
-            if self.focus == Some(FocusId::Search) {
-                search.focused = true;
-            }
-            search.draw(batch, atlas, None);
-            let hint = match self.page() {
-                Page::ModBrowser => "horizon.mods.browse.search",
-                _ => "horizon.options.search",
-            };
-            // Horizon's search box sits in the header, before the list.
-            crate::widgets::last_narratable(|n| {
-                n.order = -1;
-                if let crate::widgets::What::EditBox { message, .. } = &mut n.what {
-                    *message = tr(hint).plain();
-                }
-            });
-            if search.value.is_empty() && !search.focused {
-                batch.text_styled(
-                    atlas,
-                    &tr(hint).with_color(text::GRAY).italic(),
-                    search.text_x(),
-                    search.text_y(),
-                    u32::MAX,
-                    true,
-                );
-            }
-            self.settings_search = search;
-        }
-        if let Some(lines) = tooltip {
-            match tooltip_rect {
-                Some(rect) if self.pad_driving => ui::tooltip_under(batch, atlas, &lines, rect),
-                Some(rect) => ui::tooltip_menu(batch, atlas, &lines, cursor, rect),
-                None => ui::tooltip(batch, atlas, &lines, cursor),
-            }
-        }
-    }
     /// Mouse press/drag. Returns events for the game.
     pub fn click(
         &mut self,
@@ -3766,6 +3752,29 @@ impl OptionsUi {
         drag: bool,
         right: bool,
     ) -> Vec<Event> {
+        let events = self.click_unrevised(s, atlas, x, y, size, framebuffer, drag, right);
+        // A click that changed nothing the layout reads (an empty spot, a
+        // focus move) keeps the built layout.
+        if !events.is_empty() {
+            self.relayout();
+        }
+        events
+    }
+    /// `click` without the layout revision: the events it answered with say
+    /// whether the layout's inputs moved.
+    fn click_unrevised(
+        &mut self,
+        s: &mut Settings,
+        atlas: &HudAtlas,
+        x: f32,
+        y: f32,
+        size: (f32, f32),
+        framebuffer: [i32; 2],
+        drag: bool,
+        right: bool,
+    ) -> Vec<Event> {
+        // A click ends a pending power confirm, unless it is the confirm's own button.
+        let armed = self.lua_power_disarm();
         if self.resource_error.is_some() {
             if !drag
                 && !right
@@ -3864,6 +3873,28 @@ impl OptionsUi {
             });
             return self.shell_events(s, outputs);
         }
+        if self.page() == Page::Mods {
+            let mut events = Vec::new();
+            if drag {
+                self.mods_page(s, size).drag(y as f64);
+                return events;
+            }
+            if right {
+                return events;
+            }
+            let m = crate::screen_draw::Measure(&atlas.font);
+            let screen = self.mods_page(s, size);
+            let before = screen.search_focused();
+            let (action, sound) = screen.click(&m, x as f64, y as f64);
+            if !before && screen.search_focused() {
+                self.pack_focus = Instant::now();
+            }
+            if sound {
+                events.push(Event::ButtonClick);
+            }
+            events.extend(self.mods_action(s, action));
+            return events;
+        }
         if self.page() == Page::Packs {
             let mut events = Vec::new();
             if drag {
@@ -3898,10 +3929,15 @@ impl OptionsUi {
             }
             return events;
         }
-        let (widgets, top, bottom, content) = self.layout(s, size.0, size.1);
+        let layout = self.built_layout(s, size.0, size.1);
+        let (widgets, top, bottom, content) = layout.parts();
         self.size = size;
         self.framebuffer = framebuffer;
         let mut events = Vec::new();
+        if !drag && self.lua_edit.is_some() {
+            self.lua_end_by_click();
+            return events;
+        }
         if !drag
             && matches!(
                 self.page(),
@@ -3957,7 +3993,12 @@ impl OptionsUi {
             {
                 let v = ui::slider_value(wd.x, wd.w, x);
                 self.slider_value = Some((opt, v, Instant::now()));
-                drag_slider(opt, s, v, &mut events);
+                if let Opt::LuaSetting(i, j) = opt {
+                    self.lua_slide(i, j, v);
+                    events.push(Event::SliderDrag);
+                } else {
+                    drag_slider(opt, s, v, &mut events);
+                }
             }
             return events;
         }
@@ -3981,7 +4022,7 @@ impl OptionsUi {
             self.scrollbar_drag_y = Some(y);
             return events;
         }
-        for (wd_idx, wd) in widgets.into_iter().enumerate() {
+        for (wd_idx, wd) in widgets.iter().enumerate() {
             if !ui::hovered((x, y), wd.x, wd.y, wd.w, wd.h) {
                 continue;
             }
@@ -3990,14 +4031,14 @@ impl OptionsUi {
             }
             // AbstractWidget.mouseClicked rejects inactive buttons before the
             // container can focus them.
-            if matches!(wd.kind, WKind::Button { active: false, .. }) {
+            if matches!(&wd.kind, WKind::Button { active: false, .. }) {
                 return events;
             }
             // A click focuses the widget for its highlight only: vanilla's wheel
             // steps a keyboard-focused widget from anywhere, not a clicked one.
-            self.focus = Some(focus_id(wd_idx, &wd));
+            self.focus = Some(focus_id(wd_idx, wd));
             self.focus_from_keyboard = false;
-            match wd.kind {
+            match &wd.kind {
                 WKind::Button {
                     active: true, act, ..
                 } => {
@@ -4005,23 +4046,23 @@ impl OptionsUi {
                     events.push(Event::ButtonClick);
                     match act {
                         Act::Push(p) => {
-                            if p == Page::ShaderPacks {
+                            if *p == Page::ShaderPacks {
                                 // The pack list, and the picked pack's own settings with it.
                                 events.push(Event::ListShaderPacks);
                                 s.shader_options = None;
                                 events.push(Event::OpenShaderOptions);
                             }
-                            if p == Page::Music {
+                            if *p == Page::Music {
                                 events.push(Event::ListMusicTracks);
                             }
-                            if p == Page::ModBrowser {
+                            if *p == Page::ModBrowser {
                                 events.push(Event::BrowseMods);
                             }
-                            self.push(p)
+                            self.push(*p)
                         }
                         Act::Done => events.extend(self.back(s)),
                         Act::Cycle(opt) => {
-                            events.extend(self.cycle_option(s, opt, self.shift, framebuffer));
+                            events.extend(self.cycle_option(s, *opt, self.shift, framebuffer));
                         }
                         Act::Extra(item) => {
                             if let Some(name) = item.key_name() {
@@ -4032,47 +4073,58 @@ impl OptionsUi {
                             }
                         }
                         Act::PlayMusicTrack(event, track) => {
-                            events.push(Event::PlayMusicTrack(event, track));
+                            events.push(Event::PlayMusicTrack(event.clone(), track.clone()));
                         }
                         Act::MusicTrackOn(track, was_on) => {
                             s.extras
                                 .music_off
                                 .retain(|off| off.as_str() != track.as_str());
-                            if was_on {
-                                s.extras.music_off.push(track);
+                            if *was_on {
+                                s.extras.music_off.push(track.clone());
                             }
                             events.push(Event::Changed);
                         }
-                        Act::Key(name) => self.selected_key = Some(name),
+                        Act::Key(name) => self.selected_key = Some(*name),
                         Act::ResetKey(name) => {
                             s.keys.set(name, KeyBinds::default_of(name));
                             events.push(Event::Changed);
                         }
                         Act::ResetKeys => {
                             s.keys.reset_all();
+                            s.mods.keys.clear();
                             events.push(Event::Changed);
                         }
-                        Act::ToggleMod(i) => {
-                            s.mods.toggle(i);
-                            crate::mod_mirror::follow_toggle(s, i);
-                            events.push(Event::Changed);
+                        Act::ModKey(i, k) => {
+                            self.selected_key = Some(MOD_KEY);
+                            self.selected_mod_key = Some((*i, *k));
+                            self.pending_mod_key = None;
                         }
-                        Act::ModSettings(i) => {
-                            events.push(Event::ButtonClick);
-                            self.push(Page::NativeMod(i));
-                            events.push(Event::NativeSettings(i));
+                        Act::ResetModKey(i, k) => {
+                            if let Some((id, mapping)) = mod_mapping(s, *i, *k) {
+                                s.mods.reset_binding(&id, &mapping);
+                                events.push(Event::Changed);
+                            }
                         }
-                        Act::ModConfig(i) => {
-                            events.push(Event::ButtonClick);
-                            self.push(Page::ModSettings(i));
-                            events.push(Event::ModSettingsOpened);
+                        Act::PageRow(p, r) => events.extend(self.page_act(*p, *r, self.shift)),
+                        Act::NativeSetting(i, j) => {
+                            let setting = s
+                                .mods
+                                .installed
+                                .get_mut(*i)
+                                .and_then(|m| m.native.as_mut())
+                                .and_then(|page| page.settings.get_mut(*j));
+                            if let Some(setting) = setting {
+                                setting.value.click();
+                                events.push(Event::NativeSetting(*i, *j));
+                            }
                         }
-                        Act::NativeKey(i, k) => self.wait_native_key(i, k),
-                        Act::NativeButton(i, b) => events.push(Event::NativeButton(i, b)),
-                        Act::PageRow(p, r) => events.extend(self.page_act(p, r, self.shift)),
-                        Act::OpenModFolder => events.push(Event::OpenModFolder),
+                        Act::LuaSetting(i, j) => self.lua_click(*i, *j),
+                        Act::LuaPower(i, k) => self.lua_power_click(*i, *k, armed),
+                        Act::LuaEdit(i, j) => self.lua_begin_edit(*i, *j),
+                        Act::LuaReset(i, j) => self.lua_reset(*i, *j),
+                        Act::LuaResetAll(i) => self.lua_reset_all(*i),
                         Act::ModProject(i) => {
-                            if let Some(listing) = self.mod_browser.listings.get(i) {
+                            if let Some(listing) = self.mod_browser.listings.get(*i) {
                                 self.mod_project = listing.id.clone();
                                 self.push(Page::ModProject);
                             }
@@ -4101,17 +4153,23 @@ impl OptionsUi {
                 }
                 WKind::Slider { opt, .. } => {
                     self.can_change_value = true;
-                    self.dragging = Some(opt);
+                    self.dragging = Some(*opt);
                     let v = ui::slider_value(wd.x, wd.w, x);
-                    self.slider_value = Some((opt, v, Instant::now()));
-                    drag_slider(opt, s, v, &mut events);
+                    self.slider_value = Some((*opt, v, Instant::now()));
+                    if let Opt::LuaSetting(i, j) = *opt {
+                        self.lua_slide(i, j, v);
+                        events.push(Event::SliderDrag);
+                    } else {
+                        drag_slider(*opt, s, v, &mut events);
+                    }
                 }
                 WKind::LanguageRow { code, .. } => {
                     self.can_change_value = false;
                     if self.language_choice.as_deref() == Some(code.as_str()) {
                         events.extend(self.back(s));
                     } else {
-                        self.language_choice = Some(code);
+                        self.language_choice = Some(code.clone());
+                        self.relayout();
                     }
                 }
                 _ => {}
@@ -4131,6 +4189,9 @@ impl OptionsUi {
     pub fn release(&mut self) -> Vec<Event> {
         self.scrollbar_drag_y = None;
         if let Some(p) = &mut self.pack_screen {
+            p.release();
+        }
+        if let Some(p) = &mut self.mods_screen {
             p.release();
         }
         // AbstractSliderButton suppresses the press sound and plays once on
@@ -4156,9 +4217,11 @@ impl OptionsUi {
         }
     }
     pub fn scroll(&mut self, s: &Settings, size: (f32, f32), amount: f32) {
-        let (_, top, bottom, content) = self.layout(s, size.0, size.1);
+        let layout = self.built_layout(s, size.0, size.1);
+        let (_, top, bottom, content) = layout.parts();
         self.scroll -= amount * 18.0;
         self.clamp_scroll(top, bottom, content);
+        self.relayout();
     }
     /// `CycleButton.cycleValue` on an option, then what the option changes:
     /// the preset's values, High Contrast's built-in pack.
@@ -4171,6 +4234,9 @@ impl OptionsUi {
     ) -> Vec<Event> {
         let mut events = Vec::new();
         opt.cycle(s, back, framebuffer);
+        if opt == Opt::ReducedDebugInfo {
+            events.push(Event::DebugEntriesChanged);
+        }
         if opt == Opt::Preset {
             apply_preset(s);
         }
@@ -4216,6 +4282,22 @@ impl OptionsUi {
         framebuffer: [i32; 2],
         amount: f32,
     ) -> Vec<Event> {
+        let events = self.wheel_unrevised(s, size, cursor, framebuffer, amount);
+        if !events.is_empty() {
+            self.relayout();
+        }
+        events
+    }
+    /// `wheel` without the layout revision: a scroll bumps it in `scroll`, and
+    /// the events of a setting's step say whether its label moved.
+    fn wheel_unrevised(
+        &mut self,
+        s: &mut Settings,
+        size: (f32, f32),
+        cursor: (f32, f32),
+        framebuffer: [i32; 2],
+        amount: f32,
+    ) -> Vec<Event> {
         self.size = size;
         self.framebuffer = framebuffer;
         if self.resource_error.is_some() {
@@ -4231,7 +4313,8 @@ impl OptionsUi {
             return Vec::new();
         }
         let plain = self.resource_error.is_none()
-            && !(self.pack_screen.is_some() && self.stack.last() == Some(&Page::Packs));
+            && !(self.pack_screen.is_some() && self.stack.last() == Some(&Page::Packs))
+            && self.stack.last() != Some(&Page::Mods);
         if !plain {
             self.scroll_at(s, size, cursor, amount);
             return Vec::new();
@@ -4243,7 +4326,8 @@ impl OptionsUi {
         // it would toggle the clicked option from anywhere on the screen and the
         // list would never scroll.
         if extra && amount != 0.0 && self.focus_from_keyboard {
-            let (widgets, _, _, _) = self.layout(s, size.0, size.1);
+            let layout = self.built_layout(s, size.0, size.1);
+            let (widgets, _, _, _) = layout.parts();
             match &self.focus {
                 Some(FocusId::Slider(opt)) => {
                     let opt = *opt;
@@ -4266,7 +4350,8 @@ impl OptionsUi {
             Cycle(Opt),
             Extra(crate::extras::Item),
         }
-        let (widgets, top, bottom, _) = self.layout(s, size.0, size.1);
+        let layout = self.built_layout(s, size.0, size.1);
+        let (widgets, top, bottom, _) = layout.parts();
         // A list's row takes the wheel only with the extra on.
         let takes_wheel = |wd: &Widget| {
             ui::hovered(cursor, wd.x, wd.y, wd.w, wd.h)
@@ -4313,6 +4398,12 @@ impl OptionsUi {
             self.studio.wheel(amount);
             return;
         }
+        if self.page() == Page::Mods {
+            if let Some(p) = &mut self.mods_screen {
+                p.scroll(cursor.0 as f64, cursor.1 as f64, amount as f64);
+            }
+            return;
+        }
         match &mut self.pack_screen {
             Some(p) if self.stack.last() == Some(&Page::Packs) => {
                 p.scroll(cursor.0 as f64, cursor.1 as f64, amount as f64)
@@ -4345,7 +4436,20 @@ impl OptionsUi {
         }
         s.gui_scale = new as u32;
         self.scroll = 0.0;
+        self.relayout();
         vec![Event::Changed]
+    }
+    /// The Mods screen at this GUI size, made on first use from the installed mods.
+    fn mods_page(&mut self, s: &Settings, size: (f32, f32)) -> &mut crate::mods_screen::ModsScreen {
+        let (w, h) = (size.0 as i32, size.1 as i32);
+        let in_world = self.in_world;
+        let screen = self
+            .mods_screen
+            .get_or_insert_with(|| crate::mods_screen::ModsScreen::new(w, h, in_world, &s.mods));
+        if screen.width != w || screen.height != h {
+            screen.resize(w, h);
+        }
+        screen
     }
     /// The pack screen at this GUI size, made on first use.
     fn packs(&mut self, atlas: &HudAtlas, size: (f32, f32)) -> &mut crate::pack_screen::PackScreen {
@@ -4424,6 +4528,7 @@ impl OptionsUi {
             .map(|c| c.picture(&atlas.font, size))
     }
     pub fn back(&mut self, s: &mut Settings) -> Vec<Event> {
+        self.relayout();
         let mut events = Vec::new();
         // A pack's screen goes back to the one that opened it.
         if self.page() == Page::ShaderOptions
@@ -4434,11 +4539,20 @@ impl OptionsUi {
             return events;
         }
         let page = self.stack.pop().unwrap_or(Page::Main);
+        self.lua_fault = None;
+        self.lua_edit = None;
+        self.lua_power_armed = None;
+        self.lua_power_changed = false;
+        self.lua_powers = None;
+        if let Page::LuaMod(i) = self.page() {
+            self.lua_powers_load(i);
+        }
         self.scroll = 0.0;
         self.scrollbar_drag_y = None;
         self.dragging = None;
         self.slider_value = None;
         self.selected_key = None;
+        self.pending_mod_key = None;
         self.selected_pad_action = None;
         self.focus = None;
         self.focus_from_keyboard = false;
@@ -4465,6 +4579,9 @@ impl OptionsUi {
                     events.push(Event::Language(code));
                 }
             }
+            Page::Mods => self.mods_screen = None,
+            // Browse mods may have installed some: the list is made again.
+            Page::ModBrowser => self.mods_screen = None,
             Page::Packs => {
                 // PackSelectionScreen.onClose: PackSelectionModel.commit.
                 let data = self.data_pack_dir.take();
@@ -4497,8 +4614,18 @@ impl OptionsUi {
         if self.resource_error.is_some() {
             return;
         }
+        if self.lua_edit.is_some() {
+            self.lua_type(text);
+            return;
+        }
         if self.page() == Page::Packs
             && let Some(p) = &mut self.pack_screen
+        {
+            p.type_text(&crate::screen_draw::Measure(&atlas.font), text);
+            return;
+        }
+        if self.page() == Page::Mods
+            && let Some(p) = &mut self.mods_screen
         {
             p.type_text(&crate::screen_draw::Measure(&atlas.font), text);
             return;
@@ -4506,6 +4633,7 @@ impl OptionsUi {
         if self.page() == Page::Language {
             self.language_search.insert_text(text);
             self.scroll = 0.0;
+            self.relayout();
         } else if self.page() == Page::SplitProfiles {
             self.split_profiles.type_text(text);
         } else if self.page() == Page::ControllerRadialName {
@@ -4517,6 +4645,7 @@ impl OptionsUi {
         } else if self.settings_search_active() {
             self.settings_search.insert_text(text);
             self.scroll = 0.0;
+            self.relayout();
         }
     }
     /// Ctrl+A/C/V/X in the language or pack search box; false when neither
@@ -4536,10 +4665,18 @@ impl OptionsUi {
             let m = crate::screen_draw::Measure(&atlas.font);
             return p.shortcut(&m, shortcut, clipboard);
         }
+        if self.page() == Page::Mods
+            && let Some(p) = &mut self.mods_screen
+        {
+            let m = crate::screen_draw::Measure(&atlas.font);
+            return p.shortcut(&m, shortcut, clipboard);
+        }
         if self.page() == Page::Language {
             if self.language_search.shortcut(shortcut, clipboard) {
                 self.scroll = 0.0;
             }
+            // Select all, copy, paste and cut: the box's text is a layout input.
+            self.relayout();
             return true;
         }
         if self.page() == Page::SplitProfiles {
@@ -4555,16 +4692,40 @@ impl OptionsUi {
             if self.settings_search.shortcut(shortcut, clipboard) {
                 self.scroll = 0.0;
             }
+            self.relayout();
             return true;
         }
         false
     }
     fn bind_key(&mut self, s: &mut Settings, value: String) -> Vec<Event> {
+        // The waiting marker and the binding are both layout inputs.
+        self.relayout();
+        self.pending_mod_key = None;
         let Some(name) = self.selected_key.take() else {
             return Vec::new();
         };
-        if name == NATIVE_KEY || name == pages::PAGE_KEY {
-            return self.bind_native_key(s, name, value);
+        if name == pages::PAGE_KEY {
+            return self.bind_page_key(value);
+        }
+        if name == MOD_KEY {
+            let (i, k) = self.selected_mod_key.take().unwrap_or_default();
+            let Some((id, mapping)) = mod_mapping(s, i, k) else {
+                return Vec::new();
+            };
+            // A modifier key bound on its own is the key, not a modifier held with itself.
+            let own = match value.as_str() {
+                "key.keyboard.left.shift" | "key.keyboard.right.shift" => crate::mod_list::SHIFT,
+                "key.keyboard.left.control" | "key.keyboard.right.control" => {
+                    crate::mod_list::CONTROL
+                }
+                "key.keyboard.left.alt" | "key.keyboard.right.alt" => crate::mod_list::ALT,
+                _ => 0,
+            };
+            let modifiers = self.modifiers
+                & (crate::mod_list::SHIFT | crate::mod_list::CONTROL | crate::mod_list::ALT)
+                & !own;
+            s.mods.set_binding(&id, &mapping, &value, modifiers);
+            return vec![Event::Changed];
         }
         if !s.extras.set_key(name, value.clone()) {
             s.keys.set(name, &value);
@@ -4578,6 +4739,18 @@ impl OptionsUi {
         button: winit::event::MouseButton,
     ) -> Vec<Event> {
         self.bind_key(s, keybinds::mouse_name(button))
+    }
+    /// Completes a modifier-only mod binding when its key is released.
+    pub fn key_released(&mut self, s: &mut Settings, key: winit::keyboard::KeyCode) -> Vec<Event> {
+        if self.selected_key == Some(MOD_KEY) && self.pending_mod_key == Some(key) {
+            return self.bind_key(
+                s,
+                keybinds::key_name(key)
+                    .unwrap_or("key.keyboard.unknown")
+                    .to_owned(),
+            );
+        }
+        Vec::new()
     }
     /// Keys while the options are open. Returns events; `handled` false lets
     /// Escape fall through.
@@ -4600,7 +4773,29 @@ impl OptionsUi {
         text: Option<&str>,
         shift: bool,
     ) -> Vec<Event> {
+        let events = self.key_modifiers_unrevised(s, atlas, key, text, shift);
+        if !events.is_empty() {
+            self.relayout();
+        }
+        events
+    }
+    /// `key_modifiers` without the layout revision: search text and the keys
+    /// that change a setting bump it themselves, and the events of the rest
+    /// say whether the layout's inputs moved.
+    fn key_modifiers_unrevised(
+        &mut self,
+        s: &mut Settings,
+        atlas: &HudAtlas,
+        key: winit::keyboard::KeyCode,
+        text: Option<&str>,
+        shift: bool,
+    ) -> Vec<Event> {
         use winit::keyboard::KeyCode as K;
+        // Any key but Enter on the armed button ends a power confirm; Escape only ends it.
+        let armed = self.lua_power_disarm();
+        if key == K::Escape && armed.is_some() {
+            return Vec::new();
+        }
         if self.page() == Page::HdrCalibration
             && let Some(c) = &mut self.calibration
         {
@@ -4612,6 +4807,9 @@ impl OptionsUi {
                 self.resource_error = None;
             }
             return Vec::new();
+        }
+        if self.lua_edit.is_some() {
+            return self.lua_edit_key(key, text);
         }
         if self.page() == Page::Packs
             && let Some(p) = &mut self.pack_screen
@@ -4630,6 +4828,44 @@ impl OptionsUi {
                 _ => {}
             }
         }
+        if self.page() == Page::Mods
+            && let Some(p) = &mut self.mods_screen
+        {
+            // Enter opens the selected row's Config page, as its Config button does.
+            if matches!(key, K::Enter | K::NumpadEnter)
+                && let Some(action) = p.enter()
+            {
+                return self.mods_action(s, action);
+            }
+            let m = crate::screen_draw::Measure(&atlas.font);
+            match key {
+                K::Backspace => {
+                    p.erase(&m, 1);
+                    return Vec::new();
+                }
+                K::ArrowUp => {
+                    p.step(-1);
+                    return Vec::new();
+                }
+                K::ArrowDown => {
+                    p.step(1);
+                    return Vec::new();
+                }
+                // The key's text goes to the search box when it has the focus (as the
+                // Search field's branch below routes it); control characters are dropped.
+                _ => {
+                    let typed: String = text
+                        .unwrap_or("")
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .collect();
+                    if p.search_focused() && !typed.is_empty() {
+                        p.type_text(&crate::screen_draw::Measure(&atlas.font), &typed);
+                        return Vec::new();
+                    }
+                }
+            }
+        }
         if let Some(action) = self.selected_pad_action.take() {
             // As on Key Binds, Escape unbinds; other keys cancel.
             if key == K::Escape {
@@ -4639,6 +4875,20 @@ impl OptionsUi {
         }
         if self.selected_key.is_some() {
             // KeyBindsScreen.keyPressed: Escape unbinds.
+            if self.selected_key == Some(MOD_KEY)
+                && matches!(
+                    key,
+                    K::ShiftLeft
+                        | K::ShiftRight
+                        | K::ControlLeft
+                        | K::ControlRight
+                        | K::AltLeft
+                        | K::AltRight
+                )
+            {
+                self.pending_mod_key = Some(key);
+                return Vec::new();
+            }
             let value = if key == K::Escape {
                 "key.keyboard.unknown".to_owned()
             } else {
@@ -4688,6 +4938,7 @@ impl OptionsUi {
                     }
                 }
                 self.scroll = 0.0;
+                self.relayout();
                 return Vec::new();
             }
         } else if self.page() == Page::Language && self.focus.is_none() {
@@ -4700,6 +4951,7 @@ impl OptionsUi {
                 }
             }
             self.scroll = 0.0;
+            self.relayout();
         } else if self.settings_search_active() && self.focus.is_none() {
             if !self.settings_search.key(key, false, shift)
                 && let Some(t) = text
@@ -4710,10 +4962,12 @@ impl OptionsUi {
                 }
             }
             self.scroll = 0.0;
+            self.relayout();
         }
 
         // Gather focusables on the current page
-        let (widgets, top, bottom, content) = self.layout(s, self.size.0, self.size.1);
+        let layout = self.built_layout(s, self.size.0, self.size.1);
+        let (widgets, top, bottom, content) = layout.parts();
         let has_search = (self.page() == Page::Language) || self.settings_search_active();
         let mut focusables: Vec<(FocusId, [f32; 4], bool)> = Vec::new();
         if has_search {
@@ -4729,7 +4983,7 @@ impl OptionsUi {
             ));
         }
         for (i, wd) in widgets.iter().enumerate() {
-            match wd.kind {
+            match &wd.kind {
                 WKind::Button { active: true, .. }
                 | WKind::Slider { .. }
                 | WKind::LanguageRow { .. } => {
@@ -4918,14 +5172,14 @@ impl OptionsUi {
                             }
                         }
                         Act::PlayMusicTrack(event, track) => {
-                            events.push(Event::PlayMusicTrack(event, track));
+                            events.push(Event::PlayMusicTrack(event, track.clone()));
                         }
                         Act::MusicTrackOn(track, was_on) => {
                             s.extras
                                 .music_off
                                 .retain(|off| off.as_str() != track.as_str());
                             if was_on {
-                                s.extras.music_off.push(track);
+                                s.extras.music_off.push(track.clone());
                             }
                             events.push(Event::Changed);
                         }
@@ -4936,29 +5190,38 @@ impl OptionsUi {
                         }
                         Act::ResetKeys => {
                             s.keys.reset_all();
+                            s.mods.keys.clear();
                             events.push(Event::Changed);
                         }
-                        Act::ToggleMod(i) => {
-                            s.mods.toggle(i);
-                            crate::mod_mirror::follow_toggle(s, i);
-                            events.push(Event::Changed);
+                        Act::ModKey(i, k) => {
+                            self.selected_key = Some(MOD_KEY);
+                            self.selected_mod_key = Some((i, k));
+                            self.pending_mod_key = None;
                         }
-                        Act::ModSettings(i) => {
-                            self.focus = None;
-                            self.focus_from_keyboard = false;
-                            self.can_change_value = false;
-                            self.push(Page::NativeMod(i));
-                            events.push(Event::NativeSettings(i));
+                        Act::ResetModKey(i, k) => {
+                            if let Some((id, mapping)) = mod_mapping(s, i, k) {
+                                s.mods.reset_binding(&id, &mapping);
+                                events.push(Event::Changed);
+                            }
                         }
-                        Act::ModConfig(i) => {
-                            events.push(Event::ButtonClick);
-                            self.push(Page::ModSettings(i));
-                            events.push(Event::ModSettingsOpened);
-                        }
-                        Act::NativeKey(i, k) => self.wait_native_key(i, k),
-                        Act::NativeButton(i, b) => events.push(Event::NativeButton(i, b)),
                         Act::PageRow(p, r) => events.extend(self.page_act(p, r, shift)),
-                        Act::OpenModFolder => events.push(Event::OpenModFolder),
+                        Act::NativeSetting(i, j) => {
+                            let setting = s
+                                .mods
+                                .installed
+                                .get_mut(i)
+                                .and_then(|m| m.native.as_mut())
+                                .and_then(|page| page.settings.get_mut(j));
+                            if let Some(setting) = setting {
+                                setting.value.click();
+                                events.push(Event::NativeSetting(i, j));
+                            }
+                        }
+                        Act::LuaSetting(i, j) => self.lua_click(i, j),
+                        Act::LuaPower(i, k) => self.lua_power_click(i, k, armed),
+                        Act::LuaEdit(i, j) => self.lua_begin_edit(i, j),
+                        Act::LuaReset(i, j) => self.lua_reset(i, j),
+                        Act::LuaResetAll(i) => self.lua_reset_all(i),
                         Act::ModProject(i) => {
                             if let Some(listing) = self.mod_browser.listings.get(i) {
                                 self.mod_project = listing.id.clone();
@@ -5018,7 +5281,9 @@ mod tests {
     fn pack_options_leave_with_a_change_and_with_nothing_after_its_undo() {
         use crate::settings_shell::Screen as _;
         let mut s = Settings::default();
-        let atlas = HudAtlas::build(std::path::Path::new("/nonexistent/horizon-test-assets"));
+        let atlas = HudAtlas::build(&crate::resource_source::ResourceSource::directory(
+            std::path::PathBuf::from("/nonexistent/horizon-test-assets"),
+        ));
         let atlas = atlas.unwrap();
         let mut ui = OptionsUi::default();
         let mut configs = horizon_polytone::pack::Configs::default();
@@ -5058,6 +5323,215 @@ mod tests {
         ui.settings_search.focused = false;
         ui.show(Page::Packs);
         assert!(!ui.typing(), "the pack screen's search is not open yet");
+    }
+
+    /// The page layout is made once per size and revision, not per frame,
+    /// draw, hit test or scroll that changed nothing it reads.
+    #[test]
+    fn the_page_layout_is_built_once_per_size_and_revision() {
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        let size = (427.0, 240.0);
+        let first = ui.built_layout(&s, size.0, size.1);
+        assert_eq!(ui.layouts_built, 1);
+        // Frames and hit tests read the built one.
+        for _ in 0..3 {
+            assert!(std::sync::Arc::ptr_eq(
+                &first,
+                &ui.built_layout(&s, size.0, size.1)
+            ));
+        }
+        assert_eq!(ui.layouts_built, 1);
+        // A click on empty space changed nothing the layout reads.
+        let events = ui.click(&mut s, &atlas(), 2.0, 2.0, size, [854, 480], false, false);
+        assert!(events.is_empty());
+        assert_eq!(ui.layouts_built, 1);
+        // A scroll is a revision: one rebuild, then quiet again.
+        ui.scroll(&s, size, 1.0);
+        ui.built_layout(&s, size.0, size.1);
+        assert_eq!(ui.layouts_built, 2);
+        ui.built_layout(&s, size.0, size.1);
+        assert_eq!(ui.layouts_built, 2);
+        // A page change is a revision too.
+        ui.show(Page::Video);
+        ui.built_layout(&s, size.0, size.1);
+        assert_eq!(ui.layouts_built, 3);
+        // A resize makes the layout once at the new size.
+        ui.built_layout(&s, 854.0, 480.0);
+        assert_eq!(ui.layouts_built, 4);
+        ui.built_layout(&s, 854.0, 480.0);
+        assert_eq!(ui.layouts_built, 4);
+        // Search text changes the video page's rows.
+        ui.settings_search.focused = true;
+        ui.type_text(&atlas(), "abc");
+        ui.built_layout(&s, 854.0, 480.0);
+        assert_eq!(ui.layouts_built, 5);
+    }
+
+    /// Every operation that changes an input the page layout reads must show
+    /// in the cached layout: after each step it equals one built fresh from
+    /// the same state. Covers the wheel and a scrollbar drag, Tab and arrow
+    /// focus movement that scrolls the list, search typing, clipboard paste
+    /// and cut, a modifier-only key bind and the Agent page's status.
+    #[test]
+    fn the_cached_layout_follows_every_input() {
+        use crate::clipboard::{EditShortcut, MemoryClipboard};
+        use winit::keyboard::KeyCode as K;
+
+        let atlas = atlas();
+        let mut s = Settings::default();
+        s.mods.installed.push(crate::mod_list::Installed {
+            id: "sample".into(),
+            title: "Sample".into(),
+            description: String::new(),
+            problem: None,
+            dev: false,
+            native: Some(crate::mod_list::NativePage {
+                mappings: vec![crate::mod_list::KeyMapping {
+                    id: "zoom".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+        });
+        let mut ui = OptionsUi::default();
+        ui.open_at(false, Page::Main);
+        ui.size = (427.0, 240.0);
+        fn fresh(ui: &mut OptionsUi, s: &Settings, step: &str, stale: &mut Vec<String>) {
+            let size = ui.size;
+            let built = ui.built_layout(s, size.0, size.1);
+            let now = ui.layout_now(s, size.0, size.1);
+            if *built != now {
+                stale.push(step.to_owned());
+            }
+        }
+        let mut stale = Vec::new();
+
+        fresh(&mut ui, &s, "open", &mut stale);
+        ui.size = (854.0, 480.0);
+        fresh(&mut ui, &s, "resize", &mut stale);
+
+        // A long page: the wheel, a scrollbar drag, Tab and the arrows all
+        // move the list under the drawing.
+        ui.show(Page::KeyBinds);
+        fresh(&mut ui, &s, "Key Binds", &mut stale);
+        ui.wheel(&mut s, ui.size, (200.0, 200.0), [1708, 960], -3.0);
+        fresh(&mut ui, &s, "wheel scroll", &mut stale);
+        let sx = ui.scrollbar_x(ui.size.0);
+        ui.scrollbar_drag_y = Some(100.0);
+        ui.click(
+            &mut s,
+            &atlas,
+            sx + 1.0,
+            120.0,
+            ui.size,
+            [1708, 960],
+            true,
+            false,
+        );
+        fresh(&mut ui, &s, "scrollbar drag", &mut stale);
+        for step in 0..60 {
+            ui.key(&mut s, &atlas, K::Tab, None);
+            fresh(&mut ui, &s, &format!("Tab {step}"), &mut stale);
+        }
+        for step in 0..40 {
+            ui.key(&mut s, &atlas, K::ArrowDown, None);
+            fresh(&mut ui, &s, &format!("arrow down {step}"), &mut stale);
+        }
+
+        // Search typing, then the clipboard shortcuts in the same box.
+        ui.show(Page::Video);
+        ui.settings_search.focused = true;
+        for (step, c) in ["a", "b", "c"].iter().enumerate() {
+            ui.key(&mut s, &atlas, K::KeyA, Some(c));
+            fresh(&mut ui, &s, &format!("typing {step}"), &mut stale);
+        }
+        // A query that matches options: the rows change with the text.
+        let mut clipboard = MemoryClipboard("render".into());
+        ui.shortcut(&atlas, EditShortcut::SelectAll, &mut clipboard);
+        fresh(&mut ui, &s, "select all", &mut stale);
+        ui.shortcut(&atlas, EditShortcut::Paste, &mut clipboard);
+        assert_eq!(
+            ui.settings_search.value, "render",
+            "the clipboard went into the box"
+        );
+        fresh(&mut ui, &s, "paste", &mut stale);
+        ui.shortcut(&atlas, EditShortcut::SelectAll, &mut clipboard);
+        ui.shortcut(&atlas, EditShortcut::Cut, &mut clipboard);
+        assert!(ui.settings_search.value.is_empty());
+        fresh(&mut ui, &s, "cut", &mut stale);
+
+        ui.languages = languages();
+        ui.show(Page::Language);
+        fresh(&mut ui, &s, "language open", &mut stale);
+        let (widgets, top, bottom, _) = ui.layout(&s, ui.size.0, ui.size.1);
+        let row = widgets
+            .iter()
+            .find(|w| {
+                matches!(
+                    &w.kind,
+                    WKind::LanguageRow {
+                        selected: false,
+                        ..
+                    }
+                ) && w.y >= top
+                    && w.y + w.h <= bottom
+            })
+            .unwrap();
+        let WKind::LanguageRow { code, .. } = &row.kind else {
+            unreachable!()
+        };
+        let code = code.clone();
+        ui.click(
+            &mut s,
+            &atlas,
+            row.x + 1.0,
+            row.y + 1.0,
+            ui.size,
+            [1708, 960],
+            false,
+            false,
+        );
+        fresh(&mut ui, &s, "language selection", &mut stale);
+        assert!(ui.built_layout(&s, ui.size.0, ui.size.1).parts().0.iter().any(|w|
+            matches!(&w.kind, WKind::LanguageRow { code: selected, selected: true, .. } if selected == &code)));
+
+        // A modifier-only key bind takes the waiting selection away.
+        ui.show(Page::KeyBinds);
+        ui.selected_key = Some(MOD_KEY);
+        ui.selected_mod_key = Some((0, 0));
+        ui.pending_mod_key = Some(K::ShiftLeft);
+        fresh(&mut ui, &s, "waiting for a mod key", &mut stale);
+        ui.key_released(&mut s, K::ShiftLeft);
+        fresh(&mut ui, &s, "modifier-only bind", &mut stale);
+
+        // The Agent page's status and recording, as the game's poll sets them.
+        ui.show(Page::Agent);
+        fresh(&mut ui, &s, "agent page", &mut stale);
+        ui.set_agent_status(vec!["Running.".into()], true);
+        fresh(&mut ui, &s, "agent status", &mut stale);
+
+        // The language page's search click moves the list back to the top.
+        ui.show(Page::Language);
+        ui.wheel(&mut s, ui.size, (200.0, 200.0), [1708, 960], -3.0);
+        fresh(&mut ui, &s, "language wheel", &mut stale);
+        let (x, y) = (ui.language_search.x, ui.language_search.y);
+        ui.click(
+            &mut s,
+            &atlas,
+            x + 5.0,
+            y + 5.0,
+            ui.size,
+            [1708, 960],
+            false,
+            false,
+        );
+        fresh(&mut ui, &s, "language search click", &mut stale);
+
+        assert!(
+            stale.is_empty(),
+            "the cached layout is stale after: {stale:?}"
+        );
     }
 
     #[test]
@@ -5355,7 +5829,10 @@ mod tests {
         assert_eq!(file.int("renderDistance"), 128);
     }
     pub(super) fn atlas() -> HudAtlas {
-        HudAtlas::build(std::path::Path::new("/nonexistent/horizon-test-assets")).unwrap()
+        HudAtlas::build(&horizon_assets::resource_source::ResourceSource::directory(
+            (std::path::Path::new("/nonexistent/horizon-test-assets")).to_owned(),
+        ))
+        .unwrap()
     }
 
     /// Picking another pack keeps the last one's changed options before the next one's are
@@ -5371,6 +5848,7 @@ mod tests {
             options: Vec::new(),
             values: Vec::new(),
             pages: Vec::new(),
+            traces: false,
         };
         let mut s = Settings {
             shader_packs: vec![entry("A.zip"), entry("B.zip")],
@@ -5544,8 +6022,12 @@ mod tests {
         }
     }
 
+    /// The Mods page is NeoForge's list screen: no switches, a footer of folder and
+    /// Back, and Config on the selected native mod. Positions are the layout at 480x240:
+    /// 150 px buttons 4 px apart, centred 27 px above the bottom; the sidebar at x 41 with its
+    /// list at y 32 and 28 px rows; the panel at x 188 with its buttons at y 182, 84 px apart.
     #[test]
-    fn classic_mods_page_toggles_mods_and_keeps_dev_and_invalid_entries_inactive() {
+    fn the_mods_page_opens_the_folder_and_a_native_mods_settings() {
         let atlas = atlas();
         let mut s = Settings::default();
         let mut ui = OptionsUi::default();
@@ -5560,202 +6042,523 @@ mod tests {
                 }
             )
         }));
-        ui.show(Page::Mods);
-        let empty = ui.layout(&s, size.0, size.1).0;
-        assert!(empty.iter().any(|w| {
-            matches!(&w.kind, WKind::Text { text, .. } if text.plain() == "horizon.mods.empty")
-        }));
-        // The empty page points at the bundled key; the English line behind it
-        // is what a player reads, so both halves are checked here.
-        let en = crate::lang::Language::load(&[], "en_us");
-        assert!(
-            en.get("horizon.mods.empty")
-                .is_some_and(|line| line.contains(".hmod"))
-        );
-        let open_folder = empty
-            .iter()
-            .find(|w| {
-                matches!(
-                    &w.kind,
-                    WKind::Button {
-                        act: Act::OpenModFolder,
-                        ..
-                    }
-                )
-            })
-            .expect("Mods page has an Open Mod Folder button");
-        assert_eq!(
-            ui.click(
-                &mut s,
-                &atlas,
-                open_folder.x + 1.0,
-                open_folder.y + 1.0,
-                size,
-                [480, 240],
-                false,
-                false,
-            ),
-            vec![Event::ButtonClick, Event::OpenModFolder]
-        );
-        for (id, dev) in [("normal", false), ("dev", true), ("", false)] {
-            s.mods.installed.push(crate::mod_list::Installed {
-                kind: crate::mod_list::ModKind::Native,
-                id: id.into(),
-                title: id.into(),
-                description: "May show HUD panels.".into(),
-                problem: id.is_empty().then(|| "Invalid package".into()),
-                dev,
-                native: None,
-            });
-        }
-        let (widgets, ..) = ui.layout(&s, size.0, size.1);
-        let rows: Vec<_> = widgets
-            .iter()
-            .filter(|w| {
-                matches!(
-                    w.kind,
-                    WKind::Button {
-                        act: Act::ToggleMod(_),
-                        ..
-                    }
-                )
-            })
-            .collect();
-        assert_eq!(rows.len(), 3);
-        for (i, row) in rows.iter().enumerate() {
-            let events = ui.click(
-                &mut s,
-                &atlas,
-                row.x + 1.0,
-                row.y + 1.0,
-                size,
-                [480, 240],
-                false,
-                false,
-            );
-            if i == 0 {
-                assert!(events.contains(&Event::Changed));
-                assert!(events.contains(&Event::ButtonClick));
-            } else {
-                assert!(events.is_empty());
-            }
-        }
-        assert!(s.mods.is_on(0));
-        assert!(s.mods.is_on(1));
-        assert!(!s.mods.is_on(2));
-        assert_eq!(s.mods.serialize(), "mod.normal:true\n");
-        let row = rows[0];
-        ui.click(
-            &mut s,
-            &atlas,
-            row.x + 1.0,
-            row.y + 1.0,
-            size,
-            [480, 240],
-            false,
-            false,
-        );
-        assert!(!s.mods.is_on(0));
-        assert!(!ui.back(&mut s).contains(&Event::Close));
-        assert_eq!(ui.page(), Page::Main);
-    }
-
-    #[test]
-    fn opening_a_native_mods_page_asks_the_game_for_its_labels_again() {
-        let atlas = atlas();
-        let mut s = Settings::default();
-        let mut ui = OptionsUi::default();
-        let size = (480.0, 240.0);
         s.mods.installed.push(crate::mod_list::Installed {
-            kind: crate::mod_list::ModKind::Native,
             id: "native".into(),
             title: "Native 1.0".into(),
             description: String::new(),
             problem: None,
             dev: false,
             native: Some(crate::mod_list::NativePage {
-                buttons: vec!["Setting".into()],
+                settings: vec![crate::mod_list::NativeSetting {
+                    key: "trails".into(),
+                    label: "Trails".into(),
+                    tooltip: None,
+                    value: crate::mod_list::NativeSettingValue::Toggle(true),
+                }],
                 ..Default::default()
             }),
         });
+        let click = |ui: &mut OptionsUi, s: &mut Settings, x: f32, y: f32| {
+            ui.click(s, &atlas, x, y, size, [480, 240], false, false)
+        };
         ui.show(Page::Mods);
-        let (widgets, ..) = ui.layout(&s, size.0, size.1);
-        let settings = widgets
-            .iter()
-            .find(|w| {
-                matches!(
-                    w.kind,
-                    WKind::Button {
-                        act: Act::ModSettings(0),
-                        ..
-                    }
-                )
-            })
-            .expect("a native mod's row has a Settings button");
-        let events = ui.click(
-            &mut s,
-            &atlas,
-            settings.x + 1.0,
-            settings.y + 1.0,
-            size,
-            [480, 240],
-            false,
-            false,
+        assert_eq!(
+            click(&mut ui, &mut s, 160.0, 223.0),
+            vec![Event::ButtonClick, Event::OpenModFolder]
         );
+        // Config does nothing until a native mod with settings is picked from the list
+        // (Horizon, Minecraft, then Native).
+        assert!(click(&mut ui, &mut s, 397.0, 192.0).is_empty());
+        assert!(click(&mut ui, &mut s, 61.0, 104.0).is_empty());
+        let events = click(&mut ui, &mut s, 397.0, 192.0);
         // Its labels were made with the list, maybe in another language.
-        assert_eq!(events.last(), Some(&Event::NativeSettings(0)));
+        assert_eq!(events, vec![Event::ButtonClick, Event::NativeSettings(0)]);
         assert_eq!(ui.page(), Page::NativeMod(0));
+        ui.back(&mut s);
+        assert_eq!(ui.page(), Page::Mods);
+        // Back leaves the page.
+        let events = click(&mut ui, &mut s, 320.0, 223.0);
+        assert_eq!(events.first(), Some(&Event::ButtonClick));
+        assert_eq!(ui.page(), Page::Main);
     }
 
     #[test]
-    fn native_mod_without_settings_has_only_a_full_width_toggle() {
+    fn a_mod_page_draws_its_settings_and_a_change_reaches_the_game() {
+        use crate::mod_list::{NativeSetting, NativeSettingValue as V};
         let atlas = atlas();
         let mut s = Settings::default();
         let mut ui = OptionsUi::default();
+        let size = (480.0, 240.0);
+        let setting = |key: &str, value: V| NativeSetting {
+            key: key.into(),
+            label: key.into(),
+            tooltip: None,
+            value,
+        };
         s.mods.installed.push(crate::mod_list::Installed {
-            kind: crate::mod_list::ModKind::Native,
-            id: "no_settings".into(),
+            id: "native".into(),
             title: "Native 1.0".into(),
             description: String::new(),
             problem: None,
             dev: false,
-            native: Some(crate::mod_list::NativePage::default()),
+            native: Some(crate::mod_list::NativePage {
+                settings: vec![
+                    setting("trails", V::Toggle(true)),
+                    setting(
+                        "speed",
+                        V::Range {
+                            min: 0.0,
+                            max: 4.0,
+                            step: 1.0,
+                            value: 1.0,
+                        },
+                    ),
+                ],
+                ..Default::default()
+            }),
         });
-        ui.show(Page::Mods);
-        let (widgets, ..) = ui.layout(&s, 480.0, 240.0);
-        assert!(!widgets.iter().any(|w| matches!(
-            w.kind,
-            WKind::Button {
-                act: Act::ModSettings(_),
-                ..
-            }
-        )));
+        ui.show(Page::NativeMod(0));
+        let (widgets, ..) = ui.layout(&s, size.0, size.1);
         let toggle = widgets
             .iter()
             .find(|w| {
                 matches!(
                     w.kind,
                     WKind::Button {
-                        act: Act::ToggleMod(0),
+                        act: Act::NativeSetting(0, 0),
                         ..
                     }
                 )
             })
-            .unwrap();
-        assert_eq!(toggle.w, 310.0);
+            .expect("a toggle is a button");
+        let slider = widgets
+            .iter()
+            .find(|w| {
+                matches!(
+                    w.kind,
+                    WKind::Slider {
+                        opt: Opt::ModSetting(0, 1),
+                        ..
+                    }
+                )
+            })
+            .expect("a range is a slider");
+        let (slider_x, slider_y, slider_w) = (slider.x, slider.y, slider.w);
         let events = ui.click(
             &mut s,
             &atlas,
             toggle.x + 1.0,
             toggle.y + 1.0,
-            (480.0, 240.0),
+            size,
             [480, 240],
             false,
             false,
         );
-        assert!(events.contains(&Event::Changed));
-        assert!(!s.mods.is_on(0));
-        assert!(s.mods.disabled.contains("no_settings"));
+        assert!(events.contains(&Event::NativeSetting(0, 0)), "{events:?}");
+        let page = |s: &Settings| s.mods.installed[0].native.clone().unwrap();
+        assert_eq!(page(&s).settings[0].value, V::Toggle(false));
+        let events = ui.click(
+            &mut s,
+            &atlas,
+            slider_x + slider_w - 1.0,
+            slider_y + 1.0,
+            size,
+            [480, 240],
+            false,
+            false,
+        );
+        assert!(events.contains(&Event::NativeSetting(0, 1)), "{events:?}");
+        assert_eq!(
+            page(&s).settings[1].value,
+            V::Range {
+                min: 0.0,
+                max: 4.0,
+                step: 1.0,
+                value: 4.0
+            }
+        );
+    }
+
+    /// Typing goes to the Mods search box once a click focuses it; the one match is selected,
+    /// so Homepage opens that installed mod's declared link without product-global state.
+    #[test]
+    fn the_mods_search_takes_the_typing_after_a_click() {
+        let atlas = atlas();
+        let mut s = Settings::default();
+        s.mods.installed.push(crate::mod_list::Installed {
+            id: "search_fixture".into(),
+            title: "Search fixture".into(),
+            description: String::new(),
+            problem: None,
+            dev: false,
+            native: None,
+        });
+        s.mods.info.insert(
+            "search_fixture".into(),
+            crate::mod_list::ModInfo {
+                name: "Search fixture".into(),
+                homepage: Some("https://example.org/search".into()),
+                ..Default::default()
+            },
+        );
+        let mut ui = OptionsUi::default();
+        let size = (480.0, 240.0);
+        ui.show(Page::Mods);
+        assert!(!ui.typing());
+        ui.click(&mut s, &atlas, 60.0, 16.0, size, [480, 240], false, false);
+        assert!(ui.typing());
+        ui.type_text(&atlas, "fixture");
+        let events = ui.click(&mut s, &atlas, 229.0, 192.0, size, [480, 240], false, false);
+        assert_eq!(
+            events,
+            vec![
+                Event::ButtonClick,
+                Event::OpenLink("https://example.org/search".into())
+            ]
+        );
+        assert!(!ui.typing());
+    }
+
+    #[test]
+    fn mod_mapping_labels_and_category_search_use_translations() {
+        let mut settings = Settings::default();
+        settings.mods.installed.push(crate::mod_list::Installed {
+            id: "sample".into(),
+            title: "Sample".into(),
+            description: String::new(),
+            problem: None,
+            dev: false,
+            native: Some(crate::mod_list::NativePage {
+                mappings: vec![crate::mod_list::KeyMapping {
+                    id: "zoom".into(),
+                    label: "controls.reset".into(),
+                    category: "controls.keybinds.title".into(),
+                    key: "key.keyboard.z".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+        });
+        let mut ui = OptionsUi::default();
+        ui.show(Page::KeyBinds);
+        for (key, bound) in [("key.keyboard.z", true), ("key.keyboard.unknown", false)] {
+            settings.mods.set_binding("sample", "zoom", key, 0);
+            for act in [Act::ModKey(0, 0), Act::ResetModKey(0, 0)] {
+                let reset = matches!(act, Act::ResetModKey(..));
+                let widget = button(0.0, 0.0, 75.0, Text::literal("Z"), act);
+                let mut narration = crate::widgets::Narratable::button("", [0.0; 4], true);
+                narrate_widget(&mut narration, &settings, &widget, false, 0, [480, 240]);
+                let name = tr("controls.reset");
+                let expected = if reset {
+                    Text::translate("narrator.controls.reset", &[name])
+                } else if bound {
+                    Text::translate(
+                        "narrator.controls.bound",
+                        &[
+                            name,
+                            Text::translate("gui.narrate.button", &[Text::literal("Z")]),
+                        ],
+                    )
+                } else {
+                    Text::translate("narrator.controls.unbound", &[name])
+                };
+                assert_eq!(
+                    narration.what,
+                    crate::widgets::What::Named {
+                        title: expected.plain(),
+                        active: true,
+                    }
+                );
+                assert_eq!(
+                    narration.hint,
+                    tooltip_text(&settings, &widget).map(|tip| tip.plain())
+                );
+            }
+        }
+        for query in [
+            lang::get("controls.reset"),
+            lang::get("controls.keybinds.title"),
+        ] {
+            ui.settings_search.set_value(&query);
+            let (widgets, ..) = ui.layout(&settings, 480.0, 240.0);
+            assert!(widgets.iter().any(|widget| matches!(
+                widget.kind,
+                WKind::Button {
+                    act: Act::ModKey(0, 0),
+                    ..
+                }
+            )));
+            assert!(widgets.iter().any(|widget| matches!(
+                &widget.kind,
+                WKind::Text { text, .. } if text.plain() == lang::get("controls.reset")
+            )));
+        }
+    }
+
+    #[test]
+    fn conflicts_include_vanilla_mods_and_contexts() {
+        use crate::mod_list::{Installed, KeyConflictContext as Context, KeyMapping, NativePage};
+        let mut settings = Settings::default();
+        for id in ["first", "second"] {
+            settings.mods.installed.push(Installed {
+                id: id.into(),
+                title: id.into(),
+                description: String::new(),
+                problem: None,
+                dev: false,
+                native: Some(NativePage {
+                    mappings: vec![KeyMapping {
+                        id: "zoom".into(),
+                        label: "key.zoom".into(),
+                        key: "key.keyboard.z".into(),
+                        context: Context::InGame,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            });
+        }
+        settings
+            .mods
+            .set_binding("first", "zoom", "key.keyboard.w", 0);
+        assert!(
+            !key_conflicts(
+                &settings,
+                "first",
+                "zoom",
+                "key.keyboard.w",
+                0,
+                Context::InGame,
+                false
+            )
+            .is_empty()
+        );
+        assert!(
+            !key_conflicts(
+                &settings,
+                "",
+                "key.forward",
+                "key.keyboard.w",
+                0,
+                Context::Universal,
+                true
+            )
+            .is_empty()
+        );
+        settings
+            .mods
+            .set_binding("first", "zoom", "key.keyboard.f24", 0);
+        settings
+            .mods
+            .set_binding("second", "zoom", "key.keyboard.f24", 0);
+        assert_eq!(
+            key_conflicts(
+                &settings,
+                "first",
+                "zoom",
+                "key.keyboard.f24",
+                0,
+                Context::InGame,
+                false
+            ),
+            [lang::get("key.zoom")]
+        );
+        assert!(
+            key_conflicts(
+                &settings,
+                "first",
+                "zoom",
+                "key.keyboard.f24",
+                0,
+                Context::Gui,
+                false
+            )
+            .is_empty()
+        );
+        assert!(
+            key_conflicts(
+                &settings,
+                "first",
+                "zoom",
+                "key.keyboard.f24",
+                1,
+                Context::InGame,
+                false
+            )
+            .is_empty()
+        );
+        assert!(
+            key_conflicts(
+                &settings,
+                "first",
+                "zoom",
+                "key.keyboard.unknown",
+                0,
+                Context::Universal,
+                false
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn each_options_renderer_emits_one_phase_pair_around_contents() {
+        use crate::screen_draw::RenderPhase::{Background, Foreground};
+        let atlas = atlas();
+        let settings = Settings::default();
+        for page in [
+            Page::Main,
+            Page::Video,
+            Page::Language,
+            Page::Graphics,
+            Page::Controller,
+            Page::ControllerRadial,
+            Page::Extras,
+            Page::ShaderOptions,
+            Page::PackOptions,
+            Page::Mods,
+            Page::Packs,
+            Page::SplitSetup,
+            Page::SplitProfiles,
+            Page::Studio,
+        ] {
+            let mut ui = OptionsUi::default();
+            ui.show(page);
+            let mut batch = HudBatch::scratch([854, 480]);
+            let mut calls = Vec::new();
+            // A cancelled frame must release the hosted shell's prepared view too.
+            ui.draw_background(&settings, NONE, &mut batch, &atlas);
+            ui.discard_draw();
+            batch = HudBatch::scratch([854, 480]);
+            ui.draw_test_frame(
+                &settings,
+                NONE,
+                &mut batch,
+                &atlas,
+                (-1.0, -1.0),
+                &mut |phase, batch| calls.push((phase, batch.vertices.len())),
+            );
+            assert_eq!(
+                calls.iter().map(|(phase, _)| *phase).collect::<Vec<_>>(),
+                [Background, Foreground],
+                "{page:?}",
+            );
+            assert!(calls[0].1 > 0, "{page:?}: background painted first");
+            assert!(calls[1].1 > calls[0].1, "{page:?}: contents between phases");
+            assert_eq!(calls[1].1, batch.vertices.len(), "{page:?}: no tooltip");
+        }
+    }
+
+    #[test]
+    fn mod_key_capture_waits_for_a_chord_or_modifier_release() {
+        use winit::keyboard::KeyCode as K;
+        let atlas = atlas();
+        let mut settings = Settings::default();
+        settings.mods.installed.push(crate::mod_list::Installed {
+            id: "sample".into(),
+            title: "Sample".into(),
+            description: String::new(),
+            problem: None,
+            dev: false,
+            native: Some(crate::mod_list::NativePage {
+                mappings: vec![crate::mod_list::KeyMapping {
+                    id: "zoom".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+        });
+        let mut ui = OptionsUi::default();
+        for (keys, modifiers, mouse, expected) in [
+            (
+                vec![K::ShiftLeft, K::KeyZ],
+                1,
+                false,
+                "shift+key.keyboard.z",
+            ),
+            (
+                vec![K::ControlLeft, K::AltLeft, K::KeyZ],
+                6,
+                false,
+                "ctrl+alt+key.keyboard.z",
+            ),
+            (vec![K::ShiftLeft], 1, true, "shift+key.mouse.right"),
+            (vec![K::ShiftLeft], 1, false, "key.keyboard.left.shift"),
+        ] {
+            ui.selected_key = Some(MOD_KEY);
+            ui.selected_mod_key = Some((0, 0));
+            ui.modifiers = modifiers;
+            for key in &keys {
+                ui.key(&mut settings, &atlas, *key, None);
+            }
+            if mouse {
+                ui.bind_mouse(&mut settings, winit::event::MouseButton::Right);
+            } else if keys.len() == 1 {
+                ui.key_released(&mut settings, keys[0]);
+            }
+            assert_eq!(settings.mods.keys["sample"]["zoom"], expected);
+            assert_eq!(ui.selected_key, None);
+        }
+    }
+
+    #[test]
+    fn a_native_mods_key_shows_and_keeps_the_key_pressed() {
+        // #3539: Zoom's key set to R showed another key.
+        let atlas = atlas();
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        let size = (480.0, 240.0);
+        s.mods.installed.push(crate::mod_list::Installed {
+            id: "zoom".into(),
+            title: "Zoom 2.0.0".into(),
+            description: String::new(),
+            problem: None,
+            dev: false,
+            native: Some(crate::mod_list::NativePage {
+                mappings: vec![crate::mod_list::KeyMapping {
+                    id: "zoom".into(),
+                    label: "key.zoom".into(),
+                    key: "key.keyboard.z".into(),
+                    ..Default::default()
+                }],
+                settings: Vec::new(),
+            }),
+        });
+        ui.show(Page::KeyBinds);
+        ui.scroll(&s, size, -10_000.0);
+        let key_label = |ui: &mut OptionsUi, s: &Settings| {
+            let (widgets, ..) = ui.layout(s, size.0, size.1);
+            widgets.into_iter().find_map(|w| match w.kind {
+                WKind::Button {
+                    label,
+                    act: Act::ModKey(0, 0),
+                    ..
+                } => Some((label.plain(), w.x, w.y)),
+                _ => None,
+            })
+        };
+        let (label, x, y) = key_label(&mut ui, &s).expect("the key's row");
+        let (_, top, bottom, _) = ui.layout(&s, size.0, size.1);
+        assert!(y >= top && y + 20.0 <= bottom);
+        assert_eq!(label, "Z");
+        ui.click(
+            &mut s,
+            &atlas,
+            x + 1.0,
+            y + 1.0,
+            size,
+            [480, 240],
+            false,
+            false,
+        );
+        assert_eq!(ui.selected_key, Some(MOD_KEY));
+        assert_eq!(
+            ui.key(&mut s, &atlas, winit::keyboard::KeyCode::KeyR, Some("r")),
+            vec![Event::Changed]
+        );
+        assert_eq!(key_label(&mut ui, &s).unwrap().0, "R");
+        let saved = crate::mod_list::ModList::parse(&s.mods.serialize());
+        assert_eq!(saved.keys_of("zoom"), vec![("zoom", "key.keyboard.r")]);
     }
 
     fn mode(width: i32, rate: f32) -> crate::window::VideoMode {
@@ -5862,14 +6665,34 @@ mod tests {
         );
         assert!(!ui.focus_from_keyboard);
         let _ = take_cursor();
-        ui.draw(&s, NONE, &mut HudBatch::new([480, 480]), &atlas, over);
-        assert_eq!(take_cursor(), Cursor::PointingHand);
-        ui.draw(
+        ui.draw_test_frame(
             &s,
             NONE,
-            &mut HudBatch::new([480, 480]),
+            &mut HudBatch::new(
+                [480, 480],
+                crate::hud::GuiScale {
+                    requested: 0,
+                    unicode: false,
+                },
+            ),
+            &atlas,
+            over,
+            &mut |_, _| {},
+        );
+        assert_eq!(take_cursor(), Cursor::PointingHand);
+        ui.draw_test_frame(
+            &s,
+            NONE,
+            &mut HudBatch::new(
+                [480, 480],
+                crate::hud::GuiScale {
+                    requested: 0,
+                    unicode: false,
+                },
+            ),
             &atlas,
             (-10.0, -10.0),
+            &mut |_, _| {},
         );
         assert_eq!(take_cursor(), Cursor::Arrow, "focus is not mouse hover");
         assert!(
@@ -5877,12 +6700,19 @@ mod tests {
             "moving the pointer does not clear focus"
         );
         ui.focus_from_keyboard = true;
-        ui.draw(
+        ui.draw_test_frame(
             &s,
             NONE,
-            &mut HudBatch::new([480, 480]),
+            &mut HudBatch::new(
+                [480, 480],
+                crate::hud::GuiScale {
+                    requested: 0,
+                    unicode: false,
+                },
+            ),
             &atlas,
             (-10.0, -10.0),
+            &mut |_, _| {},
         );
         assert_eq!(
             take_cursor(),
@@ -5909,7 +6739,20 @@ mod tests {
             .expect("visible disabled button");
         let over = (button.x + 1.0, button.y + 1.0);
         let _ = take_cursor();
-        ui.draw(&s, NONE, &mut HudBatch::new([480, 480]), &atlas, over);
+        ui.draw_test_frame(
+            &s,
+            NONE,
+            &mut HudBatch::new(
+                [480, 480],
+                crate::hud::GuiScale {
+                    requested: 0,
+                    unicode: false,
+                },
+            ),
+            &atlas,
+            over,
+            &mut |_, _| {},
+        );
         assert_eq!(take_cursor(), Cursor::NotAllowed);
         assert!(
             ui.click(
@@ -5928,12 +6771,19 @@ mod tests {
             ui.focus.is_none(),
             "an inactive widget rejects the click before focus"
         );
-        ui.draw(
+        ui.draw_test_frame(
             &s,
             NONE,
-            &mut HudBatch::new([480, 480]),
+            &mut HudBatch::new(
+                [480, 480],
+                crate::hud::GuiScale {
+                    requested: 0,
+                    unicode: false,
+                },
+            ),
             &atlas,
             (-10.0, -10.0),
+            &mut |_, _| {},
         );
         assert_eq!(take_cursor(), Cursor::Arrow);
     }
@@ -5969,26 +6819,28 @@ mod tests {
         );
         // The pointer is still on the clicked widget: it carries the
         // description (`setTooltip`, drawn while hovered).
-        let mut on = HudBatch::new([480, 480]);
-        ui.draw(
+        let mut on = HudBatch::scratch([480, 480]);
+        ui.draw_test_frame(
             &s,
             NONE,
             &mut on,
             &atlas,
             (extra.x + extra.w / 2.0, extra.y + extra.h / 2.0),
+            &mut |_, _| {},
         );
         // The pointer moved off: the description goes with it. A mouse
         // focus a click left behind (the look-up keeps the click's widget,
         // `focus_from_keyboard` false) does not keep the tooltip against
         // the widget, like vanilla's `MenuTooltipPositioner` does for a
         // keyboard focus.
-        let mut off = HudBatch::new([480, 480]);
-        ui.draw(
+        let mut off = HudBatch::scratch([480, 480]);
+        ui.draw_test_frame(
             &s,
             NONE,
             &mut off,
             &atlas,
             (extra.x + extra.w + 40.0, extra.y + extra.h + 40.0),
+            &mut |_, _| {},
         );
         assert!(
             off.vertices.len() < on.vertices.len(),
@@ -6016,14 +6868,18 @@ mod tests {
         // Built in, Zoom's settings live on its page: Extras opens that page.
         s.mods.installed.push(crate::mod_list::Installed {
             id: "zoom".into(),
-            kind: crate::mod_list::ModKind::Engine,
             title: "Zoom 2.0.0".into(),
             description: String::new(),
             problem: None,
             dev: false,
             native: Some(crate::mod_list::NativePage {
-                keys: vec![["zoom".into(), "Zoom".into(), "key.keyboard.z".into()]],
-                buttons: Vec::new(),
+                mappings: Vec::new(),
+                settings: vec![crate::mod_list::NativeSetting {
+                    key: "trails".into(),
+                    label: "Trails".into(),
+                    tooltip: None,
+                    value: crate::mod_list::NativeSettingValue::Toggle(true),
+                }],
             }),
         });
         let labels = lang::scoped(english(), || ui.extras.row_labels(&s)).0;
@@ -6121,58 +6977,59 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires prepared language data in HORIZON_TEST_RESOURCES; run alone"]
+    #[ignore = "daily"]
     fn the_new_video_options_read_as_vanilla_words_them() {
         use crate::graphics::GraphicsApi;
         let root = std::path::PathBuf::from(
             std::env::var_os("HORIZON_TEST_RESOURCES").expect("HORIZON_TEST_RESOURCES"),
         );
-        lang::set(lang::Language::load(&[&root], "en_us"));
-        let mut s = Settings::default();
-        assert_eq!(Opt::ExclusiveMode.label(&s).plain(), "Setting unavailable");
-        s.video_modes = vec![mode(1280, 60.0), mode(1920, 144.0), mode(2560, 59.94)];
-        assert_eq!(
-            Opt::ExclusiveMode.label(&s).plain(),
-            "Exclusive Fullscreen Mode: Current"
-        );
-        Opt::ExclusiveMode.set_slider(&mut s, 2.0 / 3.0);
-        assert_eq!(
-            Opt::ExclusiveMode.label(&s).plain(),
-            "Exclusive Fullscreen Mode: 1920x1080@144 (24bit)"
-        );
-        Opt::ExclusiveMode.set_slider(&mut s, 1.0);
-        assert_eq!(
-            Opt::ExclusiveMode.label(&s).plain(),
-            "Exclusive Fullscreen Mode: 2560x1440@59.94 (24bit)"
-        );
-        s.horizon.api = GraphicsApi::Vulkan;
-        assert_eq!(
-            Opt::GraphicsBackend.label(&s).plain(),
-            "Graphics API: Prefer Vulkan (Experimental)"
-        );
-        assert!(
-            graphics_api_tooltip(&s)
-                .plain()
-                .starts_with("Requires a game restart to take effect.\n\n")
-        );
-        s.startup_api = GraphicsApi::Vulkan;
-        assert!(
-            graphics_api_tooltip(&s)
-                .plain()
-                .starts_with("Which graphics API")
-        );
-        s.file
-            .set("maxAnisotropyBit", crate::options_file::V::Int(2));
-        s.file
-            .set("textureFiltering", crate::options_file::V::Int(2));
-        assert_eq!(
-            Opt::MaxAnisotropy.label(&s).plain(),
-            "Anisotropic Filtering: 4x"
-        );
-        assert_eq!(
-            Opt::TextureFiltering.label(&s).plain(),
-            "Texture Filtering: Anisotropic"
-        );
+        lang::scoped(lang::Language::load(&[&root], "en_us"), || {
+            let mut s = Settings::default();
+            assert_eq!(Opt::ExclusiveMode.label(&s).plain(), "Setting unavailable");
+            s.video_modes = vec![mode(1280, 60.0), mode(1920, 144.0), mode(2560, 59.94)];
+            assert_eq!(
+                Opt::ExclusiveMode.label(&s).plain(),
+                "Exclusive Fullscreen Mode: Current"
+            );
+            Opt::ExclusiveMode.set_slider(&mut s, 2.0 / 3.0);
+            assert_eq!(
+                Opt::ExclusiveMode.label(&s).plain(),
+                "Exclusive Fullscreen Mode: 1920x1080@144 (24bit)"
+            );
+            Opt::ExclusiveMode.set_slider(&mut s, 1.0);
+            assert_eq!(
+                Opt::ExclusiveMode.label(&s).plain(),
+                "Exclusive Fullscreen Mode: 2560x1440@59.94 (24bit)"
+            );
+            s.horizon.api = GraphicsApi::Vulkan;
+            assert_eq!(
+                Opt::GraphicsBackend.label(&s).plain(),
+                "Graphics API: Prefer Vulkan (Experimental)"
+            );
+            assert!(
+                graphics_api_tooltip(&s)
+                    .plain()
+                    .starts_with("Requires a game restart to take effect.\n\n")
+            );
+            s.startup_api = GraphicsApi::Vulkan;
+            assert!(
+                graphics_api_tooltip(&s)
+                    .plain()
+                    .starts_with("Which graphics API")
+            );
+            s.file
+                .set("maxAnisotropyBit", crate::options_file::V::Int(2));
+            s.file
+                .set("textureFiltering", crate::options_file::V::Int(2));
+            assert_eq!(
+                Opt::MaxAnisotropy.label(&s).plain(),
+                "Anisotropic Filtering: 4x"
+            );
+            assert_eq!(
+                Opt::TextureFiltering.label(&s).plain(),
+                "Texture Filtering: Anisotropic"
+            );
+        });
     }
 
     #[test]
@@ -6201,50 +7058,68 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires prepared language data in HORIZON_TEST_RESOURCES; run alone"]
+    #[ignore = "daily"]
     fn classic_hover_draws_the_selected_options_wrapped_tooltip() {
         let root = std::path::PathBuf::from(
             std::env::var_os("HORIZON_TEST_RESOURCES").expect("HORIZON_TEST_RESOURCES"),
         );
-        lang::set(lang::Language::load(&[&root], "en_us"));
-        let atlas = atlas();
-        let mut s = Settings::default();
-        let mut ui = OptionsUi::default();
-        ui.show(Page::Video);
-        for mode in ["afk", "minimized"] {
-            s.inactivity_fps_limit = mode.into();
-            let (widgets, _, _, _) = ui.layout(&s, 480.0, 480.0);
-            let option = widgets
-                .iter()
-                .find(|w| {
-                    matches!(
-                        w.kind,
-                        WKind::Button {
-                            act: Act::Cycle(Opt::InactivityFps),
-                            ..
+        lang::scoped(lang::Language::load(&[&root], "en_us"), || {
+            let atlas = atlas();
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::Video);
+            for mode in ["afk", "minimized"] {
+                s.inactivity_fps_limit = mode.into();
+                let (widgets, _, _, _) = ui.layout(&s, 480.0, 480.0);
+                let option = widgets
+                    .iter()
+                    .find(|w| {
+                        matches!(
+                            w.kind,
+                            WKind::Button {
+                                act: Act::Cycle(Opt::InactivityFps),
+                                ..
+                            }
+                        )
+                    })
+                    .unwrap();
+                let cursor = (option.x + 1.0, option.y + 1.0);
+                let mut actual = HudBatch::scratch([480, 480]);
+                let mut foreground_end = None;
+                ui.draw_test_frame(
+                    &s,
+                    NONE,
+                    &mut actual,
+                    &atlas,
+                    cursor,
+                    &mut |phase, batch| {
+                        if phase == crate::screen_draw::RenderPhase::Foreground {
+                            foreground_end = Some(batch.vertices.len());
                         }
-                    )
-                })
-                .unwrap();
-            let cursor = (option.x + 1.0, option.y + 1.0);
-            let mut actual = HudBatch::new([480, 480]);
-            ui.draw(&s, NONE, &mut actual, &atlas, cursor);
-            let key = format!("options.inactivityFpsLimit.{mode}.tooltip");
-            assert!(lang::has(&key));
-            let mut expected = HudBatch::new([480, 480]);
-            ui::tooltip(
-                &mut expected,
-                &atlas,
-                &atlas.font.split(&tr(&key), 170.0),
-                cursor,
-            );
-            assert!(!expected.vertices.is_empty());
-            let tail = &actual.vertices[actual.vertices.len() - expected.vertices.len()..];
-            assert_eq!(
-                bytemuck::cast_slice::<_, u8>(tail),
-                bytemuck::cast_slice::<_, u8>(&expected.vertices)
-            );
-        }
+                    },
+                );
+                let key = format!("options.inactivityFpsLimit.{mode}.tooltip");
+                assert!(lang::has(&key));
+                let mut expected = HudBatch::scratch([480, 480]);
+                ui::tooltip(
+                    &mut expected,
+                    &atlas,
+                    &atlas.font.split(&tr(&key), 170.0),
+                    cursor,
+                );
+                assert!(!expected.vertices.is_empty());
+                assert_eq!(
+                    foreground_end,
+                    Some(actual.vertices.len() - expected.vertices.len()),
+                    "foreground precedes the tooltip",
+                );
+                let tail = &actual.vertices[actual.vertices.len() - expected.vertices.len()..];
+                assert_eq!(
+                    bytemuck::cast_slice::<_, u8>(tail),
+                    bytemuck::cast_slice::<_, u8>(&expected.vertices)
+                );
+            }
+        });
     }
 
     #[test]
@@ -6858,8 +7733,15 @@ mod tests {
         let mut ui = OptionsUi::default();
         ui.show(Page::Language);
         let draw_hint = |ui: &mut OptionsUi| {
-            let mut batch = HudBatch::new([960, 640]);
-            ui.draw(&settings, NONE, &mut batch, &atlas, (-1.0, -1.0));
+            let mut batch = HudBatch::scratch([960, 640]);
+            ui.draw_test_frame(
+                &settings,
+                NONE,
+                &mut batch,
+                &atlas,
+                (-1.0, -1.0),
+                &mut |_, _| {},
+            );
             let search = &ui.language_search;
             batch.vertices.iter().any(|v| {
                 v.color == rgba(170, 170, 170, 255)
@@ -6940,7 +7822,7 @@ mod tests {
             let mut s = Settings::default();
             let mut ui = OptionsUi::default();
             ui.show(Page::KeyBinds);
-            let mut batch = HudBatch::new([480, 240]);
+            let mut batch = HudBatch::scratch([480, 240]);
             let size = (batch.width, batch.height);
             let (widgets, top, bottom, _) = ui.layout(&s, size.0, size.1);
             let row = widgets
@@ -6965,7 +7847,7 @@ mod tests {
             let row_y = if above { top - 5.0 } else { bottom - 16.0 };
             ui.scroll = row.y - row_y;
             let (x, width, height) = (row.x, row.w, row.h);
-            ui.draw(&s, NONE, &mut batch, &atlas, (-1.0, -1.0));
+            ui.draw_test_frame(&s, NONE, &mut batch, &atlas, (-1.0, -1.0), &mut |_, _| {});
             let vertices: Vec<_> = batch
                 .vertices
                 .iter()
@@ -7265,66 +8147,6 @@ mod tests {
         assert_eq!(s.language, "de_de");
     }
 
-    /// A content mod's set builds the block-state tables an open world's
-    /// chunks were decoded with, so its toggle freezes in-world; a native
-    /// mod gates live through `native_on` and one of assets and data reloads
-    /// live, so they stay available.
-    #[test]
-    fn in_a_world_only_live_mod_toggles_stay_active() {
-        let mut s = Settings::default();
-        let installed = |id: &str,
-                         kind: crate::mod_list::ModKind,
-                         native: Option<crate::mod_list::NativePage>| {
-            crate::mod_list::Installed {
-                id: id.into(),
-                kind,
-                title: id.into(),
-                description: String::new(),
-                problem: None,
-                dev: false,
-                native,
-            }
-        };
-        s.mods.installed = vec![
-            installed("content", crate::mod_list::ModKind::Content, None),
-            installed(
-                "native",
-                crate::mod_list::ModKind::Native,
-                Some(crate::mod_list::NativePage::default()),
-            ),
-        ];
-        let mut ui = OptionsUi::default();
-        let toggles = |ui: &mut OptionsUi, s: &Settings| {
-            let (widgets, ..) = ui.layout(s, 427.0, 240.0);
-            widgets
-                .iter()
-                .filter_map(|w| match w.kind {
-                    WKind::Button {
-                        act: Act::ToggleMod(i),
-                        active,
-                        ..
-                    } => Some((i, active)),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        };
-        // The page lists the native section before the content one, whatever
-        // order the mods were installed in.
-        ui.open_at(false, Page::Mods);
-        assert_eq!(toggles(&mut ui, &s), [(1, true), (0, true)]);
-        ui.open_at(true, Page::Mods);
-        assert_eq!(toggles(&mut ui, &s), [(1, true), (0, false)]);
-        // A content mod of assets and data only reloads live in a world this
-        // game serves (`mods_live`, filled by the game).
-        s.mods.installed.push(installed(
-            "data_only",
-            crate::mod_list::ModKind::Content,
-            None,
-        ));
-        ui.mods_live.insert("data_only".into());
-        assert_eq!(toggles(&mut ui, &s), [(1, true), (0, false), (2, true)]);
-    }
-
     /// An Extras or PvP & HUD label wider than half a row takes the whole row, so every label
     /// fits its button: "Keep channels for UI sounds: Off" did not.
     #[test]
@@ -7445,6 +8267,7 @@ mod tests {
         // Vanilla's own: the same option on two of its screens.
         let vanilla_repeats: BTreeMap<&str, &[&str]> = [
             ("MenuBlur", &["Accessibility", "Graphics"][..]),
+            ("FovEffects", &["Accessibility", "Graphics"][..]),
             ("ShowSubtitles", &["Accessibility", "Sound"][..]),
             ("Narrator", &["Accessibility", "Chat"][..]),
             ("ChatOpacity", &["Accessibility", "Chat"][..]),
@@ -7502,26 +8325,6 @@ mod tests {
     }
 
     #[test]
-    fn options_main_tail_keeps_mods_in_a_build_without_extras() {
-        assert_eq!(
-            options_main_tail(true),
-            [
-                ("horizon.pages.open.horizon_settings", Some(Page::Horizon)),
-                ("horizon.pages.open.mods", Some(Page::Mods)),
-                ("options.credits_and_attribution", Some(Page::Credits)),
-            ]
-        );
-        assert_eq!(
-            options_main_tail(false),
-            [
-                ("options.telemetry", None),
-                ("horizon.pages.open.mods", Some(Page::Mods)),
-                ("options.credits_and_attribution", Some(Page::Credits)),
-            ]
-        );
-    }
-
-    #[test]
     fn horizon_settings_hang_off_options_and_reach_every_horizon_page() {
         let s = Settings::default();
         let mut ui = OptionsUi::default();
@@ -7557,6 +8360,7 @@ mod tests {
                 Page::SplitSetup,
                 Page::Studio,
                 Page::Agent,
+                Page::ModBrowser,
             ]
         );
         // No AI hides the AI Agent page.
@@ -8013,6 +8817,36 @@ mod tests {
         );
     }
 
+    /// Browse Mods is on the Horizon settings page (the Mods footer has only Open Mods Folder
+    /// and Back): clicking it lists the registry's mods and opens the browser.
+    #[test]
+    fn browse_mods_opens_the_registry_browser_from_the_horizon_page() {
+        let atlas = atlas();
+        let size = (960.0, 540.0);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Horizon);
+        let (widgets, ..) = ui.layout(&s, size.0, size.1);
+        let browse = widgets
+            .into_iter()
+            .find(|w| {
+                matches!(&w.kind, WKind::Button { act, .. } if *act == Act::Push(Page::ModBrowser))
+            })
+            .expect("Browse Mods... on the Horizon page");
+        let events = ui.click(
+            &mut s,
+            &atlas,
+            browse.x + browse.w / 2.0,
+            browse.y + browse.h / 2.0,
+            size,
+            [854, 480],
+            false,
+            false,
+        );
+        assert_eq!(events, vec![Event::ButtonClick, Event::BrowseMods]);
+        assert_eq!(ui.page(), Page::ModBrowser);
+    }
+
     #[test]
     fn the_music_page_button_follows_the_extra() {
         let atlas = atlas();
@@ -8228,249 +9062,1214 @@ mod tests {
         assert_eq!(s.particles, 0);
         ui.shift = false;
     }
-
-    /// The rows without the Mods page's Browse button, which sits above the sections.
-    fn without_browse(rows: Vec<Row>) -> Vec<Row> {
-        rows.into_iter()
-            .filter(|r| {
-                !matches!(r, Row::Buttons(w, _) if matches!(
-                    w.kind,
-                    WKind::Button { act: Act::Push(Page::ModBrowser), .. }
-                ))
-            })
-            .collect()
-    }
-
-    #[test]
-    fn mod_settings_page_shows_options_and_excludes_keybinds() {
-        let mut s = Settings::default();
-        s.mods.installed.push(crate::mod_list::Installed {
-            kind: crate::mod_list::ModKind::Hook,
-            id: "mouse_tweaks".into(),
-            title: "Mouse Tweaks".into(),
-            description: "Inventory drag controls".into(),
-            problem: None,
-            dev: false,
-            native: Some(crate::mod_list::NativePage {
-                keys: vec![[
-                    "wheel".into(),
-                    "Wheel Key".into(),
-                    "key.keyboard.unknown".into(),
-                ]],
-                buttons: Vec::new(),
-            }),
-        });
-        let mut ui = OptionsUi::default();
-        ui.show(Page::NativeMod(0));
-        let rows = ui.list_rows(&s);
-        // Excludes duplicate keybinds from mod config screen
-        assert!(!rows.iter().any(|r| matches!(r, Row::Buttons(w, _) if matches!(w.kind, WKind::Button { act: Act::NativeKey(_, _), .. }))));
-        // Includes mod enabled toggle and mod options
-        let acts: Vec<Act> = rows
-            .iter()
-            .filter_map(|r| match r {
-                Row::Buttons(w1, w2) => {
-                    let mut a = vec![match &w1.kind {
-                        WKind::Button { act, .. } => act.clone(),
-                        _ => Act::None,
-                    }];
-                    if let Some(w2) = w2
-                        && let WKind::Button { act, .. } = &w2.kind
-                    {
-                        a.push(act.clone());
-                    }
-                    Some(a)
-                }
-                _ => None,
-            })
-            .flatten()
-            .collect();
-        assert!(acts.contains(&Act::ToggleMod(0)));
-        assert!(acts.contains(&Act::Extra(crate::extras::Item::MouseTweaksWheel)));
-
-        // The toggle's label is a translated line, not English in the code.
-        let toggle = rows.iter().find_map(|r| match r {
-            Row::Buttons(w, _)
-                if matches!(
-                    w.kind,
-                    WKind::Button {
-                        act: Act::ToggleMod(0),
-                        ..
-                    }
-                ) =>
-            {
-                Some(w)
-            }
-            _ => None,
-        });
-        let en = crate::lang::Language::load(&[], "en_us");
-        assert!(en.get("horizon.mods.enabled").is_some());
-
-        // The Mods page shows the hook mod as its toggle and a Settings button to this page,
-        // under the hook mods' header, with no Extras row of its own.
-        ui.show(Page::Mods);
-        let page = without_browse(ui.list_rows(&s));
-        assert!(toggle.is_some());
-        let acts: Vec<Act> = page
-            .iter()
-            .filter_map(|r| match r {
-                Row::Buttons(w1, w2) => {
-                    let mut a = vec![match &w1.kind {
-                        WKind::Button { act, .. } => act.clone(),
-                        _ => Act::None,
-                    }];
-                    if let Some(w2) = w2
-                        && let WKind::Button { act, .. } = &w2.kind
-                    {
-                        a.push(act.clone());
-                    }
-                    Some(a)
-                }
-                _ => None,
-            })
-            .flatten()
-            .collect();
-        assert_eq!(acts, vec![Act::ToggleMod(0), Act::ModSettings(0)]);
-        assert!(matches!(page[0], Row::Header("horizon.mods.section.hook")));
-    }
-
-    /// A Lua mod with a settings schema gets a Settings button to its page; a mod without one
-    /// gets its toggle only.
-    #[test]
-    fn options_ui_mod_settings_button_is_offered_to_a_mod_with_a_schema_only() {
-        use crate::mod_list::{Installed, ModKind};
-        use crate::mod_settings_ui::{ModConfig, Snapshot};
-        let mut s = Settings::default();
-        for id in ["ruby", "plain"] {
-            s.mods.installed.push(Installed {
-                kind: ModKind::Content,
-                id: id.into(),
-                title: format!("{id} 1.0"),
-                description: String::new(),
-                problem: None,
-                dev: false,
-                native: None,
-            });
-        }
-        s.mods.config = Snapshot {
-            mods: vec![ModConfig {
-                mod_id: "ruby".into(),
-                entries: Vec::new(),
-            }],
-            remote: false,
-        };
-        let mut ui = OptionsUi::default();
-        ui.show(Page::Mods);
-        let page = without_browse(ui.list_rows(&s));
-        let acts: Vec<Act> = page
-            .iter()
-            .flat_map(|r| match r {
-                Row::Buttons(w1, w2) => [Some(w1), w2.as_ref()]
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|w| match &w.kind {
-                        WKind::Button { act, .. } => Some(act.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            })
-            .collect();
-        assert_eq!(
-            acts,
-            vec![Act::ToggleMod(0), Act::ModConfig(0), Act::ToggleMod(1)]
-        );
-    }
-
-    /// The Mods page has a section per kind in the launcher's order, each named by a bundled key,
-    /// so a feature the registry declares with a kind lands in its section with no code.
-    #[test]
-    fn mods_page_groups_installed_mods_by_kind_in_the_launcher_order() {
-        use crate::mod_list::{Installed, ModKind, NativePage};
-        let mut s = Settings::default();
-        let mut add = |id: &str, kind: ModKind, buttons: Vec<String>| {
-            s.mods.installed.push(Installed {
-                kind,
-                id: id.into(),
-                title: format!("{id} 1.0"),
-                description: String::new(),
-                problem: None,
-                dev: false,
-                native: (kind != ModKind::Content).then(|| NativePage {
-                    keys: Vec::new(),
-                    buttons,
-                }),
-            });
-        };
-        // Installed in no particular order; one of each kind, plus a second hook.
-        add("pack", ModKind::Content, Vec::new());
-        add("fullbright", ModKind::Hook, Vec::new());
-        add("tool", ModKind::Native, vec!["Setting".into()]);
-        add("cas", ModKind::Engine, Vec::new());
-        add("mouse_tweaks", ModKind::Hook, Vec::new());
-        let mut ui = OptionsUi::default();
-        ui.show(Page::Mods);
-        let rows = without_browse(ui.list_rows(&s));
-        let order: Vec<String> = rows
-            .iter()
-            .map(|r| match r {
-                Row::Header(key) => (*key).to_owned(),
-                Row::Buttons(w, settings) => match (&w.kind, settings) {
-                    (
-                        WKind::Button {
-                            act: Act::ToggleMod(i),
-                            ..
-                        },
-                        None,
-                    ) => {
-                        format!("toggle {i}")
-                    }
-                    (
-                        WKind::Button {
-                            act: Act::ToggleMod(i),
-                            ..
-                        },
-                        Some(_),
-                    ) => {
-                        format!("toggle {i} + settings")
-                    }
-                    _ => panic!("unexpected row"),
-                },
-                _ => panic!("unexpected row"),
-            })
-            .collect();
-        assert_eq!(
-            order,
-            [
-                "horizon.mods.section.hook",
-                "toggle 1",
-                "toggle 4 + settings",
-                "horizon.mods.section.engine",
-                "toggle 3",
-                "horizon.mods.section.native",
-                "toggle 2 + settings",
-                "horizon.mods.section.content",
-                "toggle 0",
-            ]
-        );
-        let en = crate::lang::Language::load(&[], "en_us");
-        for kind in ModKind::SECTIONS {
-            assert!(
-                en.get(kind.header()).is_some(),
-                "{} has no English line",
-                kind.header()
-            );
-        }
-    }
 }
 
-#[path = "options_ui_preset.rs"]
-mod preset;
-pub(crate) use preset::{
-    PRESETS, apply_preset, drag_slider, preset_from_slider, preset_index, set_slider,
-};
+fn preset_from_slider(v: f32) -> usize {
+    let v = if v >= 1.0 { 0.99999 } else { v };
+    ((v * 4.0).floor() as usize).min(3)
+}
 #[cfg(test)]
 #[path = "options_ui_graphics_tests.rs"]
 mod graphics_tests;
 #[path = "options_ui_pages.rs"]
 mod pages;
+
+#[cfg(test)]
+mod lua_page_tests {
+    use super::tests::atlas;
+    use super::*;
+    use horizon_hooks::mod_entries::{
+        self, Entry, PowerView, SettingView, Side, Status, ViewKind as K,
+    };
+    use std::sync::Mutex;
+
+    /// A provider with one Lua mod, `lua`, named "Lua", whose settings the tests read and write.
+    struct Fake {
+        settings: Mutex<Vec<SettingView>>,
+        /// A `set` of this key is refused with `mods.provider.invalid_value`.
+        refuse: Option<&'static str>,
+        /// The keys `set` was called with.
+        sets: Mutex<Vec<String>>,
+        /// The powers the mod requests, as the provider lists them.
+        powers: Mutex<Vec<PowerView>>,
+        /// Every `set_power` call: mod id, power, granted.
+        power_calls: Mutex<Vec<(String, String, bool)>>,
+        /// A `set_power` is refused with `mods.provider.power_unavailable`.
+        power_refuse: bool,
+        /// How many times `powers` was read.
+        power_reads: Mutex<usize>,
+    }
+    impl Provider for Fake {
+        fn entries(&self) -> Vec<Entry> {
+            vec![Entry {
+                id: "lua".into(),
+                name: "Lua".into(),
+                version: "1".into(),
+                authors: Vec::new(),
+                description: String::new(),
+                side: Side::Both,
+                enabled: true,
+                status: Status::Loaded,
+                settings: true,
+                powers: !self.powers.lock().unwrap().is_empty(),
+                icon_png: None,
+            }]
+        }
+        fn settings(&self, _: &str) -> Vec<SettingView> {
+            self.settings.lock().unwrap().clone()
+        }
+        fn set(&self, _: &str, key: &str, value: ViewValue) -> Result<(), mod_entries::Fault> {
+            self.sets.lock().unwrap().push(key.into());
+            if self.refuse == Some(key) {
+                return Err(mod_entries::fault(
+                    mod_entries::keys::INVALID_VALUE,
+                    &[("mod", "lua"), ("setting", key), ("value", "no")],
+                ));
+            }
+            let mut settings = self.settings.lock().unwrap();
+            let setting = settings.iter_mut().find(|s| s.key == key).unwrap();
+            setting.changed = value != setting.default;
+            setting.value = value;
+            Ok(())
+        }
+        fn reset(&self, _: &str, key: &str) -> Result<(), mod_entries::Fault> {
+            let mut settings = self.settings.lock().unwrap();
+            let setting = settings.iter_mut().find(|s| s.key == key).unwrap();
+            setting.value = setting.default.clone();
+            setting.changed = false;
+            Ok(())
+        }
+        fn reset_all(&self, _: &str) -> Result<(), mod_entries::Fault> {
+            for setting in self.settings.lock().unwrap().iter_mut() {
+                setting.value = setting.default.clone();
+                setting.changed = false;
+            }
+            Ok(())
+        }
+        fn set_enabled(&self, _: &str, _: bool) -> Result<(), mod_entries::Fault> {
+            Ok(())
+        }
+        fn powers(&self, _: &str) -> Vec<PowerView> {
+            *self.power_reads.lock().unwrap() += 1;
+            self.powers.lock().unwrap().clone()
+        }
+        fn set_power(
+            &self,
+            id: &str,
+            power: &str,
+            granted: bool,
+        ) -> Result<(), mod_entries::Fault> {
+            self.power_calls
+                .lock()
+                .unwrap()
+                .push((id.into(), power.into(), granted));
+            if self.power_refuse {
+                return Err(mod_entries::fault(
+                    mod_entries::keys::POWER_UNAVAILABLE,
+                    &[("mod", id), ("power", power)],
+                ));
+            }
+            for view in self.powers.lock().unwrap().iter_mut() {
+                if view.name == power {
+                    view.granted = granted;
+                }
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn enter_on_a_lua_row_with_settings_opens_its_config_page() {
+        install(None);
+        let atlas = super::tests::atlas();
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        // Horizon, then the Lua mod, then Minecraft: two steps down from the top of the list.
+        let screen = ui.mods_page(&s, (480.0, 240.0));
+        screen.step(1);
+        screen.step(1);
+        ui.key(&mut s, &atlas, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(ui.page(), Page::LuaMod(0));
+    }
+
+    #[test]
+    fn a_colour_with_an_alpha_is_compared_and_shown_by_its_rgb() {
+        assert_eq!(lua_rgb("#ff000080"), 0xff0000);
+        assert_eq!(lua_rgb("#f9fffe"), 0xf9fffe);
+        assert_eq!(lua_rgb("#zzzzzz"), 0);
+        assert_eq!(lua_rgb("#ff00"), 0);
+        let stored = view(
+            "tint",
+            K::Colour,
+            ViewValue::Text("#ff000080".into()),
+            ViewValue::Text("#ff000080".into()),
+        );
+        let red = view(
+            "tint",
+            K::Colour,
+            ViewValue::Text("#ff0000".into()),
+            ViewValue::Text("#ff0000".into()),
+        );
+        assert_eq!(lua_next(&stored), lua_next(&red));
+    }
+
+    fn view(key: &str, kind: K, value: ViewValue, default: ViewValue) -> SettingView {
+        SettingView {
+            key: key.into(),
+            label: key.into(),
+            description: String::new(),
+            group: String::new(),
+            side: Side::Both,
+            kind,
+            changed: value != default,
+            value,
+            default,
+        }
+    }
+
+    /// The standard settings: a toggle, a choice, an integer slider 0..10, a float slider
+    /// 0..1 step 0.25, a colour, a text (`name`, 8 characters at most) and a keybind (`bind`).
+    fn settings() -> Vec<SettingView> {
+        let choice = K::Choice {
+            options: vec!["alpha".into(), "beta".into(), "gamma".into()],
+        };
+        vec![
+            view(
+                "on",
+                K::Toggle,
+                ViewValue::Bool(true),
+                ViewValue::Bool(true),
+            ),
+            view(
+                "mode",
+                choice,
+                ViewValue::Text("alpha".into()),
+                ViewValue::Text("alpha".into()),
+            ),
+            view(
+                "level",
+                K::Slider {
+                    min: 0.0,
+                    max: 10.0,
+                    step: 1.0,
+                    integer: true,
+                },
+                ViewValue::Int(2),
+                ViewValue::Int(2),
+            ),
+            view(
+                "ratio",
+                K::Slider {
+                    min: 0.0,
+                    max: 1.0,
+                    step: 0.25,
+                    integer: false,
+                },
+                ViewValue::Float(0.5),
+                ViewValue::Float(0.5),
+            ),
+            view(
+                "tint",
+                K::Colour,
+                ViewValue::Text("#f9fffe".into()),
+                ViewValue::Text("#f9fffe".into()),
+            ),
+            view(
+                "name",
+                K::Text { max_length: 8 },
+                ViewValue::Text("hi".into()),
+                ViewValue::Text("hi".into()),
+            ),
+            view(
+                "bind",
+                K::Keybind,
+                ViewValue::Text("F".into()),
+                ViewValue::Text("F".into()),
+            ),
+        ]
+    }
+
+    /// Installs a fake provider for this test's thread and returns it.
+    fn install(refuse: Option<&'static str>) -> &'static Fake {
+        install_powers(Vec::new(), false, refuse)
+    }
+
+    /// Installs a fake whose mod requests `powers`; a `set_power` is refused when `power_refuse`.
+    fn install_powers(
+        powers: Vec<PowerView>,
+        power_refuse: bool,
+        refuse: Option<&'static str>,
+    ) -> &'static Fake {
+        let fake: &'static Fake = Box::leak(Box::new(Fake {
+            settings: Mutex::new(settings()),
+            refuse,
+            sets: Mutex::new(Vec::new()),
+            powers: Mutex::new(powers),
+            power_calls: Mutex::new(Vec::new()),
+            power_refuse,
+            power_reads: Mutex::new(0),
+        }));
+        TEST_LUA.with(|cell| cell.set(Some(fake)));
+        fake
+    }
+
+    /// A power the mod requests: its name, its state and whether this build can use it.
+    fn power(name: &str, granted: bool, available: bool, reserved: bool) -> PowerView {
+        PowerView {
+            name: name.into(),
+            label_key: format!("horizon.mods.power.{name}.label"),
+            description_key: format!("horizon.mods.power.{name}.description"),
+            requested: true,
+            granted,
+            available,
+            reserved,
+        }
+    }
+
+    /// The three powers of the page tests: world (usable), commands (not in this build), files
+    /// (reserved).
+    fn three_powers(world_granted: bool) -> Vec<PowerView> {
+        vec![
+            power("world", world_granted, true, false),
+            power("commands", false, false, false),
+            power("files", false, false, true),
+        ]
+    }
+
+    /// The texts of a page's widgets: labels and text lines, in order.
+    fn page_text(widgets: &[Widget]) -> Vec<String> {
+        widgets
+            .iter()
+            .filter_map(|w| match &w.kind {
+                WKind::Button { label, .. }
+                | WKind::Slider { label, .. }
+                | WKind::Text { text: label, .. } => Some(label.plain()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A press on the button of `act`, at its place on the page.
+    fn tap(ui: &mut OptionsUi, s: &mut Settings, act: &Act) -> Vec<Event> {
+        let (x, y, _) = button(&widgets(ui, s), act);
+        press(ui, s, x, y)
+    }
+
+    /// The label of the button of `act` now.
+    fn label_of(ui: &mut OptionsUi, s: &Settings, act: &Act) -> String {
+        button(&widgets(ui, s), act).2
+    }
+
+    const SIZE: (f32, f32) = (480.0, 1200.0);
+
+    fn widgets(ui: &mut OptionsUi, s: &Settings) -> Vec<Widget> {
+        ui.layout(s, SIZE.0, SIZE.1).0
+    }
+    fn press(ui: &mut OptionsUi, s: &mut Settings, x: f32, y: f32) -> Vec<Event> {
+        ui.click(s, &atlas(), x, y, SIZE, [480, 1200], false, false)
+    }
+    fn button(widgets: &[Widget], act: &Act) -> (f32, f32, String) {
+        widgets
+            .iter()
+            .find_map(|w| match &w.kind {
+                WKind::Button { act: a, label, .. } if a == act => {
+                    Some((w.x + 2.0, w.y + 2.0, label.plain()))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no button {act:?}"))
+    }
+    /// The slider's track point at `fraction` of its length.
+    fn slider_at(widgets: &[Widget], opt: Opt, fraction: f32) -> (f32, f32) {
+        let w = widgets
+            .iter()
+            .find(|w| matches!(&w.kind, WKind::Slider { opt: o, .. } if *o == opt))
+            .expect("a slider");
+        (w.x + 4.0 + fraction * (w.w - 8.0), w.y + 2.0)
+    }
+    fn stored(fake: &Fake, key: &str) -> ViewValue {
+        fake.settings
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.key == key)
+            .unwrap()
+            .value
+            .clone()
+    }
+
+    #[test]
+    fn config_on_a_lua_row_opens_its_page_and_back_returns_to_the_list() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        // At 480x240 as the native Mods test lays it out: Horizon, Lua, Minecraft by name, so the
+        // Lua row is the second, and its Config is the third panel button.
+        let click = |ui: &mut OptionsUi, s: &mut Settings, x: f32, y: f32| {
+            ui.click(s, &atlas(), x, y, (480.0, 240.0), [480, 240], false, false)
+        };
+        click(&mut ui, &mut s, 61.0, 76.0);
+        let events = click(&mut ui, &mut s, 397.0, 192.0);
+        assert_eq!(events.first(), Some(&Event::ButtonClick));
+        assert_eq!(ui.page(), Page::LuaMod(0));
+        ui.back(&mut s);
+        assert_eq!(ui.page(), Page::Mods);
+    }
+
+    #[test]
+    fn the_page_has_a_row_per_setting_and_reset_all() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let all = widgets(&mut ui, &s);
+        for act in [
+            Act::LuaSetting(0, 0),
+            Act::LuaSetting(0, 1),
+            Act::LuaReset(0, 0),
+            Act::LuaResetAll(0),
+        ] {
+            button(&all, &act);
+        }
+        assert!(
+            all.iter().any(|w| matches!(
+                &w.kind,
+                WKind::Slider {
+                    opt: Opt::LuaSetting(0, 2),
+                    ..
+                }
+            )),
+            "the integer slider"
+        );
+        assert!(
+            all.iter().any(|w| matches!(
+                &w.kind,
+                WKind::Slider {
+                    opt: Opt::LuaSetting(0, 3),
+                    ..
+                }
+            )),
+            "the float slider"
+        );
+        // A click on a text row opens its edit; no `set` is called until the edit commits.
+        let (x, y, _) = button(&all, &Act::LuaEdit(0, 5));
+        press(&mut ui, &mut s, x, y);
+        assert!(fake.sets.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_toggle_flips_through_the_provider_and_its_label_follows() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let before = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0)).2;
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(false));
+        assert_eq!(fake.sets.lock().unwrap().as_slice(), ["on"]);
+        let after = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0)).2;
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn a_choice_cycles_its_options_and_wraps() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1));
+        let values: Vec<_> = (0..4)
+            .map(|_| {
+                press(&mut ui, &mut s, x, y);
+                stored(fake, "mode")
+            })
+            .collect();
+        assert_eq!(
+            values,
+            [
+                ViewValue::Text("beta".into()),
+                ViewValue::Text("gamma".into()),
+                ViewValue::Text("alpha".into()),
+                ViewValue::Text("beta".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_choice_row_shows_its_option_text() {
+        let fake = install(None);
+        let s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let label = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1)).2;
+        assert!(label.contains("alpha"), "the row shows the option: {label}");
+        fake.settings.lock().unwrap()[1].value = ViewValue::Text("gamma".into());
+        let label = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1)).2;
+        assert!(
+            label.contains("gamma"),
+            "the row follows the value: {label}"
+        );
+    }
+
+    #[test]
+    fn a_choice_stored_outside_its_options_shows_as_given_and_a_click_goes_to_the_first() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        fake.settings.lock().unwrap()[1].value = ViewValue::Text("zeta".into());
+        let (x, y, label) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1));
+        assert!(label.contains("zeta"), "shown as given: {label}");
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "mode"), ViewValue::Text("alpha".into()));
+    }
+
+    #[test]
+    fn an_integer_slider_takes_the_stepped_value_and_clamps_at_the_ends() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let at = |ui: &mut OptionsUi, s: &mut Settings, f: f32| {
+            let (x, y) = slider_at(&widgets(ui, s), Opt::LuaSetting(0, 2), f);
+            press(ui, s, x, y);
+        };
+        at(&mut ui, &mut s, 0.5);
+        assert_eq!(stored(fake, "level"), ViewValue::Int(5));
+        at(&mut ui, &mut s, 0.0);
+        assert_eq!(stored(fake, "level"), ViewValue::Int(0));
+        at(&mut ui, &mut s, 1.0);
+        assert_eq!(stored(fake, "level"), ViewValue::Int(10));
+    }
+
+    #[test]
+    fn a_float_slider_snaps_to_its_step() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y) = slider_at(&widgets(&mut ui, &s), Opt::LuaSetting(0, 3), 0.4);
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "ratio"), ViewValue::Float(0.5));
+    }
+
+    #[test]
+    fn a_colour_moves_to_the_next_dye_colour() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 4));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(
+            stored(fake, "tint"),
+            ViewValue::Text("#f9801d".into()),
+            "orange follows white"
+        );
+    }
+
+    #[test]
+    fn a_refused_change_keeps_the_label_and_shows_its_notice() {
+        let fake = install(Some("on"));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let before = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, before.0, before.1);
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(true));
+        let after = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        assert_eq!(before.2, after.2, "the label keeps the old value");
+        let fault = ui.lua_fault.clone().expect("the refusal is kept");
+        assert_eq!(fault.key, mod_entries::keys::INVALID_VALUE);
+        let notice = Text::translate(
+            fault.key,
+            &[
+                Text::literal("lua"),
+                Text::literal("on"),
+                Text::literal("no"),
+            ],
+        )
+        .plain();
+        assert!(
+            ui.lua_rows(0)
+                .iter()
+                .any(|row| matches!(row, Row::Note(text) if *text == notice)),
+            "the notice row is shown"
+        );
+    }
+
+    #[test]
+    fn reset_restores_one_setting_and_reset_all_restores_them_all() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, x, y);
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaReset(0, 0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(true));
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 1));
+        press(&mut ui, &mut s, x, y);
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaResetAll(0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(stored(fake, "mode"), ViewValue::Text("alpha".into()));
+        assert!(fake.settings.lock().unwrap().iter().all(|s| !s.changed));
+    }
+
+    #[test]
+    fn with_no_provider_the_page_has_no_settings_and_nothing_changes() {
+        TEST_LUA.with(|cell| cell.set(None));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        let all = widgets(&mut ui, &s);
+        assert!(!all.iter().any(|w| matches!(
+            &w.kind,
+            WKind::Button {
+                act: Act::LuaSetting(..),
+                ..
+            }
+        )));
+        assert!(ui.lua_rows(0).is_empty());
+        let _ = press(&mut ui, &mut s, 100.0, 100.0);
+    }
+
+    #[test]
+    fn arrows_do_not_leave_a_text_edit_and_enter_commits_it() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        assert!(ui.lua_edit_active());
+        ui.type_text(&atlas(), "x");
+        assert!(send(&mut ui, &mut s, winit::keyboard::KeyCode::ArrowDown, None).is_empty());
+        assert!(send(&mut ui, &mut s, winit::keyboard::KeyCode::ArrowUp, None).is_empty());
+        assert!(ui.lua_edit_active(), "an arrow keeps the edit open");
+        assert!(names(fake).is_empty(), "an arrow stores nothing");
+        assert!(send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None).is_empty());
+        assert!(!ui.lua_edit_active());
+        assert_eq!(names(fake), ["name"]);
+        assert!(matches!(stored(fake, "name"), ViewValue::Text(t) if t.ends_with('x')));
+    }
+
+    fn send(
+        ui: &mut OptionsUi,
+        s: &mut Settings,
+        key: winit::keyboard::KeyCode,
+        text: Option<&str>,
+    ) -> Vec<Event> {
+        ui.key(s, &atlas(), key, text)
+    }
+    /// Opens the edit of setting `j` (a text or keybind row) by a click on its button.
+    fn open_edit(ui: &mut OptionsUi, s: &mut Settings, j: usize) {
+        let (x, y, _) = button(&widgets(ui, s), &Act::LuaEdit(0, j));
+        press(ui, s, x, y);
+    }
+    fn names(fake: &Fake) -> Vec<String> {
+        fake.sets.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn a_text_edit_commits_once_on_enter() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.type_text(&atlas(), "abc");
+        assert!(names(fake).is_empty(), "nothing is stored while typing");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(names(fake), ["name"]);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("abc".into()));
+        assert!(ui.lua_edit.is_none());
+        let label = button(&widgets(&mut ui, &s), &Act::LuaEdit(0, 5)).2;
+        assert!(
+            label.contains("abc"),
+            "the label shows the new value: {label}"
+        );
+    }
+
+    #[test]
+    fn typed_keys_stop_at_max_length() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(
+            &mut ui,
+            &mut s,
+            winit::keyboard::KeyCode::KeyA,
+            Some("abcdefghijk"),
+        );
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("abcdefgh".into()));
+    }
+
+    #[test]
+    fn backspace_removes_one_character() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("h".into()));
+    }
+
+    #[test]
+    fn escape_cancels_a_text_edit_and_restores_the_value() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.type_text(&atlas(), "xyz");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(names(fake).is_empty());
+        assert_eq!(stored(fake, "name"), ViewValue::Text("hi".into()));
+        assert!(ui.lua_edit.is_none());
+        assert_eq!(
+            ui.page(),
+            Page::LuaMod(0),
+            "Escape ends the edit, not the page"
+        );
+    }
+
+    #[test]
+    fn a_click_on_done_during_a_text_edit_commits_the_draft() {
+        // The click path (a real click outside the field, and the pad's B that used to be pressed
+        // as the footer's Done) commits the typed text; B no longer takes this path.
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        ui.type_text(&atlas(), "x");
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::Done);
+        press(&mut ui, &mut s, x, y);
+        assert!(!ui.lua_edit_active());
+        assert_eq!(names(fake), ["name"], "a click outside commits the draft");
+        assert_eq!(stored(fake, "name"), ViewValue::Text("hix".into()));
+    }
+
+    #[test]
+    fn a_lua_text_edit_or_keybind_wait_is_typing_until_it_ends() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        assert!(!ui.typing());
+        open_edit(&mut ui, &mut s, 5);
+        assert!(ui.typing(), "a text edit takes the keys");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(!ui.typing());
+        open_edit(&mut ui, &mut s, 6);
+        assert!(ui.typing(), "a keybind wait takes the keys");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(!ui.typing());
+    }
+
+    #[test]
+    fn escape_in_a_lua_text_edit_from_the_mods_list_keeps_the_config_page() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        let click = |ui: &mut OptionsUi, s: &mut Settings, x: f32, y: f32| {
+            ui.click(s, &atlas(), x, y, (480.0, 240.0), [480, 240], false, false)
+        };
+        click(&mut ui, &mut s, 61.0, 76.0);
+        click(&mut ui, &mut s, 397.0, 192.0);
+        assert_eq!(ui.page(), Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(ui.lua_edit.is_none());
+        assert_eq!(ui.page(), Page::LuaMod(0), "Escape ends the edit only");
+    }
+
+    #[test]
+    fn typed_text_and_backspace_reach_the_mods_search_box_from_the_keys() {
+        install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::Mods);
+        ui.mods_page(&s, SIZE);
+        let (x, y) = ui.mods_screen.as_ref().unwrap().search_centre();
+        press(&mut ui, &mut s, x, y);
+        for (key, text) in [
+            (winit::keyboard::KeyCode::KeyG, "g"),
+            (winit::keyboard::KeyCode::Digit4, "4"),
+            (winit::keyboard::KeyCode::Minus, "_"),
+        ] {
+            send(&mut ui, &mut s, key, Some(text));
+        }
+        let search = |ui: &OptionsUi| ui.mods_screen.as_ref().unwrap().search_text().to_owned();
+        assert_eq!(search(&ui), "g4_");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        assert_eq!(search(&ui), "g4");
+        // A key with only a control character as its text (Tab's) types nothing.
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Tab, Some("\t"));
+        assert_eq!(search(&ui), "g4");
+    }
+
+    #[test]
+    fn a_click_elsewhere_commits_the_text_and_focuses_nothing() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.type_text(&atlas(), "ok");
+        let focus = ui.focus.clone();
+        let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaSetting(0, 0));
+        press(&mut ui, &mut s, x, y);
+        assert_eq!(names(fake), ["name"], "the toggle is not clicked");
+        assert_eq!(stored(fake, "name"), ViewValue::Text("ok".into()));
+        assert_eq!(stored(fake, "on"), ViewValue::Bool(true));
+        assert_eq!(ui.focus, focus, "the click focuses nothing new");
+        assert!(ui.lua_edit.is_none());
+    }
+
+    #[test]
+    fn a_fault_keeps_the_old_text_and_shows_its_notice() {
+        let fake = install(Some("name"));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        ui.type_text(&atlas(), "!");
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Enter, None);
+        assert_eq!(stored(fake, "name"), ViewValue::Text("hi".into()));
+        let fault = ui.lua_fault.clone().expect("the refusal is kept");
+        assert_eq!(fault.key, mod_entries::keys::INVALID_VALUE);
+    }
+
+    #[test]
+    fn going_back_during_an_edit_commits_nothing() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 5);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Backspace, None);
+        ui.back(&mut s);
+        assert_eq!(ui.page(), Page::Main);
+        assert!(names(fake).is_empty());
+        assert!(ui.lua_edit.is_none());
+    }
+
+    #[test]
+    fn a_keybind_binds_the_next_key_by_its_store_name() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        let waiting = button(&widgets(&mut ui, &s), &Act::LuaEdit(0, 6)).2;
+        assert!(
+            !waiting.contains('F') || waiting.contains("Press"),
+            "{waiting}"
+        );
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::KeyG, None);
+        assert_eq!(names(fake), ["bind"]);
+        assert_eq!(stored(fake, "bind"), ViewValue::Text("G".into()));
+        let label = button(&widgets(&mut ui, &s), &Act::LuaEdit(0, 6)).2;
+        assert!(label.contains('G'), "{label}");
+    }
+
+    #[test]
+    fn a_keybind_takes_the_key_name_in_store_form() {
+        assert_eq!(
+            lua_key_name(winit::keyboard::KeyCode::ShiftLeft).as_deref(),
+            Some("LEFT_SHIFT")
+        );
+        assert_eq!(
+            lua_key_name(winit::keyboard::KeyCode::F5).as_deref(),
+            Some("F5")
+        );
+    }
+
+    #[test]
+    fn escape_cancels_a_keybind_and_binds_nothing() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::Escape, None);
+        assert!(names(fake).is_empty());
+        assert_eq!(stored(fake, "bind"), ViewValue::Text("F".into()));
+        assert!(ui.lua_edit.is_none());
+    }
+
+    #[test]
+    fn a_refused_keybind_shows_its_notice_and_keeps_the_old_key() {
+        let fake = install(Some("bind"));
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        send(&mut ui, &mut s, winit::keyboard::KeyCode::KeyG, None);
+        assert_eq!(stored(fake, "bind"), ViewValue::Text("F".into()));
+        let fault = ui.lua_fault.clone().expect("the refusal is kept");
+        assert_eq!(fault.key, mod_entries::keys::INVALID_VALUE);
+    }
+
+    #[test]
+    fn a_scrollbar_press_does_not_start_while_a_key_is_awaited() {
+        let fake = install(None);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::LuaMod(0));
+        open_edit(&mut ui, &mut s, 6);
+        let x = ui.scrollbar_x(480.0) + 2.0;
+        ui.click(
+            &mut s,
+            &atlas(),
+            x,
+            50.0,
+            (480.0, 240.0),
+            [960, 480],
+            false,
+            false,
+        );
+        assert_eq!(ui.scrollbar_drag_y, None);
+        assert!(ui.lua_edit.is_none(), "the click ends the wait");
+        assert!(names(fake).is_empty());
+    }
+
+    /// Runs `f` with the English lang loaded, so the labels the tests read are the words.
+    fn english(f: impl FnOnce()) {
+        lang::scoped(lang::Language::load(&[], "en_us"), f);
+    }
+
+    #[test]
+    fn a_mod_without_powers_has_no_powers_section() {
+        english(|| {
+            install(None);
+            let s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let texts = page_text(&widgets(&mut ui, &s));
+            assert!(!texts.iter().any(|t| t == "Powers"), "{texts:?}");
+            assert!(!texts.iter().any(|t| t == "Grant" || t == "Revoke"));
+            assert_eq!(
+                texts.iter().filter(|t| *t == "Reset").count(),
+                7,
+                "one per setting"
+            );
+        });
+    }
+
+    #[test]
+    fn three_powers_are_listed_in_rank_order_with_their_button_states() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let all = widgets(&mut ui, &s);
+            let (world, commands, files) = (
+                button(&all, &Act::LuaPower(0, 0)),
+                button(&all, &Act::LuaPower(0, 1)),
+                button(&all, &Act::LuaPower(0, 2)),
+            );
+            assert_eq!(world.2, "Grant");
+            assert_eq!(commands.2, "Not available");
+            assert_eq!(files.2, "Not available");
+            assert!(
+                world.1 < commands.1 && commands.1 < files.1,
+                "rank order on the page"
+            );
+            let inactive = |act: &Act| {
+                all.iter().any(
+                    |w| matches!(&w.kind, WKind::Button { act: a, active: false, .. } if a == act),
+                )
+            };
+            assert!(!inactive(&Act::LuaPower(0, 0)));
+            assert!(inactive(&Act::LuaPower(0, 1)) && inactive(&Act::LuaPower(0, 2)));
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+        });
+    }
+
+    #[test]
+    fn the_first_grant_click_arms_the_confirm_and_only_the_second_grants() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let reads = *fake.power_reads.lock().unwrap();
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert!(
+                fake.power_calls.lock().unwrap().is_empty(),
+                "the first click only arms"
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Confirm grant");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                *fake.power_calls.lock().unwrap(),
+                [("lua".to_owned(), "world".to_owned(), true)]
+            );
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                reads + 1,
+                "the powers are read again"
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Revoke");
+        });
+    }
+
+    #[test]
+    fn another_click_or_a_page_change_clears_the_pending_confirm() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaSetting(0, 0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Confirm grant");
+            // A focus move with the arrow keys clears it too.
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::ArrowDown, None);
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            // Leaving the page and coming back clears it.
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            ui.back(&mut s);
+            ui.show(Page::LuaMod(0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert!(
+                fake.power_calls.lock().unwrap().is_empty(),
+                "no grant without a second click"
+            );
+        });
+    }
+
+    #[test]
+    fn revoke_applies_at_once() {
+        english(|| {
+            let fake = install_powers(three_powers(true), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Revoke");
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                *fake.power_calls.lock().unwrap(),
+                [("lua".to_owned(), "world".to_owned(), false)]
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+        });
+    }
+
+    #[test]
+    fn a_refused_change_shows_its_fault_and_keeps_the_state() {
+        english(|| {
+            let fake = install_powers(three_powers(false), true, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                fake.power_calls.lock().unwrap().len(),
+                1,
+                "the provider was asked"
+            );
+            let fault = ui.lua_fault.clone().expect("the refusal is kept");
+            assert_eq!(fault.key, mod_entries::keys::POWER_UNAVAILABLE);
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            assert!(!ui.lua_power_changed, "no restart note for a refusal");
+            assert!(!fake.powers.lock().unwrap()[0].granted);
+        });
+    }
+
+    #[test]
+    fn a_disabled_power_button_does_nothing() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let (x, y, _) = button(&widgets(&mut ui, &s), &Act::LuaPower(0, 1));
+            press(&mut ui, &mut s, x, y);
+            press(&mut ui, &mut s, x, y);
+            assert!(ui.lua_power_armed.is_none());
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 1)), "Not available");
+        });
+    }
+
+    #[test]
+    fn the_keyboard_reaches_the_usable_power_button_and_enter_grants_after_a_second_enter() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let mut reached = Vec::new();
+            for _ in 0..80 {
+                ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::ArrowDown, None);
+                if let Some(FocusId::Act(act)) = &ui.focus {
+                    reached.push(act.clone());
+                }
+            }
+            let powers: Vec<Act> = reached
+                .into_iter()
+                .filter(|a| matches!(a, Act::LuaPower(..)))
+                .collect();
+            assert_eq!(
+                powers.first(),
+                Some(&Act::LuaPower(0, 0)),
+                "the walk reaches Grant"
+            );
+            assert!(
+                !powers.contains(&Act::LuaPower(0, 1)),
+                "a disabled button is not a stop"
+            );
+            assert!(!powers.contains(&Act::LuaPower(0, 2)));
+            // Focus the Grant button again and press Enter twice.
+            while ui.focus != Some(FocusId::Act(Act::LuaPower(0, 0))) {
+                ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::ArrowUp, None);
+            }
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::Enter, None);
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::Enter, None);
+            assert_eq!(fake.power_calls.lock().unwrap().len(), 1);
+        });
+    }
+
+    #[test]
+    fn escape_cancels_a_pending_confirm_and_keeps_the_page() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            ui.key(&mut s, &atlas(), winit::keyboard::KeyCode::Escape, None);
+            assert_eq!(
+                ui.page(),
+                Page::LuaMod(0),
+                "Escape only cancels the confirm"
+            );
+            assert_eq!(label_of(&mut ui, &s, &Act::LuaPower(0, 0)), "Grant");
+            assert!(fake.power_calls.lock().unwrap().is_empty());
+        });
+    }
+
+    #[test]
+    fn the_restart_note_follows_a_successful_change() {
+        english(|| {
+            install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let note = tr("horizon.mods.screen.restart").plain();
+            assert!(!page_text(&widgets(&mut ui, &s)).contains(&note));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert!(page_text(&widgets(&mut ui, &s)).contains(&note));
+        });
+    }
+
+    #[test]
+    fn powers_are_read_on_open_and_after_a_change_not_on_each_repaint() {
+        english(|| {
+            let fake = install_powers(three_powers(false), false, None);
+            let mut s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            assert_eq!(*fake.power_reads.lock().unwrap(), 1);
+            for _ in 0..20 {
+                let _ = widgets(&mut ui, &s);
+                ui.relayout();
+            }
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                1,
+                "repaints read the cache"
+            );
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            tap(&mut ui, &mut s, &Act::LuaPower(0, 0));
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                2,
+                "a change reads once more"
+            );
+        });
+    }
+
+    #[test]
+    fn a_page_of_eight_powers_builds_its_rows_in_a_few_milliseconds() {
+        english(|| {
+            let powers: Vec<PowerView> = (0..8)
+                .map(|k| power(&format!("p{k}"), k % 2 == 0, k % 3 != 0, false))
+                .collect();
+            let fake = install_powers(powers, false, None);
+            let s = Settings::default();
+            let mut ui = OptionsUi::default();
+            ui.show(Page::LuaMod(0));
+            let start = std::time::Instant::now();
+            let rounds = 50;
+            for _ in 0..rounds {
+                ui.relayout();
+                let _ = ui.layout(&s, SIZE.0, SIZE.1);
+            }
+            let per_page = start.elapsed() / rounds;
+            eprintln!("lua powers page (8 powers, 7 settings): {per_page:?} to build the rows");
+            assert_eq!(
+                *fake.power_reads.lock().unwrap(),
+                1,
+                "rows are built without the provider"
+            );
+            assert!(
+                per_page < std::time::Duration::from_millis(50),
+                "{per_page:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn every_new_lang_key_is_in_en_us() {
+        let keys = [
+            "horizon.mods.powers.title",
+            "horizon.mods.powers.note",
+            "horizon.mods.powers.grant",
+            "horizon.mods.powers.revoke",
+            "horizon.mods.powers.confirm",
+            "horizon.mods.powers.unavailable",
+            "horizon.mods.powers.granted",
+            "horizon.mods.powers.not_granted",
+            "horizon.mods.power.world.label",
+            "horizon.mods.power.world.description",
+            "horizon.mods.power.commands.label",
+            "horizon.mods.power.commands.description",
+            "horizon.mods.power.files.label",
+            "horizon.mods.power.files.description",
+            "mods.provider.power_unavailable",
+        ];
+        lang::scoped(lang::Language::load(&[], "en_us"), || {
+            for key in keys {
+                assert!(lang::has(key), "{key} is missing from en_us");
+            }
+        });
+    }
+}

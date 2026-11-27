@@ -3,22 +3,17 @@
 // launcher's horizon-mixins then rejects every native mod targeting this crate (#8169).
 #![forbid(unsafe_code)]
 extern crate self as horizon_client;
+pub use horizon_client_lib::carrier_store;
 pub use horizon_client_lib::*;
-pub mod dev_input;
+#[doc(hidden)]
 pub mod entry;
-pub mod game;
-mod horizon_look;
-pub mod mod_api;
-pub mod mod_settings;
-/// Constructors for the mod API's `#[non_exhaustive]` event and player structs
-/// (whos-carmen/horizon#28): the structs say fields may be added, so only their
-/// defining crate can build them, and the Lua runtime's tests moved out of it
-/// into `event-horizon-lua`. The `test-support` feature (as `horizon-items`'s)
-/// turns them on for a dev-dependency; players' builds never see them.
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_events;
 
-#[cfg(test)]
-mod brewing_speed_load_tests;
-#[cfg(test)]
-mod living_death_tests;
+// The game's allocator lives in the library, not the executable: the prebuilt game (arismoko/horizon#589) is this crate as a
+// dylib, and the allocator must be the one its code and the mods' executable share. The Windows and macOS archives
+// build with `system-allocator`: their loaders bind each library to std's own allocator, which everything then
+// shares (arismoko/horizon#2394, arismoko/horizon#3877).
+#[cfg(not(feature = "system-allocator"))]
+#[global_allocator]
+static ALLOCATOR: horizon_threads::GameAllocator = horizon_threads::GAME_ALLOCATOR;
+pub mod game;
+pub mod orb_limits;

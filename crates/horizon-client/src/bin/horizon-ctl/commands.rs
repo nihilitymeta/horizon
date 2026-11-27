@@ -93,26 +93,6 @@ const HELLO_REPLY: &[Field] = &[
     ),
 ];
 
-/// `mod-state`: the saved data of one scripted mod, read on the server thread.
-const MOD_STATE_REPLY: &[Field] = &[
-    f(
-        "ok",
-        "boolean",
-        "true: the reply carries the data (a failure is {\"error\": ...})",
-    ),
-    f("id", "string", "the mod id asked for"),
-    f(
-        "world_data",
-        "object",
-        "the mod's horizon.world_data() table; {} when nothing is saved",
-    ),
-    f(
-        "players",
-        "object",
-        "each online player's uuid to its horizon.player_data() table; {} when nothing is saved",
-    ),
-];
-
 /// `status`: the top-level fields the reply always carries. It holds more (sounds,
 /// projectiles, maps and the like), so a reader must ignore the keys it does not know.
 const STATUS_REPLY: &[Field] = &[
@@ -301,7 +281,7 @@ const CONFIRM: Param = Param {
 };
 
 /// MCP tools that delete or overwrite the player's things (`destructiveHint`).
-pub const DESTRUCTIVE: &[&str] = &["world-delete", "fill", "setblock", "lua"];
+pub const DESTRUCTIVE: &[&str] = &["world-delete", "fill", "setblock"];
 /// MCP tools that reach other players or the network (`openWorldHint`): only when the player asks.
 pub const OPEN_WORLD: &[&str] = &["connect", "lan", "friends", "chat", "command"];
 
@@ -652,15 +632,6 @@ pub const COMMANDS: &[Cmd] = &[
     cmd!("repro-export", Scripting, "repro-export [NAME] [PATH] [--no-world]", "zip a recording with the logs, crash report and status",
         "Writes repro/<stamp>-NAME.zip: the recording, logs/latest.log, the newest crash report, a status.json and a README. The player attaches it to the bug report; nothing is uploaded. Stops a running recording first.",
         ["horizon-ctl repro-export", "horizon-ctl repro-export repro-bug out.zip"], &[opt("name", Ty::Str, "recording from record-list (default the newest)"), opt("path", Ty::Str, "where to write the zip"), flag("no-world", Ty::Bool, "leave the world out")], mcp: true, local: false),
-    cmd!("reload-mods", Scripting, "reload-mods [ID] [--side client|server|both]", "reload scripted mods, waiting until the reload is applied",
-        "Reloads one mod by id, or every scripted mod without an id, as /reload does: the game reads its scripts again at the next server tick. Without --side every state reloads (both sides in single player); with --side client or --side server only that side. Waits up to 10 s for the reload to apply, then replies with one short status per (mod, side) (id, side, ok, reloads, and the error text when a reload fails). A registry.lua change still needs a restart: reloaded registry mods say so in their note. Unknown id is an error, as is an id with no state of the asked side.",
-        ["horizon-ctl reload-mods", "horizon-ctl reload-mods my_mod", "horizon-ctl reload-mods my_mod --side client"], &[opt("id", Ty::Str, "mod id to reload (default: every scripted mod)"), flag("side", Ty::Enum(&["client", "server", "both"]), "which side(s) to reload (default: both)")], mcp: true, local: false),
-    cmd!("lua", Scripting, "lua CHUNK", "run a Lua chunk as /lua does, waiting until it runs (needs --dev-tools)",
-        "Runs CHUNK on the server thread in the /lua console's Luau state and limits (2 s, 64 MiB): the printed output comes back as output, a failing chunk as an error with its traceback. Needs the dev tools (--dev-tools); without them it is an error. One run at a time.",
-        ["horizon-ctl lua print(1)", "horizon-ctl lua print(mc.snbt(\"@p\", \"Pos\"))"], &[p("chunk", Ty::Rest, "Lua code, as one /lua line")], mcp: true, local: false),
-    cmd!("mod-state", Scripting, "mod-state ID", "the mod's saved data as JSON",
-        "Replies with the scripted mod's saved data read on the server thread's console (as lua does, so it needs the dev tools, --dev-tools, and a game that runs its own server): world_data is its horizon.world_data() table, and players maps each online player's uuid to its horizon.player_data() table. Integers are exact; a float is its value as a double (a float 0.1 prints as 0.10000000149011612), and NaN and the infinities are null. Unknown id is an error.",
-        ["horizon-ctl mod-state my_mod"], &[p("id", Ty::Str, "mod id of a scripted mod")], mcp: true, local: false, reply: MOD_STATE_REPLY),
 ];
 
 pub fn find(name: &str) -> Option<&'static Cmd> {
@@ -723,7 +694,7 @@ pub fn detail(c: &Cmd) -> String {
 /// The commands whose replies are described so far, one group at a time: the test
 /// requires each to name its fields.
 #[cfg(test)]
-pub const REPLY_GROUP: &[&str] = &["hello", "status", "mod-state"];
+pub const REPLY_GROUP: &[&str] = &["hello", "status"];
 
 /// The JSON schema of a command's reply, or none while its reply is undescribed.
 pub fn reply_schema(c: &Cmd) -> Option<Value> {
@@ -956,10 +927,6 @@ pub fn line_for(c: &Cmd, args: &Value) -> Result<Vec<String>, String> {
             if let Some(missing) = gap {
                 return Err(format!("{} needs {missing} to be given too", p.name));
             }
-            // The control socket reads one line per request: a newline would cut the chunk.
-            if c.name == "lua" && text.contains(['\n', '\r']) {
-                return Err("lua CHUNK must be one line (the control socket is line based): join the statements with ';' or use a file".to_owned());
-            }
             if p.ty == Ty::Rest {
                 rest = Some(text);
             } else if text.contains(char::is_whitespace) || text.is_empty() {
@@ -1070,98 +1037,11 @@ mod tests {
     }
 
     #[test]
-    fn reload_mods_side_becomes_a_flag_and_rejects_bad_values() {
-        let reload = find("reload-mods").unwrap();
-        assert_eq!(
-            line_for(reload, &json!({ "id": "my_mod", "side": "client" })).unwrap(),
-            ["reload-mods", "my_mod", "--side", "client"]
-        );
-        assert_eq!(
-            line_for(reload, &json!({ "id": "my_mod", "side": "server" })).unwrap(),
-            ["reload-mods", "my_mod", "--side", "server"]
-        );
-        assert_eq!(
-            line_for(reload, &json!({ "side": "client" })).unwrap(),
-            ["reload-mods", "--side", "client"]
-        );
-        assert_eq!(
-            line_for(reload, &json!({ "id": "my_mod" })).unwrap(),
-            ["reload-mods", "my_mod"]
-        );
-        assert!(
-            line_for(reload, &json!({ "id": "my_mod", "side": "sideways" }))
-                .unwrap_err()
-                .contains("one of")
-        );
-    }
-
-    #[test]
-    fn mod_state_takes_one_required_id() {
-        let state = find("mod-state").unwrap();
-        assert_eq!(tool_name(state), "mod_state");
-        assert_eq!(
-            line_for(state, &json!({ "id": "my_mod" })).unwrap(),
-            ["mod-state", "my_mod"]
-        );
-        assert!(
-            line_for(state, &json!({}))
-                .unwrap_err()
-                .contains("id is required")
-        );
-    }
-
-    #[test]
-    fn lua_chunk_becomes_one_command_line() {
-        let lua = find("lua").unwrap();
-        assert_eq!(tool_name(lua), "lua");
-        assert_eq!(
-            line_for(lua, &json!({ "chunk": "print(mc.snbt(\"@p\", \"Pos\"))" })).unwrap(),
-            ["lua", "print(mc.snbt(\"@p\", \"Pos\"))"]
-        );
-        assert!(
-            line_for(lua, &json!({}))
-                .unwrap_err()
-                .contains("chunk is required")
-        );
-    }
-
-    #[test]
-    fn lua_chunk_with_a_newline_is_refused_before_it_is_sent() {
-        // The control socket is line based: a newline would cut the chunk and drop the rest.
-        let lua = find("lua").unwrap();
-        let message = "lua CHUNK must be one line (the control socket is line based): join the statements with ';' or use a file";
-        assert_eq!(
-            line_for(lua, &json!({ "chunk": "print(1)\nprint(2)" })).unwrap_err(),
-            message
-        );
-        assert_eq!(
-            line_for(lua, &json!({ "chunk": "print(1)\rprint(2)" })).unwrap_err(),
-            message
-        );
-        assert_eq!(
-            line_for(lua, &json!({ "chunk": "print(1); print(2)" })).unwrap(),
-            ["lua", "print(1); print(2)"]
-        );
-    }
-
-    #[test]
     fn schemas_list_required_parameters() {
         let s = schema(find("break").unwrap());
         assert_eq!(s["required"], json!(["x", "y", "z"]));
         assert_eq!(s["properties"]["timeout"]["type"], "number");
         assert_eq!(tool_name(find("look-at-entity").unwrap()), "look_at_entity");
-    }
-
-    /// The MCP outputSchema of `mod-state` is its reply: `players` and
-    /// `world_data` are declared, and no `missing` survives from the old reply.
-    #[test]
-    fn mod_state_reply_declares_players_and_no_missing() {
-        let schema =
-            reply_schema(find("mod-state").unwrap()).expect("mod-state declares its reply fields");
-        let props = schema["properties"].as_object().unwrap();
-        assert!(props.contains_key("players"), "{props:?}");
-        assert_eq!(schema["properties"]["world_data"]["type"], "object");
-        assert!(!props.contains_key("missing"), "{props:?}");
     }
 
     #[test]
@@ -1228,19 +1108,6 @@ mod tests {
                 c.name
             );
         }
-    }
-
-    #[test]
-    fn lua_is_marked_destructive_and_says_it_needs_dev_tools() {
-        // Arbitrary Luau runs `mc.cmd`: it changes the world, as fill does.
-        assert!(DESTRUCTIVE.contains(&"lua"));
-        let md = markdown();
-        let row = md
-            .lines()
-            .find(|l| l.starts_with("| `lua CHUNK` |"))
-            .unwrap();
-        assert!(row.contains("(destructive)"), "{row}");
-        assert!(row.contains("--dev-tools"), "{row}");
     }
 
     #[test]

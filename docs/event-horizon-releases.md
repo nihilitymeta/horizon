@@ -1,104 +1,56 @@
-# Event Horizon Releases
+# Event Horizon releases
 
-Event Horizon publishes its builds as GitHub releases of `whos-carmen/horizon`, for Windows x64 and Linux x86_64. A
-mod developer installs the launcher from a release once; after that, the launcher installs each new release by itself.
-Nobody compiles the engine to play it.
+Event Horizon's builds are published as GitHub releases of this repository, for Windows x64 and Linux x86_64. They are
+built by the `event horizon release` workflow (`.github/workflows/event-horizon-release.yml`) on GitHub-hosted runners.
+Nothing is built on a schedule: a release exists only when a version tag is pushed or the workflow is started by hand.
 
 ## What a release holds
 
-Each archive, `event-horizon-windows-x64.zip` and `event-horizon-linux-x86_64.tar.gz`, holds:
+Each platform has one archive, `event-horizon-windows-x64.zip` or `event-horizon-linux-x86_64.tar.gz`. It holds:
 
 | Program | What it is |
 |---|---|
-| `horizon-launcher` | Event Horizon's launcher |
-| `horizon-client` | the game |
-| `horizon-ctl` | drives a running game, for the modkit's in-game checks |
+| `horizon-launcher` | the launcher |
+| `horizon-client` | the game (built from the `event-horizon` package) |
+| `horizon-ctl` | drives a running game, for in-game checks |
 | `cargo-horizon-mod` | makes, checks and packs mods |
+| `THIRD_PARTY_NOTICES.md` | licences of the bundled libraries |
+| `horizon-native-mods/event_horizon_lua/` | the Lua host's package, which the game loads from beside its executable |
+| `horizon-native-mods/event_horizon_dev_tools/` | the developer tools' package; the game needs it to start with `--dev-tools` |
 
-`SHA256SUMS` lists its checksum. Another platform is another row in the workflow's matrix: Linux x86_64 builds
-on GitHub's runners as it is, with the system libraries the workflow installs for it.
+The release also has `SHA256SUMS`, with the SHA-256 of each archive. The launcher checks a downloaded archive against
+the SHA-256 that GitHub lists for it, and refuses an archive that has none or whose digest does not match.
 
-The Linux releases hold one more file, `horizon-launcher.flatpak`: the same launcher for Flatpak, built in the
-freedesktop runtime with its own JRE (`packaging/flatpak/`). It is called **Event Horizon** in menus and in
-`flatpak list`, so it reads apart from a Horizon launcher installed beside it.
+A release holds only programs. Game data (the exporters and the data they prepare) is built from Minecraft's own files,
+which cannot be built on GitHub's runners, so it comes from a separate source.
 
-A release holds only programs. The game's data files (the exporters and the data they prepare) come from one of
-Horizon's own releases: they are built with Minecraft's files, which can't be on GitHub's runners.
+## Cut a release
 
-## Publish a release
+The version is the tag. Its form is `eh-v` followed by the version, for example `eh-v0.1.0`.
 
-Releases come two ways, both from the `event horizon release` workflow:
-
-- **Nightly**: every day at 09:00 UTC (4am Eastern in winter, 5am in summer), the workflow builds `engine-work` as
-  `eh-nightly-<date>`, if it changed since the last release. GitHub can start a scheduled run some minutes late.
-- **A version of your choosing**: tag `engine-work` and push the tag:
+- **Push a tag** on the commit to release:
 
   ```sh
-  git tag eh-v0.1.0 engine-work
+  git tag eh-v0.1.0 <commit>
   git push origin eh-v0.1.0
   ```
 
-To skip the nightlies, for a day or for good, set the repository variable `NIGHTLY_PAUSED`; delete it to resume:
+- **Run it by hand**: on the Actions tab, open `event horizon release`, choose Run workflow, and enter the tag in the
+  `tag` field. The tag must start with `eh-v`; the run refuses anything else.
 
-```sh
-gh variable set NIGHTLY_PAUSED -R whos-carmen/horizon --body 1
-gh variable delete NIGHTLY_PAUSED -R whos-carmen/horizon
-```
+The release is created at the commit the run builds, under the tag given. A build takes a while, since it compiles the
+whole workspace; its progress is on the run's page.
 
-To make a nightly now, run the workflow by hand: on the repository's Actions tab, or
-`gh workflow run "event horizon release" -R whos-carmen/horizon`. A build takes a while, since it compiles the whole
-workspace; its progress is on the Actions tab.
+Nothing is scheduled. The workflow has no cron trigger, so no release appears unless one of the two above starts it.
 
-The modkit's own workflow does the same at the same time: `nightly-<date>` from its `main`, `v<version>` tags of your
-choosing (matching `horizon-mod.toml`), and its own `NIGHTLY_PAUSED` variable on `whos-carmen/horizon-modkit`.
+## Platforms
 
-## What a developer does
-
-1. Download the archive for your computer from the newest release, unpack it, and start the launcher:
-   `horizon-launcher.exe` from `event-horizon-windows-x64.zip`, or `horizon-launcher` from
-   `event-horizon-linux-x86_64.tar.gz`. Windows may warn that the program is unrecognized, since it isn't
-   code-signed: choose More info, then Run anyway.
-2. Sign in with a Microsoft account that owns Minecraft: Java Edition.
-3. Install one Horizon version, for its game files: Versions, the newest Nightly, Install.
-
-On Linux the launcher is also one file to install rather than unpack: download `horizon-launcher.flatpak` and run
-`flatpak install horizon-launcher.flatpak`, then start **Event Horizon** from the menu. It carries its own JRE, keeps
-its versions in the same `~/.local/share/horizon-launcher` a distribution build uses, and never replaces itself: a
-newer bundle is installed over it with `flatpak install --reinstall horizon-launcher.flatpak` (a bundle has no
-repository, so `flatpak update` has nothing to ask).
-
-The launcher's Versions page lists Event Horizon's builds in a section of their own, above Horizon's: a release as
-**Event Horizon 0.1.0**, a build you made from the checkout as **Event Horizon · local <commit>**. Its **GitHub
-sources** card has Event Horizon's repository on it, set to **Update automatically**: at each update check, the
-launcher installs a new release on the Horizon version's game files, and plays it. To install the newest release at
-once, press **Update** on the card. The Home page's Play button says **Update** only when the source that installed the
-build has a newer release: a build you made yourself, and Horizon's newer Nightlies, are never updates of one.
-
-The **Horizon Modkit** card, at the top of the Mods page, installs the modkit that Event Horizon's mods need: its
-newest `horizon_modkit.hmod` goes into every instance that plays an Event Horizon build, turned on, so a mod that
-depends on it runs with no `--dev-mod`. The card shows the version installed and the newest release, and has its own
-**Update automatically** switch. The modkit publishes a release when its own `v…` tag is pushed (the modkit's
-`.github/workflows/release.yml`). From the command line: `horizon-launcher modkit`, `modkit update`,
-`modkit auto on|off`, and `modkit install <file>` for a `horizon_modkit.hmod` you built yourself.
-
-Two switches decide what updates by itself:
-
-- **Update the launcher automatically** (Settings): on by default. The launcher updates itself from Event Horizon's
-  releases, never Horizon's, when one was published after it was built. Off, the Settings page offers an Update
-  button instead. A launcher you built yourself never updates itself.
-- **Install new versions automatically** (Versions page): off by default, and leave it off. On, it would install and
-  select Horizon's own new releases over Event Horizon's.
-
-The command line does the same as the card: `horizon-launcher sources list`, `sources update`,
-`sources auto <owner>/<repo> on|off`, `sources add <owner>/<repo>`.
-
-## Telemetry
-
-Event Horizon's game and launcher send nothing to Horizon's servers: no telemetry and no "I'm playing" ping, so
-Horizon's counts stay Horizon's. To send to a server of your own, set `HORIZON_TELEMETRY_URL` to its address.
+Linux archives are built on `ubuntu-24.04`, not `ubuntu-latest`: the programs link the runner's glibc, so they run only
+on systems at least as new as that one. To add a platform, add a row to the build matrix; a Linux row needs the apt
+packages the workflow installs.
 
 ## Microsoft sign-in
 
-The launcher starts the game only for a signed-in account that owns the game, and signing in needs Event Horizon's
-own app registration. [Setting up Microsoft sign-in](event-horizon-sign-in.md) walks through it. Until it is done, a
-release's launcher can't sign in, and the release workflow warns about it.
+The launcher needs an app registration for Microsoft sign-in. It is read from the repository variable
+`HORIZON_MSA_CLIENT_ID` when the launcher is built. If the variable is unset, the build still succeeds, the workflow
+prints a warning, and the launcher can't sign in.

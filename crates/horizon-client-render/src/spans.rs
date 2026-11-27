@@ -44,8 +44,8 @@ pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
 }
 /// Record this thread's spans even with spans off, their wall time only (no CPU clock read):
-/// what the render thread's slow frames spent their time in, for the opt-in performance
-/// statistics (`telemetry::Session::frame`). The thread takes them every frame ([`take`]).
+/// what the render thread's slow frames spent their time in. The thread takes them every
+/// frame ([`take`]).
 pub fn record_here(on: bool) {
     HERE.with(|h| h.set(on));
 }
@@ -229,78 +229,6 @@ pub fn take_raw() -> Vec<Span> {
 /// The frame's spans, summed by name, slowest first; clears them.
 pub fn take() -> Vec<Span> {
     merge(&take_raw())
-}
-thread_local! {
-    static TALLY: RefCell<Tally> = const {
-        RefCell::new(Tally {
-            frames: 0,
-            start: None,
-            sums: Vec::new(),
-        })
-    };
-}
-struct Tally {
-    frames: usize,
-    start: Option<Instant>,
-    sums: Vec<Span>,
-}
-/// Adds one frame's spans ([`take_raw`]) to the running averages
-/// [`take_tally`] reports: the slow-frame line names the spikes, this names
-/// what every frame is made of, which is what the frame rate is.
-pub fn tally(raw: &[Span]) {
-    TALLY.with(|t| {
-        let mut t = t.borrow_mut();
-        if t.start.is_none() {
-            t.start = Some(Instant::now());
-        }
-        t.frames += 1;
-        for span in merge(raw) {
-            match t.sums.iter_mut().find(|s| s.name == span.name) {
-                Some(sum) => {
-                    sum.ms += span.ms;
-                    sum.cpu_ms += span.cpu_ms;
-                }
-                None => t.sums.push(span),
-            }
-        }
-    });
-}
-/// The frames tallied since the last report, as an average frame, once five
-/// seconds have passed: `frame stats: 300 frames in 5.0 s, 13.2 ms a frame:
-/// renderer 6.1, update_world 4.2, ...`. None before the window ends.
-pub fn take_tally() -> Option<String> {
-    const WINDOW: Duration = Duration::from_secs(5);
-    TALLY.with(|t| {
-        let mut t = t.borrow_mut();
-        let elapsed = t.start?.elapsed();
-        if elapsed < WINDOW || t.frames == 0 {
-            return None;
-        }
-        let frames = t.frames as f32;
-        let mut sums = std::mem::take(&mut t.sums);
-        let total: f32 = sums
-            .iter()
-            .filter(|s| s.depth == 0)
-            .map(|s| s.ms)
-            .sum::<f32>()
-            / frames;
-        sums.sort_by(|a, b| b.ms.total_cmp(&a.ms));
-        let list: Vec<String> = sums
-            .iter()
-            .filter(|s| s.ms / frames >= 0.1)
-            .map(|s| format!("{} {:.1}", s.name, s.ms / frames))
-            .collect();
-        let line = format!(
-            "frame stats: {} frames in {:.1} s, {:.1} ms a frame: {}",
-            t.frames,
-            elapsed.as_secs_f32(),
-            total,
-            list.join(", ")
-        );
-        t.frames = 0;
-        t.start = Some(Instant::now());
-        Some(line)
-    })
 }
 /// What a frame spent its time in, from its spans as recorded ([`take_raw`]): the slowest of
 /// the outermost spans (summed by name, as a frame can tick several times), then the slowest
@@ -739,40 +667,54 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn samples_inside_a_span_carry_its_id() {
+        use horizon_threads::sampler::test_support::{ensure, first_passing_run};
         use horizon_threads::{sampler, work};
-        use std::time::{Duration, Instant};
-        let worker = std::thread::spawn(|| {
-            assert!(sampler::sampled_thread("spans-id-test"));
-            let config = sampler::Config {
-                hz: 1000,
-                ..Default::default()
-            };
-            let session = sampler::start(config, |n| n == "spans-id-test").unwrap();
-            let busy = |ms| {
-                let until = Instant::now() + Duration::from_millis(ms);
-                while Instant::now() < until {
-                    std::hint::black_box(0);
-                }
-            };
-            super::time("spans_id_test_named", || busy(60));
-            assert_eq!(sampler::span(), 0);
-            busy(60);
-            let mut spans = Vec::new();
-            session.stop(|_, r| spans.push(r.ctx.span));
-            spans
+        let minimum = sampler::test_support::cpu_count(30) as usize;
+        // A loaded runner can starve one run of its samples: judged on the first of five runs
+        // whose checks all hold. A span left on, or samples filed under it outside, fail every run.
+        first_passing_run(|| {
+            let worker = std::thread::spawn(|| {
+                assert!(sampler::sampled_thread("spans-id-test"));
+                let config = sampler::Config {
+                    hz: 1000,
+                    ..Default::default()
+                };
+                let session = sampler::start(config, |n| n == "spans-id-test").unwrap();
+                // Match calibration's CPU-time denominator, not scheduler-dependent wall time.
+                let busy = |ms: u64| {
+                    let until = sampler::thread_cpu_ns() + ms * 1_000_000;
+                    while sampler::thread_cpu_ns() < until {
+                        std::hint::black_box(0);
+                    }
+                };
+                super::time("spans_id_test_named", || busy(60));
+                assert_eq!(sampler::span(), 0);
+                busy(60);
+                let mut spans = Vec::new();
+                session.stop(|_, r| spans.push(r.ctx.span));
+                spans
+            });
+            let spans = worker.join().unwrap();
+            let inside = |s: &u16| work::name(work::Space::Span, *s) == Some("spans_id_test_named");
+            let (named, plain) = (
+                spans.iter().filter(|s| inside(s)).count(),
+                spans.iter().filter(|s| **s == 0).count(),
+            );
+            ensure(named > minimum && plain > minimum, || {
+                format!(
+                    "{named} named, {plain} outside of {} samples (minimum {minimum} each)",
+                    spans.len()
+                )
+            })?;
+            ensure(named + plain == spans.len(), || "another span id".into())?;
+            // Equal CPU work should split attribution in half. At 250 Hz each 60 ms
+            // section has about 15 samples; 0.15 allows a few boundary samples, but
+            // rejects a substantial attribution bias without changing with the rate.
+            let named_share = named as f64 / (named + plain) as f64;
+            ensure((named_share - 0.5).abs() < 0.15, || {
+                format!("{named} named, {plain} outside")
+            })
         });
-        let spans = worker.join().unwrap();
-        let inside = |s: &u16| work::name(work::Space::Span, *s) == Some("spans_id_test_named");
-        let (named, plain) = (
-            spans.iter().filter(|s| inside(s)).count(),
-            spans.iter().filter(|s| **s == 0).count(),
-        );
-        assert!(
-            named > 30 && plain > 30,
-            "{named} named, {plain} outside of {} samples",
-            spans.len()
-        );
-        assert_eq!(named + plain, spans.len(), "no other span id");
     }
 
     /// A slow tick's notes are its slowest steps, slowest first; short steps and steps on a

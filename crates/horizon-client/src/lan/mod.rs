@@ -5,13 +5,18 @@
 //! state is driven by the game thread (`hub`), which only ever exchanges
 //! decoded packets with these threads, so a world that is not open to the
 //! network pays nothing.
+pub mod abilities;
 mod advancements;
+pub mod announced_channels;
+pub mod config_payloads;
+pub use advancements::ServerAdvancements;
 pub mod anticheat;
 pub mod arrivals;
 pub mod attributes;
 mod biome_resend;
+mod body;
 pub mod border;
-pub mod chunk_sync;
+pub mod chunk_watch;
 pub mod chunks;
 pub mod code_of_conduct;
 mod command_order;
@@ -27,11 +32,16 @@ pub mod equipment_cache;
 pub mod far;
 pub mod forwarding;
 pub mod guest;
+pub mod guest_list;
 pub mod handoff;
 pub mod hub;
 pub mod import;
 mod io_pool;
 pub mod menu;
+pub mod menu_extra_rev;
+#[cfg(test)]
+mod payload_bounds_tests;
+pub mod player_shown;
 pub mod playerdata;
 pub mod prediction;
 pub mod recipes;
@@ -39,8 +49,10 @@ mod registry_names;
 pub mod scoreboard;
 mod sound_order;
 pub mod tracking;
+pub mod viewed_levels;
 pub mod waypoints;
 
+pub use body::Body;
 pub use conn::{Holding, PlayerSender, flush_all};
 use horizon_protocol::packets::play;
 use horizon_protocol::{
@@ -54,7 +66,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize, Ordering},
-        mpsc::{Receiver, Sender, channel},
+        mpsc::{Receiver, channel},
     },
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -65,6 +77,8 @@ pub const MAX_PLAYERS: usize = 8;
 
 /// Messages from the connection threads to the game thread.
 pub enum NetEvent {
+    /// Frozen receiver identity and credit, retained through its main root transaction.
+    RawPayload(Box<crate::raw_payloads::Delivery>),
     /// A client finished configuration and enters the play state.
     Joined(Box<Joined>),
     /// A packet and the bytes of its body on the wire.
@@ -90,62 +104,70 @@ pub struct Joined {
     /// The login used up an expectation of a proxy's (`player-expect`) when it
     /// started (`arrivals`).
     pub expected: bool,
-    /// What the client said during its configuration that the game hears once it joined.
-    pub configured: Configured,
 }
-
-/// What a client said during its configuration, kept for the game (`native_packets.rs`): the
-/// plugin channels it registered (`minecraft:register`), in order, and its answers to the
-/// server's resource pack (pack id, `ServerboundResourcePackPacket.Action` id), in order.
-#[derive(Clone, Debug, Default)]
-pub struct Configured {
-    pub channels: Vec<String>,
-    pub pack_answers: Vec<(u128, i32)>,
+pub(crate) fn event_channel() -> (
+    crate::net::ingress::Producer<NetEvent>,
+    crate::net::ingress::Consumer<NetEvent>,
+) {
+    crate::net::ingress::channel(96 << 20, NetEvent::ingress_charge)
+        .expect("positive incoming byte budget")
 }
-
-/// The most plugin channels kept for one client ([`apply_channels`]).
-pub const MAX_CHANNELS: usize = 128;
-/// The longest plugin channel name kept, in bytes.
-pub const MAX_CHANNEL_NAME: usize = 256;
-
-/// Whether a plugin channel message on `channel` registers channels (`minecraft:register`,
-/// true) or unregisters them (`minecraft:unregister`, false), as Bukkit's and Fabric's
-/// clients and proxies send them; None for any other channel. Vanilla reads neither.
-pub fn channel_registration(channel: &str) -> Option<bool> {
-    match channel {
-        "minecraft:register" => Some(true),
-        "minecraft:unregister" => Some(false),
-        _ => None,
-    }
+#[cfg(test)]
+pub(crate) fn event_channel_with_capacity(
+    capacity: usize,
+) -> (
+    crate::net::ingress::Producer<NetEvent>,
+    crate::net::ingress::Consumer<NetEvent>,
+) {
+    crate::net::ingress::channel(capacity, NetEvent::ingress_charge)
+        .expect("positive test incoming byte budget")
 }
-
-/// Applies a register or unregister message's NUL-separated channel names to `channels`: the
-/// names it added or removed, in the message's order. A name that isn't printable ASCII with a
-/// `:`, is longer than [`MAX_CHANNEL_NAME`], or would take `channels` past [`MAX_CHANNELS`] is
-/// skipped; a name already registered, or not registered, changes nothing.
-pub fn apply_channels(channels: &mut Vec<String>, data: &[u8], register: bool) -> Vec<String> {
-    let mut changed = Vec::new();
-    for name in data.split(|b| *b == 0) {
-        let Ok(name) = std::str::from_utf8(name) else {
-            continue;
-        };
-        if name.len() > MAX_CHANNEL_NAME
-            || !name.contains(':')
-            || !name.bytes().all(|b| b.is_ascii_graphic())
-        {
-            continue;
-        }
-        if register {
-            if channels.len() < MAX_CHANNELS && !channels.iter().any(|c| c == name) {
-                channels.push(name.to_owned());
-                changed.push(name.to_owned());
+impl NetEvent {
+    fn ingress_charge(&self) -> usize {
+        use horizon_protocol::retained::OwnedHeap;
+        use std::mem::size_of;
+        let owned = match self {
+            Self::RawPayload(delivery) => size_of::<crate::raw_payloads::Delivery>()
+                .saturating_add(delivery.incoming.owned_heap_bytes()),
+            Self::Joined(joined) => {
+                let Joined {
+                    conn: _,
+                    uuid: _,
+                    name,
+                    properties,
+                    info,
+                    brand,
+                    sender: _,
+                    latency: _,
+                    address: _,
+                    expected: _,
+                } = joined.as_ref();
+                // sender/latency are shared physical provider state, not this record.
+                size_of::<Joined>()
+                    .saturating_add(name.capacity())
+                    .saturating_add(properties.owned_heap_bytes())
+                    .saturating_add(info.owned_heap_bytes())
+                    .saturating_add(brand.capacity())
             }
-        } else if let Some(at) = channels.iter().position(|c| c == name) {
-            channels.remove(at);
-            changed.push(name.to_owned());
-        }
+            Self::Packet(_, packet, _) => {
+                size_of::<play::Serverbound>().saturating_add(packet.as_ref().owned_heap_bytes())
+            }
+            Self::Left(_, reason) => reason.capacity(),
+            Self::Duplicate(_) => 0,
+        };
+        // Source snapshot, guest inbox, derived HostEvent batch and credit marker,
+        // with spare-capacity allowance. No wire-length proxy for owned buffers.
+        owned.saturating_add(
+            8 * size_of::<(
+                Self,
+                play::Serverbound,
+                hub::HostEvent,
+                crate::net::ingress::ReceiveLease<Self>,
+                usize,
+                usize,
+            )>(),
+        )
     }
-    changed
 }
 /// What a [`PlayerSender`] made for a test's channel gives it.
 pub enum Out {
@@ -154,13 +176,13 @@ pub enum Out {
     /// Packet bodies held during a tick, in order.
     Packets(Vec<Vec<u8>>),
     /// Send a play disconnect with this component, then close.
-    Disconnect(horizon_world::nbt::Tag),
+    Disconnect(horizon_core::nbt::Tag),
 }
 
 /// PlayerList.canPlayerLogin for a dedicated server: the disconnect reason
 /// (bans, whitelist) for a profile connecting from an address, if refused.
 pub type LoginGate =
-    Arc<dyn Fn(SocketAddr, u128, &str) -> Option<horizon_world::nbt::Tag> + Send + Sync>;
+    Arc<dyn Fn(SocketAddr, u128, &str) -> Option<horizon_core::nbt::Tag> + Send + Sync>;
 
 /// online-mode=true: the key pair the server made at startup
 /// (MinecraftServer.initializeKeyPair) and how players are verified.
@@ -297,8 +319,6 @@ pub struct NetConfig {
     /// The shapes of the world's levels: their dimension types go to
     /// clients when the world's data packs changed them.
     pub levels: crate::chunk::LevelShapes,
-    /// A registered transport's door for accepted connections. `None` serves plain Minecraft only.
-    pub door: Option<Arc<dyn horizon_transport::Upgrade>>,
 }
 impl NetConfig {
     /// A real TCP server confined to this machine, without multicast announcements.
@@ -346,7 +366,6 @@ impl NetConfig {
             levels: crate::chunk::LevelShapes::VANILLA,
             owner_profile: None,
             singleplayer_profile: None,
-            door: horizon_transport::Registry::global().lan_door(),
         }
     }
 }
@@ -437,9 +456,10 @@ impl SecureChat {
 
 /// State shared with the connection threads.
 pub struct Shared {
+    payload_local: Arc<crate::raw_payloads::Local>,
     /// What the next login is sent; `PlayerList.reloadResources` swaps it.
     sync: Mutex<Arc<data::SyncData>>,
-    pub events: Sender<NetEvent>,
+    pub events: crate::net::ingress::Producer<NetEvent>,
     pub config: NetConfig,
     motd: Mutex<String>,
     max_players: AtomicUsize,
@@ -448,8 +468,9 @@ pub struct Shared {
     /// `DedicatedServer.setAcceptsTransfers`: whether a login by transfer from another server
     /// is accepted (`accepts-transfers`), live.
     accepts_transfers: AtomicBool,
-    /// PlayerList.players in join order: profile id and name.
-    online: Mutex<Vec<(u128, String)>>,
+    /// PlayerList.players in join order: profile id, name, and `ServerPlayer.allowsListing`
+    /// (the client's "Allow Server Listings", true until its client information says otherwise).
+    online: Mutex<Vec<(u128, String, bool)>>,
     next: AtomicU32,
     stop: AtomicBool,
     random: Mutex<u64>,
@@ -476,8 +497,20 @@ impl Shared {
     pub fn set_sync(&self, sync: Arc<data::SyncData>) {
         *self.sync.lock().unwrap_or_else(|e| e.into_inner()) = sync;
     }
-    pub fn next_id(&self) -> u32 {
-        self.next.fetch_add(1, Ordering::Relaxed)
+    /// Allocate from the shared network and connectionless actor namespace.
+    /// Exhaustion is permanent for this server; never wrap and reuse a token.
+    pub fn next_id(&self) -> Option<u32> {
+        let mut id = self.next.load(Ordering::Relaxed);
+        loop {
+            let next = id.checked_add(1)?;
+            match self
+                .next
+                .compare_exchange_weak(id, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => return Some(id),
+                Err(current) => id = current,
+            }
+        }
     }
     /// PlayerList.canPlayerLogin then disconnectAllPlayersWithProfile: the
     /// refusal reason, or None once the profile holds a place. A profile
@@ -487,7 +520,7 @@ impl Shared {
         address: SocketAddr,
         uuid: u128,
         name: &str,
-    ) -> Option<horizon_world::nbt::Tag> {
+    ) -> Option<horizon_core::nbt::Tag> {
         if self.shutting_down.load(Ordering::Relaxed) {
             return Some(translatable("multiplayer.disconnect.server_shutdown", &[]));
         }
@@ -500,7 +533,7 @@ impl Shared {
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|(_, online)| online.eq_ignore_ascii_case(name))
+                .any(|(_, online, _)| online.eq_ignore_ascii_case(name))
         {
             return Some(translatable("multiplayer.disconnect.name_taken", &[]));
         }
@@ -527,7 +560,10 @@ impl Shared {
                 std::thread::sleep(Duration::from_millis(10));
             }
         }
-        self.online.lock().unwrap().push((uuid, name.to_owned()));
+        self.online
+            .lock()
+            .unwrap()
+            .push((uuid, name.to_owned(), true));
         None
     }
     /// A stop has begun: every login from now on is refused as the server's shutdown.
@@ -535,7 +571,11 @@ impl Shared {
         self.shutting_down.store(true, Ordering::Relaxed);
     }
     fn is_online(&self, uuid: u128) -> bool {
-        self.online.lock().unwrap().iter().any(|(u, _)| *u == uuid)
+        self.online
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(u, _, _)| *u == uuid)
     }
     pub fn motd(&self) -> String {
         self.motd.lock().unwrap().clone()
@@ -573,7 +613,16 @@ impl Shared {
         self.accepts_transfers.store(accept, Ordering::Relaxed);
     }
     pub fn release(&self, uuid: u128) {
-        self.online.lock().unwrap().retain(|(u, _)| *u != uuid);
+        self.online.lock().unwrap().retain(|(u, _, _)| *u != uuid);
+    }
+    /// `ServerPlayer.updateOptions`: whether the player's client allows server listings, which
+    /// `MinecraftServer.buildPlayerStatus` reads for the status sample.
+    pub fn set_listed(&self, uuid: u128, listed: bool) {
+        for entry in self.online.lock().unwrap().iter_mut() {
+            if entry.0 == uuid {
+                entry.2 = listed;
+            }
+        }
     }
     pub fn online(&self) -> usize {
         self.online.lock().unwrap().len()
@@ -593,124 +642,38 @@ impl Shared {
     }
     /// [`Self::status_json`] stating `protocol`: an older client's own, when it may join.
     pub fn status_json_for(&self, protocol: i32) -> String {
-        self.status_values(protocol).json()
-    }
-    /// [`Self::status_json_for`] for the status request of the peer `address`, heard by the
-    /// `server_status` hook: `client_protocol` is the protocol its handshake stated and `protocol`
-    /// what the answer lists (the client's own when this server lets it join, this server's
-    /// otherwise). `None`: a mod cancelled, so the connection is closed unanswered, as it is for a
-    /// handshake a mod cancels.
-    pub fn status_json_for_peer(
-        &self,
-        client_protocol: i32,
-        protocol: i32,
-        address: SocketAddr,
-    ) -> Option<String> {
-        let mut status = self.status_values(protocol);
-        let mut cancel = false;
-        status.told(client_protocol, address, &mut cancel);
-        if cancel {
-            return None;
-        }
-        Some(status.json())
-    }
-    /// The values a status answer carries, before they are encoded: the sample is already
-    /// shuffled (vanilla's draws, in the same order whether or not a hook listens).
-    fn status_values(&self, protocol: i32) -> StatusValues {
+        use crate::server::json::Json;
         let motd = self.motd.lock().unwrap().clone();
-        let online: Vec<(u128, String)> = self.online.lock().unwrap().clone();
+        let online: Vec<(u128, String, bool)> = self.online.lock().unwrap().clone();
         let count = self.online();
-        let mut sample = Vec::new();
+        let mut players = vec![
+            (
+                "max".to_owned(),
+                Json::Number(self.max_players().to_string()),
+            ),
+            ("online".to_owned(), Json::Number(count.to_string())),
+        ];
         if !self.hide_online_players() && !online.is_empty() {
             let size = online.len().min(12);
             let offset = self.next_random(online.len() - size + 1);
-            sample = online[offset..offset + size].to_vec();
+            let mut sample: Vec<(u128, String, bool)> = online[offset..offset + size].to_vec();
             for i in (1..sample.len()).rev() {
                 let j = self.next_random(i + 1);
                 sample.swap(i, j);
             }
-        }
-        let favicon = self
-            .config
-            .favicon
-            .as_ref()
-            .map(|icon| format!("data:image/png;base64,{}", base64(icon)))
-            .unwrap_or_default();
-        StatusValues {
-            description: motd,
-            max_players: i32::try_from(self.max_players()).unwrap_or(i32::MAX),
-            online: i32::try_from(count).unwrap_or(i32::MAX),
-            sample,
-            version_name: GAME_VERSION.to_owned(),
-            protocol,
-            favicon,
-            secure_chat: self.config.enforces_secure_chat(),
-        }
-    }
-}
-
-/// A status answer's values, before they are encoded as JSON: what the `server_status` hook
-/// reads and may change.
-struct StatusValues {
-    description: String,
-    max_players: i32,
-    online: i32,
-    /// The listed players as profile id and name, in listing order; empty: no list at all.
-    sample: Vec<(u128, String)>,
-    version_name: String,
-    protocol: i32,
-    /// The favicon as its data URI; empty: none.
-    favicon: String,
-    secure_chat: bool,
-}
-
-impl StatusValues {
-    /// Tell the `server_status` hook, when a native hook table is installed: the sample goes to it
-    /// as names. The ids stay with the names that remain, and a name it adds is listed with the
-    /// offline-player id of that name (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`, MD5,
-    /// version 3, the id an offline server gives that name), so it stays the same for the name.
-    fn told(&mut self, client_protocol: i32, address: SocketAddr, cancel: &mut bool) {
-        if !crate::native_client_hooks::server_status_installed() {
-            return;
-        }
-        let mut sample: Vec<String> = self.sample.iter().map(|(_, name)| name.clone()).collect();
-        crate::native_client_hooks::server_status(
-            address,
-            client_protocol,
-            &mut self.description,
-            &mut self.max_players,
-            &mut self.online,
-            &mut sample,
-            &mut self.version_name,
-            &mut self.protocol,
-            &mut self.favicon,
-            cancel,
-        );
-        let mut listed = std::mem::take(&mut self.sample);
-        self.sample = sample
-            .into_iter()
-            .map(
-                |name| match listed.iter().position(|(_, known)| *known == name) {
-                    Some(i) => listed.remove(i),
-                    None => (horizon_protocol::crypto::offline_uuid(&name), name),
-                },
-            )
-            .collect();
-    }
-
-    /// The status response's JSON.
-    fn json(self) -> String {
-        use crate::server::json::Json;
-        let mut players = vec![
-            ("max".to_owned(), Json::Number(self.max_players.to_string())),
-            ("online".to_owned(), Json::Number(self.online.to_string())),
-        ];
-        if !self.sample.is_empty() {
             players.push((
                 "sample".to_owned(),
                 Json::Array(
-                    self.sample
+                    sample
                         .into_iter()
+                        // ANONYMOUS_PLAYER_PROFILE for a player who allows no listing.
+                        .map(|(u, n, listed)| {
+                            if listed {
+                                (u, n)
+                            } else {
+                                (0, "Anonymous Player".to_owned())
+                            }
+                        })
                         .map(|(u, n)| {
                             Json::Object(vec![
                                 ("id".to_owned(), Json::String(uuid_string(u))),
@@ -722,23 +685,23 @@ impl StatusValues {
             ));
         }
         let mut status = vec![
-            ("description".to_owned(), Json::String(self.description)),
+            ("description".to_owned(), Json::String(motd)),
             ("players".to_owned(), Json::Object(players)),
             (
                 "version".to_owned(),
                 Json::Object(vec![
-                    ("name".to_owned(), Json::String(self.version_name)),
-                    (
-                        "protocol".to_owned(),
-                        Json::Number(self.protocol.to_string()),
-                    ),
+                    ("name".to_owned(), Json::String(GAME_VERSION.to_owned())),
+                    ("protocol".to_owned(), Json::Number(protocol.to_string())),
                 ]),
             ),
         ];
-        if !self.favicon.is_empty() {
-            status.push(("favicon".to_owned(), Json::String(self.favicon)));
+        if let Some(icon) = &self.config.favicon {
+            status.push((
+                "favicon".to_owned(),
+                Json::String(format!("data:image/png;base64,{}", base64(icon))),
+            ));
         }
-        if self.secure_chat {
+        if self.config.enforces_secure_chat() {
             status.push(("enforcesSecureChat".to_owned(), Json::Bool(true)));
         }
         Json::Object(status).compact()
@@ -775,7 +738,7 @@ pub fn base64(data: &[u8]) -> String {
 /// A running LAN server.
 pub struct Lan {
     pub shared: Arc<Shared>,
-    events: Receiver<NetEvent>,
+    events: crate::net::ingress::Consumer<NetEvent>,
     pub port: u16,
     listener: Option<JoinHandle<()>>,
     /// Stops the accept loop alone: local connections stay.
@@ -795,11 +758,13 @@ impl Lan {
     }
     /// ServerConnectionListener.startTcpServerListener with a configuration.
     pub fn start_with(sync: Arc<data::SyncData>, config: NetConfig) -> io::Result<Self> {
-        let (tx, events) = channel();
+        let (tx, events) = event_channel();
         let (listen, port, announce) = (config.listen, config.port, config.announce);
         let hide_online_players = config.hide_online_players;
         let enable_status = config.enable_status;
         let shared = Arc::new(Shared {
+            payload_local: crate::raw_payloads::Local::capture(crate::raw_payloads::Side::Server)
+                .map_err(io::Error::other)?,
             sync: Mutex::new(sync),
             events: tx,
             motd: Mutex::new(config.motd.clone()),
@@ -817,7 +782,7 @@ impl Lan {
             closing: AtomicUsize::new(0),
             turned_away: Mutex::new((0, None)),
             shutting_down: AtomicBool::new(false),
-            random: Mutex::new(crate::server::java_properties::now_millis() as u64 | 1),
+            random: Mutex::new(horizon_java_properties::now_millis() as u64 | 1),
             config,
         });
         let mut lan = Self {
@@ -903,20 +868,19 @@ impl Lan {
     pub fn connect_local(&self) -> io::Result<horizon_protocol::connection::Pipe> {
         let (client, server) = horizon_protocol::connection::Pipe::pair();
         let shared = self.shared.clone();
-        std::thread::Builder::new()
-            .name("horizon-local-conn".into())
-            .spawn(move || {
-                if let Err(e) = conn::serve_local(server, shared)
-                    && std::env::var_os("HORIZON_NET_DEBUG").is_some()
-                {
-                    log::warn!("[lan] local: {e}");
-                }
-            })?;
+        // Configuration payload handlers of wasm mods run on this thread.
+        horizon_guest_stack::spawn("horizon-local-conn".into(), move || {
+            if let Err(e) = conn::serve_local(server, shared)
+                && std::env::var_os("HORIZON_NET_DEBUG").is_some()
+            {
+                log::warn!("[lan] local: {e}");
+            }
+        })?;
         Ok(client)
     }
     /// Everything the connection threads reported since the last call.
-    pub fn poll(&self) -> Vec<NetEvent> {
-        self.events.try_iter().collect()
+    pub fn poll(&self) -> Vec<crate::net::ingress::OwnedReceipt<NetEvent>> {
+        self.events.take_turn()
     }
     pub fn stop(&mut self) {
         self.shared.stop.store(true, Ordering::Relaxed);
@@ -1125,12 +1089,11 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: &AtomicBool) {
                     continue;
                 };
                 shared.wait(&counted, &stream);
-                let _ = std::thread::Builder::new()
-                    .name("horizon-lan-conn".into())
-                    .spawn(move || {
-                        WAITING.set(Some(counted.2));
-                        handle(stream, addr, counted);
-                    });
+                // Configuration payload handlers of wasm mods run on this thread.
+                let _ = horizon_guest_stack::spawn("horizon-lan-conn".into(), move || {
+                    WAITING.set(Some(counted.2));
+                    handle(stream, addr, counted);
+                });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(25));
@@ -1169,37 +1132,7 @@ pub(super) fn test_loopback() -> bool {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn channel_messages_register_and_unregister_each_name_once() {
-        let mut channels = Vec::new();
-        let added = super::apply_channels(
-            &mut channels,
-            b"fabric:registry/sync\0voxy:info\0voxy:info\0nocolon\0bad name:x",
-            true,
-        );
-        assert_eq!(added, ["fabric:registry/sync", "voxy:info"]);
-        assert_eq!(channels, ["fabric:registry/sync", "voxy:info"]);
-        let removed = super::apply_channels(&mut channels, b"voxy:info\0other:one", false);
-        assert_eq!(removed, ["voxy:info"]);
-        assert_eq!(channels, ["fabric:registry/sync"]);
-        let many: Vec<u8> = (0..200)
-            .map(|i| format!("m:c{i}"))
-            .collect::<Vec<_>>()
-            .join("\0")
-            .into_bytes();
-        super::apply_channels(&mut channels, &many, true);
-        assert_eq!(channels.len(), super::MAX_CHANNELS);
-        assert_eq!(
-            super::channel_registration("minecraft:register"),
-            Some(true)
-        );
-        assert_eq!(
-            super::channel_registration("minecraft:unregister"),
-            Some(false)
-        );
-        assert_eq!(super::channel_registration("minecraft:brand"), None);
-    }
-
-    #[test]
+    #[ignore = "daily"]
     fn a_local_server_accepts_only_the_requested_loopback_address() {
         let lan = super::Lan::start_with(
             std::sync::Arc::new(super::data::SyncData::empty()),
@@ -1221,10 +1154,25 @@ mod tests {
     use super::*;
     use std::{io::Read, time::Instant};
 
+    #[test]
+    #[ignore = "daily"]
+    fn actor_ids_never_wrap() {
+        let config = NetConfig {
+            announce: false,
+            ..NetConfig::lan(0, "ids".into(), 1)
+        };
+        let lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
+        lan.shared.next.store(u32::MAX - 1, Ordering::Relaxed);
+        assert_eq!(lan.shared.next_id(), Some(u32::MAX - 1));
+        assert_eq!(lan.shared.next_id(), None);
+        assert_eq!(lan.shared.next_id(), None);
+    }
+
     /// Sockets that never say a word each hold a connection thread until their read times out: past
     /// the player limit and [`SPARE_CONNECTIONS`], a new one is closed at once instead of taking one
     /// more thread, and the room comes back as they go.
     #[test]
+    #[ignore = "daily"]
     fn a_flood_of_silent_sockets_is_turned_away() {
         let config = NetConfig {
             announce: false,
@@ -1334,299 +1282,38 @@ mod tests {
         assert!(!hidden.contains("Player"));
     }
 
-    /// The status answer with no hook table installed is the pre-hook one, byte for byte (this
-    /// golden was taken from the code before the `server_status` hook). In its own process: the
-    /// first hook table installed is the process's.
+    /// MinecraftServer.buildPlayerStatus: a player whose client turned off "Allow Server Listings"
+    /// is in the sample as ANONYMOUS_PLAYER_PROFILE (the nil uuid, "Anonymous Player"); turned on
+    /// again, as itself.
     #[test]
-    fn status_json_is_unchanged_with_no_hook_installed() {
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "lan::tests::status_json_is_unchanged_with_no_hook_installed",
-            || {
-                let lan = golden_status_server();
-                assert_eq!(
-                    lan.shared.status_json_for(777),
-                    "{\"description\":\"Golden MOTD\",\"players\":{\"max\":8,\"online\":1,\"sample\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Player\"}]},\"version\":{\"name\":\"26.3\",\"protocol\":777}}"
-                );
-                assert_eq!(lan.shared.status_json(), lan.shared.status_json_for(777));
-                let peer = lan
-                    .shared
-                    .status_json_for_peer(777, 777, MEMORY_ADDRESS)
-                    .expect("no hook table: the answer is sent");
-                assert_eq!(peer, lan.shared.status_json_for(777));
-            },
+    fn a_player_who_allows_no_listing_is_an_anonymous_player_in_the_status_sample() {
+        let config = NetConfig {
+            announce: false,
+            listen: false,
+            ..NetConfig::loopback(0, "Status".into(), 8)
+        };
+        let lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
+        let uuid = 0x1234_5678_9abc_def0_1234_5678_9abc_def0;
+        assert!(lan.shared.try_admit(MEMORY_ADDRESS, uuid, "Shy").is_none());
+        lan.shared.set_listed(uuid, false);
+        let status = lan.shared.status_json();
+        assert!(
+            status.contains(
+                r#""sample":[{"id":"00000000-0000-0000-0000-000000000000","name":"Anonymous Player"}]"#
+            ),
+            "{status}"
         );
-    }
-
-    /// A listener changes every field the hook hands it; the JSON carries the new values, the id of a
-    /// name that remains stays with it, and an added name gets the offline-player id of that name.
-    #[test]
-    fn a_server_status_listener_edits_the_answer() {
-        const PEER: std::net::SocketAddr = std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
-            std::net::Ipv4Addr::LOCALHOST,
-            25565,
-        ));
-        fn listener(
-            address: std::net::SocketAddr,
-            client_protocol: i32,
-            description: &mut String,
-            max_players: &mut i32,
-            online: &mut i32,
-            sample: &mut Vec<String>,
-            version_name: &mut String,
-            protocol: &mut i32,
-            favicon: &mut String,
-            _cancel: &mut bool,
-        ) {
-            assert_eq!(address, PEER, "the peer's address");
-            assert_eq!(client_protocol, 764, "the client's own protocol");
-            assert_eq!(*protocol, 777, "the answer's protocol before the edit");
-            assert_eq!(
-                sample.as_slice(),
-                ["Player"],
-                "the listed names, with no id"
-            );
-            *description = "Edited MOTD".into();
-            *max_players = 42;
-            *online = 7;
-            *version_name = "Edited 1.0".into();
-            *protocol = 999;
-            *favicon = "data:image/png;base64,AAA".into();
-            sample.push("Added".into());
-        }
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "lan::tests::a_server_status_listener_edits_the_answer",
-            || {
-                crate::native_client_hooks::test_hooks::install_server_status(listener);
-                let lan = golden_status_server();
-                let json = lan
-                    .shared
-                    .status_json_for_peer(764, 777, PEER)
-                    .expect("a listener that does not cancel sends the answer");
-                let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-                assert_eq!(value["description"], "Edited MOTD");
-                assert_eq!(value["players"]["max"], 42);
-                assert_eq!(value["players"]["online"], 7);
-                assert_eq!(value["version"]["name"], "Edited 1.0");
-                assert_eq!(value["version"]["protocol"], 999);
-                assert_eq!(value["favicon"], "data:image/png;base64,AAA");
-                let sample = value["players"]["sample"].as_array().unwrap();
-                assert_eq!(sample.len(), 2);
-                assert_eq!(sample[0]["name"], "Player");
-                assert_eq!(sample[0]["id"], "00000000-0000-0000-0000-000000000001");
-                assert_eq!(sample[1]["name"], "Added");
-                assert_eq!(
-                    sample[1]["id"],
-                    uuid_string(horizon_protocol::crypto::offline_uuid("Added"))
-                );
-            },
+        assert!(!status.contains("Shy"), "{status}");
+        assert!(!status.contains("12345678-9abc-def0"), "{status}");
+        assert!(status.contains(r#""online":1"#), "{status}");
+        lan.shared.set_listed(uuid, true);
+        let status = lan.shared.status_json();
+        assert!(
+            status.contains(
+                r#""sample":[{"id":"12345678-9abc-def0-1234-56789abcdef0","name":"Shy"}]"#
+            ),
+            "{status}"
         );
-    }
-
-    /// A listener that cancels closes the status request unanswered, so no JSON is built.
-    #[test]
-    fn a_server_status_listener_can_cancel_the_ping() {
-        fn listener(
-            _address: std::net::SocketAddr,
-            _client_protocol: i32,
-            _description: &mut String,
-            _max_players: &mut i32,
-            _online: &mut i32,
-            _sample: &mut Vec<String>,
-            _version_name: &mut String,
-            _protocol: &mut i32,
-            _favicon: &mut String,
-            cancel: &mut bool,
-        ) {
-            *cancel = true;
-        }
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "lan::tests::a_server_status_listener_can_cancel_the_ping",
-            || {
-                crate::native_client_hooks::test_hooks::install_server_status(listener);
-                let lan = golden_status_server();
-                assert_eq!(
-                    lan.shared.status_json_for_peer(777, 777, MEMORY_ADDRESS),
-                    None
-                );
-            },
-        );
-    }
-
-    /// The shuffle draws the same numbers in the same order whether or not a listener is installed.
-    #[test]
-    fn the_status_shuffle_draws_the_same_with_and_without_a_listener() {
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "lan::tests::the_status_shuffle_draws_the_same_with_and_without_a_listener",
-            || {
-                let lan = Lan::start_with(
-                    Arc::new(data::SyncData::empty()),
-                    NetConfig {
-                        announce: false,
-                        listen: false,
-                        ..NetConfig::loopback(0, "Draws".into(), 8)
-                    },
-                )
-                .unwrap();
-                for (i, name) in ["A", "B", "C", "D"].iter().enumerate() {
-                    assert!(
-                        lan.shared
-                            .try_admit(MEMORY_ADDRESS, 10 + i as u128, name)
-                            .is_none()
-                    );
-                }
-                let start = *lan.shared.random.lock().unwrap();
-                let without = lan
-                    .shared
-                    .status_json_for_peer(777, 777, MEMORY_ADDRESS)
-                    .unwrap();
-                let drawn_without = *lan.shared.random.lock().unwrap();
-                assert_ne!(start, drawn_without, "the shuffle drew");
-                *lan.shared.random.lock().unwrap() = start;
-                crate::native_client_hooks::test_hooks::install_server_status(
-                    |_, _, _, _, _, _, _, _, _, _| {},
-                );
-                let with = lan
-                    .shared
-                    .status_json_for_peer(777, 777, MEMORY_ADDRESS)
-                    .unwrap();
-                assert_eq!(*lan.shared.random.lock().unwrap(), drawn_without);
-                assert_eq!(with, without);
-            },
-        );
-    }
-
-    /// A server in the fixed state the status goldens use: MOTD "Golden MOTD", 8 players, one on.
-    fn golden_status_server() -> Lan {
-        let lan = Lan::start_with(
-            Arc::new(data::SyncData::empty()),
-            NetConfig {
-                announce: false,
-                listen: false,
-                ..NetConfig::loopback(0, "Golden MOTD".into(), 8)
-            },
-        )
-        .unwrap();
-        assert!(lan.shared.try_admit(MEMORY_ADDRESS, 1, "Player").is_none());
-        lan
-    }
-    /// A WebSocket client's first bytes: the upgrade, with `extra` headers, then `packets`
-    /// framed as Minecraft frames them and sent in client frames.
-    fn websocket_opening(extra: &str, packets: &[Vec<u8>]) -> Vec<u8> {
-        use event_horizon_websocket::codec::{self, Role};
-        let mut sent = format!(
-            "GET /play HTTP/1.1\r\nHost: example.net\r\nUpgrade: websocket\r\n\
-             Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
-             Sec-WebSocket-Version: 13\r\n{extra}\r\n"
-        )
-        .into_bytes();
-        for body in packets {
-            let mut framed = Vec::new();
-            horizon_protocol::buf::write_varint(&mut framed, body.len() as i32);
-            framed.extend_from_slice(body);
-            codec::encode_binary(&mut sent, &framed, Role::Client);
-        }
-        sent
-    }
-
-    fn websocket_door(
-        properties: HashMap<String, String>,
-    ) -> Option<Arc<dyn horizon_transport::Upgrade>> {
-        event_horizon_websocket::install();
-        horizon_transport::Registry::global().door(&properties)
-    }
-
-    /// Behind a proxy that this server trusts, the player's address is the one the proxy's
-    /// handshake names, and the login's gate (bans, the whitelist) sees it; trusting nobody,
-    /// the address is the proxy's own.
-    #[test]
-    fn a_trusted_proxy_names_the_player_behind_it() {
-        use horizon_protocol::packets::{handshake, login};
-        use std::io::{Read, Write};
-        let opening = websocket_opening(
-            "X-Forwarded-For: 198.51.100.1, 203.0.113.5\r\n",
-            &[
-                handshake::Serverbound::Intention(handshake::Intention {
-                    protocol: PROTOCOL_VERSION,
-                    host: "example.net".into(),
-                    port: 443,
-                    intent: handshake::LOGIN,
-                })
-                .encode(),
-                login::Serverbound::Hello(login::ServerHello {
-                    name: "Alex".into(),
-                    uuid: 7,
-                })
-                .encode(),
-            ],
-        );
-        for (trusted, player) in [("127.0.0.0/8, ::1", "203.0.113.5"), ("", "127.0.0.1")] {
-            let seen = Arc::new(Mutex::new(None));
-            let into = seen.clone();
-            let properties = HashMap::from([(
-                event_horizon_websocket::TRUSTED_PROXIES.to_owned(),
-                trusted.to_owned(),
-            )]);
-            let config = NetConfig {
-                announce: false,
-                door: websocket_door(properties),
-                gate: Some(Arc::new(move |address: SocketAddr, _, _| {
-                    *into.lock().unwrap() = Some(address.ip().to_string());
-                    Some(horizon_protocol::text::translatable(
-                        "multiplayer.disconnect.banned",
-                        &[],
-                    ))
-                })),
-                ..NetConfig::lan(0, "Proxy".into(), 8)
-            };
-            let lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
-            let mut s = TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, lan.port)).unwrap();
-            s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-            s.write_all(&opening).unwrap();
-            let mut answer = Vec::new();
-            let _ = s.read_to_end(&mut answer);
-            assert!(answer.starts_with(b"HTTP/1.1 101 "), "{answer:?}");
-            // The refusal comes back inside a server frame: binary, unmasked.
-            let head = answer.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
-            assert_eq!(answer[head], 0x82);
-            assert_eq!(seen.lock().unwrap().as_deref(), Some(player));
-        }
-    }
-
-    /// A browser or a health check that asks for a page is told this is no website; with the
-    /// door off, an HTTP request is a broken Minecraft handshake and is closed unanswered.
-    #[test]
-    fn an_http_request_that_isnt_an_upgrade_is_refused() {
-        use std::io::{Read, Write};
-        for (websocket, answered) in [(true, true), (false, false)] {
-            let properties = if websocket {
-                HashMap::new()
-            } else {
-                HashMap::from([(
-                    event_horizon_websocket::WEBSOCKET.to_owned(),
-                    "false".to_owned(),
-                )])
-            };
-            let config = NetConfig {
-                announce: false,
-                door: websocket_door(properties),
-                ..NetConfig::lan(0, "Page".into(), 8)
-            };
-            let lan = Lan::start_with(Arc::new(data::SyncData::empty()), config).unwrap();
-            let mut s = TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, lan.port)).unwrap();
-            s.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
-            // Longer than the 71-byte frame its "G" reads as, so that the door being off doesn't
-            // wait for the rest.
-            let page = "GET / HTTP/1.1\r\nHost: example.net\r\nUser-Agent: Mozilla/5.0 (Macintosh)\r\n\
-                        Accept: text/html\r\n\r\n";
-            assert!(page.len() > 72);
-            s.write_all(page.as_bytes()).unwrap();
-            let mut answer = Vec::new();
-            let _ = s.read_to_end(&mut answer);
-            assert_eq!(answer.starts_with(b"HTTP/1.1 426 "), answered, "{answer:?}");
-            if !answered {
-                assert!(answer.is_empty(), "{answer:?}");
-            }
-        }
     }
 
     /// One public address takes at most [`PER_ADDRESS`] places, its own coming back as they end;
@@ -1657,6 +1344,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "daily"]
     fn a_full_server_closes_the_connection_that_waited_longest() {
         use std::io::Read;
         // With a log writer, as on a dedicated server: making room logs, and must not deadlock.

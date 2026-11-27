@@ -16,7 +16,7 @@ use std::time::Instant;
 
 fn rows(selector: &super::goals::GoalSelector) -> Vec<GoalRow> {
     selector
-        .entries()
+        .entries_with_flags()
         .map(|(priority, name, running, flags)| GoalRow {
             priority,
             name,
@@ -84,4 +84,32 @@ pub fn observe(m: &Mob, w: &MobWorld) {
             taken: Instant::now(),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mobs::sensor_scan_tests::kind;
+    use crate::mobs::world::with_test_world;
+    use horizon_core::geometry::Vec3;
+
+    /// The AI step's tap stores a snapshot for a watched mob and nothing for
+    /// an unwatched one. Needs the extracted vanilla data (`HORIZON_TEST_RESOURCES`).
+    #[test]
+    #[ignore = "daily"]
+    fn the_ai_tap_snapshots_only_a_watched_mob() {
+        let id = 900_001;
+        with_test_world(&[], |w, _| {
+            reset();
+            let m = Mob::new(id, kind(), Vec3::new(0.5, 64.0, 0.5), 0.0);
+            observe(&m, w);
+            assert!(brain_of(id).is_none(), "an unwatched mob stores nothing");
+            add(&[id], View::Goals);
+            observe(&m, w);
+            let snap = brain_of(id).expect("a watched mob stores a snapshot");
+            assert_eq!(snap.kind, "minecraft:cow");
+            assert_eq!(snap.position, [0.5, 64.0, 0.5]);
+            reset();
+        });
+    }
 }

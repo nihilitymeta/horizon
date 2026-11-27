@@ -1,38 +1,35 @@
-//! Embeds Horizon's icon (`packaging/icons/horizon.ico`) in the Windows executable, as icon
-//! resource 1: Explorer and the task bar show it, and the window takes it as its icon.
-//! The optional Segment Heap manifest is embedded in the same resource compilation.
+//! Gives the Windows executable Horizon's icon and its stack, as horizon-client's
+//! (`packaging/windows/exe.rs`), and writes the Lua host's package beside the executable, where
+//! the loader finds the built-in mod.
+use std::env;
+use std::path::PathBuf;
+
+#[path = "../../packaging/windows/exe.rs"]
+mod windows_exe;
+
+#[allow(dead_code)]
+#[path = "../event-horizon-lua/src/package.rs"]
+mod lua_package;
+
+#[allow(dead_code)]
+#[path = "../event-horizon-dev-tools/src/package.rs"]
+mod dev_tools_package;
+
 fn main() {
-    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
-    let ico = format!("{dir}/../../packaging/icons/horizon.ico");
-    println!("cargo:rerun-if-changed={ico}");
-    // The game's main thread gets 8 MB of stack on Windows as on macOS and Linux (Windows gives 1
-    // MB): splitscreen builds a joining player's `Game`, ~67 KB, deep in the event loop.
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        let arg = match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
-            Ok("msvc") => "/STACK:8388608",
-            _ => "-Wl,--stack,8388608",
-        };
-        println!("cargo:rustc-link-arg-bin=horizon-client={arg}");
-    }
-    #[cfg(windows)]
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        let mut resource = winresource::WindowsResource::new();
-        resource.set_icon(&ico);
-        if std::env::var_os("CARGO_FEATURE_WINDOWS_SEGMENT_HEAP").is_some() {
-            let manifest = format!("{dir}/../horizon-client/windows-segment-heap.manifest");
-            println!("cargo:rerun-if-changed={manifest}");
-            resource.set_manifest_file(&manifest);
-        }
-        if let Err(e) = resource.compile() {
-            // The GNU toolchain's `windres` (the launcher's mod builds use it) can't take a path
-            // with a space, and a Windows user name often has one: such a build goes on without
-            // the icon. Release builds run in CI, where the icon stays required.
-            if std::env::var_os("CI").is_some() {
-                panic!("embedding Windows resources: {e}");
-            }
-            println!(
-                "cargo:warning=building without Horizon's icon: embedding Windows resources failed: {e}"
-            );
-        }
-    }
+    windows_exe::resources("event-horizon");
+    println!("cargo:rerun-if-changed=../event-horizon-lua/src/package.rs");
+    println!("cargo:rerun-if-changed=../event-horizon-dev-tools/src/package.rs");
+    // OUT_DIR is `<target>/<profile>/build/<package>-<hash>/out`, or with `--target` under
+    // `<target>/<triple>/`; the executable goes in the profile folder, four levels up.
+    let out = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by cargo"));
+    let profile = out
+        .ancestors()
+        .nth(3)
+        .expect("OUT_DIR has a profile folder above it");
+    let dir = profile.join("horizon-native-mods").join(lua_package::ID);
+    lua_package::write_to(&dir).expect("the Lua host's package can be written");
+    let dev_dir = profile
+        .join("horizon-native-mods")
+        .join(dev_tools_package::ID);
+    dev_tools_package::write_to(&dev_dir).expect("the developer tools' package can be written");
 }

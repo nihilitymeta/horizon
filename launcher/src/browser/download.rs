@@ -13,13 +13,13 @@ const HOSTS: [&str; 5] = [
     "https://cdn.modrinth.com/",
     "https://edge.forgecdn.net/",
     "https://mediafilez.forgecdn.net/",
-    horizon_mods::index::FILE_HOST,
+    horizon_platform::mod_package::index::FILE_HOST,
     // The registry's files at their address before the move to horizon-rust (GitHub redirects it).
     "https://github.com/ludovic111/horizon-mods/releases/download/",
 ];
 /// `https://github.com/<owner>/<repo>/releases/download/<tag>/<name>`: a release asset of a mod's
 /// own repository, which the registry's index lists once its release passed the registry's checks
-/// (docs/api/mod-index.md). Only the address is vouched for here; the index's SHA-256 is what
+/// (docs/modding/src/reference/registry-index.md). Only the address is vouched for here; the index's SHA-256 is what
 /// pins the bytes, and [`save`] refuses any other.
 pub fn github_release_asset(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://github.com/") else {
@@ -50,8 +50,10 @@ pub(super) fn agent(url: &str) -> ureq::Agent {
     horizon_port_pack::net::keep("browser", spec.as_deref(), |proxy| {
         let builder = ureq::AgentBuilder::new()
             .user_agent(&format!(
-                "horizon-rust/horizon horizon-launcher/{} (github.com/horizon-rust/horizon)",
-                crate::backend::VERSION
+                "{} horizon-launcher/{} (github.com/{})",
+                crate::backend::REPO,
+                crate::backend::VERSION,
+                crate::backend::REPO
             ))
             .timeout_connect(std::time::Duration::from_secs(15))
             .timeout_read(std::time::Duration::from_secs(60));
@@ -66,7 +68,7 @@ pub(super) fn agent(url: &str) -> ureq::Agent {
 pub fn refuse(file: &FileRef) -> Option<String> {
     if !HOSTS.iter().any(|h| file.url.starts_with(h)) && !github_release_asset(&file.url) {
         return Some(format!(
-            "{} isn't on Modrinth's, CurseForge's or Horizon's file servers, or a GitHub release.",
+            "{} isn't on Modrinth's, CurseForge's or Event Horizon's file servers, or a GitHub release.",
             file.url
         ));
     }
@@ -161,9 +163,7 @@ pub(super) fn save_from_anywhere(
             }
             done += n as u64;
             if done > MAX || (file.size > 0 && done > file.size) {
-                return Err(
-                    crate::i18n::tr("The download is larger than its source says.").to_string(),
-                );
+                return Err("The download is larger than its source says.".to_string());
             }
             hasher.update(&buf[..n]);
             out.write_all(&buf[..n]).map_err(|e| e.to_string())?;

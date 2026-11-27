@@ -105,7 +105,8 @@ impl Launcher {
                                 None => this.location_target = Some(path),
                                 Some(Ok(_)) => {
                                     this.location_error = Some(
-                                        tr("Choose an empty folder for Horizon's data.").into(),
+                                        tr("Choose an empty folder for Event Horizon's data.")
+                                            .into(),
                                     );
                                 }
                                 Some(Err(error)) => this.location_picker_error(error.to_string()),
@@ -223,18 +224,18 @@ impl Launcher {
                 ),
                 &t,
             ))
-            .child(text(theme::CAPTION).text_color(t.muted).child(tr(
+            .child(text(theme::CAPTION).px(px(if t.glass { 14. } else { 0. })).text_color(t.muted).child(tr(
                 "Moves all launcher, game and build data, including settings, worlds, instances and installed versions. Choose an empty folder with enough free space.",
             ).to_string()))
-            .child(text(theme::CAPTION).text_color(t.muted).child(tr(
+            .child(text(theme::CAPTION).px(px(if t.glass { 14. } else { 0. })).text_color(t.muted).child(tr(
                 "The launcher closes while your data is copied and verified, then reopens. Old folders are kept and still use disk space until you verify the move and remove them yourself.",
             ).to_string()))
-            .children(blocked.map(|message| text(theme::CAPTION).text_color(t.warn).child(message)))
+            .children(blocked.map(|message| text(theme::CAPTION).px(px(if t.glass { 14. } else { 0. })).text_color(t.warn).child(message)))
             .children(self.location_note.as_ref().map(|message| {
-                text(theme::CAPTION).text_color(t.ink).child(message.clone())
+                text(theme::CAPTION).px(px(if t.glass { 14. } else { 0. })).text_color(t.ink).child(message.clone())
             }))
             .children(self.location_error.as_ref().map(|message| {
-                text(theme::CAPTION).text_color(t.danger).child(message.clone())
+                text(theme::CAPTION).px(px(if t.glass { 14. } else { 0. })).text_color(t.danger).child(message.clone())
             }));
         if horizon_launcher::data_location::startup_error().is_some() {
             body = body.child(

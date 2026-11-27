@@ -3,6 +3,7 @@
 //! translation of rebound physical keys back to the default keys the game
 //! logic listens for.
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{event::MouseButton, keyboard::KeyCode};
 
 /// (name, default key, category) in Options.keyMappings order.
@@ -34,11 +35,6 @@ pub const MAPPINGS: &[(&str, &str, &str)] = &[
     ("key.togglePerspective", "key.keyboard.f5", "misc"),
     ("key.smoothCamera", "key.keyboard.unknown", "misc"),
     ("key.fullscreen", "key.keyboard.f11", "misc"),
-    ("key.zoom", "key.keyboard.c", "misc"),
-    ("key.minimap", "key.keyboard.m", "misc"),
-    // Event Horizon's dev windows: frees the mouse for them and takes it
-    // back; listed only in a game that has them ([`show_dev_tools_key`]).
-    ("key.devTools", "key.keyboard.f8", "misc"),
     ("key.spectatorOutlines", "key.keyboard.unknown", "spectator"),
     ("key.spectatorHotbar", "key.mouse.middle", "spectator"),
     ("key.swapOffhand", "key.keyboard.f", "inventory"),
@@ -79,27 +75,28 @@ pub const MAPPINGS: &[(&str, &str, &str)] = &[
     ("key.debug.lightmapTexture", "key.keyboard.4", "debug"),
     ("key.debug.improvedTransparency", "key.keyboard.x", "debug"),
 ];
-static DEV_TOOLS_KEY_LISTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// The game has the dev windows: Key Binds lists their key.
-pub fn show_dev_tools_key(on: bool) {
-    DEV_TOOLS_KEY_LISTED.store(on, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Whether Key Binds lists the mapping `name`: every one, but the dev
-/// windows' key only in a game that has them. All are saved either way.
-pub fn listed(name: &str) -> bool {
-    name != "key.devTools" || DEV_TOOLS_KEY_LISTED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Horizon's own key mappings: bound in Controls like the vanilla ones, but kept in
 /// `horizon-extras.txt` (`emoteKey`), never in `options.txt`, which stays exactly vanilla's
 /// (`MAPPINGS` is what the options parity harness compares with the pinned client).
 pub const HORIZON_MAPPINGS: &[(&str, &str, &str)] = &[
     // The emote wheel (docs/cosmetics.md), on a key vanilla leaves free.
     ("key.emote", "key.keyboard.b", "multiplayer"),
+    // Frees the mouse in the developer tools' windows (docs/dev-tools.md); listed on Key Binds
+    // only in a game that has them (`show_dev_tools_key`).
+    ("key.devTools", "key.keyboard.f8", "misc"),
 ];
+/// Whether the developer tools' windows exist in this game: `key.devTools` is listed on Key
+/// Binds only then (`listed`).
+static DEV_TOOLS_KEY_LISTED: AtomicBool = AtomicBool::new(false);
+/// Lists `key.devTools` on Key Binds (on) or hides it (off).
+pub fn show_dev_tools_key(on: bool) {
+    DEV_TOOLS_KEY_LISTED.store(on, Ordering::Relaxed);
+}
+/// Whether Key Binds lists the mapping `name`: every one except `key.devTools`, until
+/// `show_dev_tools_key(true)`.
+pub fn listed(name: &str) -> bool {
+    name != "key.devTools" || DEV_TOOLS_KEY_LISTED.load(Ordering::Relaxed)
+}
 /// Every mapping the game binds: vanilla's in `Options.keyMappings` order, then Horizon's.
 pub fn all_mappings() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> {
     MAPPINGS.iter().chain(HORIZON_MAPPINGS)
@@ -312,7 +309,10 @@ pub fn mouse_button(name: &str) -> Option<MouseButton> {
         _ => return None,
     })
 }
-pub use horizon_client_core::key_display::display_name;
+pub use horizon_client_core::key_display::{
+    clear_action_bindings, clear_action_resolver, display_name, replace_action_bindings,
+    reset_action_bindings, set_action_binding, set_action_resolver,
+};
 
 /// A key event: what the layout writes on its key, without modifiers, names
 /// that key from now on (`key_display::learn_layout`), so an AZERTY player's
@@ -331,6 +331,55 @@ pub fn learn_layout(event: &winit::event::KeyEvent) {
         Key::Character(text) => learn(name, &text),
         Key::Dead(Some(c)) => learn(name, c.encode_utf8(&mut [0; 4])),
         _ => {}
+    }
+}
+
+/// Vanilla's name for the key the layout produced (`InputEvent.Key.getKeycode`):
+/// `layout` is the event's key without modifiers. A letter or digit names its
+/// own key, so AZERTY's key at QWERTY's W gives `key.keyboard.z`; a named key
+/// (Enter, arrows, Shift) keeps its place on every layout, so it gets the
+/// physical key's name. `None` for any other character and for a physical key
+/// vanilla doesn't name. A dead key arrives as its character (winit's key
+/// without modifiers), so an accent key gives `None`, not a dead-key value.
+pub fn layout_key_name(
+    physical: winit::keyboard::PhysicalKey,
+    layout: &winit::keyboard::Key,
+) -> Option<&'static str> {
+    use winit::keyboard::{Key, PhysicalKey};
+    match layout {
+        Key::Character(text) => {
+            let mut chars = text.chars();
+            let c = chars.next().filter(|c| c.is_ascii_alphanumeric())?;
+            if chars.next().is_some() {
+                return None;
+            }
+            let c = c.to_ascii_lowercase();
+            KEYS.iter().map(|(n, _)| *n).find(|n| {
+                n.strip_prefix("key.keyboard.")
+                    .is_some_and(|rest| rest.chars().eq([c]))
+            })
+        }
+        Key::Named(_) => match physical {
+            PhysicalKey::Code(code) => key_name(code),
+            PhysicalKey::Unidentified(_) => None,
+        },
+        _ => None,
+    }
+}
+
+/// A code telling physical keys apart, named or not (`InputEvent.Key.getScanCode`):
+/// the platform scan code, or the native code winit reports for a key it
+/// doesn't identify; 0 when there is neither. Stable within a platform only.
+pub fn raw_key_code(physical: winit::keyboard::PhysicalKey) -> u32 {
+    use winit::keyboard::{NativeKeyCode, PhysicalKey};
+    use winit::platform::scancode::PhysicalKeyExtScancode;
+    match physical {
+        PhysicalKey::Unidentified(native) => match native {
+            NativeKeyCode::Android(c) | NativeKeyCode::Xkb(c) => c,
+            NativeKeyCode::MacOS(c) | NativeKeyCode::Windows(c) => c.into(),
+            NativeKeyCode::Unidentified => 0,
+        },
+        PhysicalKey::Code(_) => physical.to_scancode().unwrap_or(0),
     }
 }
 
@@ -386,6 +435,12 @@ impl KeyBinds {
             self.keys.insert(n, key.to_owned());
         }
     }
+    /// Publish these bindings as the ones `keybind` text components show
+    /// (`KeybindResolver`). Only the active set calls this: on load and after
+    /// the options change it.
+    pub fn sync_action_bindings(&self) {
+        replace_action_bindings(self.keys.iter().map(|(n, d)| (*n, d.as_str())));
+    }
     /// The bindings `options.txt` holds: vanilla's mappings only.
     pub fn saved(&self) -> Vec<(&'static str, String)> {
         MAPPINGS
@@ -432,7 +487,10 @@ impl KeyBinds {
     /// (`KeyboardHandler.handleDebugKeys`, `debug_keys.rs` reads the physical
     /// key and the binding itself); their defaults (A, S, D, T, L, 1 to 4...)
     /// would otherwise turn the key back into its old gameplay meaning.
-    fn translated_mappings<'a>(&'a self, key: &'a str) -> impl Iterator<Item = &'static str> + 'a {
+    pub fn translated_mappings<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> impl Iterator<Item = &'static str> + 'a {
         all_mappings()
             .filter(|m| m.2 != "debug")
             .map(|m| m.0)
@@ -551,18 +609,6 @@ impl KeyBinds {
 
 #[cfg(test)]
 mod tests {
-
-    #[test]
-    fn the_dev_windows_key_is_listed_only_in_a_game_that_has_them() {
-        assert_eq!(KeyBinds::default_of("key.devTools"), "key.keyboard.f8");
-        assert!(listed("key.zoom"));
-        show_dev_tools_key(false);
-        assert!(!listed("key.devTools"));
-        show_dev_tools_key(true);
-        assert!(listed("key.devTools"));
-        show_dev_tools_key(false);
-    }
-
     use super::*;
 
     #[test]
@@ -702,5 +748,58 @@ mod tests {
     fn display_names() {
         assert_eq!(display_name("key.keyboard.w").plain(), "W");
         assert_eq!(display_name("key.keyboard.slash").plain(), "/");
+    }
+    #[test]
+    fn only_a_synced_set_changes_keybind_display() {
+        let mut k = KeyBinds::default();
+        k.set("key.forward", "key.keyboard.up");
+        k.sync_action_bindings();
+        assert_eq!(display_name("key.forward").plain(), "key.keyboard.up");
+        let mut inactive = KeyBinds::default();
+        inactive.set("key.forward", "key.keyboard.x");
+        assert_eq!(display_name("key.forward").plain(), "key.keyboard.up");
+        clear_action_bindings();
+    }
+
+    #[test]
+    fn a_key_event_names_the_layout_key_and_tells_unnamed_keys_apart() {
+        use winit::keyboard::{Key, NamedKey, NativeKeyCode, PhysicalKey};
+        // AZERTY: the key at QWERTY's W writes z.
+        let w = PhysicalKey::Code(KeyCode::KeyW);
+        assert_eq!(key_name(KeyCode::KeyW), Some("key.keyboard.w"));
+        let z = layout_key_name(w, &Key::Character("Z".into()));
+        assert_eq!(z, Some("key.keyboard.z"));
+        let enter = PhysicalKey::Code(KeyCode::Enter);
+        let named = layout_key_name(enter, &Key::Named(NamedKey::Enter));
+        assert_eq!(named, Some("key.keyboard.enter"));
+        assert_eq!(layout_key_name(w, &Key::Character("é".into())), None);
+        assert_eq!(layout_key_name(w, &Key::Dead(Some('^'))), None);
+        // Two keys vanilla doesn't name share a name but not a code.
+        let a = PhysicalKey::Unidentified(NativeKeyCode::Windows(0x6a));
+        let b = PhysicalKey::Unidentified(NativeKeyCode::Windows(0x6b));
+        assert_eq!((raw_key_code(a), raw_key_code(b)), (0x6a, 0x6b));
+    }
+
+    #[test]
+    fn the_dev_tools_key_is_f8_and_listed_only_with_the_dev_windows() {
+        assert_eq!(KeyBinds::default_of("key.devTools"), "key.keyboard.f8");
+        assert!(listed("key.zoom"));
+        show_dev_tools_key(false);
+        assert!(!listed("key.devTools"));
+        show_dev_tools_key(true);
+        assert!(listed("key.devTools"));
+        show_dev_tools_key(false);
+        assert!(!listed("key.devTools"));
+    }
+
+    #[test]
+    fn the_dev_tools_key_stays_out_of_options_txt() {
+        // `options.txt` holds vanilla's table only (`saved`), as the options parity harness expects.
+        assert!(
+            KeyBinds::default()
+                .saved()
+                .iter()
+                .all(|(n, _)| *n != "key.devTools")
+        );
     }
 }

@@ -22,8 +22,20 @@ impl MotionWorld<'_, '_, '_> {
             .damage
             .id(source)
             .ok_or("missing environment damage type")?;
-        self.player
-            .hurt(self.health, self.scene.health_rules, id, damage)?;
+        let rules = self.scene.health_rules;
+        self.player.hurt(
+            &mut crate::health::DamageLevel::of(
+                self.scene,
+                self.assets.registry,
+                self.tag_items,
+                self.block_registries,
+                self.damage_hooks,
+            ),
+            self.health,
+            rules,
+            id,
+            damage,
+        )?;
         Ok(())
     }
     pub(super) fn tick_remaining_fire(&mut self) -> Result<()> {
@@ -39,11 +51,7 @@ impl MotionWorld<'_, '_, '_> {
             }
             self.player.fire_ticks -= 1;
         }
-        let extinguishes = self
-            .player
-            .mod_fluid()
-            .is_some_and(|m| m.fluid.info().entity.can_extinguish);
-        if self.player.fluids.was_touching_water || extinguishes {
+        if self.player.fluids.was_touching_water {
             self.player.fire_ticks = self.player.fire_ticks.min(0);
         }
         Ok(())
@@ -60,8 +68,7 @@ impl MotionWorld<'_, '_, '_> {
             .registry
             .state(self.block(eye))
             .is_some_and(|state| state.name == "minecraft:bubble_column");
-        let submerged = (self.player.is_eye_in_fluid(WATER) || self.player.eye_in_drowning_fluid())
-            && !bubble_column;
+        let submerged = self.player.is_eye_in_fluid(WATER) && !bubble_column;
         let drowns = submerged
             && !self.player.status.water_breathing
             && !self.player.status.breath_of_the_nautilus
@@ -100,17 +107,26 @@ impl MotionWorld<'_, '_, '_> {
         let breath = if self.player.client_side {
             vanilla
         } else {
-            breathe(self.player.entity_id as u32, "minecraft:player", vanilla)
+            breathe(
+                self.loop_context,
+                self.player.entity_id as u32,
+                "minecraft:player",
+                vanilla,
+            )
         };
-        // LivingDrownEvent, likewise.
+        // LivingDrownEvent, likewise. A player's getMaxAirSupply is Entity's 300.
         if let Some(drowning) = drown(
+            self.loop_context,
             self.player.entity_id as u32,
             "minecraft:player",
             &mut self.player.air,
+            300,
             breath,
             !self.player.client_side,
         ) {
-            self.player.events.push(MotionEvent::Drown);
+            self.player
+                .events
+                .push(MotionEvent::Drown(drowning.bubbles));
             if let Some(damage) = drowning.damage {
                 self.player.events.push(MotionEvent::Health(
                     crate::health::HealthEvent::DrownDamage(damage),
@@ -119,82 +135,10 @@ impl MotionWorld<'_, '_, '_> {
             }
         }
         if self.player.is_in_lava() {
-            self.ignite_player_for(300, "lava")?;
+            self.player.ignite_for_ticks(300)?;
             self.environment_hurt("minecraft:lava", 4.0)?;
         }
         Ok(())
-    }
-    /// `Entity.igniteForTicks` for the player through the `entity_ignite`
-    /// hook: `ticks` is the fire the cause asks for and what a listener leaves
-    /// replaces it, as `Entity.igniteForTicks` takes it (a changed value is
-    /// clamped to `0..=72000`), while a cancel or 0 leaves the player's timer
-    /// as it was. Told on the server's copy only: the window's predicted tick
-    /// and an anticheat replay are not ignitions.
-    pub(super) fn ignite_player_for(&mut self, ticks: i32, cause: &str) -> Result<()> {
-        if self.player.client_side || self.player.replaying {
-            return self.player.ignite_for_ticks(ticks);
-        }
-        let mut chosen = ticks;
-        let mut cancel = false;
-        let told = crate::native_client_hooks::ignite(
-            self.player.entity_id as u32,
-            "minecraft:player",
-            cause,
-            ticks,
-            &mut chosen,
-            &mut cancel,
-        );
-        if !told {
-            return self.player.ignite_for_ticks(ticks);
-        }
-        if cancel {
-            return Ok(());
-        }
-        let chosen = if chosen == ticks {
-            ticks
-        } else {
-            chosen.clamp(0, 72_000)
-        };
-        if chosen == 0 {
-            return Ok(());
-        }
-        self.player.ignite_for_ticks(chosen)
-    }
-    /// `Entity.setRemainingFireTicks` for the fire block's ramp through the
-    /// `entity_ignite` hook: the hook is asked with the ticks `ignite_contact`
-    /// made (its random draw was already taken, so the draw order is
-    /// vanilla's), and a listener's ticks replace the set. A listener that
-    /// leaves the value alone keeps vanilla's, negative ramp steps included.
-    pub(super) fn burn_player_for(&mut self, ticks: i32, cause: &str) {
-        if self.player.client_side || self.player.replaying {
-            self.player.set_remaining_fire_ticks(ticks);
-            return;
-        }
-        let mut chosen = ticks;
-        let mut cancel = false;
-        let told = crate::native_client_hooks::ignite(
-            self.player.entity_id as u32,
-            "minecraft:player",
-            cause,
-            ticks,
-            &mut chosen,
-            &mut cancel,
-        );
-        if !told {
-            self.player.set_remaining_fire_ticks(ticks);
-            return;
-        }
-        if cancel {
-            return;
-        }
-        let chosen = if chosen == ticks {
-            ticks
-        } else {
-            chosen.clamp(0, 72_000)
-        };
-        if chosen != 0 {
-            self.player.set_remaining_fire_ticks(chosen);
-        }
     }
     /// What a server's `LivingEntity.baseTick` adds for a player it hosts:
     /// the void (`Entity.checkBelowWorld`, 4 a tick, which creative players
@@ -207,8 +151,20 @@ impl MotionWorld<'_, '_, '_> {
                 .damage
                 .id("minecraft:out_of_world")
                 .ok_or("missing environment damage type")?;
-            self.player
-                .hurt(self.health, self.scene.health_rules, id, 4.0)?;
+            let rules = self.scene.health_rules;
+            self.player.hurt(
+                &mut crate::health::DamageLevel::of(
+                    self.scene,
+                    self.assets.registry,
+                    self.tag_items,
+                    self.block_registries,
+                    self.damage_hooks,
+                ),
+                self.health,
+                rules,
+                id,
+                4.0,
+            )?;
         }
         if in_wall {
             self.environment_hurt("minecraft:in_wall", 1.0)?;
@@ -231,7 +187,7 @@ impl MotionWorld<'_, '_, '_> {
                     &mut self.scene.random,
                     multiplier,
                 );
-                self.burn_player_for(ticks, "fire_block");
+                self.player.set_remaining_fire_ticks(ticks);
             }
             self.environment_hurt("minecraft:in_fire", damage)?;
         } else if self.player.fire_ticks <= 0 {
@@ -290,9 +246,7 @@ pub(crate) fn cactus_contact(
 }
 impl LivingFluidWorld for MotionWorld<'_, '_, '_> {
     fn in_water(&mut self) -> Result<bool> {
-        // A mod fluid moves the player as water (NeoForge's `FluidType.move`
-        // left to the default).
-        Ok(self.player.fluids.was_touching_water || self.player.mod_fluid().is_some())
+        Ok(self.player.fluids.was_touching_water)
     }
     fn sprinting(&mut self) -> Result<bool> {
         Ok(self.player.sprinting)
@@ -307,11 +261,11 @@ impl LivingFluidWorld for MotionWorld<'_, '_, '_> {
         Ok(self.player.status.dolphins_grace)
     }
     fn fluid_height(&mut self, tag: TravelFluidTag) -> Result<f64> {
-        if tag == TravelFluidTag::Lava {
-            return Ok(self.player.fluid_height(LAVA));
-        }
-        let modded = self.player.mod_fluid().map_or(0.0, |m| m.height);
-        Ok(self.player.fluid_height(WATER).max(modded))
+        Ok(self.player.fluid_height(if tag == TravelFluidTag::Lava {
+            LAVA
+        } else {
+            WATER
+        }))
     }
     fn fluid_jump_threshold(&mut self) -> Result<f64> {
         Ok(self.player.fluid_jump_threshold())
@@ -334,6 +288,24 @@ impl PlayerMotion {
     }
 }
 impl MotionWorld<'_, '_, '_> {
+    /// `Player.getBlockSpeedFactor` (#16176): soul sand and honey slow the
+    /// player's move only while it neither flies nor glides.
+    pub(super) fn player_block_speed_factor(&mut self) -> Result<f32> {
+        let efficiency = self.player.attribute("minecraft:movement_efficiency")? as f32;
+        let flying = self.player.flying || self.player.fall_flying;
+        let location = self.location();
+        let context = self.loop_context;
+        Ok(movement_support::player_block_speed_factor(
+            &mut RegistryMovementWorld {
+                properties: &self.resources.blocks,
+                world: self,
+                edits: &ModBlockFactors(context),
+            },
+            location,
+            flying,
+            efficiency,
+        )?)
+    }
     /// `LivingEntity.aiStep`'s jump phase: rise in water or lava, else jump
     /// from the ground (or from shallow fluid); nothing while flying.
     pub(super) fn jump_phase(&mut self) -> Result<()> {
@@ -342,16 +314,8 @@ impl MotionWorld<'_, '_, '_> {
             return Ok(());
         }
         let in_lava = self.player.is_in_lava();
-        // `jumpInFluid` also rises in a mod fluid that `canSwim`.
-        let swim = self.player.swim_fluid();
-        let height = if in_lava {
-            self.player.fluid_height(LAVA)
-        } else {
-            self.player
-                .fluid_height(WATER)
-                .max(swim.map_or(0.0, |m| m.height))
-        };
-        let in_water = (self.player.fluids.was_touching_water || swim.is_some()) && height > 0.0;
+        let height = self.player.fluid_height(if in_lava { LAVA } else { WATER });
+        let in_water = self.player.fluids.was_touching_water && height > 0.0;
         let threshold = self.player.fluid_jump_threshold();
         let on_ground = self.player.ground.on_ground;
         if in_water && !(on_ground && height <= threshold) {
@@ -455,6 +419,12 @@ pub(crate) fn ignite_contact(
     }
 }
 
+/// `LivingEntity.handleFallFlyingCollisions`: a glide a block stopped takes
+/// `(before - after) * 10 - 3`, and nothing when that is not positive.
+pub(super) fn fly_into_wall_damage(before: f64, after: f64) -> f32 {
+    ((before - after) * 10.0 - 3.0) as f32
+}
+
 #[cfg(test)]
 mod fire_ignition_tests {
     use super::*;
@@ -481,13 +451,21 @@ mod below_world_tests {
             std::env::var_os("HORIZON_TEST_RESOURCES").expect("HORIZON_TEST_RESOURCES"),
         );
         let assets = Assets::load(&root).unwrap();
-        let render = assets.reload(&root).unwrap();
+        let render = assets
+            .reload(&horizon_assets::resource_source::ResourceRoot::directory(
+                root.clone(),
+            ))
+            .unwrap();
         let binding = crate::collisions::load(&root, assets.registry).unwrap();
         let resources = MotionResources::load(&root, &assets).unwrap();
         let mut scene = World::test_scene(&assets, &render, 1).unwrap();
         scene.shape = shape;
         let mut player = PlayerMotion::new(&resources, Vec3::new(0.5, y, 0.5)).unwrap();
         MotionWorld {
+            tag_items: None,
+            block_registries: None,
+            loop_context: crate::test_resources::server_loop_context(),
+            damage_hooks: &crate::health::DamageHooks::NONE,
             entities: &[],
             player: &mut player,
             scene: &mut scene,
@@ -504,7 +482,7 @@ mod below_world_tests {
     /// `Entity.checkBelowWorld` hurts below `Level.getMinY() - 64`: y = -64 in the End and the
     /// Nether (min Y 0), y = -128 in the Overworld, whatever the chunks' widened column holds.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn the_void_starts_64_blocks_below_each_levels_floor() {
         assert_eq!(
             health_after_hazards(LevelShape::END, -64.5),
@@ -531,232 +509,5 @@ mod below_world_tests {
             16.0,
             "Overworld: below -128"
         );
-    }
-}
-
-#[cfg(test)]
-mod ignite_hook_tests {
-    use super::*;
-    use crate::native_client_hooks::test_hooks::install_ignite;
-    use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
-
-    /// What the installed listener does: leave the ticks alone, set 40, or
-    /// cancel.
-    const LEAVE: i32 = 0;
-    const SHORTEN: i32 = 40;
-    const CANCEL: i32 = -1;
-    static MODE: AtomicI32 = AtomicI32::new(LEAVE);
-    static CALLS: AtomicUsize = AtomicUsize::new(0);
-
-    fn listener(
-        entity: u32,
-        kind: &str,
-        cause: &str,
-        requested: i32,
-        ticks: &mut i32,
-        cancel: &mut bool,
-    ) {
-        assert_eq!(entity, 7, "the player's own id");
-        assert_eq!(kind, "minecraft:player");
-        match cause {
-            "lava" => assert_eq!(requested, 300),
-            "fire_block" => assert_eq!(requested, -19, "a new player's fire ramp"),
-            other => panic!("unexpected cause {other}"),
-        }
-        CALLS.fetch_add(1, Ordering::Relaxed);
-        match MODE.load(Ordering::Relaxed) {
-            LEAVE => {}
-            SHORTEN => *ticks = 40,
-            CANCEL => *cancel = true,
-            other => panic!("unexpected mode {other}"),
-        }
-    }
-
-    /// Runs `f` on a player at (20.5, 4.0, 20.5) inside `block` (None for no
-    /// block). False without the prepared resources, so the test skips.
-    fn with_player(
-        block: Option<&str>,
-        client_side: bool,
-        f: impl FnOnce(&mut MotionWorld<'_, '_, '_>) -> Result<()>,
-    ) -> bool {
-        let root = std::env::var_os("HORIZON_TEST_RESOURCES")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../.local/horizon-client")
-                    .join(horizon_core::VANILLA_VERSION)
-            });
-        if !root.join("movement-properties.nbt").exists() {
-            eprintln!("skipping ignition hook test: prepared resources unavailable");
-            return false;
-        }
-        let assets = Assets::load(&root).unwrap();
-        let render = assets.reload(&root).unwrap();
-        let binding = crate::collisions::load(&root, assets.registry).unwrap();
-        let resources = MotionResources::load(&root, &assets).unwrap();
-        let mut scene = World::test_scene(&assets, &render, 3).unwrap();
-        if let Some(block) = block {
-            let state = assets.registry.default_state(block).unwrap();
-            for x in 19..=21 {
-                for y in 3..=7 {
-                    for z in 19..=21 {
-                        scene.set(x, y, z, state).unwrap();
-                    }
-                }
-            }
-        }
-        let mut player = PlayerMotion::new(&resources, Vec3::new(20.5, 4.0, 20.5)).unwrap();
-        player.entity_id = 7;
-        player.client_side = client_side;
-        let mut world = MotionWorld {
-            entities: &[],
-            player: &mut player,
-            scene: &mut scene,
-            assets: &assets,
-            collision_binding: &binding,
-            resources: &resources,
-            health: &resources.health,
-        };
-        f(&mut world).unwrap();
-        true
-    }
-
-    /// One player-in-lava tick of `tick_environment_damage`, its fire timer and
-    /// health after it.
-    fn lava_tick(mode: i32, client_side: bool) -> Option<(i32, f32, usize)> {
-        MODE.store(mode, Ordering::Relaxed);
-        CALLS.store(0, Ordering::Relaxed);
-        let mut after = (0, 0.0);
-        with_player(Some("minecraft:lava"), client_side, |w| {
-            w.fluid_base_tick()?;
-            w.tick_environment_damage()?;
-            after = (w.player.fire_ticks, w.player.health.health());
-            Ok(())
-        })
-        .then(|| (after.0, after.1, CALLS.load(Ordering::Relaxed)))
-    }
-
-    /// One player-in-fire tick of `apply_fire_contact`, its fire timer and
-    /// health after it.
-    fn fire_tick(mode: i32, client_side: bool) -> Option<(i32, f32, usize)> {
-        MODE.store(mode, Ordering::Relaxed);
-        CALLS.store(0, Ordering::Relaxed);
-        let mut after = (0, 0.0);
-        with_player(Some("minecraft:fire"), client_side, |w| {
-            w.apply_fire_contact()?;
-            after = (w.player.fire_ticks, w.player.health.health());
-            Ok(())
-        })
-        .then(|| (after.0, after.1, CALLS.load(Ordering::Relaxed)))
-    }
-
-    #[test]
-    fn a_player_in_lava_ignites_through_the_hook() {
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "motion::environment::ignite_hook_tests::a_player_in_lava_ignites_through_the_hook",
-            a_player_in_lava_ignites_through_the_hook_in_own_process,
-        );
-    }
-
-    fn a_player_in_lava_ignites_through_the_hook_in_own_process() {
-        install_ignite(listener);
-        let Some(cancelled) = lava_tick(CANCEL, false) else {
-            return;
-        };
-        // A cancel keeps the timer where it was, and the lava still hurts.
-        assert_eq!(cancelled, (-20, 16.0, 1));
-        // The listener's 40 ticks replace the 300 lava asks for.
-        assert_eq!(lava_tick(SHORTEN, false), Some((40, 16.0, 1)));
-        // A listener that leaves the ticks alone leaves 300.
-        assert_eq!(lava_tick(LEAVE, false), Some((300, 16.0, 1)));
-        // The window's predicted tick never asks: it burns for the vanilla 300.
-        assert_eq!(lava_tick(SHORTEN, true), Some((300, 20.0, 0)));
-    }
-
-    #[test]
-    fn a_player_in_fire_ignites_through_the_hook() {
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "motion::environment::ignite_hook_tests::a_player_in_fire_ignites_through_the_hook",
-            a_player_in_fire_ignites_through_the_hook_in_own_process,
-        );
-    }
-
-    fn a_player_in_fire_ignites_through_the_hook_in_own_process() {
-        install_ignite(listener);
-        let Some(cancelled) = fire_tick(CANCEL, false) else {
-            return;
-        };
-        // A cancel keeps the fire timer where it was, and the fire still hurts.
-        assert_eq!(cancelled, (-20, 19.0, 1));
-        // The listener's 40 ticks replace the ramp's -19.
-        assert_eq!(fire_tick(SHORTEN, false), Some((40, 19.0, 1)));
-        // A listener that leaves the ticks alone leaves the ramp's next step.
-        assert_eq!(fire_tick(LEAVE, false), Some((-19, 19.0, 1)));
-        // The window's predicted tick never asks: it keeps the vanilla ramp.
-        assert_eq!(fire_tick(SHORTEN, true), Some((-19, 20.0, 0)));
-    }
-
-    /// With no table installed, a fire block's ramp and the level random's next
-    /// draw are exactly vanilla's.
-    #[test]
-    fn no_listener_keeps_vanillas_fire_ignition_ramp() {
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "motion::environment::ignite_hook_tests::no_listener_keeps_vanillas_fire_ignition_ramp",
-            no_listener_keeps_vanillas_fire_ignition_ramp_in_own_process,
-        );
-    }
-
-    fn no_listener_keeps_vanillas_fire_ignition_ramp_in_own_process() {
-        let mut reference = horizon_core::random::LegacyRandom::new(3);
-        let expected = ignite_contact(200, true, &mut reference, 1.0);
-        let next = reference.next_int_bound(2).unwrap();
-        let mut after = (0, 0);
-        if !with_player(Some("minecraft:fire"), false, |w| {
-            w.scene.random.set_seed(3);
-            w.player.fire_ticks = 200;
-            w.apply_fire_contact()?;
-            after = (
-                w.player.fire_ticks,
-                w.scene.random.next_int_bound(2).unwrap(),
-            );
-            Ok(())
-        }) {
-            return;
-        }
-        assert_eq!(after, (expected, next));
-    }
-
-    #[test]
-    fn a_lava_cauldron_ignites_through_the_hook() {
-        crate::native_client_hooks::test_hooks::in_own_process(
-            "motion::environment::ignite_hook_tests::a_lava_cauldron_ignites_through_the_hook",
-            a_lava_cauldron_ignites_through_the_hook_in_own_process,
-        );
-    }
-
-    fn a_lava_cauldron_ignites_through_the_hook_in_own_process() {
-        install_ignite(listener);
-        MODE.store(CANCEL, Ordering::Relaxed);
-        let mut cancelled = (0, 0.0);
-        if !with_player(None, false, |w| {
-            w.lava_cauldron_inside()?;
-            cancelled = (w.player.fire_ticks, w.player.health.health());
-            Ok(())
-        }) {
-            return;
-        }
-        assert_eq!(
-            cancelled,
-            (-20, 16.0),
-            "a cancel leaves the fire timer, the lava still hurts"
-        );
-        MODE.store(LEAVE, Ordering::Relaxed);
-        let mut told = (0, 0.0);
-        with_player(None, false, |w| {
-            w.lava_cauldron_inside()?;
-            told = (w.player.fire_ticks, w.player.health.health());
-            Ok(())
-        });
-        assert_eq!(told, (300, 16.0));
     }
 }

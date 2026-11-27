@@ -65,7 +65,7 @@ impl Launcher {
         }
     }
 
-    fn choose_pack(&mut self, folder: bool, cx: &mut Context<Self>) {
+    pub(super) fn choose_pack(&mut self, folder: bool, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: !folder,
             directories: folder,
@@ -133,7 +133,7 @@ impl Launcher {
             return;
         }
         self.starting_pack = Some(work);
-        self.start_client(tag);
+        self.start_client(tag, None);
     }
 
     /// Looks for other launchers' modpacks on a thread: their folders can be slow to read.
@@ -192,9 +192,7 @@ impl Launcher {
             .child(pick("import-file", "Import a pack file…", false))
             .child(pick("import-folder", "Import an instance folder…", true))
             .child(text(theme::CAPTION).w_full().text_color(t.muted).child(tr(
-                ".mrpack (Modrinth), .zip (CurseForge), or a Prism, MultiMC or CurseForge instance. \
-                 Horizon ports what it can on this computer, from your own downloads, and plays \
-                 the pack as its own profile. Nothing is uploaded or shared.",
+                ".mrpack (Modrinth), .zip (CurseForge), or a Prism, MultiMC or CurseForge instance. Event Horizon ports what it can on this computer, from your own downloads, and plays the pack as its own profile. Nothing is uploaded or shared.",
             )));
         let mut page = div().flex().flex_col().gap(px(16.));
         if !self.found_packs.is_empty() {

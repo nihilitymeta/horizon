@@ -1,168 +1,199 @@
-//! The developer tools' server half (#31, docs/dev-tools.md): the inspect
-//! stick's pages, the watched entities' data and the guests' windows, once
-//! a server tick after every level ticked ([`tick`], the mod's
-//! `server_tick` hook). It lives on the engine's generic host helpers only
-//! (`entity_data_with_attachments`, `entity_name_at`, `entity_is_mob`,
-//! `block_info`, `server_players`, `player_sneaking`, `server_owner`,
-//! `send_payload`, `action_bar`) and on the shared
-//! [`event_horizon_observe`] store, which is also where the engine's two
-//! packet feeds and the commands hand it their input: a guest's client's
-//! Hello/Stop/Interval through `push_server_command`, the stick's uses and
-//! the windows' log buttons through the requests, the commands' targets
-//! through `remember`. Nothing here runs in the engine's process half
-//! without the mod installed.
-use event_horizon_observe as observe;
-use event_horizon_observe::wire::{self as observe_wire, BlockPage, EntityPage, Wire};
-use event_horizon_observe::{BlockKey, BlockSnapshot, Request, StickTarget, View};
-use horizon_client::game::NativeBlockInfo;
-use horizon_client::mod_api::{Host, NativeServerPlayer};
-use horizon_client::nbt_path::NbtPath;
-use horizon_client::text::Text;
-use horizon_client::{data_cmd, lang};
-use horizon_world::nbt::Tag;
-use horizon_world::snbt_text::to_snbt;
+//! The developer tools' server half, owner-local part (#31, docs/dev-tools.md): once a server tick,
+//! after every level ticked ([`tick`], the mod's `server_tick` hook), the store's requests are
+//! served (a window's `/mobai log` button starts or stops one mob's log), and each entity the
+//! commands watch is read into the shared [`event_horizon_observe`] store: its data, its watched
+//! paths' numbers, and its AI log lines. The commands fill the store with `remember`, `add` and
+//! `add_path`; the windows read it. Nothing here runs without the mod installed.
+//!
+//! Each watched block (`/blockinfo`) is read here too, once a tick: its facts go to the block window
+//! ([`blocks_tick`]). Left out, as a chunk of its own: the inspect stick (`Request::Stick`, 5c-d3:
+//! dropped for now), the guests' remote pages and their clients' commands (5c-d2).
+use event_horizon_observe::{self as observe, BlockKey, BlockSnapshot, Request};
+use horizon_client::{data_cmd, lang, nbt_path::NbtPath};
+use horizon_core::geometry::Direction;
+use horizon_core::nbt::{Compound, Tag};
+use mod_api::{BlockShapeKind, EntityRef, LightLayer, ServerHost};
 use std::sync::Mutex;
 
-/// The inspect stick, by player: what it showed last, its page, and the
-/// window it opened, which the next use replaces.
-static STICK: Mutex<Vec<Stick>> = Mutex::new(Vec::new());
-
-/// The guests whose clients said they show the windows (`Wire::Hello`).
-static SHOWS: Mutex<Vec<u128>> = Mutex::new(Vec::new());
-/// The window each such guest's stick opened, sent to their client.
-static REMOTE: Mutex<Vec<RemoteShown>> = Mutex::new(Vec::new());
-/// Server ticks the tools counted, for the guests' intervals.
-static CLOCK: Mutex<u64> = Mutex::new(0);
 /// Ticks since the tools first read anything: the x axis of `/watch`.
 static TICKS: Mutex<u64> = Mutex::new(0);
 
-/// How far from a guest the thing their window shows may be.
-const REMOTE_RANGE: f64 = 64.0;
-
-#[derive(Clone)]
-struct RemoteShown {
-    player: u128,
-    what: RemoteWhat,
-    /// Milliseconds between two pages, at least `observe_wire::FLOOR`.
-    interval: u32,
-    /// The tick the next page goes at.
-    next: u64,
+/// The server's reads a tick makes, as a seam: the live host implements it ([`Live`]); the tests
+/// implement it with fakes.
+pub trait Server {
+    /// The dimension id of the player whose entity id is `id`, where the player is now. None when
+    /// no player has that id.
+    fn player_dimension(&self, id: u32) -> Option<String>;
+    /// The data of entity `id` in `dimension`, as `/data get entity` shows it. None when there is no
+    /// such entity there, or when the data cannot be read (see [`Live::entity_data`]).
+    fn entity_data(&mut self, dimension: &str, id: u32) -> Option<Compound>;
+    /// The name of entity `id` in `dimension`, when it has one.
+    fn entity_name(&self, dimension: &str, id: u32) -> Option<String>;
+    /// Whether entity `id` in `dimension` is a living mob that is alive.
+    fn is_mob(&self, dimension: &str, id: u32) -> bool;
+    /// The facts of the block at `key`, read in its level; `face` is the clicked face's unit
+    /// vector, for the light there. None when the level is not open or the block cannot be read,
+    /// and the window keeps its last snapshot.
+    fn block(&mut self, key: &BlockKey, face: [i32; 3]) -> Option<BlockSnapshot>;
 }
 
-#[derive(Clone, PartialEq)]
-enum RemoteWhat {
-    /// An entity by its id (a player's is its network entity id), read in
-    /// the guest's dimension.
-    Entity(u32, View),
-    Block(BlockKey, [i32; 3]),
+/// The live host, as the tick reads it.
+struct Live<'a> {
+    host: &'a mut dyn ServerHost,
 }
 
-struct Stick {
-    player: u128,
-    last: Option<StickTarget>,
-    page: View,
-    opened: Option<Opened>,
-}
-
-/// A window the stick opened.
-enum Opened {
-    Entity(u32, View),
-    Block(BlockKey),
-}
-
-/// The pages of an entity, in the stick's order: a mob has its data, goals,
-/// senses and path; every other entity its data alone.
-fn pages(mob: bool) -> &'static [View] {
-    if mob {
-        &[View::Data, View::Goals, View::Senses, View::Nav]
-    } else {
-        &[View::Data]
+impl Live<'_> {
+    /// The entity `id` when it is in `dimension`: the server's entity of that id, if its level is
+    /// the one `dimension` names. The tick runs with no level in place, so the level is the
+    /// entity's own, not the hook's.
+    fn entity_in(&self, dimension: &str, id: u32) -> Option<EntityRef> {
+        let entity = self.host.entity(id)?;
+        let level = entity.level(&*self.host)?;
+        (self.host.dev_level_dimension(level)? == dimension).then_some(entity)
     }
 }
 
-/// The page the stick shows next: the same entity again turns the page
-/// (back when sneaking), another keeps the page when it has it, else its data.
-fn next_page(pages: &[View], page: View, same: bool, back: bool) -> View {
-    let Some(i) = pages.iter().position(|p| *p == page) else {
-        return View::Data;
-    };
-    if !same {
-        return page;
-    }
-    let n = pages.len();
-    pages[if back { (i + n - 1) % n } else { (i + 1) % n }]
-}
-
-/// A page's name, as its command is named.
-fn page_name(view: View) -> &'static str {
-    match view {
-        View::Data => "inspect",
-        View::Goals => "goals",
-        View::Senses => "senses",
-        View::Nav => "nav",
-    }
-}
-
-/// The player `uuid`'s record on the server, as the host lists the players.
-fn player_record(host: &mut dyn Host, uuid: u128) -> Option<NativeServerPlayer> {
-    host.server_players().into_iter().find(|g| g.uuid == uuid)
-}
-
-/// The dimension a remembered entity is read in: a player's own record
-/// names it (they may have changed levels since); an entity's is the one
-/// the remember carried. None when a player left.
-fn dimension_of(host: &mut dyn Host, id: u32, remembered: Option<&str>) -> Option<String> {
-    match remembered {
-        Some(dimension) => Some(dimension.to_owned()),
-        None => host
+impl Server for Live<'_> {
+    fn player_dimension(&self, id: u32) -> Option<String> {
+        let player = self
+            .host
+            .players()
             .server_players()
-            .iter()
-            .find(|g| u32::try_from(g.entity_id).ok() == Some(id))
-            .map(|g| g.dimension.clone()),
+            .into_iter()
+            .find(|p| p.entity().id() == id)?;
+        let level = player.level(&*self.host)?;
+        self.host.dev_level_dimension(level)
+    }
+
+    /// The entity's saved data (`/data get entity`), through the developer tools' own read
+    /// (`dev_entity_nbt`), once the entity is found in `dimension`.
+    fn entity_data(&mut self, dimension: &str, id: u32) -> Option<Compound> {
+        let entity = self.entity_in(dimension, id)?;
+        self.host.dev_entity_nbt(entity)
+    }
+
+    fn entity_name(&self, dimension: &str, id: u32) -> Option<String> {
+        self.entity_in(dimension, id)?.name(&*self.host)
+    }
+
+    fn is_mob(&self, dimension: &str, id: u32) -> bool {
+        let Some(entity) = self.entity_in(dimension, id) else {
+            return false;
+        };
+        let Some(mob) = self.host.mob(entity) else {
+            return false;
+        };
+        mob.living().alive(&*self.host) == Some(true)
+    }
+
+    /// The block's facts, through the host's reads. The level is the dimension's; the state is
+    /// the block's name and properties, split from `block_state_string`. The block entity's data,
+    /// the light (block and sky, here and at the face), the biome, the power, the six strong
+    /// signals in `Direction::ALL` order, and the collision and outline boxes in world
+    /// coordinates. A read that fails gives the empty value (no entity, no biome, 0), except the
+    /// level and the state: without them there is no snapshot. Random ticks, pending ticks, tags
+    /// and the declaring mod have no read on this base; they stay empty (the window says so).
+    fn block(&mut self, key: &BlockKey, face: [i32; 3]) -> Option<BlockSnapshot> {
+        let host: &dyn ServerHost = &*self.host;
+        let level = host.level(&key.dimension)?;
+        let pos = key.pos;
+        mod_api::__private::backend_read(host, |backend| {
+            let state = backend.level_block_state(level, pos)?;
+            let (name, properties) = split_state(&host.block_state_string(state)?);
+            let light = |layer: LightLayer, at: [i32; 3]| {
+                backend
+                    .level_brightness(level, layer, at)
+                    .unwrap_or(0)
+                    .clamp(0, 15) as u8
+            };
+            let face_at = [pos[0] + face[0], pos[1] + face[1], pos[2] + face[2]];
+            let entity = host
+                .block_entity(level, pos)
+                .and_then(|e| backend.block_entity_data(e))
+                .map(Tag::Compound);
+            let shape = |kind| {
+                backend
+                    .level_block_shape(level, state, pos, kind)
+                    .unwrap_or_default()
+            };
+            Some(BlockSnapshot {
+                name,
+                properties,
+                entity,
+                light: [light(LightLayer::Block, pos), light(LightLayer::Sky, pos)],
+                face_light: [
+                    light(LightLayer::Block, face_at),
+                    light(LightLayer::Sky, face_at),
+                ],
+                biome: backend.level_biome_at(level, pos),
+                power: backend.level_best_neighbor_signal(level, pos).unwrap_or(0),
+                strong: Direction::ALL
+                    .map(|d| backend.level_direct_signal(level, pos, d).unwrap_or(0)),
+                random_ticks: false,
+                scheduled: Vec::new(),
+                tags: Vec::new(),
+                declared_by: None,
+                collision: shape(BlockShapeKind::Collision),
+                outline: shape(BlockShapeKind::Outline),
+                taken: std::time::Instant::now(),
+            })
+        })
+        .flatten()
     }
 }
 
-/// Once a server tick, after every level ticked (the mod's `server_tick`
-/// hook at `ServerTickEnd`, a world that runs): the stick's requests and
-/// the guests' clients' commands, the guests' pages, then each watched
-/// entity's data (read where `/data get entity` reads it), the watched
-/// paths' values, each watched block's facts and the AI logs' lines. An
-/// entity that is gone keeps its last data, which the windows mark stale.
-pub(crate) fn tick(host: &mut dyn Host) {
-    requests(host);
-    server_commands();
-    remote_tick(host);
+/// A state string as `block_state_string` gives it, `minecraft:repeater[delay=1,facing=north]`,
+/// as its name and its properties in the order written.
+fn split_state(text: &str) -> (String, Vec<(String, String)>) {
+    let Some((name, rest)) = text.split_once('[') else {
+        return (text.to_owned(), Vec::new());
+    };
+    let properties = rest
+        .trim_end_matches(']')
+        .split(',')
+        .filter_map(|p| p.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    (name.to_owned(), properties)
+}
+
+/// Once a server tick, after every level ticked, while the world runs (the mod's `server_tick`
+/// hook at `ServerTickEnd`): the store's requests first, then each watched entity's data and the
+/// watched paths' values, and the AI logs' lines. An entity that is gone keeps its last data,
+/// which the windows mark stale.
+pub fn tick(host: &mut dyn ServerHost) {
+    run(&mut Live { host });
+}
+
+/// The tick's steps, over the seam. The guests' clients' commands and pages (5c-d2) are not ported:
+/// they run here once their chunk lands.
+fn run(server: &mut dyn Server) {
+    requests(server);
     let logging = observe::is_logging();
     if !observe::watching() && !logging {
         return;
     }
+    blocks_tick(server);
     let tick = {
         let mut t = TICKS.lock().unwrap_or_else(|e| e.into_inner());
         *t += 1;
         *t
     };
-    blocks_tick(host);
     for (id, remembered) in observe::watch_entries() {
-        let Some(dimension) = dimension_of(host, id, remembered.as_deref()) else {
+        let Some(dimension) = dimension_of(server, id, remembered.as_deref()) else {
             continue;
         };
-        let Some(data) = host.entity_data_with_attachments(&dimension, id) else {
+        let Some(data) = server.entity_data(&dimension, id) else {
             continue;
         };
-        let name = host
-            .entity_name_at(&dimension, id)
+        let name = server
+            .entity_name(&dimension, id)
             .unwrap_or_else(|| lang::get("horizon.dev_tools.entity"));
+        let root = Tag::Compound(data);
         for path in observe::paths_of(id) {
-            let value = match NbtPath::parse(&path) {
-                Err(e) => Err(format!("{e:?}")),
-                Ok(p) => match data_cmd::single_tag(&p, &Tag::Compound(data.clone())) {
-                    Err(_) => Err("no such path".to_string()),
-                    Ok(tag) => number(&tag).ok_or_else(|| "not a number".to_string()),
-                },
-            };
-            observe::set_sample(id, &path, tick, value);
+            observe::set_sample(id, &path, tick, sample(&path, &root));
         }
-        observe::set_data(id, name, Tag::Compound(data));
+        observe::set_data(id, name, root);
         if logging
             && let Some(brain) = observe::brain_of(id)
             && let Ok(line) = serde_json::to_string(&brain)
@@ -172,378 +203,73 @@ pub(crate) fn tick(host: &mut dyn Host) {
     }
 }
 
-/// What the windows and the stick asked for since the last tick: the Goals
-/// window's log button starts or stops one mob's log, as `/mobai log` does;
-/// the stick turns a page.
-fn requests(host: &mut dyn Host) {
+/// Each watched block's facts, read through the seam once a tick. A block whose read gives none
+/// keeps its last snapshot.
+fn blocks_tick(server: &mut dyn Server) {
+    for block in observe::blocks() {
+        if let Some(snapshot) = server.block(&block.key, block.face) {
+            observe::set_block(&block.key, snapshot);
+        }
+    }
+}
+
+/// The dimension a remembered entity is read in: the one the command remembered it with; for a
+/// player (remembered with none), the dimension the player is in now. None when the player left.
+fn dimension_of(server: &dyn Server, id: u32, remembered: Option<&str>) -> Option<String> {
+    match remembered {
+        Some(dimension) => Some(dimension.to_owned()),
+        None => server.player_dimension(id),
+    }
+}
+
+/// The value of the numeric NBT path `path` in `root`, or why there is none.
+fn sample(path: &str, root: &Tag) -> Result<f64, String> {
+    let parsed = NbtPath::parse(path).map_err(|e| format!("{e:?}"))?;
+    let tag = data_cmd::single_tag(&parsed, root).map_err(|_| "no such path".to_string())?;
+    number(&tag).ok_or_else(|| "not a number".to_string())
+}
+
+/// What the windows and the stick asked the game for since the last tick. The Goals window's log
+/// button starts or stops one mob's log, as `/mobai log` does. The inspect stick is not ported yet
+/// (5c-d3): its request is dropped, with a debug line.
+fn requests(server: &mut dyn Server) {
     for request in observe::take_requests() {
         match request {
-            Request::StartLog(id) => {
-                // A mob some command named: the Goals window shows only those.
-                let named = observe::watch_entries().into_iter().find(|(i, dimension)| {
-                    *i == id
-                        && dimension
-                            .as_deref()
-                            .is_some_and(|d| host.entity_is_mob(d, id))
-                });
-                let Some((_, dimension)) = named else {
-                    continue;
-                };
-                let name = host
-                    .entity_name_at(dimension.as_deref().unwrap_or_default(), id)
-                    .unwrap_or_default();
-                if let Err(e) = observe::open_log(&name, id) {
-                    log::warn!("dev tools: {e}");
-                }
-            }
+            Request::StartLog(id) => start_log(server, id),
             Request::StopLog(id) => {
                 observe::stop_log(id);
                 observe::forget_unwatched();
             }
-            Request::Stick { player, target } => stick_used(host, player, target),
-        }
-    }
-}
-
-/// What the guests' clients said on the tools' channel since the last tick:
-/// a client that shows the windows, one whose window closed, and another
-/// interval for one. Pages never come from a client.
-fn server_commands() {
-    for (player, wire) in observe::take_server_commands() {
-        match wire {
-            Wire::Hello => {
-                let mut shows = SHOWS.lock().unwrap_or_else(|e| e.into_inner());
-                if !shows.contains(&player) {
-                    shows.push(player);
-                }
-            }
-            Wire::Stop => remote_stop(player),
-            Wire::Interval(ms) => {
-                let mut remote = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(r) = remote.iter_mut().find(|r| r.player == player) {
-                    r.interval = observe_wire::clamp_interval(ms);
-                }
-            }
-            Wire::Entity(_) | Wire::Block(_) | Wire::Closed => {}
-        }
-    }
-}
-
-/// The inspect stick used by `player` on `target`. The windows are the
-/// host's: another player's use is refused with a message. An entity
-/// shows its data first; the same entity again turns the page (back when
-/// sneaking), and the window replaces the one the stick opened before.
-fn stick_used(host: &mut dyn Host, player: u128, target: StickTarget) {
-    let Some(guest) = player_record(host, player) else {
-        return;
-    };
-    let (dimension, back) = (
-        guest.dimension,
-        host.player_sneaking(player).unwrap_or(false),
-    );
-    // The owner's windows are the host's; a guest's are on their own
-    // screen when their client shows them.
-    let remote = host.server_owner() != Some(player);
-    if remote
-        && !SHOWS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains(&player)
-    {
-        host.action_bar(player, Text::tr("horizon.dev_tools.stick.no_windows", &[]));
-        return;
-    }
-    let mut sticks = STICK.lock().unwrap_or_else(|e| e.into_inner());
-    let i = match sticks.iter().position(|s| s.player == player) {
-        Some(i) => i,
-        None => {
-            sticks.push(Stick {
-                player,
-                last: None,
-                page: View::Data,
-                opened: None,
-            });
-            sticks.len() - 1
-        }
-    };
-    let stick = &mut sticks[i];
-    let line = match &target {
-        StickTarget::Entity(id) => {
-            let id = *id;
-            // A player by its entity id, or an entity of the player's level.
-            let is_player = host
-                .server_players()
-                .iter()
-                .any(|g| u32::try_from(g.entity_id).ok() == Some(id));
-            let found = is_player || host.entity_name_at(&dimension, id).is_some();
-            if !found {
-                return;
-            }
-            let mob = !is_player && host.entity_is_mob(&dimension, id);
-            let pages = pages(mob);
-            let same = stick.last.as_ref() == Some(&target);
-            let page = if stick.last.is_none() {
-                View::Data
-            } else {
-                next_page(pages, stick.page, same, back)
-            };
-            if let Some(opened) = stick.opened.take() {
-                close(opened);
-            }
-            if remote {
-                remote_open(player, RemoteWhat::Entity(id, page), mob);
-            } else {
-                observe::remember(&[(
-                    id,
-                    if is_player {
-                        None
-                    } else {
-                        Some(dimension.clone())
-                    },
-                )]);
-                observe::add(&[id], page);
-                stick.opened = Some(Opened::Entity(id, page));
-            }
-            stick.page = page;
-            let n = pages.iter().position(|p| *p == page).unwrap_or(0) + 1;
-            Text::tr(
-                "horizon.dev_tools.stick.page",
-                &[&page_name(page), &n, &pages.len()],
-            )
-        }
-        StickTarget::Block {
-            dimension: target_dimension,
-            pos,
-            face,
-        } => {
-            let key = BlockKey {
-                dimension: target_dimension.clone(),
-                pos: *pos,
-            };
-            if let Some(opened) = stick.opened.take()
-                && !matches!(&opened, Opened::Block(k) if *k == key)
-            {
-                close(opened);
-            }
-            if remote {
-                remote_open(player, RemoteWhat::Block(key, *face), false);
-            } else {
-                observe::add_block(key.clone(), *face);
-                stick.opened = Some(Opened::Block(key));
-            }
-            Text::tr("horizon.dev_tools.stick.block", &[])
-        }
-    };
-    stick.last = Some(target);
-    drop(sticks);
-    observe::forget_unwatched();
-    host.action_bar(player, line);
-}
-
-/// The guests' windows whose interval came: their pages, read now and
-/// sent; a window whose player left, or whose entity is gone or out of
-/// range, ends with `Wire::Closed`.
-fn remote_tick(host: &mut dyn Host) {
-    let now = {
-        let mut c = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
-        *c += 1;
-        *c
-    };
-    let due: Vec<RemoteShown> = REMOTE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .iter()
-        .filter(|r| r.next <= now)
-        .cloned()
-        .collect();
-    for r in due {
-        let Some(guest) = player_record(host, r.player) else {
-            remote_stop(r.player);
-            continue;
-        };
-        let (dimension, at) = (guest.dimension, guest.position);
-        let near = |p: [f64; 3]| {
-            (0..3).map(|i| (p[i] - at[i]).powi(2)).sum::<f64>() <= REMOTE_RANGE * REMOTE_RANGE
-        };
-        let page = match &r.what {
-            RemoteWhat::Entity(id, view) => {
-                let (id, view) = (*id, *view);
-                host.entity_data_with_attachments(&dimension, id)
-                    .zip(host.entity_name_at(&dimension, id))
-                    .and_then(|(data, name)| {
-                        let pos = match data.get(&"Pos".into()) {
-                            Some(Tag::List(p)) if p.len() == 3 => {
-                                let f = |v: &Tag| match v {
-                                    Tag::Double(bits) => f64::from_bits(*bits),
-                                    _ => 0.0,
-                                };
-                                [f(&p[0]), f(&p[1]), f(&p[2])]
-                            }
-                            _ => return None,
-                        };
-                        near(pos).then(|| {
-                            Wire::Entity(EntityPage {
-                                id,
-                                view,
-                                name,
-                                data: Some(to_snbt(&Tag::Compound(data))),
-                                brain: observe::brain_of(id),
-                                history: observe::history_of(id)
-                                    .into_iter()
-                                    .map(|(age, names)| {
-                                        (age, names.iter().map(|n| n.to_string()).collect())
-                                    })
-                                    .collect(),
-                                interval: r.interval,
-                            })
-                        })
-                    })
-            }
-            RemoteWhat::Block(key, face) => (key.dimension == dimension
-                && near(key.pos.map(|c| f64::from(c) + 0.5)))
-            .then(|| {
-                host.block_info(&key.dimension, key.pos, *face).map(|info| {
-                    Wire::Block(BlockPage {
-                        key: key.clone(),
-                        face: *face,
-                        snapshot: block_snapshot(info),
-                        interval: r.interval,
-                    })
-                })
-            })
-            .flatten(),
-        };
-        match page {
-            Some(wire) => {
-                send_page(host, r.player, &wire);
-                let ticks = u64::from(r.interval.div_ceil(50)).max(1);
-                if let Some(shown) = REMOTE
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .iter_mut()
-                    .find(|s| s.player == r.player)
-                {
-                    shown.next = now + ticks;
-                }
-            }
-            None => {
-                send_page(host, r.player, &Wire::Closed);
-                remote_stop(r.player);
+            Request::Stick { player, target } => {
+                log::debug!(
+                    "dev tools: an inspect stick use is not ported yet, dropped: {player:#x} {target:?}"
+                );
             }
         }
     }
 }
 
-/// A page on the tools' channel to the client of guest `player`.
-fn send_page(host: &mut dyn Host, player: u128, wire: &Wire) {
-    let Some(data) = observe_wire::encode(wire) else {
-        log::warn!(
-            "dev tools: a page past {} bytes is not sent",
-            observe_wire::MAX
-        );
-        return;
-    };
-    host.send_payload(player, observe_wire::CHANNEL, &data);
-}
-
-/// Each watched block's facts, read in its level.
-fn blocks_tick(host: &mut dyn Host) {
-    for block in observe::blocks() {
-        if let Some(info) = host.block_info(&block.key.dimension, block.key.pos, block.face) {
-            observe::set_block(&block.key, block_snapshot(info));
-        }
-    }
-}
-
-/// What the block window shows of a block the host read.
-fn block_snapshot(info: NativeBlockInfo) -> BlockSnapshot {
-    BlockSnapshot {
-        name: info.name,
-        properties: info.properties,
-        entity: info.entity,
-        light: info.light,
-        face_light: info.face_light,
-        biome: info.biome,
-        power: info.power,
-        strong: info.strong,
-        random_ticks: info.random_ticks,
-        scheduled: info.scheduled,
-        tags: info.tags,
-        declared_by: info.declared_by,
-        collision: info.collision,
-        outline: info.outline,
-        taken: std::time::Instant::now(),
-    }
-}
-
-/// The world closed: the stick's windows, the guests' pages and the tick
-/// counts go, and the store's watches, logs, requests and snapshots with
-/// them. Runs before the engine's own world-closed reset; both reset the
-/// store, which is idempotent.
-pub fn world_closed() {
-    STICK.lock().unwrap_or_else(|e| e.into_inner()).clear();
-    SHOWS.lock().unwrap_or_else(|e| e.into_inner()).clear();
-    REMOTE.lock().unwrap_or_else(|e| e.into_inner()).clear();
-    *CLOCK.lock().unwrap_or_else(|e| e.into_inner()) = 0;
-    *TICKS.lock().unwrap_or_else(|e| e.into_inner()) = 0;
-    observe::reset();
-}
-
-/// Guest `player`'s stick shows `what` on their screen now, the first page
-/// at the end of this tick; a mob's AI is snapshot for it.
-fn remote_open(player: u128, what: RemoteWhat, mob: bool) {
-    let mut remote = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
-    let (interval, old) = match remote.iter().position(|r| r.player == player) {
-        Some(i) => {
-            let r = remote.remove(i);
-            (r.interval, Some(r.what))
-        }
-        None => (observe_wire::DEFAULT_INTERVAL, None),
-    };
-    if let RemoteWhat::Entity(id, _) = &what
-        && mob
-    {
-        observe::set_remote(*id, true);
-    }
-    remote.push(RemoteShown {
-        player,
-        what,
-        interval,
-        next: 0,
+/// Starts mob `id`'s log, when a command named it as a mob in a dimension. Anything else is ignored.
+fn start_log(server: &mut dyn Server, id: u32) {
+    let named = observe::watch_entries().into_iter().find(|(i, dimension)| {
+        *i == id && dimension.as_deref().is_some_and(|d| server.is_mob(d, id))
     });
-    unwatch_remote(&remote, old);
-}
-
-/// Guest `player`'s window ended.
-fn remote_stop(player: u128) {
-    let mut remote = REMOTE.lock().unwrap_or_else(|e| e.into_inner());
-    let Some(i) = remote.iter().position(|r| r.player == player) else {
+    let Some((_, Some(dimension))) = named else {
         return;
     };
-    let r = remote.remove(i);
-    unwatch_remote(&remote, Some(r.what));
-}
-
-/// A mob no guest's window shows any more is no longer snapshot for one.
-fn unwatch_remote(remote: &[RemoteShown], old: Option<RemoteWhat>) {
-    if let Some(RemoteWhat::Entity(id, _)) = old
-        && !remote
-            .iter()
-            .any(|r| matches!(r.what, RemoteWhat::Entity(i, _) if i == id))
-    {
-        observe::set_remote(id, false);
+    let name = server.entity_name(&dimension, id).unwrap_or_default();
+    if let Err(e) = observe::open_log(&name, id) {
+        log::warn!("dev tools: {e}");
     }
 }
 
-/// Close a window the stick opened.
-fn close(opened: Opened) {
-    match opened {
-        Opened::Entity(id, view) => observe::remove(id, Some(view)),
-        Opened::Block(key) => observe::remove_block(&key),
-    }
+/// The world closed: the tick count starts again. The store is reset by the engine when the world
+/// closes (`dev_tools_world_closed`), so only the mod's own state is kept here.
+pub fn world_closed() {
+    *TICKS.lock().unwrap_or_else(|e| e.into_inner()) = 0;
 }
 
-/// A numeric tag as a float, for the chart.
+/// A numeric tag's value, as `/watch` plots it: the integers and the floats; None for the rest.
 fn number(tag: &Tag) -> Option<f64> {
     Some(match tag {
         Tag::Byte(v) => f64::from(*v),
@@ -556,81 +282,299 @@ fn number(tag: &Tag) -> Option<f64> {
     })
 }
 
+/// The tests share the process-wide store: each takes this guard, and `commands`' tests take it too.
+#[cfg(test)]
+pub(crate) fn store_guard() -> std::sync::MutexGuard<'static, ()> {
+    static STORE_TESTS: Mutex<()> = Mutex::new(());
+    STORE_TESTS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use event_horizon_observe::View;
 
-    #[test]
-    fn the_stick_turns_a_mobs_pages_and_keeps_its_page_on_another() {
-        let mob = pages(true);
-        // The same mob again: forward, wrapping; sneaking: back, wrapping.
-        assert_eq!(next_page(mob, View::Data, true, false), View::Goals);
-        assert_eq!(next_page(mob, View::Nav, true, false), View::Data);
-        assert_eq!(next_page(mob, View::Data, true, true), View::Nav);
-        assert_eq!(next_page(mob, View::Senses, true, true), View::Goals);
-        // Another mob keeps the page; an entity without it shows its data.
-        assert_eq!(next_page(mob, View::Senses, false, false), View::Senses);
-        let frame = pages(false);
-        assert_eq!(next_page(frame, View::Senses, false, false), View::Data);
-        assert_eq!(next_page(frame, View::Data, true, false), View::Data);
-        assert_eq!(pages(false), [View::Data]);
+    const OVERWORLD: &str = "minecraft:overworld";
+
+    /// The server's reads as a test sets them: where each player is, each entity's data, name and
+    /// whether it is a mob.
+    #[derive(Default)]
+    struct Fake {
+        players: Vec<(u32, String)>,
+        data: Vec<(u32, Compound)>,
+        names: Vec<(u32, String)>,
+        mobs: Vec<u32>,
+        /// The block reads the tick gives, and the snapshot each block's read gives (None: no read).
+        blocks: Vec<(BlockKey, BlockSnapshot)>,
+        block_reads: Vec<BlockKey>,
     }
 
-    /// The host the log-button test needs: two zombies by their ids, nothing
-    /// else. Every other hook keeps `Host`'s default.
-    struct LogHost;
-    impl Host for LogHost {
-        fn entity_name_at(&mut self, _dimension: &str, id: u32) -> Option<String> {
-            Some(format!("Zombie {id}"))
-        }
-        fn entity_is_mob(&mut self, _dimension: &str, id: u32) -> bool {
-            id == 42 || id == 43
-        }
-    }
-
-    /// The Goals window's log button asks; the mod's tick opens the file at
-    /// the same place `/mobai log` does, one mob at a time, and Stop closes
-    /// only the one it names.
-    #[test]
-    fn the_goals_windows_log_button_opens_and_closes_one_mobs_log() {
-        observe::reset();
-        observe::remember(&[
-            (42, Some("overworld".into())),
-            (43, Some("overworld".into())),
-        ]);
-        observe::add(&[42, 43], View::Goals);
-        observe::request(Request::StartLog(42));
-        requests(&mut LogHost);
-        let file = |id: u32| {
-            observe::snapshots()
-                .into_iter()
-                .find(|w| w.id == id)
-                .and_then(|w| w.log_file)
-        };
-        let path = file(42).expect("42 logged");
-        assert!(
-            path.starts_with("dev-tools/logs/mobai-") && path.ends_with(".jsonl"),
-            "{path}"
-        );
-        assert!(std::path::Path::new(&path).is_file());
-        assert_eq!(file(43), None);
-        // A mob no command named is not the window's to log.
-        observe::request(Request::StartLog(7));
-        requests(&mut LogHost);
-        assert!(!observe::watched().contains(&7));
-        // Stop closes that log only; the Goals window stays.
-        observe::request(Request::StopLog(42));
-        requests(&mut LogHost);
-        assert_eq!(file(42), None);
-        assert!(
-            observe::snapshots()
+    impl Server for Fake {
+        fn player_dimension(&self, id: u32) -> Option<String> {
+            self.players
                 .iter()
-                .any(|w| w.id == 42 && w.views.contains(&View::Goals))
+                .find(|(i, _)| *i == id)
+                .map(|(_, d)| d.clone())
+        }
+        fn entity_data(&mut self, _dimension: &str, id: u32) -> Option<Compound> {
+            self.data
+                .iter()
+                .find(|(i, _)| *i == id)
+                .map(|(_, c)| c.clone())
+        }
+        fn entity_name(&self, _dimension: &str, id: u32) -> Option<String> {
+            self.names
+                .iter()
+                .find(|(i, _)| *i == id)
+                .map(|(_, n)| n.clone())
+        }
+        fn is_mob(&self, _dimension: &str, id: u32) -> bool {
+            self.mobs.contains(&id)
+        }
+        fn block(&mut self, key: &BlockKey, _face: [i32; 3]) -> Option<BlockSnapshot> {
+            self.block_reads.push(key.clone());
+            self.blocks
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, snapshot)| snapshot.clone())
+        }
+    }
+
+    /// A repeater's facts, as a test's read gives them.
+    fn repeater(delay: &str) -> BlockSnapshot {
+        BlockSnapshot {
+            name: "minecraft:repeater".to_owned(),
+            properties: vec![("delay".to_owned(), delay.to_owned())],
+            entity: None,
+            light: [0, 15],
+            face_light: [0, 15],
+            biome: Some("minecraft:plains".to_owned()),
+            power: 15,
+            strong: [0, 0, 0, 0, 15, 0],
+            random_ticks: false,
+            scheduled: Vec::new(),
+            tags: Vec::new(),
+            declared_by: None,
+            collision: vec![[0.0, 0.0, 0.0, 1.0, 0.125, 1.0]],
+            outline: Vec::new(),
+            taken: std::time::Instant::now(),
+        }
+    }
+
+    fn at_origin() -> BlockKey {
+        BlockKey {
+            dimension: OVERWORLD.to_owned(),
+            pos: [0, 64, 0],
+        }
+    }
+
+    /// A zombie's data with a float `Health` of 20 and an int `Age` of 7.
+    fn zombie() -> Compound {
+        let mut c = Compound::new();
+        c.insert("Health".into(), Tag::Float(20.0_f32.to_bits()));
+        c.insert("Age".into(), Tag::Int(7));
+        c
+    }
+
+    /// A clean store with `id` watched in the overworld, its data and name known to the fake.
+    fn watched(id: u32) -> Fake {
+        observe::reset();
+        *TICKS.lock().unwrap() = 0;
+        observe::remember(&[(id, Some(OVERWORLD.to_owned()))]);
+        observe::add(&[id], View::Data);
+        Fake {
+            data: vec![(id, zombie())],
+            names: vec![(id, "Zombie".to_owned())],
+            ..Fake::default()
+        }
+    }
+
+    /// The store's watch of `id`, as the windows see it.
+    fn seen(id: u32) -> observe::Inspected {
+        observe::snapshots()
+            .into_iter()
+            .find(|w| w.id == id)
+            .expect("the entity is watched")
+    }
+
+    #[test]
+    fn a_numeric_tag_is_its_value_and_the_rest_are_not_numbers() {
+        assert_eq!(number(&Tag::Byte(-3)), Some(-3.0));
+        assert_eq!(number(&Tag::Int(7)), Some(7.0));
+        assert_eq!(number(&Tag::Long(1 << 40)), Some(1_099_511_627_776.0));
+        assert_eq!(number(&Tag::Float(1.5_f32.to_bits())), Some(1.5));
+        assert_eq!(number(&Tag::Double(2.25_f64.to_bits())), Some(2.25));
+        assert_eq!(number(&Tag::String("12".into())), None);
+    }
+
+    #[test]
+    fn a_watched_path_gives_its_number_and_a_bad_path_gives_its_error() {
+        let root = Tag::Compound(zombie());
+        assert_eq!(sample("Health", &root), Ok(20.0));
+        assert_eq!(sample("Age", &root), Ok(7.0));
+        assert_eq!(sample("Missing", &root), Err("no such path".to_owned()));
+        assert!(sample("Health[", &root).is_err());
+    }
+
+    #[test]
+    fn a_watched_entity_gets_its_data_and_name_after_one_tick() {
+        let _guard = store_guard();
+        let mut fake = watched(5);
+        run(&mut fake);
+        let snap = seen(5).data.expect("the data is stored after a tick");
+        assert_eq!(snap.name, "Zombie");
+        assert_eq!(snap.data, Tag::Compound(zombie()));
+    }
+
+    #[test]
+    fn a_player_remembered_without_a_dimension_is_read_where_they_are() {
+        let _guard = store_guard();
+        let mut fake = watched(9);
+        observe::reset();
+        observe::remember(&[(9, None)]);
+        observe::add(&[9], View::Data);
+        fake.players = vec![(9, OVERWORLD.to_owned())];
+        run(&mut fake);
+        assert_eq!(
+            seen(9).data.expect("read in the player's dimension").name,
+            "Zombie"
+        );
+    }
+
+    #[test]
+    fn a_watched_path_gets_a_sample_at_the_tick_and_a_bad_path_an_error() {
+        let _guard = store_guard();
+        let mut fake = watched(5);
+        observe::add_path(&[5], "Health");
+        observe::add_path(&[5], "Missing");
+        run(&mut fake);
+        let series = seen(5).series;
+        let health = series.iter().find(|s| s.path == "Health").expect("sampled");
+        assert_eq!(health.samples.back(), Some(&(1, 20.0)));
+        let missing = series
+            .iter()
+            .find(|s| s.path == "Missing")
+            .expect("sampled");
+        assert_eq!(missing.error.as_deref(), Some("no such path"));
+        assert!(missing.samples.is_empty());
+    }
+
+    #[test]
+    fn nothing_watched_returns_early_and_does_not_count_a_tick() {
+        let _guard = store_guard();
+        observe::reset();
+        *TICKS.lock().unwrap() = 0;
+        run(&mut Fake::default());
+        assert_eq!(*TICKS.lock().unwrap(), 0);
+        let mut watching = watched(5);
+        run(&mut watching);
+        assert_eq!(*TICKS.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn a_log_for_a_mob_starts_and_one_for_another_entity_is_ignored() {
+        let _guard = store_guard();
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let before = std::env::current_dir().expect("a working folder");
+        std::env::set_current_dir(dir.path()).expect("into the scratch folder");
+        let mut fake = watched(5);
+        observe::request(Request::StartLog(6));
+        run(&mut fake);
+        assert!(!observe::is_logging(), "entity 6 was never named");
+        observe::request(Request::StartLog(5));
+        run(&mut fake);
+        assert!(!observe::is_logging(), "entity 5 is no mob");
+        fake.mobs = vec![5];
+        observe::request(Request::StartLog(5));
+        run(&mut fake);
+        assert!(observe::is_logging(), "a named mob's log is open");
+        observe::request(Request::StopLog(5));
+        run(&mut fake);
+        let log_file = seen(5).log_file;
+        std::env::set_current_dir(before).expect("back to the working folder");
+        assert_eq!(log_file, None, "the window's log mark is cleared");
+        assert!(!observe::is_logging(), "the stopped log's file is closed");
+    }
+
+    #[test]
+    fn a_watched_block_gets_its_snapshot_once_a_tick() {
+        let _guard = store_guard();
+        observe::reset();
+        observe::add_block(at_origin(), [0, 1, 0]);
+        let mut fake = Fake {
+            blocks: vec![(at_origin(), repeater("1"))],
+            ..Fake::default()
+        };
+        run(&mut fake);
+        let shown = observe::blocks()[0]
+            .snapshot
+            .clone()
+            .expect("the block is read after one tick");
+        assert_eq!(shown.name, "minecraft:repeater");
+        assert_eq!(shown.properties, vec![("delay".to_owned(), "1".to_owned())]);
+        assert_eq!(fake.block_reads, vec![at_origin()]);
+        observe::reset();
+    }
+
+    #[test]
+    fn a_block_whose_read_gives_nothing_keeps_its_last_snapshot() {
+        let _guard = store_guard();
+        observe::reset();
+        observe::add_block(at_origin(), [0, 1, 0]);
+        let mut fake = Fake {
+            blocks: vec![(at_origin(), repeater("1"))],
+            ..Fake::default()
+        };
+        run(&mut fake);
+        fake.blocks.clear();
+        run(&mut fake);
+        assert_eq!(
+            observe::blocks()[0]
+                .snapshot
+                .as_ref()
+                .map(|s| s.properties.clone()),
+            Some(vec![("delay".to_owned(), "1".to_owned())]),
+            "the read gave nothing, so the old snapshot stays"
         );
         observe::reset();
-        let _ = std::fs::remove_file(&path);
-        // The folders only when this test made them (nothing else is in them).
-        let _ = std::fs::remove_dir(std::path::Path::new(observe::DIR).join("logs"));
-        let _ = std::fs::remove_dir(observe::DIR);
+    }
+
+    #[test]
+    fn nothing_watched_reads_no_block() {
+        let _guard = store_guard();
+        observe::reset();
+        let mut fake = Fake {
+            blocks: vec![(at_origin(), repeater("1"))],
+            ..Fake::default()
+        };
+        run(&mut fake);
+        assert!(fake.block_reads.is_empty());
+    }
+
+    #[test]
+    fn a_state_string_splits_into_its_name_and_its_properties_in_order() {
+        assert_eq!(
+            split_state("minecraft:repeater[delay=1,facing=north,powered=false]"),
+            (
+                "minecraft:repeater".to_owned(),
+                vec![
+                    ("delay".to_owned(), "1".to_owned()),
+                    ("facing".to_owned(), "north".to_owned()),
+                    ("powered".to_owned(), "false".to_owned()),
+                ]
+            )
+        );
+        assert_eq!(
+            split_state("minecraft:grass_block"),
+            ("minecraft:grass_block".to_owned(), Vec::new())
+        );
+    }
+
+    #[test]
+    fn the_world_closing_starts_the_tick_count_again() {
+        let _guard = store_guard();
+        *TICKS.lock().unwrap() = 9;
+        world_closed();
+        assert_eq!(*TICKS.lock().unwrap(), 0);
     }
 }

@@ -1,0 +1,6 @@
+id = "loot_function_sample"
+name = "Loot Function Sample"
+version = "1.0.0"
+side = "server"
+description = "Adds a custom loot function to the simple dungeon chest and doubles the stack it is given."
+entries = ["main.luau"]

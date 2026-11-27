@@ -45,10 +45,7 @@ pub const CONSENT_VERSION: u32 = 2;
 /// either (tests and automated runs). What is sent still depends on the player's switches.
 pub const DEFAULT_ENDPOINT: &str = horizon_addresses::TELEMETRY;
 
-/// Where items are sent, if anywhere. Event Horizon sends nothing, the "I'm playing" ping
-/// included, unless `HORIZON_TELEMETRY_URL` names a server: its builds are not Horizon's, and
-/// Horizon's server would count them as Horizon's players. `off` (or `none`, `0`) sends nothing
-/// too. What is sent still depends on the player's switches.
+/// Where items are sent, if anywhere.
 pub fn endpoint() -> Option<String> {
     resolve(std::env::var("HORIZON_TELEMETRY_URL").ok().as_deref())
 }
@@ -57,7 +54,7 @@ fn resolve(var: Option<&str>) -> Option<String> {
     match var.map(str::trim) {
         Some("off" | "none" | "0") => None,
         Some(url) if !url.is_empty() => Some(url.trim_end_matches('/').to_owned()),
-        _ => None,
+        _ => Some(DEFAULT_ENDPOINT.to_owned()),
     }
 }
 
@@ -121,14 +118,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nothing_is_sent_unless_a_server_is_named() {
-        // Event Horizon: no server unless one is named, so nothing reaches Horizon's.
-        assert_eq!(resolve(None), None);
-        assert_eq!(resolve(Some(" ")), None);
-        assert_eq!(
-            resolve(Some(DEFAULT_ENDPOINT)).as_deref(),
-            Some(DEFAULT_ENDPOINT)
-        );
+    fn the_endpoint_defaults_to_the_server_and_can_be_moved_or_turned_off() {
+        assert_eq!(resolve(None).as_deref(), Some(DEFAULT_ENDPOINT));
+        assert_eq!(resolve(Some(" ")).as_deref(), Some(DEFAULT_ENDPOINT));
         assert_eq!(
             resolve(Some("http://127.0.0.1:8080/")).as_deref(),
             Some("http://127.0.0.1:8080")

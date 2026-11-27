@@ -572,9 +572,6 @@ impl Drop for Device {
     fn drop(&mut self) {}
 }
 
-impl Device {
-}
-
 /// Semaphores for forcing queue submissions to run in order.
 ///
 /// The [`wgpu_hal::Queue`] trait promises that if two calls to [`submit`] are

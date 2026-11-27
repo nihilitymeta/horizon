@@ -1,21 +1,18 @@
 name: event horizon release
-# Event Horizon's releases (docs/event-horizon-releases.md): the game and the launcher for Windows x64 and Linux x86_64,
-# built on GitHub's runners and published as a GitHub release, which the launchers' GitHub sources install. Linux also
-# gets the launcher as a Flatpak bundle (packaging/flatpak/). Only the programs are built here: the game files
-# (exporters, prepared data) come from Horizon's own releases.
-# - A version of your choosing: push a tag eh-v<version> on engine-work.
-#     git tag eh-v0.1.0 && git push origin eh-v0.1.0
-# - A nightly, eh-nightly-<date>: every day at 09:00 UTC (4am Eastern in winter, 5am in summer), from engine-work, when it
-#   changed since the last release. The repository variable NIGHTLY_PAUSED=1 skips nightlies until it is removed:
-#     gh variable set NIGHTLY_PAUSED -R whos-carmen/horizon --body 1      # gh variable delete NIGHTLY_PAUSED to resume
-#   Run one now from the Actions tab or with: gh workflow run "event horizon release" -R whos-carmen/horizon
+# Event Horizon's releases (docs/event-horizon-releases.md): the game, the launcher and cargo-horizon-mod for Windows x64
+# and Linux x86_64, built on GitHub-hosted runners and published as a GitHub release. No automatic builds: only a tag or a manual run.
+# - Push a tag: git tag eh-v0.1.0 && git push origin eh-v0.1.0
+# - By hand: Actions, this workflow, Run workflow, with the tag (it must start with eh-v).
 # Another platform is another row in the build matrix (a Linux row needs the apt step below).
 on:
   push:
     tags: ['eh-v*']
-  schedule:
-    - cron: '0 9 * * *'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create, e.g. eh-v0.1.0 (must start with eh-v)'
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -23,34 +20,27 @@ concurrency:
   cancel-in-progress: false
 jobs:
   decide:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.decide.outputs.tag }}
-      go: ${{ steps.decide.outputs.go }}
     steps:
       - id: decide
         env:
-          GH_TOKEN: ${{ github.token }}
-          PAUSED: ${{ vars.NIGHTLY_PAUSED }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/eh-v* ]]; then
-            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"; echo "go=true" >> "$GITHUB_OUTPUT"; exit 0
+          if [[ "$EVENT" == push ]]; then
+            tag="$REF_NAME"
+          else
+            tag="$INPUT_TAG"
           fi
-          if [[ "$GITHUB_EVENT_NAME" == schedule && "$PAUSED" == 1 ]]; then
-            echo "::notice::NIGHTLY_PAUSED=1: no nightly"; echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          if [[ ! "$tag" =~ ^eh-v[0-9A-Za-z._-]+$ ]]; then
+            echo "::error::the tag must look like eh-v0.1.0, not '$tag'"; exit 1
           fi
-          last=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .target_commitish 2>/dev/null || true)
-          if [[ "$GITHUB_EVENT_NAME" == schedule && "$last" == "$GITHUB_SHA" ]]; then
-            echo "::notice::engine-work is what the last release built: no nightly"; echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          tag="eh-nightly-$(date -u +%Y-%m-%d)"
-          # A second nightly on one day (a run by hand) gets -2, -3...
-          n=1; base=$tag
-          while gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" >/dev/null 2>&1; do n=$((n+1)); tag="$base-$n"; done
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "go=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
   build:
     needs: decide
-    if: needs.decide.outputs.go == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -59,8 +49,8 @@ jobs:
             name: windows-x64
             exe: .exe
           # Not ubuntu-latest: the programs link the runner's glibc and run only on systems at least as new. 24.04 (glibc
-          # 2.39) runs on Debian 13 and every distribution newer than 2024; ubuntu-latest moved on to a glibc (2.43) that
-          # Debian 13 (2.41) doesn't have. `cache` keeps the build cache of the old runner away from this one.
+          # 2.39) runs on Debian 13 and every distribution newer than 2024; ubuntu-latest moved on to a newer glibc.
+          # `cache` keeps the build cache of the old runner away from this one.
           - os: ubuntu-24.04
             name: linux-x86_64
             exe: ''
@@ -68,8 +58,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 240
     env:
-      # Event Horizon's own Azure app for Microsoft sign-in (docs/event-horizon-sign-in.md): the repository variable
-      # HORIZON_MSA_CLIENT_ID, never another app's. Unset, the launcher can't sign in.
+      # The app registration for Microsoft sign-in is a repository variable, set on the fork. Unset, the launcher
+      # builds but can't sign in.
       HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
       TAG: ${{ needs.decide.outputs.tag }}
     steps:
@@ -87,21 +77,20 @@ jobs:
           workspaces: |
             . -> target
             launcher -> target
-      # Built as a build from source (no HORIZON_VERSION): the programs don't call themselves Horizon releases in
-      # crash reports. The launcher records which Event Horizon release a build came from.
+      # Built from source (no HORIZON_VERSION): the programs don't call themselves Horizon releases in crash reports.
       - name: Build the game, horizon-ctl and cargo-horizon-mod
         shell: bash
         run: |
-          cargo build --release --locked -p event-horizon -p horizon-client-lib --bin horizon-client --bin horizon-ctl
+          cargo build --release --locked -p event-horizon -p horizon-client-lib --bin event-horizon --bin horizon-ctl
           cargo build --release --locked -p cargo-horizon-mod
       - name: The game starts
         shell: bash
-        run: target/release/horizon-client${{ matrix.exe }} --help | grep -q -- '--resources'
+        run: target/release/event-horizon${{ matrix.exe }} --help | grep -q -- '--resources'
       - name: Build the launcher
         shell: bash
         working-directory: launcher
         # The release it belongs to, and when it was built: the launcher updates itself to a release published after
-        # it was built (game_sources.rs).
+        # it was built.
         run: |
           [[ -n "$HORIZON_MSA_CLIENT_ID" ]] || echo "::warning::HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in to Microsoft"
           export HORIZON_LAUNCHER_TAG="$TAG" HORIZON_LAUNCHER_VERSION="${TAG#eh-}"
@@ -112,12 +101,16 @@ jobs:
         run: |
           dir="event-horizon-${{ matrix.name }}"
           mkdir -p "dist/$dir"
-          for program in horizon-client horizon-ctl cargo-horizon-mod; do
+          # The game ships under the name the launcher and the docs use: horizon-client.
+          cp "target/release/event-horizon${{ matrix.exe }}" "dist/$dir/horizon-client${{ matrix.exe }}"
+          for program in horizon-ctl cargo-horizon-mod; do
             cp "target/release/$program${{ matrix.exe }}" "dist/$dir/"
           done
           cp "launcher/target/release/horizon-launcher${{ matrix.exe }}" "dist/$dir/"
           # cargo-horizon-mod links MPL-2.0 libraries (StyLua, selene): the notice says where their source is.
           cp THIRD_PARTY_NOTICES.md "dist/$dir/"
+          # The Lua host's and the developer tools' packages, which the game loads from beside its executable (horizon-native-mods/).
+          cargo run --release --locked -p xtask -- lua-host "dist/$dir"
           cd dist
           if [[ "${{ runner.os }}" == Windows ]]; then 7z a -tzip "$dir.zip" "$dir" >/dev/null; else tar -czf "$dir.tar.gz" "$dir"; fi
       - uses: actions/upload-artifact@v7
@@ -125,42 +118,9 @@ jobs:
           name: ${{ matrix.name }}
           path: dist/event-horizon-${{ matrix.name }}.*
           if-no-files-found: error
-  # The Linux launcher as one Flatpak bundle (packaging/flatpak/): built in the freedesktop SDK so it links the
-  # runtime's libraries rather than a distribution's, with the JRE the vanilla exporters need. Its own job: a
-  # flatpak-builder problem must not hold the game's release, and a red job here is seen on the run.
-  flatpak:
-    needs: decide
-    if: needs.decide.outputs.go == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install flatpak-builder
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
-          flatpak-builder --version
-      - name: Build the launcher bundle
-        # The Microsoft sign-in app (`docs/event-horizon-sign-in.md`): a bundle built without it lists an account but
-        # cannot refresh its token, so the launcher says it has no sign-in. Set the repository variable to bake it in.
-        env:
-          HORIZON_MSA_CLIENT_ID: ${{ vars.HORIZON_MSA_CLIENT_ID }}
-          HORIZON_LAUNCHER_TAG: ${{ needs.decide.outputs.tag }}
-          HORIZON_LAUNCHER_VERSION: ${{ needs.decide.outputs.tag }}
-        run: |
-          [[ -n "$HORIZON_MSA_CLIENT_ID" ]] || echo "::warning::HORIZON_MSA_CLIENT_ID is not set: this launcher can't sign in to Microsoft"
-          # The launcher's own version reads `Event Horizon 0.2.0`-style: the tag without `eh-`, and the build's time.
-          export HORIZON_LAUNCHER_VERSION="${HORIZON_LAUNCHER_VERSION#eh-}"
-          export HORIZON_LAUNCHER_BUILT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          packaging/flatpak/build.sh dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: horizon-launcher-flatpak
-          path: dist/horizon-launcher.flatpak
-          if-no-files-found: error
   publish:
     needs: [decide, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -176,34 +136,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.decide.outputs.tag }}
         run: |
-          case "$TAG" in
-            eh-nightly-*) title="Event Horizon Nightly ${TAG#eh-nightly-}" ;;
-            *) title="Event Horizon ${TAG#eh-v}" ;;
-          esac
+          title="Event Horizon ${TAG#eh-v}"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$title" \
             --notes "$title, built from $GITHUB_SHA. Install it from the launcher's GitHub sources (docs/event-horizon-releases.md)." \
             dist/event-horizon-* dist/SHA256SUMS
-
-  # The Flatpak goes on the release once it exists: the game's release is not held back by it (a red `flatpak` job is
-  # visible on the run), and a missing bundle only means the release has one file fewer.
-  publish-flatpak:
-    needs: [decide, build, flatpak, publish]
-    if: needs.publish.result == 'success' && needs.flatpak.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: horizon-launcher-flatpak
-          path: dist
-      - name: Put the bundle on the release, and its checksum with the others
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.decide.outputs.tag }}
-        run: |
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/horizon-launcher.flatpak
-          # SHA256SUMS is written before the bundle exists: add its line to the list and put the list back.
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D dist --clobber
-          (cd dist && sha256sum horizon-launcher.flatpak >> SHA256SUMS)
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/SHA256SUMS --clobber

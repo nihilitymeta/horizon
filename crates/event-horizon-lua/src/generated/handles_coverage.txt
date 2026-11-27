@@ -1,0 +1,787 @@
+# Handle coverage (issue 74, H2) from surface c9c3d86a5c6a047b43bb6a54dbd411ec, by event-horizon-lua-gen: do not edit.
+# families: BlockEntityRef, BossBarRef, ChunkRef, DisplayRef, DragonRef, EntityRef, FishingHookRef, ItemEntityRef, LevelRef, LivingRef, MenuRef, MerchantRef, MinecartRef, MobRef, OriginalPlayerRef, PlayerRef, ProjectileRef, RaidRef, UnspawnedMobRef
+# not generated (no member binds): InstanceGroupRef, SoundRef
+
+BlockEntityRef: 17 members
+  handle:BlockEntityRef::data bound, cost 1
+  handle:BlockEntityRef::data_slots bound, cost 100
+  handle:BlockEntityRef::item_slot skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:BlockEntityRef::kind skipped: unconvertible return: Option<BlockEntityTypeKey>
+  handle:BlockEntityRef::level bound, cost 1
+  handle:BlockEntityRef::lock bound, cost 1
+  handle:BlockEntityRef::merge_data bound, cost 10, gated: nbt
+  handle:BlockEntityRef::name bound, cost 1
+  handle:BlockEntityRef::position bound, cost 1
+  handle:BlockEntityRef::replace_data skipped: powerful (needs manifest power): argument `Compound`
+  handle:BlockEntityRef::set_changed bound, cost 10
+  handle:BlockEntityRef::set_data_slot bound, cost 10
+  handle:BlockEntityRef::set_data_slots bound, cost 10
+  handle:BlockEntityRef::set_item_slot skipped: powerful (needs manifest power): argument `&Transaction`
+  handle:BlockEntityRef::set_lock skipped: powerful (needs manifest power): argument `Option<Compound>`
+  handle:BlockEntityRef::set_name bound, cost 10
+  handle:BlockEntityRef::viewers bound, cost 100
+
+BossBarRef: 23 members
+  handle:BossBarRef::add_player bound, cost 10
+  handle:BossBarRef::color bound, cost 1
+  handle:BossBarRef::create_world_fog bound, cost 1
+  handle:BossBarRef::darken_screen bound, cost 1
+  handle:BossBarRef::id bound, cost 1
+  handle:BossBarRef::max bound, cost 1
+  handle:BossBarRef::name bound, cost 1
+  handle:BossBarRef::overlay bound, cost 1
+  handle:BossBarRef::play_boss_music bound, cost 1
+  handle:BossBarRef::players bound, cost 100
+  handle:BossBarRef::remove bound, cost 10, gated: world
+  handle:BossBarRef::remove_player bound, cost 10, gated: world
+  handle:BossBarRef::set_color bound, cost 10
+  handle:BossBarRef::set_create_world_fog bound, cost 10
+  handle:BossBarRef::set_darken_screen bound, cost 10
+  handle:BossBarRef::set_max bound, cost 10
+  handle:BossBarRef::set_name bound, cost 10
+  handle:BossBarRef::set_overlay bound, cost 10
+  handle:BossBarRef::set_play_boss_music bound, cost 10
+  handle:BossBarRef::set_value bound, cost 10
+  handle:BossBarRef::set_visible bound, cost 10
+  handle:BossBarRef::value bound, cost 1
+  handle:BossBarRef::visible bound, cost 1
+
+ChunkRef: 10 members
+  handle:ChunkRef::forced bound, cost 1
+  handle:ChunkRef::is_slime_chunk bound, cost 1
+  handle:ChunkRef::level bound, cost 1
+  handle:ChunkRef::loaded bound, cost 1
+  handle:ChunkRef::pos bound, cost 1
+  handle:ChunkRef::resend bound, cost 10
+  handle:ChunkRef::set_forced bound, cost 10
+  handle:ChunkRef::set_mod_forced skipped: unconvertible arg: TicketController
+  handle:ChunkRef::status bound, cost 1
+  handle:ChunkRef::watchers bound, cost 100
+
+DisplayRef: 48 members
+  handle:DisplayRef::alignment bound, cost 1
+  handle:DisplayRef::background bound, cost 1
+  handle:DisplayRef::billboard bound, cost 1
+  handle:DisplayRef::block_state bound, cost 1
+  handle:DisplayRef::brightness skipped: unconvertible return: Option<(u8, u8)>
+  handle:DisplayRef::default_background bound, cost 1
+  handle:DisplayRef::entity bound, cost 1
+  handle:DisplayRef::glow_color_override bound, cost 1
+  handle:DisplayRef::height bound, cost 1
+  handle:DisplayRef::interpolation_duration bound, cost 1
+  handle:DisplayRef::item skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:DisplayRef::item_context bound, cost 1
+  handle:DisplayRef::kind bound, cost 1
+  handle:DisplayRef::line_width bound, cost 1
+  handle:DisplayRef::see_through bound, cost 1
+  handle:DisplayRef::set_alignment bound, cost 10
+  handle:DisplayRef::set_background bound, cost 10
+  handle:DisplayRef::set_billboard bound, cost 10
+  handle:DisplayRef::set_block_state bound, cost 10
+  handle:DisplayRef::set_brightness skipped: unconvertible arg: Option<(u8, u8)>
+  handle:DisplayRef::set_default_background bound, cost 10
+  handle:DisplayRef::set_glow_color_override bound, cost 10
+  handle:DisplayRef::set_height bound, cost 10
+  handle:DisplayRef::set_interpolation_duration bound, cost 10
+  handle:DisplayRef::set_item skipped: powerful (needs manifest power): argument `Option<item::item_stack::ItemStack>`
+  handle:DisplayRef::set_item_context bound, cost 10
+  handle:DisplayRef::set_line_width bound, cost 10
+  handle:DisplayRef::set_see_through bound, cost 10
+  handle:DisplayRef::set_shadow_radius bound, cost 10
+  handle:DisplayRef::set_shadow_strength bound, cost 10
+  handle:DisplayRef::set_start_interpolation bound, cost 10
+  handle:DisplayRef::set_teleport_duration bound, cost 10
+  handle:DisplayRef::set_text bound, cost 10
+  handle:DisplayRef::set_text_opacity bound, cost 10
+  handle:DisplayRef::set_text_shadow bound, cost 10
+  handle:DisplayRef::set_transformation skipped: unconvertible arg: Transformation
+  handle:DisplayRef::set_view_range bound, cost 10
+  handle:DisplayRef::set_width bound, cost 10
+  handle:DisplayRef::shadow_radius bound, cost 1
+  handle:DisplayRef::shadow_strength bound, cost 1
+  handle:DisplayRef::start_interpolation bound, cost 1
+  handle:DisplayRef::teleport_duration bound, cost 1
+  handle:DisplayRef::text bound, cost 1
+  handle:DisplayRef::text_opacity bound, cost 1
+  handle:DisplayRef::text_shadow bound, cost 1
+  handle:DisplayRef::transformation bound, cost 1
+  handle:DisplayRef::view_range bound, cost 1
+  handle:DisplayRef::width bound, cost 1
+
+DragonRef: 6 members
+  handle:DragonRef::alive_crystals bound, cost 1
+  handle:DragonRef::entity bound, cost 1
+  handle:DragonRef::mob bound, cost 1
+  handle:DragonRef::phase bound, cost 1
+  handle:DragonRef::previously_killed bound, cost 1
+  handle:DragonRef::set_phase bound, cost 10
+
+EntityRef: 115 members
+  handle:EntityRef::add_tag bound, cost 10
+  handle:EntityRef::added_to_level bound, cost 1
+  handle:EntityRef::air_supply bound, cost 1
+  handle:EntityRef::block_position bound, cost 1
+  handle:EntityRef::bounding_box skipped: unconvertible return: Option<[[f64; 3]; 2]>
+  handle:EntityRef::broadcast_event bound, cost 10
+  handle:EntityRef::capability skipped: generics: <T: ? Sized + 'static, C: Copy + 'static>
+  handle:EntityRef::classification bound, cost 1
+  handle:EntityRef::clear_fire bound, cost 10
+  handle:EntityRef::controlling_passenger bound, cost 1
+  handle:EntityRef::custom_name_visible bound, cost 1
+  handle:EntityRef::damage_cooldown_time bound, cost 1
+  handle:EntityRef::detach_leash bound, cost 10
+  handle:EntityRef::dimensions bound, cost 1
+  handle:EntityRef::direction bound, cost 1
+  handle:EntityRef::discard bound, cost 10, gated: world
+  handle:EntityRef::dismount_location bound, cost 1
+  handle:EntityRef::distance_to_sqr bound, cost 1
+  handle:EntityRef::eject_passengers bound, cost 10
+  handle:EntityRef::entities_team_damage_allowed bound, cost 1
+  handle:EntityRef::epoch bound, cost 1
+  handle:EntityRef::extinguish_fire bound, cost 10
+  handle:EntityRef::eye_fluid bound, cost 1
+  handle:EntityRef::eye_height bound, cost 1
+  handle:EntityRef::eye_position bound, cost 1
+  handle:EntityRef::fire_immune bound, cost 1
+  handle:EntityRef::fire_ticks bound, cost 1
+  handle:EntityRef::fluid_heights skipped: unconvertible return: Option<Vec<(String, f64)>>
+  handle:EntityRef::game_event bound, cost 10
+  handle:EntityRef::glowing bound, cost 1
+  handle:EntityRef::head_yaw bound, cost 1
+  handle:EntityRef::hurt bound, cost 10
+  handle:EntityRef::id bound, cost 1
+  handle:EntityRef::indirect_passengers bound, cost 100
+  handle:EntityRef::invulnerable_time bound, cost 1
+  handle:EntityRef::invulnerable_to_damage bound, cost 1
+  handle:EntityRef::invulnerable_to_piercing_weapon bound, cost 1
+  handle:EntityRef::is_crouching bound, cost 1
+  handle:EntityRef::is_in_lava bound, cost 1
+  handle:EntityRef::is_in_water bound, cost 1
+  handle:EntityRef::is_invisible bound, cost 1
+  handle:EntityRef::is_multipart bound, cost 1
+  handle:EntityRef::is_passenger bound, cost 1
+  handle:EntityRef::is_passenger_of_same_vehicle bound, cost 1
+  handle:EntityRef::is_shift_key_down bound, cost 1
+  handle:EntityRef::is_silent bound, cost 1
+  handle:EntityRef::is_sprinting bound, cost 1
+  handle:EntityRef::is_vehicle bound, cost 1
+  handle:EntityRef::kind skipped: unconvertible return: Option<EntityTypeKey>
+  handle:EntityRef::leash_holder bound, cost 1
+  handle:EntityRef::leash_to bound, cost 10
+  handle:EntityRef::leash_to_knot bound, cost 10
+  handle:EntityRef::level bound, cost 1
+  handle:EntityRef::living bound, cost 1
+  handle:EntityRef::max_air_supply bound, cost 1
+  handle:EntityRef::merge_nbt bound, cost 10, gated: nbt
+  handle:EntityRef::name bound, cost 1
+  handle:EntityRef::nbt skipped: powerful (needs manifest power): name contains `nbt`
+  handle:EntityRef::no_gravity bound, cost 1
+  handle:EntityRef::no_physics bound, cost 1
+  handle:EntityRef::on_block bound, cost 1
+  handle:EntityRef::on_ground bound, cost 1
+  handle:EntityRef::parts bound, cost 100
+  handle:EntityRef::passengers bound, cost 100
+  handle:EntityRef::permanently_invulnerable bound, cost 1
+  handle:EntityRef::pick bound, cost 1
+  handle:EntityRef::play_bound_sound bound, cost 10
+  handle:EntityRef::play_sound bound, cost 10
+  handle:EntityRef::portal_cooldown bound, cost 1
+  handle:EntityRef::pose bound, cost 1
+  handle:EntityRef::position bound, cost 1
+  handle:EntityRef::push bound, cost 10
+  handle:EntityRef::remove skipped: powerful (needs manifest power): name contains `remove`
+  handle:EntityRef::remove_tag bound, cost 10, gated: world
+  handle:EntityRef::reset_fall_distance bound, cost 10
+  handle:EntityRef::root_vehicle bound, cost 1
+  handle:EntityRef::rotation bound, cost 1
+  handle:EntityRef::run_command bound, cost 10, gated: commands
+  handle:EntityRef::run_command_with_output bound, cost 10, gated: commands
+  handle:EntityRef::set_air_supply bound, cost 10
+  handle:EntityRef::set_collision_exclusions skipped: unconvertible arg: &[[f64; 6]]
+  handle:EntityRef::set_custom_name bound, cost 10
+  handle:EntityRef::set_custom_name_visible bound, cost 10
+  handle:EntityRef::set_damage_cooldown_time bound, cost 10
+  handle:EntityRef::set_glowing bound, cost 10
+  handle:EntityRef::set_hanging_direction bound, cost 10
+  handle:EntityRef::set_head_yaw bound, cost 10
+  handle:EntityRef::set_invisible bound, cost 10
+  handle:EntityRef::set_invulnerable bound, cost 10
+  handle:EntityRef::set_invulnerable_time bound, cost 10
+  handle:EntityRef::set_item_frame_rotation bound, cost 10
+  handle:EntityRef::set_no_gravity bound, cost 10
+  handle:EntityRef::set_no_physics bound, cost 10
+  handle:EntityRef::set_portal_cooldown bound, cost 10
+  handle:EntityRef::set_remaining_fire_ticks bound, cost 10
+  handle:EntityRef::set_rotation bound, cost 10
+  handle:EntityRef::set_silent bound, cost 10
+  handle:EntityRef::set_ticks_frozen bound, cost 10
+  handle:EntityRef::set_velocity bound, cost 10
+  handle:EntityRef::sound_source bound, cost 1
+  handle:EntityRef::spawn_at_location skipped: powerful (needs manifest power): name contains `spawn`
+  handle:EntityRef::spectator bound, cost 1
+  handle:EntityRef::sprint_particles skipped: client write: &mut dyn ClientHost
+  handle:EntityRef::start_riding bound, cost 10
+  handle:EntityRef::stop_riding bound, cost 10
+  handle:EntityRef::tags bound, cost 100
+  handle:EntityRef::teleport_to bound, cost 10
+  handle:EntityRef::teleport_to_level bound, cost 10, gated: world
+  handle:EntityRef::tick_count bound, cost 1
+  handle:EntityRef::ticks_frozen bound, cost 1
+  handle:EntityRef::up_vector bound, cost 1
+  handle:EntityRef::uuid bound, cost 10
+  handle:EntityRef::vehicle bound, cost 1
+  handle:EntityRef::velocity bound, cost 1
+  handle:EntityRef::view_vector bound, cost 1
+
+FishingHookRef: 4 members
+  handle:FishingHookRef::entity bound, cost 1
+  handle:FishingHookRef::hooked_in bound, cost 1
+  handle:FishingHookRef::open_water bound, cost 1
+  handle:FishingHookRef::player_owner bound, cost 1
+
+ItemEntityRef: 12 members
+  handle:ItemEntityRef::age bound, cost 1
+  handle:ItemEntityRef::entity bound, cost 1
+  handle:ItemEntityRef::owner bound, cost 1
+  handle:ItemEntityRef::pickup_delay bound, cost 1
+  handle:ItemEntityRef::set_default_pickup_delay bound, cost 10
+  handle:ItemEntityRef::set_never_pickup bound, cost 10
+  handle:ItemEntityRef::set_no_pickup_delay bound, cost 10
+  handle:ItemEntityRef::set_pickup_delay bound, cost 10
+  handle:ItemEntityRef::set_stack skipped: powerful (needs manifest power): argument `item::item_stack::ItemStack`
+  handle:ItemEntityRef::set_target bound, cost 10
+  handle:ItemEntityRef::stack skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:ItemEntityRef::target bound, cost 1
+
+LevelRef: 145 members
+  handle:LevelRef::add_water_ticket skipped: powerful (needs manifest power): name contains `ticket`
+  handle:LevelRef::all_entities bound, cost 100
+  handle:LevelRef::award_experience bound, cost 10, gated: spawn
+  handle:LevelRef::best_neighbor_signal bound, cost 1
+  handle:LevelRef::biome_at bound, cost 1
+  handle:LevelRef::biome_effects bound, cost 1
+  handle:LevelRef::biome_in_tag bound, cost 1
+  handle:LevelRef::biome_properties bound, cost 1
+  handle:LevelRef::biome_spawners skipped: unconvertible return: Option<Vec<BiomeSpawners>>
+  handle:LevelRef::block skipped: unconvertible return: Option<BlockKey>
+  handle:LevelRef::block_break_speed bound, cost 1
+  handle:LevelRef::block_drops skipped: powerful (needs manifest power): argument `Option<&item::item_stack::ItemStack>`
+  handle:LevelRef::block_event skipped: unconvertible arg: BlockKey
+  handle:LevelRef::block_face_sturdy bound, cost 1
+  handle:LevelRef::block_floor_height bound, cost 1
+  handle:LevelRef::block_property bound, cost 1
+  handle:LevelRef::block_random_tick bound, cost 10, gated: world
+  handle:LevelRef::block_shape bound, cost 100
+  handle:LevelRef::block_state bound, cost 1
+  handle:LevelRef::block_tick bound, cost 10
+  handle:LevelRef::block_transform skipped: unconvertible arg: BlockHit
+  handle:LevelRef::bone_meal bound, cost 10
+  handle:LevelRef::brightness bound, cost 1
+  handle:LevelRef::can_see_sky bound, cost 1
+  handle:LevelRef::can_spawn_entities_in_chunk bound, cost 1
+  handle:LevelRef::capability skipped: generics: <T: ? Sized + 'static>
+  handle:LevelRef::capability_generation bound, cost 1
+  handle:LevelRef::check_light bound, cost 10
+  handle:LevelRef::chunk_ref bound, cost 1
+  handle:LevelRef::client_biome bound, cost 1
+  handle:LevelRef::clip bound, cost 100
+  handle:LevelRef::clock_marker_time bound, cost 1
+  handle:LevelRef::clock_time bound, cost 1
+  handle:LevelRef::collision_boxes skipped: unconvertible arg: [f64; 6]
+  handle:LevelRef::datapack_entries bound, cost 100
+  handle:LevelRef::datapack_handle skipped: unconvertible return: DatapackHandle
+  handle:LevelRef::datapack_read skipped: unconvertible arg: &DatapackHandle
+  handle:LevelRef::day_time bound, cost 1
+  handle:LevelRef::destroy_block skipped: powerful (needs manifest power): argument `Option<&item::item_stack::ItemStack>`
+  handle:LevelRef::difficulty bound, cost 1
+  handle:LevelRef::dimension skipped: unconvertible return: DimensionKey
+  handle:LevelRef::dimension_shape bound, cost 1
+  handle:LevelRef::dimension_type skipped: unconvertible return: Option<LevelDimensionType>
+  handle:LevelRef::direct_signal bound, cost 1
+  handle:LevelRef::direct_signal_to bound, cost 1
+  handle:LevelRef::enabled_features skipped: unconvertible return: Option<FeatureFlags>
+  handle:LevelRef::entities_in bound, cost 100
+  handle:LevelRef::entity_ticking bound, cost 1
+  handle:LevelRef::epoch bound, cost 1
+  handle:LevelRef::explode bound, cost 10, gated: explosions
+  handle:LevelRef::explosion_destroy_blocks bound, cost 10, gated: explosions
+  handle:LevelRef::explosion_resistance bound, cost 10
+  handle:LevelRef::explosion_resistances skipped: unconvertible arg: &ResistanceCells
+  handle:LevelRef::find_closest_biome skipped: unconvertible arg: BiomeSearch
+  handle:LevelRef::find_nearest_structure skipped: unconvertible arg: StructureSearch
+  handle:LevelRef::fluid_can_be_replaced_with skipped: unconvertible arg: FluidKey
+  handle:LevelRef::fluid_flow bound, cost 1
+  handle:LevelRef::fluid_height bound, cost 1
+  handle:LevelRef::fluid_height_for_camera bound, cost 1
+  handle:LevelRef::fluid_shape bound, cost 100
+  handle:LevelRef::fluid_state skipped: unconvertible return: Option<FluidState>
+  handle:LevelRef::fluid_tick bound, cost 10
+  handle:LevelRef::fluid_tick_delay skipped: unconvertible arg: FluidKey
+  handle:LevelRef::forced_chunks bound, cost 100
+  handle:LevelRef::game_event skipped: unconvertible arg: GameEventContext
+  handle:LevelRef::game_rule bound, cost 1
+  handle:LevelRef::game_rule_bool skipped: unconvertible arg: BoolGameRuleKey
+  handle:LevelRef::game_rule_int skipped: unconvertible arg: IntGameRuleKey
+  handle:LevelRef::game_rules skipped: unconvertible return: Vec<(String, GameRuleValue)>
+  handle:LevelRef::game_time bound, cost 1
+  handle:LevelRef::get_sky_darken bound, cost 1
+  handle:LevelRef::global_level_event bound, cost 10
+  handle:LevelRef::has_collisions skipped: unconvertible arg: [f64; 6]
+  handle:LevelRef::has_neighbor_signal bound, cost 1
+  handle:LevelRef::has_water_ticket bound, cost 1
+  handle:LevelRef::height skipped: unconvertible return: Option<(i32, i32)>
+  handle:LevelRef::in_place bound, cost 1
+  handle:LevelRef::in_spawnable_bounds bound, cost 1
+  handle:LevelRef::in_world_bounds bound, cost 1
+  handle:LevelRef::invalidate_capabilities bound, cost 10, gated: world
+  handle:LevelRef::is_loaded bound, cost 1
+  handle:LevelRef::is_raining bound, cost 1
+  handle:LevelRef::is_raining_at bound, cost 1
+  handle:LevelRef::is_thundering bound, cost 1
+  handle:LevelRef::level_event bound, cost 10
+  handle:LevelRef::lightning_target skipped: powerful (needs manifest power): name contains `lightning`
+  handle:LevelRef::line_of_sight bound, cost 1
+  handle:LevelRef::loaded_chunks bound, cost 100
+  handle:LevelRef::local_difficulty bound, cost 1
+  handle:LevelRef::logical_height bound, cost 1
+  handle:LevelRef::map_data skipped: unconvertible return: Option<MapState>
+  handle:LevelRef::mod_forced_chunks skipped: unconvertible arg: TicketController
+  handle:LevelRef::neighbor_changed bound, cost 10
+  handle:LevelRef::online_players bound, cost 100
+  handle:LevelRef::pickup_fluid skipped: powerful (needs manifest power): argument `&Transaction`
+  handle:LevelRef::place_fluid skipped: powerful (needs manifest power): argument `&Transaction`
+  handle:LevelRef::play_fluid_effects skipped: powerful (needs manifest power): argument `&Transaction`
+  handle:LevelRef::play_sound bound, cost 10
+  handle:LevelRef::pop_resource bound, cost 10, gated: spawn
+  handle:LevelRef::raid bound, cost 1
+  handle:LevelRef::raid_at bound, cost 1
+  handle:LevelRef::raids bound, cost 100
+  handle:LevelRef::random skipped: unconvertible return: Option<LegacyRandom>
+  handle:LevelRef::ray_trace_entities bound, cost 100
+  handle:LevelRef::recipe_for skipped: unconvertible arg: &RecipeInput
+  handle:LevelRef::register_passage skipped: powerful (needs manifest power): name contains `passage`
+  handle:LevelRef::relight_chunks skipped: powerful (needs manifest power): name contains `relight`
+  handle:LevelRef::remove_block bound, cost 10, gated: world
+  handle:LevelRef::remove_passage skipped: powerful (needs manifest power): name contains `passage`
+  handle:LevelRef::request_save bound, cost 10, gated: world
+  handle:LevelRef::respawn_data bound, cost 1
+  handle:LevelRef::roll_loot skipped: powerful (needs manifest power): argument `Option<&item::item_stack::ItemStack>`
+  handle:LevelRef::sea_level bound, cost 1
+  handle:LevelRef::seed bound, cost 1
+  handle:LevelRef::send_block_updated bound, cost 10
+  handle:LevelRef::send_particles skipped: unconvertible arg: &ParticleOptions
+  handle:LevelRef::set_biome bound, cost 10
+  handle:LevelRef::set_block skipped: unconvertible arg: BlockUpdateFlags
+  handle:LevelRef::set_break_progress bound, cost 10
+  handle:LevelRef::set_client_break_progress skipped: client write: &mut dyn ClientHost
+  handle:LevelRef::set_clock_time bound, cost 10, gated: world
+  handle:LevelRef::set_game_rule bound, cost 10, gated: game_rules
+  handle:LevelRef::set_map_data skipped: powerful (needs manifest power): name contains `map_data`
+  handle:LevelRef::set_random skipped: powerful (needs manifest power): name contains `random`
+  handle:LevelRef::set_respawn_data bound, cost 10, gated: spawn
+  handle:LevelRef::set_spawn_flags skipped: powerful (needs manifest power): name contains `spawn`
+  handle:LevelRef::set_spawn_limits skipped: powerful (needs manifest power): name contains `spawn`
+  handle:LevelRef::set_weather bound, cost 10, gated: world
+  handle:LevelRef::set_weather_levels bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_center bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_damage bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_size bound, cost 10, gated: world
+  handle:LevelRef::set_world_border_warning bound, cost 10, gated: world
+  handle:LevelRef::should_tick_blocks_at bound, cost 1
+  handle:LevelRef::signal bound, cost 1
+  handle:LevelRef::spawn_flags bound, cost 1
+  handle:LevelRef::spawn_item bound, cost 10, gated: spawn
+  handle:LevelRef::spawn_item_with_motion bound, cost 10, gated: spawn
+  handle:LevelRef::spawn_limits bound, cost 1
+  handle:LevelRef::spawn_mob bound, cost 10, gated: spawn
+  handle:LevelRef::strike_lightning bound, cost 10, gated: world
+  handle:LevelRef::update_neighbors skipped: unconvertible arg: NeighbourUpdate
+  handle:LevelRef::weather skipped: unconvertible return: Option<(f32, f32)>
+  handle:LevelRef::with_random skipped: generics: <T>
+  handle:LevelRef::world_border bound, cost 1
+
+LivingRef: 73 members
+  handle:LivingRef::absorption bound, cost 1
+  handle:LivingRef::add_attribute_modifier skipped: unconvertible arg: AttributeModifier
+  handle:LivingRef::add_effect skipped: unconvertible arg: &ActiveEffect
+  handle:LivingRef::alive bound, cost 1
+  handle:LivingRef::apply_consume_effect skipped: powerful (needs manifest power): argument `&item::item_stack::ItemStack`
+  handle:LivingRef::arrow_count bound, cost 10
+  handle:LivingRef::attribute_base bound, cost 1
+  handle:LivingRef::attribute_modifiers bound, cost 100
+  handle:LivingRef::attribute_value bound, cost 1
+  handle:LivingRef::attributes bound, cost 100
+  handle:LivingRef::baby bound, cost 1
+  handle:LivingRef::bed_orientation bound, cost 1
+  handle:LivingRef::can_breathe_underwater bound, cost 1
+  handle:LivingRef::can_freeze bound, cost 1
+  handle:LivingRef::can_use_portal bound, cost 1
+  handle:LivingRef::clear_sleeping_pos bound, cost 10
+  handle:LivingRef::dimensions_for_pose bound, cost 1
+  handle:LivingRef::drop skipped: powerful (needs manifest power): argument `item::item_stack::ItemStack`
+  handle:LivingRef::effect skipped: unconvertible arg: EffectKey
+  handle:LivingRef::effect_blend_factor skipped: other: host kind &dyn ClientHost
+  handle:LivingRef::effects skipped: unconvertible return: Option<Vec<ActiveEffect>>
+  handle:LivingRef::entity bound, cost 1
+  handle:LivingRef::equipment skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:LivingRef::gliding_ticks bound, cost 1
+  handle:LivingRef::hand_item skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:LivingRef::has_line_of_sight bound, cost 1
+  handle:LivingRef::heal bound, cost 10
+  handle:LivingRef::health bound, cost 1
+  handle:LivingRef::hurt_and_break skipped: powerful (needs manifest power): argument `EquipmentSlot`
+  handle:LivingRef::id bound, cost 1
+  handle:LivingRef::in_melee_range bound, cost 1
+  handle:LivingRef::is_blocking bound, cost 1
+  handle:LivingRef::is_climbing bound, cost 1
+  handle:LivingRef::is_gliding bound, cost 1
+  handle:LivingRef::is_jumping bound, cost 1
+  handle:LivingRef::is_sleeping bound, cost 1
+  handle:LivingRef::is_tamed bound, cost 1
+  handle:LivingRef::item_use_remaining bound, cost 1
+  handle:LivingRef::kill_credit bound, cost 1
+  handle:LivingRef::last_attacker bound, cost 1
+  handle:LivingRef::max_health bound, cost 1
+  handle:LivingRef::owner bound, cost 1
+  handle:LivingRef::potion_affected skipped: unconvertible arg: EffectKey
+  handle:LivingRef::random_teleport bound, cost 10, gated: world
+  handle:LivingRef::release_using_item bound, cost 10
+  handle:LivingRef::remove_all_effects skipped: powerful (needs manifest power): name contains `remove`
+  handle:LivingRef::remove_attribute_modifier skipped: powerful (needs manifest power): name contains `remove`
+  handle:LivingRef::remove_effect skipped: powerful (needs manifest power): name contains `remove`
+  handle:LivingRef::replace_attribute_modifier skipped: unconvertible arg: AttributeModifier
+  handle:LivingRef::set_absorption bound, cost 10
+  handle:LivingRef::set_arrow_count bound, cost 10
+  handle:LivingRef::set_arrow_removal_ticks bound, cost 10
+  handle:LivingRef::set_attribute_base bound, cost 10
+  handle:LivingRef::set_equipment bound, cost 10, gated: inventory
+  handle:LivingRef::set_hand_item bound, cost 10, gated: inventory
+  handle:LivingRef::set_health bound, cost 10
+  handle:LivingRef::set_is_jumping bound, cost 10
+  handle:LivingRef::set_item_use_remaining bound, cost 10
+  handle:LivingRef::set_riptiding bound, cost 10
+  handle:LivingRef::set_sleeping_pos bound, cost 10
+  handle:LivingRef::set_stinger_count bound, cost 10
+  handle:LivingRef::set_stinger_removal_ticks bound, cost 10
+  handle:LivingRef::set_waypoint_color bound, cost 10
+  handle:LivingRef::set_waypoint_style bound, cost 10
+  handle:LivingRef::sleeping_pos bound, cost 1
+  handle:LivingRef::start_sleeping bound, cost 10
+  handle:LivingRef::start_using_item bound, cost 10
+  handle:LivingRef::stinger_count bound, cost 10
+  handle:LivingRef::stop_gliding bound, cost 10
+  handle:LivingRef::stop_sleeping bound, cost 10
+  handle:LivingRef::swing bound, cost 10
+  handle:LivingRef::used_item_hand bound, cost 1
+  handle:LivingRef::weapon_item skipped: unconvertible return: Option<item::item_stack::ItemStack>
+
+MenuRef: 15 members
+  handle:MenuRef::carried skipped: unconvertible return: Option<Option<item::item_stack::ItemStack>>
+  handle:MenuRef::click skipped: client write: &mut dyn ClientHost
+  handle:MenuRef::click_button skipped: client write: &mut dyn ClientHost
+  handle:MenuRef::close skipped: client write: &mut dyn ClientHost
+  handle:MenuRef::close_container bound, cost 10
+  handle:MenuRef::container_id bound, cost 1
+  handle:MenuRef::cursor skipped: unconvertible return: ItemPlace
+  handle:MenuRef::kind bound, cost 1
+  handle:MenuRef::slot skipped: unconvertible return: Option<Option<item::item_stack::ItemStack>>
+  handle:MenuRef::slot_backing skipped: unconvertible return: Option<MenuSlotBacking>
+  handle:MenuRef::slot_boxes skipped: other: host kind &dyn ClientHost
+  handle:MenuRef::slot_count bound, cost 1
+  handle:MenuRef::slot_gives bound, cost 1
+  handle:MenuRef::slot_holds bound, cost 1
+  handle:MenuRef::slot_kinds skipped: other: host kind &dyn ClientHost
+
+MerchantRef: 14 members
+  handle:MerchantRef::add_offer skipped: powerful (needs manifest power): MerchantRef method containing `offer`
+  handle:MerchantRef::entity bound, cost 1
+  handle:MerchantRef::level bound, cost 1
+  handle:MerchantRef::offers skipped: unconvertible return: Option<Vec<MerchantOffer>>
+  handle:MerchantRef::profession bound, cost 1
+  handle:MerchantRef::remove_offer skipped: powerful (needs manifest power): name contains `remove`
+  handle:MerchantRef::set_level bound, cost 10
+  handle:MerchantRef::set_offer skipped: powerful (needs manifest power): MerchantRef method containing `offer`
+  handle:MerchantRef::set_profession bound, cost 10
+  handle:MerchantRef::set_villager_type bound, cost 10
+  handle:MerchantRef::set_xp bound, cost 10
+  handle:MerchantRef::trading_player bound, cost 1
+  handle:MerchantRef::villager_type bound, cost 1
+  handle:MerchantRef::xp bound, cost 1
+
+MinecartRef: 24 members
+  handle:MinecartRef::command bound, cost 1
+  handle:MinecartRef::custom_display_block skipped: unconvertible return: Option<Option<BlockState>>
+  handle:MinecartRef::damage bound, cost 1
+  handle:MinecartRef::display_offset bound, cost 1
+  handle:MinecartRef::entity bound, cost 1
+  handle:MinecartRef::flipped bound, cost 1
+  handle:MinecartRef::fuel bound, cost 1
+  handle:MinecartRef::fuse bound, cost 1
+  handle:MinecartRef::hopper_enabled bound, cost 1
+  handle:MinecartRef::hurt_time bound, cost 1
+  handle:MinecartRef::is_on_rails bound, cost 1
+  handle:MinecartRef::kind bound, cost 1
+  handle:MinecartRef::max_speed bound, cost 1
+  handle:MinecartRef::prime_fuse bound, cost 10
+  handle:MinecartRef::push bound, cost 1
+  handle:MinecartRef::set_command skipped: powerful (needs manifest power): name contains `command`
+  handle:MinecartRef::set_custom_display_block skipped: unconvertible arg: Option<BlockState>
+  handle:MinecartRef::set_damage bound, cost 10
+  handle:MinecartRef::set_display_offset bound, cost 10
+  handle:MinecartRef::set_flipped bound, cost 10
+  handle:MinecartRef::set_fuel bound, cost 10
+  handle:MinecartRef::set_hopper_enabled bound, cost 10
+  handle:MinecartRef::set_hurt_time bound, cost 10
+  handle:MinecartRef::set_push bound, cost 10
+
+MobRef: 54 members
+  handle:MobRef::add_goal skipped: unconvertible arg: &GoalSpec
+  handle:MobRef::add_target_goal skipped: unconvertible arg: &GoalSpec
+  handle:MobRef::ai_paused bound, cost 1
+  handle:MobRef::can_float bound, cost 1
+  handle:MobRef::can_open_doors bound, cost 1
+  handle:MobRef::can_pass_doors bound, cost 1
+  handle:MobRef::can_pick_up_loot bound, cost 1
+  handle:MobRef::can_use_portal bound, cost 1
+  handle:MobRef::clear_restriction bound, cost 10
+  handle:MobRef::entity bound, cost 1
+  handle:MobRef::goals skipped: unconvertible return: Option<Vec<MobGoalEntry>>
+  handle:MobRef::has_restriction bound, cost 1
+  handle:MobRef::is_aggressive bound, cost 1
+  handle:MobRef::is_done bound, cost 1
+  handle:MobRef::is_within_restriction bound, cost 1
+  handle:MobRef::jump bound, cost 10
+  handle:MobRef::left_handed bound, cost 1
+  handle:MobRef::living bound, cost 1
+  handle:MobRef::look_at bound, cost 10
+  handle:MobRef::move_to bound, cost 10
+  handle:MobRef::move_to_path skipped: unconvertible arg: Vec<PathNode>
+  handle:MobRef::navigation_speed bound, cost 1
+  handle:MobRef::no_action_time bound, cost 1
+  handle:MobRef::no_ai bound, cost 1
+  handle:MobRef::pathfinding_malus bound, cost 1
+  handle:MobRef::persistence_required bound, cost 1
+  handle:MobRef::raid bound, cost 1
+  handle:MobRef::remove_goal bound, cost 10, gated: world
+  handle:MobRef::remove_target_goal bound, cost 10, gated: world
+  handle:MobRef::requires_custom_persistence bound, cost 1
+  handle:MobRef::restrict_center bound, cost 1
+  handle:MobRef::restrict_radius bound, cost 1
+  handle:MobRef::restrict_to bound, cost 10
+  handle:MobRef::set_aggressive bound, cost 10
+  handle:MobRef::set_ai_paused bound, cost 10
+  handle:MobRef::set_baby bound, cost 10
+  handle:MobRef::set_brain_target bound, cost 10
+  handle:MobRef::set_can_float bound, cost 10
+  handle:MobRef::set_can_open_doors bound, cost 10
+  handle:MobRef::set_can_pass_doors bound, cost 10
+  handle:MobRef::set_can_pick_up_loot bound, cost 10
+  handle:MobRef::set_left_handed bound, cost 10
+  handle:MobRef::set_navigation_speed bound, cost 10
+  handle:MobRef::set_no_action_time bound, cost 10
+  handle:MobRef::set_no_ai bound, cost 10
+  handle:MobRef::set_pathfinding_malus bound, cost 10
+  handle:MobRef::set_persistence_required bound, cost 10
+  handle:MobRef::set_target bound, cost 10
+  handle:MobRef::set_wanted_position bound, cost 10
+  handle:MobRef::speed_modifier bound, cost 1
+  handle:MobRef::stop bound, cost 10
+  handle:MobRef::target bound, cost 1
+  handle:MobRef::target_goals skipped: unconvertible return: Option<Vec<MobGoalEntry>>
+  handle:MobRef::wanted_position bound, cost 1
+
+OriginalPlayerRef: 9 members
+  handle:OriginalPlayerRef::attachment skipped: generics: <T: Clone + Send + Sync + 'static>
+  handle:OriginalPlayerRef::dimension bound, cost 1
+  handle:OriginalPlayerRef::effects skipped: unconvertible return: Option<Vec<ActiveEffect>>
+  handle:OriginalPlayerRef::experience bound, cost 1
+  handle:OriginalPlayerRef::health bound, cost 1
+  handle:OriginalPlayerRef::inventory_slot skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:OriginalPlayerRef::level bound, cost 1
+  handle:OriginalPlayerRef::position bound, cost 1
+  handle:OriginalPlayerRef::uuid bound, cost 1
+
+PlayerRef: 112 members
+  handle:PlayerRef::abilities bound, cost 1
+  handle:PlayerRef::ack_block_changes bound, cost 10
+  handle:PlayerRef::action_bar bound, cost 10
+  handle:PlayerRef::add_exhaustion bound, cost 10
+  handle:PlayerRef::address bound, cost 1
+  handle:PlayerRef::ambient_mood skipped: other: host kind &dyn ClientHost
+  handle:PlayerRef::announced_channels bound, cost 100
+  handle:PlayerRef::attack_strength_scale bound, cost 1
+  handle:PlayerRef::award_recipes bound, cost 10, gated: players
+  handle:PlayerRef::award_stat skipped: powerful (needs manifest power): name contains `award_stat`
+  handle:PlayerRef::back_mod_menu_slots skipped: unconvertible arg: Vec<MenuSlotPlace>
+  handle:PlayerRef::block_breaking skipped: other: host kind &dyn ClientHost
+  handle:PlayerRef::can_eat bound, cost 1
+  handle:PlayerRef::can_harm bound, cost 1
+  handle:PlayerRef::can_use_game_master_blocks bound, cost 1
+  handle:PlayerRef::client_brand bound, cost 1
+  handle:PlayerRef::container_menu bound, cost 1
+  handle:PlayerRef::counts_for_sleep bound, cost 1
+  handle:PlayerRef::destroy_block bound, cost 10
+  handle:PlayerRef::dimension bound, cost 1
+  handle:PlayerRef::disconnect bound, cost 10, gated: players
+  handle:PlayerRef::discovered_recipes bound, cost 100
+  handle:PlayerRef::drop_stack bound, cost 10, gated: inventory
+  handle:PlayerRef::ender_chest skipped: unconvertible return: Option<Vec<(u32, item::item_stack::ItemStack)>>
+  handle:PlayerRef::entity bound, cost 1
+  handle:PlayerRef::exp_cooldown bound, cost 1
+  handle:PlayerRef::experience bound, cost 1
+  handle:PlayerRef::feed bound, cost 10
+  handle:PlayerRef::food bound, cost 1
+  handle:PlayerRef::game_mode bound, cost 1
+  handle:PlayerRef::give_experience_points skipped: powerful (needs manifest power): name contains `give`
+  handle:PlayerRef::give_levels skipped: powerful (needs manifest power): name contains `give`
+  handle:PlayerRef::give_stack bound, cost 10, gated: inventory
+  handle:PlayerRef::has_discovered_recipe bound, cost 1
+  handle:PlayerRef::has_enough_food bound, cost 1
+  handle:PlayerRef::has_infinite_materials bound, cost 1
+  handle:PlayerRef::has_item_cooldown bound, cost 1
+  handle:PlayerRef::hide bound, cost 10
+  handle:PlayerRef::inventory skipped: unconvertible return: Option<Vec<item::item_stack::ItemStack>>
+  handle:PlayerRef::inventory_slots skipped: unconvertible return: Option<Vec<(u32, item::item_stack::ItemStack)>>
+  handle:PlayerRef::is_creative bound, cost 1
+  handle:PlayerRef::is_fake bound, cost 1
+  handle:PlayerRef::is_secondary_use_active bound, cost 1
+  handle:PlayerRef::is_spectator bound, cost 1
+  handle:PlayerRef::item_cooldown_percent bound, cost 1
+  handle:PlayerRef::item_cooldowns bound, cost 100
+  handle:PlayerRef::last_death_location skipped: unconvertible return: Option<GlobalPos>
+  handle:PlayerRef::level bound, cost 1
+  handle:PlayerRef::may_build bound, cost 1
+  handle:PlayerRef::may_fly bound, cost 1
+  handle:PlayerRef::may_use_item_at bound, cost 1
+  handle:PlayerRef::name bound, cost 1
+  handle:PlayerRef::needs_food bound, cost 1
+  handle:PlayerRef::open_menu bound, cost 10
+  handle:PlayerRef::open_mod_menu skipped: unconvertible arg: MenuKey
+  handle:PlayerRef::perform_action skipped: unconvertible arg: PlayerAction
+  handle:PlayerRef::perform_action_scoped skipped: unconvertible arg: PlayerAction
+  handle:PlayerRef::permission_level bound, cost 1
+  handle:PlayerRef::persistent_data bound, cost 1
+  handle:PlayerRef::place_block bound, cost 10
+  handle:PlayerRef::play_sound bound, cost 10
+  handle:PlayerRef::previous_game_mode bound, cost 1
+  handle:PlayerRef::profile skipped: unconvertible return: Option<GameProfile>
+  handle:PlayerRef::recipe_book_settings skipped: unconvertible arg: &RecipeBookTypeKey
+  handle:PlayerRef::remove_fake skipped: powerful (needs manifest power): name contains `remove`
+  handle:PlayerRef::remove_item_cooldown skipped: powerful (needs manifest power): name contains `remove`
+  handle:PlayerRef::request_recipe_book_settings skipped: client write: &mut dyn ClientHost
+  handle:PlayerRef::reset_recipes bound, cost 10, gated: players
+  handle:PlayerRef::reset_stat skipped: powerful (needs manifest power): name contains `reset_stat`
+  handle:PlayerRef::respawn bound, cost 10, gated: spawn
+  handle:PlayerRef::respawn_config skipped: unconvertible return: Option<Option<PlayerRespawnConfig>>
+  handle:PlayerRef::sees bound, cost 1
+  handle:PlayerRef::selected_slot bound, cost 1
+  handle:PlayerRef::send_map bound, cost 10, gated: players
+  handle:PlayerRef::send_payload skipped: unconvertible arg: &PayloadId
+  handle:PlayerRef::set_abilities skipped: unconvertible arg: PlayerAbilities
+  handle:PlayerRef::set_chunk_areas skipped: unconvertible arg: &[ChunkArea]
+  handle:PlayerRef::set_ender_chest_slot bound, cost 10, gated: inventory
+  handle:PlayerRef::set_exhaustion bound, cost 10
+  handle:PlayerRef::set_exp_cooldown bound, cost 10
+  handle:PlayerRef::set_experience_levels bound, cost 10
+  handle:PlayerRef::set_experience_points bound, cost 10
+  handle:PlayerRef::set_food_level bound, cost 10
+  handle:PlayerRef::set_game_mode skipped: powerful (needs manifest power): name contains `set_game_mode`
+  handle:PlayerRef::set_inventory_slot bound, cost 10, gated: inventory
+  handle:PlayerRef::set_item_cooldown bound, cost 10
+  handle:PlayerRef::set_last_death_location skipped: unconvertible arg: Option<GlobalPos>
+  handle:PlayerRef::set_nickname skipped: powerful (needs manifest power): name contains `nickname`
+  handle:PlayerRef::set_persistent_data skipped: powerful (needs manifest power): argument `Compound`
+  handle:PlayerRef::set_recipe_book_settings skipped: unconvertible arg: &RecipeBookTypeKey
+  handle:PlayerRef::set_respawn_config skipped: powerful (needs manifest power): name contains `spawn`
+  handle:PlayerRef::set_saturation bound, cost 10
+  handle:PlayerRef::set_selected_slot bound, cost 10
+  handle:PlayerRef::set_sleep_ignored bound, cost 10
+  handle:PlayerRef::set_sleep_timer bound, cost 10
+  handle:PlayerRef::set_warden_warning_cooldown bound, cost 10
+  handle:PlayerRef::show_block bound, cost 10
+  handle:PlayerRef::simulate_move skipped: unconvertible arg: PlayerInput
+  handle:PlayerRef::sleep_ignored bound, cost 1
+  handle:PlayerRef::sleep_timer bound, cost 1
+  handle:PlayerRef::stat bound, cost 1
+  handle:PlayerRef::stop_sound bound, cost 10
+  handle:PlayerRef::synced_recipe_book_settings skipped: other: host kind &dyn ClientHost
+  handle:PlayerRef::tab_list skipped: unconvertible arg: &text::Text
+  handle:PlayerRef::tell bound, cost 10
+  handle:PlayerRef::text_filtering bound, cost 1
+  handle:PlayerRef::trigger_block_use bound, cost 10
+  handle:PlayerRef::trigger_criterion skipped: unconvertible arg: Arc<dyn CriterionTest>
+  handle:PlayerRef::trigger_item_used_on_block skipped: powerful (needs manifest power): argument `&item::item_stack::ItemStack`
+  handle:PlayerRef::uuid bound, cost 1
+  handle:PlayerRef::within_entity_reach bound, cost 1
+  handle:PlayerRef::xp_needed_for_next_level bound, cost 1
+
+ProjectileRef: 12 members
+  handle:ProjectileRef::base_damage bound, cost 1
+  handle:ProjectileRef::critical bound, cost 1
+  handle:ProjectileRef::deflect bound, cost 10
+  handle:ProjectileRef::entity bound, cost 1
+  handle:ProjectileRef::owner bound, cost 1
+  handle:ProjectileRef::pickup bound, cost 1
+  handle:ProjectileRef::pierce_level bound, cost 1
+  handle:ProjectileRef::set_base_damage bound, cost 10
+  handle:ProjectileRef::set_critical bound, cost 10
+  handle:ProjectileRef::set_owner bound, cost 10
+  handle:ProjectileRef::set_pickup bound, cost 10
+  handle:ProjectileRef::set_pierce_level bound, cost 10
+
+RaidRef: 18 members
+  handle:RaidRef::bar_progress bound, cost 1
+  handle:RaidRef::center bound, cost 1
+  handle:RaidRef::groups_spawned bound, cost 1
+  handle:RaidRef::has_bonus_wave bound, cost 1
+  handle:RaidRef::heroes bound, cost 100
+  handle:RaidRef::id bound, cost 1
+  handle:RaidRef::is_active bound, cost 1
+  handle:RaidRef::is_started bound, cost 1
+  handle:RaidRef::level bound, cost 1
+  handle:RaidRef::living_health bound, cost 1
+  handle:RaidRef::num_groups bound, cost 1
+  handle:RaidRef::omen_level bound, cost 1
+  handle:RaidRef::raiders bound, cost 100
+  handle:RaidRef::set_omen_level bound, cost 10
+  handle:RaidRef::status bound, cost 1
+  handle:RaidRef::stop bound, cost 10
+  handle:RaidRef::total_health bound, cost 1
+  handle:RaidRef::wave_raiders bound, cost 100
+
+UnspawnedMobRef: 7 members
+  handle:UnspawnedMobRef::attribute_base bound, cost 1
+  handle:UnspawnedMobRef::attribute_value bound, cost 1
+  handle:UnspawnedMobRef::custom_name bound, cost 1
+  handle:UnspawnedMobRef::equipment skipped: unconvertible return: Option<item::item_stack::ItemStack>
+  handle:UnspawnedMobRef::kind bound, cost 1
+  handle:UnspawnedMobRef::position bound, cost 1
+  handle:UnspawnedMobRef::tags bound, cost 100
+
+InstanceGroupRef: 4 members, not generated: no member binds
+  handle:InstanceGroupRef::destroy skipped: other: host kind &dyn ClientHost
+  handle:InstanceGroupRef::set_group_transform skipped: other: host kind &dyn ClientHost
+  handle:InstanceGroupRef::set_len skipped: other: host kind &dyn ClientHost
+  handle:InstanceGroupRef::write skipped: other: host kind &dyn ClientHost
+
+SoundRef: 3 members, not generated: no member binds
+  handle:SoundRef::fade skipped: other: host kind &dyn ClientHost
+  handle:SoundRef::state skipped: other: host kind &dyn ClientHost
+  handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
+
+summary: bound 573 of 725; heavy 28
+  skipped, client write: 6
+  skipped, generics: 4
+  skipped, other: 13
+  skipped, powerful (needs manifest power): 44
+  skipped, unconvertible arg: 44
+  skipped, unconvertible return: 41
+  gated: commands 2
+  gated: explosions 2
+  gated: game_rules 1
+  gated: inventory 6
+  gated: nbt 2
+  gated: players 4
+  gated: spawn 7
+  gated: world 20
+heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

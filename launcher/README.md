@@ -1,6 +1,6 @@
-# Horizon launcher
+# Event Horizon launcher
 
-A small desktop app that installs Horizon builds, prepares them from your own copy of
+A small desktop app that installs Event Horizon builds, prepares them from your own copy of
 Minecraft, and starts the client or a dedicated server. Built with [GPUI Fast](https://github.com/longbridge/gpui-fast),
 a fork of Zed's UI framework [GPUI](https://www.gpui.rs) that draws unchanged views from the last frame;
 it has its own Cargo workspace and is not part of the game's builds.
@@ -40,7 +40,7 @@ The opening, then Play ([clip](docs/opening.webm)):
   preparer sources, else that version's own `horizon-prepare`; versions released before it
   still prepare with their Python script and need Python 3.10+. Before importing,
   preparation reuses checksum-verified game jars and libraries from the current
-  or another installed Horizon version, so the original Minecraft install is
+  or another installed Event Horizon version, so the original Minecraft install is
   only required when no valid imported copy exists.
 - **Download and prepare**: for a signed-in account that owns the game (asked again first),
   the launcher downloads the pinned version from Mojang itself (piston-meta, piston-data,
@@ -59,8 +59,8 @@ The opening, then Play ([clip](docs/opening.webm)):
   Resource packs and Data packs (into the world picked there) search Horizon's own registry, with
   its categories as filters, or Modrinth (CurseForge support is coming soon); Shader packs search
   the registry. A Java
-  instance's files come from Modrinth for its version and loader; on a Horizon instance, Modrinth's
-  Java mods are listed too, each marked Works, Partly or Doesn't run in Horizon. Install puts a file in
+  instance's files come from Modrinth for its version and loader; on an Event Horizon instance, Modrinth's
+  Java mods are listed too, each marked Works, Partly or Doesn't run in Event Horizon. Install puts a file in
   the game folder only after its SHA-512 matches, and a
   modpack goes to the Modpacks page; installed packs show their source and checksum, with Update,
   **Update all** and Remove ([docs/mod-browser.md](../docs/mod-browser.md)).
@@ -103,7 +103,7 @@ The opening, then Play ([clip](docs/opening.webm)):
   Stop sharing and offers **Limit them to Minecraft**: when your tailnet has Tailscale's default
   access controls, one click changes them so friends you share with reach only the server's
   port (Remove the limit undoes it); custom access controls are never rewritten, the page gives
-  the rule to add instead. Horizon never turns on Funnel.
+  the rule to add instead. Event Horizon never turns on Funnel.
 - **Instances**: separate game folders, each with its own worlds, options and packs. The game's
   folder stays the first one, "Horizon", exactly where it was; imported and registry modpacks are
   instances too, in their own folders as before; new ones go to `instances/<name>/` in the game's
@@ -156,20 +156,20 @@ The opening, then Play ([clip](docs/opening.webm)):
 - **Desktop shortcut**: Home's Instance row has **Shortcut**: a shortcut on the desktop that plays
   the selected instance without opening the launcher (`horizon-launcher play --instance <id>`).
   A `.desktop` file on Linux (also put in the applications menu, and marked trusted with `gio`
-  where it exists), a small app with Horizon's icon on macOS, a `.lnk` on Windows
+  where it exists), a small app with Event Horizon's icon on macOS, a `.lnk` on Windows
   (`horizon_launcher::shortcut`). **Remove shortcut** moves it to the trash; it is found by the
   instance id inside it, so a rename doesn't lose it. `horizon-launcher instance shortcut
   [instance] [--remove]`; `HORIZON_LAUNCHER_DESKTOP` points it at another folder.
 - **Accounts and quick switch**: the top bar's account chip opens a menu of the signed-in
   Microsoft accounts. Picking one plays as it from the next Play; that account must own the game
   ([Microsoft accounts](#microsoft-accounts)). There are no offline names: the project decided
-  that Horizon plays only with a Microsoft account that owns Minecraft: Java Edition. The
+  that Event Horizon plays only with a Microsoft account that owns Minecraft: Java Edition. The
   Console's Share log takes the account names out of the log. `horizon-launcher account select
   <name>`.
 - **Accent and Home background**: on top of Dark, Light or System, Settings > Launcher picks an
-  accent (Horizon's violet, blue, teal, green, amber, red or pink, any hue, or any colour typed as
+  accent (Event Horizon's violet, blue, teal, green, amber, red or pink, any hue, or any colour typed as
   hex in the dark look) and a picture of the player's own behind Home (PNG, JPEG or WebP, cropped
-  to fill; **Landscape** brings Horizon's back). The dark look wears the colour as is, as the
+  to fill; **Landscape** brings Event Horizon's back). The dark look wears the colour as is, as the
   mockup does; in the light look an accent turns the violet tokens to its hue, then darkens or
   lightens them just enough to keep white on the Play button at 4.5:1 and the accent at 3:1 on
   every background (a test holds every accent in both looks to it). The picture is copied into the
@@ -178,7 +178,7 @@ The opening, then Play ([clip](docs/opening.webm)):
 - **Language**: English, French, Russian, German, Simplified Chinese, Spanish, Ukrainian and Polish.
   The window follows the system's language unless the player picks one in Settings > Launcher
   (each named in itself); a string a table lacks shows in English. The tables are
-  `launcher/lang/<code>.json`, English text to its translation, Horizon's own; a test fails when
+  `launcher/lang/<code>.json`, English text to its translation, Event Horizon's own; a test fails when
   the code asks `tr("…")` for a string a table lacks, or a table keeps one the code dropped.
   `horizon-launcher settings language system|en|fr|ru|de|zh|es|uk|pl`.
 - **Console**: Home's Console shows the game's output of this run as it comes: a search (every
@@ -199,7 +199,7 @@ The opening, then Play ([clip](docs/opening.webm)):
   a new one on when the world opens. From the command line: `horizon-launcher worlds
   datapack-list|datapack-add|datapack-remove <world> …`. The Mods page's **Data packs**
   tab finds them on Modrinth and installs one into the world picked there (`mods search --kind
-  datapack`, `mods install <pack> --world <world>`), saying what of it runs in Horizon.
+  datapack`, `mods install <pack> --world <world>`), saying what of it runs in Event Horizon.
 - **Packs**: Home lists the selected instance's resource packs and shader packs, each with a switch.
   The choice is the game's own: `resourcePacks` in options.txt (a pack turned on goes on top, as
   the game's Resource Packs screen does) and `pickedShaderPack` in `horizon-graphics.txt` (one shader
@@ -213,7 +213,7 @@ The opening, then Play ([clip](docs/opening.webm)):
   **Delete** (to the trash, after a confirmation). From the command line:
   `horizon-launcher screenshots [list|delete] [--instance <name>]`.
 - **Java** (for the Minecraft: Java Edition instances to come): the runtime a version's JSON asks for
-  (`javaVersion`: its major exactly, Java 8 before that field), found among Mojang's runtimes Horizon
+  (`javaVersion`: its major exactly, Java 8 before that field), found among Mojang's runtimes Event Horizon
   downloaded (`minecraft/runtime/` in its data folder, the one preparing uses) and the Java homes installed
   on this computer, read from their `release` files without starting them; when none has that major,
   Mojang's runtime is downloaded; an instance may name its own Java home instead.
@@ -232,7 +232,7 @@ Windows): `versions/<tag>/`, `server-jars/`, `server/`, `settings.json`, and for
 page `servers.json` (the list), `servers/<name>/` (the servers created there) and
 `server-runtime/` (the programs and game files they run).
 
-- **Settings**: install new Horizon versions automatically (on unless you turn it off; the
+- **Settings**: install new Event Horizon versions automatically (on unless you turn it off; the
   selected version only moves to the new one if you were on the newest), the opening animation,
   what the window does while you play (stays by default; Minimise, or Hide on macOS, puts it away
   when the game starts and brings it back to the front when the game closes; `settings
@@ -259,6 +259,17 @@ page `servers.json` (the list), `servers/<name>/` (the servers created there) an
   launcher's own arguments, kept as `game_args` in `settings.json`, and apply the next time the
   game starts. `horizon-launcher game-args "<line>"` sets them too, and `play --arg <ARG>` passes
   one for a single run.
+- **Wasm compile budget** (game runtime, not a launcher preference):
+  `wasm.compile_timeout_secs:120` in the client's `options.txt` (the resolved
+  `--player-dir` when supplied, otherwise the selected instance) allows 120 seconds
+  per uncached module on the Unix child-compiler path. Remove the line for the
+  `5 + 300 / available_threads` seconds default. Invalid values publish a refusal
+  and exclude the wasm package's code and content rather than silently defaulting.
+  An unavailable/untrusted Unix cache or failed compiler refuses compilation instead
+  of dropping the deadline. Dedicated servers use
+  `"wasm.compile_timeout_secs" = "120"` under `server.toml`'s `[properties]`.
+  Restart the game/server after editing. Windows currently compiles in process
+  without this child deadline; see the [runtime reference](../docs/modding/src/how-to/wasm-mods.md#compilation-time-setting).
 - **Proxy**: when the internet here needs one (a school's, an office's, a country where a host is
   unreachable), Settings' Proxy takes the `http://host:port` or `socks5://host:port` address your
   proxy app listens on, and
@@ -275,6 +286,10 @@ page `servers.json` (the list), `servers/<name>/` (the servers created there) an
 
 Long pages, dialogs, the server console and data previews have a visible scrollbar when
 their content overflows. Drag the thumb or click the track to navigate without a mouse wheel.
+When the top bar's page tabs overflow, an arrow on a fading edge shows each side with more tabs
+(`src/nav_strip.rs`); the arrows go at the ends and when all tabs fit. They fade in and out over
+150 ms, and a click scrolls three quarters of the strip over 240 ms; another click goes on from where
+that one is headed, and the wheel stops it. Performance mode and reduced motion make both instant.
 
 Pages and Home's landscape fill the window as it resizes. The title bar is transparent over the
 launcher on every platform: Windows keeps native dragging, resizing, Snap, minimize,
@@ -301,8 +316,8 @@ every 0.2 tag counts as newer than all of those (docs/versioning.md). It downloa
 against the release's signed `SHA256SUMS`, and says "A new version is available" in the sidebar with
 **Update**: the window closes, the launcher's own file runs again as the installer (`apply-update`,
 `src/update_handoff.rs`), which waits for the window's process to exit, puts the new launcher in place (the
-binary, the `.app` bundle or the AppImage) and starts it. Closing the window with an update downloaded installs
-it the same way, so the next start is the new launcher. When the installer can't put it in place, the old
+binary, the `.app` bundle or the AppImage) and starts it. Nothing goes in without **Update**: closing the window
+drops a downloaded update, and the next start checks again. When the installer can't put it in place, the old
 launcher starts again and says why. Each process stages in its own folder, and the installer checks the signed
 SHA-256 again before anything goes in; when the launcher in place is already that version or newer, it changes
 nothing. Servers keep running through **Update**. A copy that can't replace itself says so at once and offers
@@ -382,7 +397,7 @@ and don't set `%ERRORLEVEL%` / `$LASTEXITCODE`. Scripts that need the exit code 
     horizon-launcher notes [<tag>]                  patch notes as plain text
     horizon-launcher links                          the Discord, sponsor and website links
     horizon-launcher game-args [<line>]             show or set the extra arguments the game starts with
-    horizon-launcher update [--check]               Horizon and the launcher
+    horizon-launcher update [--check]               Event Horizon and the launcher
     horizon-launcher logs [--lines N] [--crash]     the end of the game's log, or its newest crash report
     horizon-launcher account [list]                 the Microsoft accounts signed in (* = plays)
     horizon-launcher account sign-in                sign in in your browser with a code
@@ -402,7 +417,7 @@ and don't set `%ERRORLEVEL%` / `$LASTEXITCODE`. Scripts that need the exit code 
     horizon-launcher packs add <file> | on|off|remove <pack> [--kind shader]
     horizon-launcher screenshots [list] [--instance <name>]   an instance's screenshots, the newest first
     horizon-launcher screenshots delete <name> [--instance <name>]   moves it to the trash
-    horizon-launcher java [list]          Java runtimes: Mojang's (downloaded by Horizon) and installed ones
+    horizon-launcher java [list]          Java runtimes: Mojang's (downloaded by Event Horizon) and installed ones
     horizon-launcher java install <21|java-runtime-delta>   downloads Mojang's runtime, each file sha1-checked
     horizon-launcher multiplayer [list] [--instance <name>]   the servers in an instance's Multiplayer list
     horizon-launcher multiplayer add <address> [--name <name>] | remove <server>
@@ -491,7 +506,7 @@ Tailscale access token never goes to that file: without a keychain it lasts unti
 closes. When the game starts, it gets the session in a private file it
 deletes as soon as it has read it. Sign out removes the tokens.
 
-Sign-in needs Horizon's own Azure app registration: its client ID is built in from
+Sign-in needs Event Horizon's own Azure app registration: its client ID is built in from
 `HORIZON_MSA_CLIENT_ID` (and `HORIZON_MSA_CLIENT_ID` at run time overrides it; empty = not
 configured). How it works: [docs/microsoft-account.md](../docs/microsoft-account.md).
 
@@ -539,6 +554,22 @@ On Windows, `cargo test --bin horizon-launcher desktop_list_renders_the_viewport
 ## Building
 
     cargo build --release
+
+A debug build (`cargo build`) also supports Windows' default 1 MiB process-entry stack.
+On Windows, the entry thread starts and joins a launcher thread with a 16 MiB stack before
+any CLI dispatch or GUI initialization. That thread owns OLE initialization, GPUI's windows
+and its message loop together; Linux and macOS still run on the original main thread.
+CLI arguments, terminal pipes and command exit codes are unchanged.
+
+The Windows daily subprocess tests use the debug binary. To exercise real CLI startup with
+a deterministic 1 MiB entry stack, including persisted settings and failure exit codes:
+
+    cargo test --locked --test startup cli_settings_work_with_one_mib_process_stack -- --ignored --exact
+
+That test uses fresh homes and a private copy of the executable with only its PE stack reserve
+changed; it needs no desktop. The ignored
+`hardware_probes_run_hidden_after_the_first_frame` test additionally checks real GUI startup
+on an interactive Windows desktop with a graphics adapter.
 
 On NixOS, `nix-shell` in this folder provides the libraries GPUI links to (Wayland, X11,
 xkbcommon, Vulkan, fontconfig) and the ALSA and libudev files a native mod build looks up, so

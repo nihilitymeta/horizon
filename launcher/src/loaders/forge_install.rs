@@ -367,8 +367,7 @@ pub(super) fn install(
     let profile = installer.json("install_profile.json")?;
     if profile.get("versionInfo").is_some() {
         return Err(format!(
-            "{name} {version} has an installer from before Minecraft 1.12.2, which Horizon can't \
-             run yet."
+            "{name} {version} has an installer from before Minecraft 1.12.2, which Event Horizon can't run yet."
         ));
     }
     if profile["minecraft"] != minecraft {

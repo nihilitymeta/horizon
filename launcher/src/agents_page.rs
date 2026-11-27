@@ -107,7 +107,7 @@ impl Launcher {
                     .child(tr("Connect an AI agent")),
             )
             .child(div().max_w(px(640.)).text_color(t.muted).child(tr(
-                "Your own agent (Claude Code, Codex, Cursor or any MCP client) can drive the launcher and the game it starts, with the same commands as the terminal. It runs on your computer and talks to Horizon there; it asks before deleting anything.",
+                "Your own agent (Claude Code, Codex, Cursor or any MCP client) can drive the launcher and the game it starts, with the same commands as the terminal. It runs on your computer and talks to Event Horizon there; it asks before deleting anything.",
             )))
             .child(picker);
         if let Some((program, args)) = client.add.clone() {
@@ -178,7 +178,7 @@ impl Launcher {
                         let exe = backend::update_target();
                         let task = cx.background_executor().spawn(async move {
                             match agents::self_test(&exe) {
-                                Ok(n) => (true, trf("The MCP server answered with {count} tools. Now ask your agent: \"Say hello from Horizon\".", &[("count", &n.to_string())])),
+                                Ok(n) => (true, trf("The MCP server answered with {count} tools. Now ask your agent: \"Say hello from Event Horizon\".", &[("count", &n.to_string())])),
                                 Err(e) => (false, trf("The MCP server did not answer: {error}", &[("error", &e)])),
                             }
                         });
@@ -225,7 +225,7 @@ fn run_add(program: &str, args: &[String]) -> (bool, String) {
         Ok(out) if out.status.success() => (
             true,
             trf(
-                "Added. Restart {program} if it is open, then ask it: \"Say hello from Horizon\".",
+                "Added. Restart {program} if it is open, then ask it: \"Say hello from Event Horizon\".",
                 &[("program", program)],
             ),
         ),

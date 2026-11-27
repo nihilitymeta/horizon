@@ -1,6 +1,7 @@
-//! "GitHub sources" on the Versions page: repositories whose GitHub releases are game builds, such
-//! as Event Horizon's (`horizon_launcher::game_sources`). Each row says what it installed, has its
-//! "Update automatically" switch and an Update button; a field adds another repository.
+//! "GitHub sources" on the Versions page, in both looks: repositories whose GitHub releases are game
+//! builds, such as Event Horizon's (`horizon_launcher::game_sources`). Each row says what it
+//! installed, has its "Update automatically" switch, an Update button and a Remove button; a field
+//! adds another repository. Installs run on a thread and report back through a channel.
 use super::line_edit::{self, Key, LineEdit};
 use super::*;
 use horizon_launcher::game_sources::{self, Source};
@@ -38,6 +39,25 @@ impl Sources {
     }
 }
 
+/// Whether `tag` is a release to install over `installed` (the tag installed last, if any).
+fn is_new(installed: Option<&str>, tag: &str) -> bool {
+    installed != Some(tag)
+}
+
+/// The update for `source`: its newest release, installed unless it is the one installed already.
+/// The text says what happened.
+fn update_source(source: Source) -> Result<String, String> {
+    let newest = game_sources::latest(&source.repo, &horizon_launcher::github_mods::api)?;
+    let installed = source.installed.as_ref().map(|i| i.tag.as_str());
+    match newest {
+        Some(release) if is_new(installed, &release.tag) => {
+            let version = game_sources::install(&release, true)?;
+            Ok(format!("{} → {version}", release.label()))
+        }
+        _ => Ok(tr("Up to date").to_string()),
+    }
+}
+
 impl Launcher {
     /// What an update started from the card did: the list, the installed versions and the
     /// selection are read again.
@@ -65,7 +85,7 @@ impl Launcher {
                 // undoes the step-aside.
                 game_sources::step_aside_for_horizon_updates(&mut self.settings);
                 trf(
-                    "Added {repo}. It updates itself, and Horizon's game updates are off.",
+                    "Added {repo}. It updates itself, and Event Horizon's game updates are off.",
                     &[("repo", &repo)],
                 )
                 .to_string()
@@ -73,14 +93,15 @@ impl Launcher {
                 trf("Added {repo}.", &[("repo", &repo)]).to_string()
             }
         });
+        let added = message.is_ok();
         self.sources.message = Some(message);
-        if matches!(self.sources.message, Some(Ok(_))) {
+        if added {
             self.sources.text = LineEdit::new(String::new(), 200, 40);
         }
         self.sources.list = game_sources::load();
     }
 
-    /// Installs `repo`'s newest release now and plays it.
+    /// Installs `repo`'s newest release now, on a thread.
     fn sources_update(&mut self, repo: String) {
         if self.sources.busy.is_some() {
             return;
@@ -95,21 +116,15 @@ impl Launcher {
             .cloned();
         let tx = self.sources.tx.clone();
         std::thread::spawn(move || {
-            let result = (|| {
-                let source = source.ok_or_else(|| format!("{repo} is not a source."))?;
-                let found = game_sources::updates(&[source], &horizon_launcher::github_mods::api);
-                let Some((_, latest)) = found.into_iter().next() else {
-                    return Ok(tr("Up to date").to_string());
-                };
-                let release = latest?;
-                let version = game_sources::install(&release, true)?;
-                Ok(format!("{} → {version}", release.label()))
-            })();
+            let result = match source {
+                Some(source) => update_source(source),
+                None => Err(trf("{repo} is not a source.", &[("repo", &repo)]).to_string()),
+            };
             let _ = tx.send(result);
         });
     }
 
-    fn sources_field(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn sources_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
         let focused = self.sources.focused;
         let field = div()
@@ -151,10 +166,11 @@ impl Launcher {
         line_edit::mouse(field, cx, |this| &mut this.sources.text)
     }
 
-    /// The card: each source with what it installed, its switch and its Update button, then the
-    /// field that adds one.
-    pub(super) fn sources_card(&mut self, cx: &mut Context<Self>) -> Div {
+    /// The card: each source with what it installed, its switch, Update and Remove, then the field
+    /// that adds one. While an update runs, every control on the card is inert.
+    pub(super) fn sources_card(&self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
+        let busy_any = self.sources.busy.is_some();
         let mut card = div()
             .flex()
             .flex_col()
@@ -165,13 +181,17 @@ impl Launcher {
                 "Game builds a repository publishes as GitHub releases, such as Event Horizon's. Each installs on an installed version's game files.",
             )));
         for (i, source) in self.sources.list.clone().into_iter().enumerate() {
+            let busy = self.sources.busy.as_deref() == Some(source.repo.as_str());
             let installed = match &source.installed {
+                _ if busy => tr("Installing…").to_string(),
                 Some(done) => trf("Installed {tag}", &[("tag", &done.tag)]).to_string(),
                 None => tr("Nothing installed yet").to_string(),
             };
             let repo = source.repo.clone();
-            let auto = switch(format!("source-auto-{i}"), source.auto_update, &t).on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| {
+            let mut auto = switch(format!("source-auto-{i}"), source.auto_update, &t);
+            auto = match busy_any {
+                true => disabled(auto),
+                false => auto.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     let on = this
                         .sources
                         .list
@@ -183,28 +203,30 @@ impl Launcher {
                     }
                     this.sources.list = game_sources::load();
                     cx.notify();
-                }),
-            );
-            let busy = self.sources.busy.as_deref() == Some(source.repo.as_str());
-            let repo = source.repo.clone();
-            let mut update = button(format!("source-update-{i}"), "Update", Kind::Secondary, &t);
-            update = if self.sources.busy.is_some() {
-                disabled(update)
-            } else {
-                update.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.sources_update(repo.clone());
-                    cx.notify();
-                }))
+                })),
             };
             let repo = source.repo.clone();
-            let remove = button(format!("source-remove-{i}"), "Remove", Kind::Secondary, &t)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            let mut update = button(format!("source-update-{i}"), "Update", Kind::Secondary, &t);
+            update = match busy_any {
+                true => disabled(update),
+                false => update.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.sources_update(repo.clone());
+                    cx.notify();
+                })),
+            };
+            let repo = source.repo.clone();
+            let mut remove = button(format!("source-remove-{i}"), "Remove", Kind::Secondary, &t);
+            remove = match busy_any {
+                true => disabled(remove),
+                false => remove.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    // The versions it installed stay; only the source is forgotten.
                     if let Err(e) = game_sources::remove(&repo) {
                         this.sources.message = Some(Err(e));
                     }
                     this.sources.list = game_sources::load();
                     cx.notify();
-                }));
+                })),
+            };
             card = card.child(
                 div()
                     .flex()
@@ -217,11 +239,7 @@ impl Launcher {
                             .flex_col()
                             .flex_1()
                             .child(text(theme::UI).text_color(t.ink).child(source.repo.clone()))
-                            .child(text(theme::CAPTION).text_color(t.muted).child(if busy {
-                                tr("Installing…").to_string()
-                            } else {
-                                installed
-                            })),
+                            .child(text(theme::CAPTION).text_color(t.muted).child(installed)),
                     )
                     .child(
                         div()
@@ -239,12 +257,14 @@ impl Launcher {
                     .child(remove),
             );
         }
-        let add = button("source-add", "Add", Kind::Secondary, &t).on_click(cx.listener(
-            |this, _: &ClickEvent, _, cx| {
+        let add = button("source-add", "Add", Kind::Secondary, &t);
+        let add = match busy_any {
+            true => disabled(add),
+            false => add.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.sources_add();
                 cx.notify();
-            },
-        ));
+            })),
+        };
         card = card.child(
             div()
                 .flex()
@@ -255,13 +275,23 @@ impl Launcher {
                 .child(add),
         );
         match &self.sources.message {
-            Some(Ok(done)) => card.child(
-                text(theme::CAPTION)
-                    .text_color(t.ink_soft)
-                    .child(done.clone()),
-            ),
+            Some(Ok(done)) => {
+                card.child(plate(&t).p(px(12.)).text_color(t.ink).child(done.clone()))
+            }
             Some(Err(e)) => card.child(notice(e.clone(), &t)),
             None => card,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_new;
+
+    #[test]
+    fn a_release_is_new_unless_it_is_the_one_installed() {
+        assert!(is_new(None, "v1"));
+        assert!(is_new(Some("v1"), "v2"));
+        assert!(!is_new(Some("v2"), "v2"));
     }
 }

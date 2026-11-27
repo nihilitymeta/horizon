@@ -1,0 +1,13 @@
+# The daily tests of event-horizon-lua-check: each is #[ignore = "daily"] in its source and runs once a day in the daily run,
+# where it must pass (README.md). Rows: PACKAGE TEST TARGET daily REASON, sorted; tools/ci/move_to_daily.py writes them.
+event-horizon-lua-check a_good_mod_loads_and_exits_zero test:cli daily child-process
+event-horizon-lua-check a_misspelt_api_member_fails_and_names_the_file_line_and_member test:cli daily child-process
+event-horizon-lua-check a_refused_manifest_fails_and_prints_its_key test:cli daily child-process
+event-horizon-lua-check a_syntax_error_fails_and_names_the_file_and_line test:cli daily child-process
+event-horizon-lua-check an_undefined_plain_global_fails test:cli daily child-process
+event-horizon-lua-check an_unformatted_script_would_reformat_and_is_left_on_disk test:cli daily child-process
+event-horizon-lua-check an_unused_local_warns_and_fails_only_under_strict test:cli daily child-process
+event-horizon-lua-check emit_types_writes_both_files_and_refuses_a_changed_one_without_force test:cli daily child-process
+event-horizon-lua-check list_prints_a_mod_the_host_refuses_after_discovery_as_refused test:cli daily child-process
+event-horizon-lua-check list_prints_loaded_refused_and_disabled_mods test:cli daily child-process
+event-horizon-lua-check usage_errors_and_unreadable_paths_exit_two test:cli daily child-process

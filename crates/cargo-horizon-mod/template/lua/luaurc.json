@@ -1,7 +1,0 @@
-{
-  "languageMode": "nonstrict",
-  "aliases": {
-    "modkit": "../horizon-modkit/scripts/server/modkit",
-    "registry": "scripts/registry"
-  }
-}

@@ -8,7 +8,6 @@ use crate::{
     hud_layout::{GuiDraw, argb, fill},
     text::Text,
 };
-use event_horizon_debug::FrameTimeWindow;
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
@@ -49,6 +48,10 @@ impl SampleLogger {
     pub fn reset(&mut self) {
         self.samples.clear();
     }
+    /// The newest primary sample, if any, without copying the history.
+    pub fn latest(&self) -> Option<i64> {
+        self.samples.back().map(|sample| sample[0])
+    }
     fn get(&self, index: usize, dimension: usize) -> i64 {
         self.samples[index][dimension]
     }
@@ -65,8 +68,6 @@ pub struct DebugCharts {
     pub lightmap: bool,
     /// `frameTimeLogger`: nanoseconds between frames.
     pub frame_times: SampleLogger,
-    /// The last [`FrameTimeWindow::WINDOW`] of frames for the 1%/0.1% lows.
-    frame_window: FrameTimeWindow,
     /// `tickTimeLogger`: the integrated server's ticks.
     pub tick_times: SampleLogger,
     /// `pingLogger`: milliseconds.
@@ -83,14 +84,6 @@ pub struct DebugCharts {
     bytes_seen: Option<i64>,
 }
 impl DebugCharts {
-    /// Records a frame for the overlay's 1% and 0.1% lows.
-    pub fn record_frame(&mut self, now: Instant, millis: f32) {
-        self.frame_window.record(now, millis);
-    }
-    /// The 1% and 0.1% worst frames of the last five seconds, as FPS.
-    pub fn frame_lows(&self, now: Instant) -> Option<(f32, f32)> {
-        self.frame_window.lows(now)
-    }
     /// `toggleFpsCharts`; `overlay` is the debug overlay's visibility.
     pub fn toggle_fps(&mut self, overlay: &mut bool) {
         self.fps = !*overlay || !self.fps;

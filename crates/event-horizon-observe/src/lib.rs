@@ -6,6 +6,8 @@
 //! ([`received_name`]) and the wire codec ([`wire`]). Nothing here changes an
 //! entity: the game fills the store ([`observe_entity`]), the windows read
 //! it.
+#![forbid(unsafe_code)]
+
 mod names;
 mod snbt;
 mod store;

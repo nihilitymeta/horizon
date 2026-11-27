@@ -1,0 +1,6 @@
+id = "loot_probe"
+name = "Loot Probe"
+version = "1.0.0"
+side = "server"
+description = "Logs what the four loot hooks give, and adds a condition-gated emerald pool to the zombie table."
+entries = ["main.luau"]

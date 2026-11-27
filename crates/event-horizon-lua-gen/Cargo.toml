@@ -1,0 +1,25 @@
+[package]
+name = "event-horizon-lua-gen"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Generator of the Lua host's bindings and type definitions from the mod API's surface.json"
+autobins = false
+autoexamples = false
+autotests = false
+
+[[bin]]
+name = "event-horizon-lua-gen"
+path = "src/main.rs"
+
+[dependencies]
+horizon-mod-surface = { path = "../horizon-mod-surface" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+[lints]
+workspace = true

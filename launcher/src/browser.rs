@@ -5,7 +5,7 @@
 //! Offered: Java mods (Fabric, NeoForge, Forge), whose content Horizon ports and whose jar is
 //! checked before install ([`java`]), modpacks (imported and ported), resource packs
 //! (`resourcepacks/`) and data packs (into a world, [`installed::install_datapack`]). Java code
-//! itself doesn't run in Horizon (docs/mods.md).
+//! itself doesn't run in Horizon (docs/modding/src/how-to/content-mods.md).
 pub mod curseforge;
 pub mod details;
 pub mod download;
@@ -14,10 +14,9 @@ pub mod images;
 pub mod installed;
 pub mod java;
 pub mod java_instance;
-pub mod lock;
 pub mod modrinth;
 
-pub use lock::{lock_home, try_lock_home, HomeLockGuard};
+pub use horizon_platform::mod_package::install_lock::{lock_home, try_lock_home, HomeLockGuard};
 
 use serde::{Deserialize, Serialize};
 
@@ -85,7 +84,7 @@ impl SourceId {
         match self {
             SourceId::Modrinth => "Modrinth",
             SourceId::CurseForge => "CurseForge",
-            SourceId::Horizon => "Horizon",
+            SourceId::Horizon => "Event Horizon",
         }
     }
 
@@ -150,11 +149,17 @@ pub struct Project {
     /// The Minecraft versions its files list, and the loaders (`fabric`, `neoforge`, `minecraft`...).
     pub game_versions: Vec<String>,
     pub loaders: Vec<String>,
+    /// Why no version of it can be installed here, when its source says so (a registry project
+    /// whose versions for this game were taken down or made for the earlier mod system).
+    pub blocked: Option<String>,
 }
 
 impl Project {
     pub fn support(&self) -> Support {
-        support(self.kind, &self.game_versions, &self.loaders)
+        match &self.blocked {
+            Some(why) => Support::No(why.clone()),
+            None => support(self.kind, &self.game_versions, &self.loaders),
+        }
     }
 
     /// The project as a data pack, for a search of data packs or an install into a world;
@@ -302,7 +307,7 @@ pub fn support(kind: Kind, game_versions: &[String], loaders: &[String]) -> Supp
         return match newest_release(game_versions)
             .filter(|_| !game_versions.iter().any(|v| v == GAME))
         {
-            Some(other) => Support::No(format!("Made for Horizon on {other}.")),
+            Some(other) => Support::No(format!("Made for Event Horizon on {other}.")),
             None => Support::Works,
         };
     }
@@ -319,9 +324,9 @@ pub fn support(kind: Kind, game_versions: &[String], loaders: &[String]) -> Supp
                 Support::Partial("Lists no Minecraft version.".into())
             }
         }
-        Kind::Modpack => {
-            Support::Partial("Horizon runs the mods it can port, from your own downloads.".into())
-        }
+        Kind::Modpack => Support::Partial(
+            "Event Horizon runs the mods it can port, from your own downloads.".into(),
+        ),
         Kind::Shader => Support::No("Not one of Horizon's own shader packs.".into()),
         Kind::DataPack => {
             let made_for = match newest_release(game_versions) {
@@ -337,7 +342,7 @@ pub fn support(kind: Kind, game_versions: &[String], loaders: &[String]) -> Supp
             } else if !game_versions.iter().any(|v| portable_version(v)) {
                 let newest = newest_release(game_versions).unwrap_or("an unknown version");
                 Support::No(format!(
-                    "Made for {newest}: Horizon ports mods made for 1.21 and later."
+                    "Made for {newest}: Event Horizon ports mods made for 1.21 and later."
                 ))
             } else {
                 Support::Partial(
@@ -352,7 +357,7 @@ pub fn support(kind: Kind, game_versions: &[String], loaders: &[String]) -> Supp
 /// pack's own files (`crate::datapacks::coverage`).
 pub fn datapack_support() -> &'static str {
     crate::i18n::tr(
-        "Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.",
+        "Event Horizon runs a data pack's functions, function tags, predicates, item modifiers, recipes, loot tables, advancements, villager trades, damage types, most tags and most worldgen (biomes, features, structures, dimensions). Other files, such as world presets, are not read yet.",
     )
 }
 

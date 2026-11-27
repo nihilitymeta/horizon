@@ -108,6 +108,7 @@ fn row_explanations_keep_the_coverage_reports_english_and_dependency_counts() {
     .collect();
     let missing = std::env::temp_dir().join(format!("horizon-row-english-{}", std::process::id()));
     let rows = report::build(&records, &missing);
+    // The report's sentences and the launcher's patterns both say "Event Horizon".
     for row in &rows {
         assert_eq!(row_plain(row), row.plain_text(), "{}", row.key);
     }

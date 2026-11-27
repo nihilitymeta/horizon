@@ -1,0 +1,973 @@
+# Hook coverage (issue 74, H3) from surface c9c3d86a5c6a047b43bb6a54dbd411ec, by event-horizon-lua-gen: do not edit.
+# hooks: 749, emitted: 410, skipped: 339
+# skipped, answer: ArmPose: 1
+# skipped, answer: Minimap: 1
+# skipped, answer: Vec<GuiDraw>: 1
+# skipped, answer: Vec<u8>: 1
+# skipped, answer: Zoom: 1
+# skipped, argument <..> has type <..> (kind Collection): a mutable argument writes back, not in this slice: 4
+# skipped, argument <..> has type <..> (kind Collection): no Lua conversion: 10
+# skipped, argument <..> has type <..> (kind DynHost): a mutable argument writes back, not in this slice: 30
+# skipped, argument <..> has type <..> (kind Event): a mutable argument writes back, not in this slice: 5
+# skipped, argument <..> has type <..> (kind Event): no Lua conversion: 17
+# skipped, argument <..> has type <..> (kind Identifier): a mutable argument writes back, not in this slice: 2
+# skipped, argument <..> has type <..> (kind Other): a reference inside Option has no Lua conversion: 5
+# skipped, argument <..> has type <..> (kind Other): no Lua conversion: 9
+# skipped, argument <..> has type <..> (kind Text): a mutable argument writes back, not in this slice: 1
+# skipped, argument <..> has type <..> (kind Vector): a mutable argument writes back, not in this slice: 2
+# skipped, argument <..>: a mutable argument writes back, not in this slice: 1
+# skipped, handle input: host <..> is not carried by a turn: 2
+# skipped, handle output: 4
+# skipped, has an output: its listeners write back, not in this slice: 43
+# skipped, hot path (needs measurement): 10
+# skipped, listen hook returns <..>: its listeners answer nothing: 1
+# skipped, not a method of the Hooks trait: 144
+# skipped, output <..>: <..> has no <..> field of that name: 7
+# skipped, output: ArmAngles: 1
+# skipped, output: BiomeColors: 1
+# skipped, output: ClockAdjustment: 1
+# skipped, output: Corners: 1
+# skipped, output: CustomSpawners: 1
+# skipped, output: DamageContainer: 1
+# skipped, output: HandRender<'_>: 1
+# skipped, output: HiddenParts: 2
+# skipped, output: ItemAttributeModifiers: 1
+# skipped, output: ItemEnchantments: 1
+# skipped, output: Option<Answered<ScreenOpening>>: 1
+# skipped, output: Option<Identifier>: 1
+# skipped, output: Option<Music>: 1
+# skipped, output: Option<ParticleOptions>: 1
+# skipped, output: Option<SoundPlay>: 1
+# skipped, output: Option<client::widgets::TextEdit>: 1
+# skipped, output: ScreenshotImage: 1
+# skipped, output: Shake: 1
+# skipped, output: ShieldBlock: 1
+# skipped, output: StackedOnOther<'_>: 1
+# skipped, output: Vec<(Text,u32)>: 1
+# skipped, output: Vec<ArmorHurt>: 1
+# skipped, output: Vec<BlockRim>: 1
+# skipped, output: Vec<RecipeBookCategory>: 1
+# skipped, output: Vec<SpawnEntry>: 1
+# skipped, output: Vec<TooltipElement>: 1
+# skipped, output: [Option<ItemStack>;5]: 2
+# skipped, output: [[f32;4];8]: 1
+# skipped, output: [f32;2]: 1
+# skipped, output: client::fog::FogData: 1
+# skipped, output: client::fog::FogType: 1
+# skipped, output: client::hud_layout::HeartKind: 1
+# skipped, output: item::menu::AnvilUpdate: 1
+# skipped, output: item::menu::GrindstonePlace: 1
+# skipped, output: item::menu::GrindstoneTake: 1
+
+add_attribute_tooltips skipped: argument `lines` has type `&'a mut Vec<(text::Text, u32)>` (kind Collection): a mutable argument writes back, not in this slice
+add_client_reload_listeners skipped: argument `listeners` has type `&'a mut dyn ClientReloadListeners` (kind DynHost): a mutable argument writes back, not in this slice
+add_pack_finders skipped: argument `packs` has type `&'a mut dyn PackFinders` (kind DynHost): a mutable argument writes back, not in this slice
+add_section_geometry skipped: argument `renderers` has type `&'a mut dyn SectionGeometryRenderers` (kind DynHost): a mutable argument writes back, not in this slice
+add_server_reload_listeners skipped: argument `listeners` has type `&'a mut dyn ServerReloadListeners` (kind DynHost): a mutable argument writes back, not in this slice
+adjacent_block_path_type skipped: not a method of the Hooks trait
+affect_neighbors_after_removal skipped: not a method of the Hooks trait
+alter_ground skipped: has an output: its listeners write back, not in this slice
+analog_output skipped: not a method of the Hooks trait
+animal_tame emitted
+anvil_craft_post skipped: argument `craft` has type `&'a item::menu::AnvilCraft` (kind Event): no Lua conversion
+anvil_craft_pre skipped: argument `craft` has type `&'a item::menu::AnvilCraft` (kind Event): no Lua conversion
+anvil_damaged emitted
+anvil_update skipped: output: item::menu::AnvilUpdate
+apply_effect_tick skipped: argument `effect` has type `EffectKey` (kind Other): no Lua conversion
+apply_enchantments skipped: not a method of the Hooks trait
+arm_pose_transform skipped: output: ArmAngles
+armor_hurt skipped: output: Vec<ArmorHurt>
+armor_stand_manipulate emitted
+arrow_loose emitted
+arrow_nock emitted
+attack_entity emitted
+baby_entity_spawn emitted
+bake_model_loader skipped: has an output: its listeners write back, not in this slice
+beacon_color_multiplier skipped: not a method of the Hooks trait
+beacon_state_change emitted
+bell_ring emitted
+biome_colors skipped: output: BiomeColors
+block_break_progress_update emitted
+block_burn emitted
+block_changed emitted
+block_cook emitted
+block_damage_abort emitted
+block_dispense_armor emitted
+block_drops skipped: handle input: host `&dyn LevelHost` is not carried by a turn
+block_entity skipped: not a method of the Hooks trait
+block_entity_client_tick skipped: not a method of the Hooks trait
+block_entity_client_ticks skipped: not a method of the Hooks trait
+block_entity_data_received skipped: not a method of the Hooks trait
+block_entity_on_load skipped: not a method of the Hooks trait
+block_entity_render_bounding_box skipped: not a method of the Hooks trait
+block_entity_submit skipped: not a method of the Hooks trait
+block_entity_tick skipped: not a method of the Hooks trait
+block_entity_ticks skipped: not a method of the Hooks trait
+block_entity_type_add_blocks skipped: has an output: its listeners write back, not in this slice
+block_entity_update_tag skipped: not a method of the Hooks trait
+block_entity_view_distance skipped: not a method of the Hooks trait
+block_fade emitted
+block_failed_dispense emitted
+block_form emitted
+block_grow_feature emitted
+block_highlight emitted
+block_ignite emitted
+block_jump_factor skipped: hot path (needs measurement)
+block_lock_check emitted
+block_path_type skipped: not a method of the Hooks trait
+block_receive_game emitted
+block_render_visibility skipped: not a method of the Hooks trait
+block_screen_effect_draw skipped: argument `draw` has type `&'a mut dyn CameraDrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+block_shear_entity emitted
+block_signal skipped: not a method of the Hooks trait
+block_speed_factor skipped: hot path (needs measurement)
+block_spread emitted
+block_step_on skipped: hot path (needs measurement)
+block_tool_modification emitted
+blocks emitted (host records)
+bonemeal skipped: argument `stack`: a mutable argument writes back, not in this slice
+bounce_on skipped: not a method of the Hooks trait
+bounce_restitution skipped: not a method of the Hooks trait
+break_block emitted
+brewing_complete emitted
+brewing_fuel emitted
+brewing_start emitted
+broadcast_message emitted
+bucket_empty emitted
+build_creative_mode_tab_contents emitted
+calculate_player_turn emitted
+camera_distance skipped: argument `entity` has type `&'a CameraEntity` (kind Event): no Lua conversion
+camera_pose emitted
+camera_shake skipped: output: Shake
+camera_submersion skipped: output: client::fog::FogType
+camera_type_cycle emitted
+campfire_start emitted
+can_be_connected_to skipped: not a method of the Hooks trait
+can_be_hydrated skipped: not a method of the Hooks trait
+can_continue_sleeping skipped: output `may_continue`: `CanContinueSleepingEvent` has no `Option<bool>` field of that name
+can_drop_from_explosion skipped: not a method of the Hooks trait
+can_eat skipped: output `can_eat`: `CanEatEvent` has no `Option<bool>` field of that name
+can_entity_destroy skipped: not a method of the Hooks trait
+can_equip skipped: not a method of the Hooks trait
+can_fit_inside_container_items skipped: not a method of the Hooks trait
+can_grindstone_repair skipped: not a method of the Hooks trait
+can_harvest_block skipped: not a method of the Hooks trait
+can_perform_action skipped: not a method of the Hooks trait
+can_player_sleep emitted
+can_stick_to skipped: not a method of the Hooks trait
+can_survive skipped: not a method of the Hooks trait
+can_sustain_plant skipped: not a method of the Hooks trait
+cauldron_level_changed emitted
+chat_recipient emitted
+chat_suggestion_applied emitted
+chunk_load emitted
+chunk_sent emitted
+chunk_ticket_level_updated emitted
+chunk_unload emitted
+chunk_unwatch emitted
+chunk_watch emitted
+client_attack_target skipped: handle output
+client_chat emitted
+client_chat_received skipped: argument `player_message` has type `Option<&'a PlayerChatInfo>` (kind Other): a reference inside Option has no Lua conversion
+client_chunk_load emitted
+client_chunk_unload emitted
+client_disconnecting emitted
+client_information_updated emitted
+client_level_load emitted
+client_level_unload emitted
+client_mining_predict emitted
+client_packet skipped: argument `packet` has type `&'a ClientPacket` (kind Event): no Lua conversion
+client_packet_send skipped: argument `packet` has type `&'a ClientPacket` (kind Event): no Lua conversion
+client_pause_change_post emitted
+client_pause_change_pre emitted
+client_player_change_game_type emitted
+client_player_clone emitted
+client_player_logging_in emitted
+client_player_logging_out emitted
+client_resources_reloaded emitted
+client_setup emitted
+client_stopped emitted
+client_stopping emitted
+client_tick_post emitted
+client_tick_pre emitted
+clone_item_stack skipped: not a method of the Hooks trait
+command emitted
+component_hover skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+component_types emitted
+compost_item emitted
+compute_fog_color emitted
+compute_fov emitted
+compute_fov_modifier skipped: argument `player` has type `&'a FovPlayer` (kind Event): no Lua conversion
+config_loading emitted
+config_reloading emitted
+config_unloading emitted
+connects_to skipped: not a method of the Hooks trait
+console_line emitted
+consume_effect skipped: argument `data` has type `&'a Tag` (kind Event): no Lua conversion
+contained_fluid skipped: not a method of the Hooks trait
+container_loot_filled emitted
+container_opened emitted
+contents_changed skipped: not a method of the Hooks trait
+crafter_craft emitted
+crafting_remainder skipped: not a method of the Hooks trait
+create_fluid_source emitted
+create_skull_models skipped: has an output: its listeners write back, not in this slice
+create_spawn_position skipped: output: [f32;2]
+creative_slot emitted
+creator_mod_id skipped: not a method of the Hooks trait
+creeper_ignite emitted
+creeper_power emitted
+critical_hit emitted
+crop_grow_post emitted
+crop_grow_pre emitted
+custom_click_action skipped: argument `payload` has type `Option<&'a Tag>` (kind Other): a reference inside Option has no Lua conversion
+custom_spawner_tick emitted
+customize_boss_event_progress emitted
+customize_chat_overlay emitted
+damage_item skipped: not a method of the Hooks trait
+data_map_types emitted (host records)
+data_maps_updated emitted
+data_pack_files emitted (host records)
+datapack_sync emitted
+debug_entry_lines emitted
+debug_renderer_draw skipped: argument `draw` has type `&'a mut dyn WorldDrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+default_components_bound emitted
+difficulty_changed emitted
+dimension_transition_screen_draw skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+dispense_item skipped: not a method of the Hooks trait
+dispense_method skipped: not a method of the Hooks trait
+dragon_egg_form emitted
+effect_particle_modification skipped: output: Option<ParticleOptions>
+emissive skipped: has an output: its listeners write back, not in this slice
+empty_contents skipped: not a method of the Hooks trait
+enchant_effect skipped: argument `data` has type `&'a Tag` (kind Event): no Lua conversion
+enchant_item emitted
+enchant_power_bonus skipped: not a method of the Hooks trait
+enchanted_block_loot skipped: handle input: host `&dyn LevelHost` is not carried by a turn
+enchanted_entity_loot emitted
+enchantment_level_set skipped: argument `offer` has type `&'a item::stations::EnchantmentRow<'a>` (kind Event): no Lua conversion
+ender_entity_teleport emitted
+ender_pearl_teleport skipped: argument `target` has type `&'a mut[f64; 3]` (kind Vector): a mutable argument writes back, not in this slice
+enderman_anger emitted
+entities_load emitted
+entities_unload emitted
+entity_break_door emitted
+entity_breed emitted
+entity_change_block emitted
+entity_change_block_pre emitted
+entity_constructing emitted
+entity_drop_item emitted
+entity_enter_block emitted
+entity_enter_love_mode emitted
+entity_entering_section emitted
+entity_inside skipped: not a method of the Hooks trait
+entity_interact skipped: output `result`: `EntityInteractEvent` has no `Option<mod_api::InteractionResult>` field of that name
+entity_interact_specific emitted
+entity_invulnerability_check emitted
+entity_join_level emitted
+entity_leave_level emitted
+entity_mob_griefing emitted
+entity_mount emitted
+entity_move emitted
+entity_outline emitted
+entity_place skipped: argument `placement` has type `Placement` (kind Other): no Lua conversion
+entity_portal emitted
+entity_pose_change emitted
+entity_shoot_bow emitted
+entity_size emitted
+entity_struck_by_lightning emitted
+entity_tame emitted
+entity_teleport emitted
+entity_tick_listened skipped: has an output: its listeners write back, not in this slice
+entity_tick_post emitted
+entity_tick_pre emitted
+entity_toggle_glide emitted
+entity_travel_to_dimension emitted
+entity_unleash emitted
+exp_bottle emitted
+exp_drop skipped: not a method of the Hooks trait
+experience_orb_can_merge emitted
+experience_orb_merge emitted
+explosion_detonate skipped: handle output
+explosion_knockback skipped: argument `blocks` has type `&'a[[i32; 3]]` (kind Collection): no Lua conversion
+explosion_prime emitted
+explosion_resistance skipped: not a method of the Hooks trait
+explosion_start emitted
+extend_poi_types skipped: has an output: its listeners write back, not in this slice
+extract_block_screen_effect emitted
+fall_on skipped: not a method of the Hooks trait
+falling_tick skipped: not a method of the Hooks trait
+farmland_trample emitted
+fill_bucket emitted
+finalize_spawn skipped: argument `difficulty` has type `&'a mut Difficulty` (kind Event): a mutable argument writes back, not in this slice
+fire_odds skipped: not a method of the Hooks trait
+firework_explode emitted
+flip_frame emitted
+fluid_flow emitted
+fluid_level_change emitted
+fluid_place_block emitted
+fluid_rules skipped: not a method of the Hooks trait
+fluid_tick emitted
+fluid_tooltip skipped: argument `stack` has type `&'a FluidStack` (kind Event): no Lua conversion
+food_level_changed emitted
+framerate_limit emitted
+friction skipped: hot path (needs measurement)
+furnace_burn emitted
+furnace_extract emitted
+furnace_smelt emitted
+furnace_start_smelt emitted
+game_rule_changed skipped: argument `actor` has type `Option<&'a GameRuleActor<'a>>` (kind Other): a reference inside Option has no Lua conversion
+game_shutting_down emitted
+gather_effect_screen_tooltips skipped: output: Vec<(Text,u32)>
+gather_skipped_attribute_tooltips skipped: argument `skipped_ids` has type `&'a mut Vec<String>` (kind Collection): a mutable argument writes back, not in this slice
+general_entity_tick skipped: not a method of the Hooks trait
+get_arm_pose skipped: answer: ArmPose
+get_enchantment_level skipped: output: ItemEnchantments
+get_equipment_drop_chance emitted
+grindstone_place skipped: output: item::menu::GrindstonePlace
+grindstone_take skipped: output: item::menu::GrindstoneTake
+gui_layer_draw skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+gui_layer_post skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+gui_layer_pre skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+gui_render_post skipped: argument `batch` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+hand_drawn skipped: not a method of the Hooks trait
+hanging_break emitted
+hanging_place emitted
+has_analog_output skipped: not a method of the Hooks trait
+health_hud skipped: answer: Vec<GuiDraw>
+hears_projectile_impacts skipped: has an output: its listeners write back, not in this slice
+highlight_tip skipped: not a method of the Hooks trait
+hopper_inventory_search emitted
+hopper_pickup_item emitted
+hurt_enemy skipped: not a method of the Hooks trait
+ignited_by_lava skipped: not a method of the Hooks trait
+ingredient emitted
+ingredient_test skipped: hot path (needs measurement)
+input_key emitted
+instantiate_block_state_definition skipped: has an output: its listeners write back, not in this slice
+interaction_key_mapping_triggered emitted
+inventory_block_start emitted
+inventory_move_item emitted
+inventory_tick skipped: not a method of the Hooks trait
+is_bonemeal_success skipped: not a method of the Hooks trait
+is_combine_repairable skipped: not a method of the Hooks trait
+is_fertile skipped: not a method of the Hooks trait
+is_fire_source skipped: not a method of the Hooks trait
+is_ladder skipped: hot path (needs measurement)
+is_not_replaceable_by_pick_action skipped: not a method of the Hooks trait
+is_pathfindable skipped: not a method of the Hooks trait
+is_piglin_currency skipped: not a method of the Hooks trait
+is_primary_item_for skipped: not a method of the Hooks trait
+is_signal_source skipped: not a method of the Hooks trait
+is_slime_block skipped: not a method of the Hooks trait
+is_sticky_block skipped: not a method of the Hooks trait
+is_valid_bonemeal_target skipped: not a method of the Hooks trait
+item_after_vertical_collision skipped: not a method of the Hooks trait
+item_attribute_modifier skipped: output: ItemAttributeModifiers
+item_bar skipped: not a method of the Hooks trait
+item_consumption_teleport emitted
+item_crafted skipped: argument `inputs` has type `&'a[Option<item::item_stack::ItemStack>]` (kind Collection): no Lua conversion
+item_decorations skipped: not a method of the Hooks trait
+item_despawn emitted
+item_expire emitted
+item_fished skipped: listen hook returns `Flow`: its listeners answer nothing
+item_interact_mob skipped: not a method of the Hooks trait
+item_model_property emitted
+item_model_range_property emitted
+item_model_select_property emitted
+item_model_update skipped: argument `config` has type `&'a Tag` (kind Event): no Lua conversion
+item_picked_up emitted
+item_picked_up_partial emitted
+item_picked_up_post emitted
+item_smelted emitted
+item_spawn emitted
+item_stacked_on_other skipped: output: StackedOnOther<'_>
+item_tint_source skipped: argument `config` has type `&'a Tag` (kind Event): no Lua conversion
+item_tooltip skipped: argument `display` has type `&'a TooltipDisplay<'a>` (kind Event): no Lua conversion
+item_toss emitted
+items emitted (host records)
+key_mapping_pre emitted
+leaves_decay emitted
+left_click_block emitted
+left_click_empty emitted
+level_load emitted
+level_save emitted
+level_tick_post emitted
+level_tick_pre emitted
+level_unload emitted
+light_emission skipped: not a method of the Hooks trait
+lightning_strike emitted
+living_breathe emitted
+living_change_target skipped: handle output
+living_conversion_post emitted
+living_conversion_pre emitted
+living_damage_post skipped: argument `container` has type `&'a DamageContainer` (kind Event): no Lua conversion
+living_damage_pre skipped: output: DamageContainer
+living_death emitted
+living_death_message skipped: has an output: its listeners write back, not in this slice
+living_death_post emitted
+living_destroy_block emitted
+living_drops skipped: argument `drops` has type `&'a mut Vec<ItemDrop>` (kind Collection): a mutable argument writes back, not in this slice
+living_drown emitted
+living_entity_use_item_finish emitted
+living_entity_use_item_start emitted
+living_entity_use_item_stop emitted
+living_entity_use_item_tick emitted
+living_equipment_change emitted
+living_equipment_listened skipped: has an output: its listeners write back, not in this slice
+living_experience_drop emitted
+living_fall emitted
+living_flying_speed emitted
+living_get_projectile emitted
+living_heal emitted
+living_incoming_damage skipped: hot path (needs measurement)
+living_jump emitted
+living_jump_power emitted
+living_knockback emitted
+living_shield_block skipped: output: ShieldBlock
+living_speed emitted
+living_use_totem emitted
+living_visibility emitted
+loot_condition emitted
+loot_drops emitted
+loot_function emitted
+loot_table_load emitted
+makes_open_trapdoor_above_climbable skipped: hot path (needs measurement)
+makes_piglins_neutral skipped: not a method of the Hooks trait
+map_decoration_types skipped: has an output: its listeners write back, not in this slice
+map_decorations skipped: has an output: its listeners write back, not in this slice
+may_place_on skipped: not a method of the Hooks trait
+menu_background emitted
+menu_button skipped: not a method of the Hooks trait
+menu_clicked emitted
+menu_closed emitted
+menu_extra_data skipped: answer: Vec<u8>
+menu_links emitted
+menu_quick_move skipped: not a method of the Hooks trait
+menu_slot_rules skipped: not a method of the Hooks trait
+menu_still_valid skipped: not a method of the Hooks trait
+menu_transfer skipped: not a method of the Hooks trait
+minecart_pass skipped: not a method of the Hooks trait
+minimap skipped: answer: Minimap
+mob_despawn emitted
+mob_effect_added skipped: argument `effect` has type `EffectKey` (kind Other): no Lua conversion
+mob_effect_applicable skipped: output `applicable`: `MobEffectApplicableEvent` has no `Option<mod_api::EffectApplicable>` field of that name
+mob_effect_expired skipped: argument `effect` has type `EffectKey` (kind Other): no Lua conversion
+mob_effect_remove skipped: argument `effect` has type `EffectKey` (kind Other): no Lua conversion
+mob_killed emitted
+mob_spawn_placement_check skipped: argument `result` has type `&'a mut SpawnCheck` (kind Event): a mutable argument writes back, not in this slice
+mob_spawn_position_check skipped: argument `result` has type `&'a mut SpawnCheck` (kind Event): a mutable argument writes back, not in this slice
+mob_spawned emitted
+mob_split emitted
+mod_container_viewers emitted
+mod_mismatch skipped: has an output: its listeners write back, not in this slice
+model_baking_completed emitted
+modify_custom_spawners skipped: output: CustomSpawners
+modify_default_components skipped: has an output: its listeners write back, not in this slice
+moisture_change emitted
+mouse_button_post emitted
+mouse_button_pre emitted
+mouse_scrolling emitted
+movement_input emitted
+music skipped: output: Option<Music>
+music_layers skipped: has an output: its listeners write back, not in this slice
+neighbor_changed skipped: hot path (needs measurement)
+neighbor_notify emitted
+note_block_change emitted
+note_block_play skipped: argument `instrument` has type `&'a mut NoteInstrument` (kind Event): a mutable argument writes back, not in this slice
+on_block_exploded skipped: not a method of the Hooks trait
+on_block_placed_by skipped: not a method of the Hooks trait
+on_block_state_change skipped: not a method of the Hooks trait
+on_caught_fire skipped: not a method of the Hooks trait
+on_chunk_unloaded skipped: not a method of the Hooks trait
+on_destroyed_by_player skipped: not a method of the Hooks trait
+on_destroyed_by_push_reaction skipped: not a method of the Hooks trait
+on_dropped_by_player skipped: not a method of the Hooks trait
+on_effect_added skipped: argument `effect` has type `EffectKey` (kind Other): no Lua conversion
+on_entity_item_update skipped: not a method of the Hooks trait
+on_entity_swing skipped: not a method of the Hooks trait
+on_equip emitted
+on_item_use_first skipped: not a method of the Hooks trait
+on_left_click_entity skipped: not a method of the Hooks trait
+on_neighbor_change skipped: not a method of the Hooks trait
+on_tree_grow skipped: not a method of the Hooks trait
+on_use_tick skipped: not a method of the Hooks trait
+panel_event skipped: argument `event` has type `&'a PanelEvent` (kind Event): no Lua conversion
+perform_bonemeal skipped: not a method of the Hooks trait
+permissions_changed emitted
+pickup_xp emitted
+piston_carries_block_entity skipped: not a method of the Hooks trait
+piston_post skipped: argument `push` has type `&'a[BlockPos]` (kind Collection): no Lua conversion
+piston_pre skipped: argument `push` has type `&'a[BlockPos]` (kind Collection): no Lua conversion
+piston_push_reaction skipped: not a method of the Hooks trait
+play_hit_sound skipped: not a method of the Hooks trait
+play_level_sound_at_entity skipped: argument `sound` has type `&'a mut Identifier` (kind Identifier): a mutable argument writes back, not in this slice
+play_level_sound_at_position skipped: argument `sound` has type `&'a mut Identifier` (kind Identifier): a mutable argument writes back, not in this slice
+play_sound skipped: output: Option<SoundPlay>
+play_sound_source emitted
+play_streaming_source emitted
+player_advancement_done emitted
+player_advancement_progress skipped: argument `progress` has type `&'a AdvancementProgress` (kind Event): no Lua conversion
+player_arm_swing emitted
+player_attack_cooldown_reset emitted
+player_bed_enter emitted
+player_bed_leave emitted
+player_break_speed emitted
+player_brewed_potion emitted
+player_bucket_entity emitted
+player_bundle_item_select emitted
+player_change_beacon_effect skipped: argument `primary` has type `Option<EffectKey>` (kind Other): no Lua conversion
+player_changed_dimension emitted
+player_client_loaded_world emitted
+player_clone emitted
+player_command emitted
+player_commands_sent emitted
+player_container_close emitted
+player_container_open emitted
+player_deep_sleep emitted
+player_destroy_item emitted
+player_destroyed_block emitted
+player_died emitted
+player_edit_book emitted
+player_egg_throw emitted
+player_elytra_boost emitted
+player_enchant_item skipped: argument `enchantments` has type `&'a[(Arc<str>, u32)]` (kind Collection): no Lua conversion
+player_exp_cooldown_change emitted
+player_fish emitted
+player_flower_pot_manipulate emitted
+player_flyable_fall emitted
+player_game_mode_changed emitted
+player_harvest_check skipped: has an output: its listeners write back, not in this slice
+player_heart_type skipped: output: client::hud_layout::HeartKind
+player_input emitted
+player_insert_lectern_book emitted
+player_inventory_changed skipped: argument `stacks` has type `&'a[Option<item::item_stack::ItemStack>]` (kind Collection): no Lua conversion
+player_item_cooldown emitted
+player_item_frame_change emitted
+player_item_mend emitted
+player_item_smithed skipped: argument `inputs` has type `&'a[Option<item::item_stack::ItemStack>; 3]` (kind Collection): no Lua conversion
+player_jump emitted
+player_kicked emitted
+player_launch_projectile emitted
+player_lectern_page_change emitted
+player_level_change emitted
+player_load_from_file emitted
+player_logged_in emitted
+player_logged_out emitted
+player_login emitted
+player_loom_pattern_select emitted
+player_map_filled emitted
+player_move emitted
+player_name_entity emitted
+player_name_format skipped: has an output: its listeners write back, not in this slice
+player_open_sign emitted
+player_passage_cross skipped: argument `passage` has type `PassageId` (kind Other): no Lua conversion
+player_pick_item emitted
+player_pickup_arrow emitted
+player_ready_arrow emitted
+player_recipe_book_click emitted
+player_recipe_book_settings_change emitted
+player_recipe_discovered emitted
+player_respawn_position skipped: argument `level` has type `&'a mut LevelDimension` (kind Event): a mutable argument writes back, not in this slice
+player_respawned emitted
+player_riptide emitted
+player_save_to_file emitted
+player_set_spawn emitted
+player_shear_entity emitted
+player_shield_disable emitted
+player_spawn_phantoms skipped: output `result`: `PlayerSpawnPhantomsEvent` has no `Option<PhantomSpawnResult>` field of that name
+player_sprint emitted
+player_start_spectating_entity emitted
+player_start_tracking emitted
+player_stat_award emitted
+player_stays_on_ground_surface emitted
+player_stonecutter_recipe_select emitted
+player_stop_spectating_entity emitted
+player_stop_tracking emitted
+player_stop_using_item emitted
+player_swap_hands emitted
+player_swap_with_equipment_slot emitted
+player_switch_hotbar_slot_post emitted
+player_switch_hotbar_slot_pre emitted
+player_tab_list_name_format skipped: has an output: its listeners write back, not in this slice
+player_take_lectern_book emitted
+player_teleport_end_gateway emitted
+player_teleported emitted
+player_tick_post emitted
+player_tick_pre emitted
+player_toggle_entity_age_lock emitted
+player_toggle_flight emitted
+player_toggle_sneak emitted
+player_totem emitted
+player_trade emitted
+player_unleash_entity emitted
+player_velocity emitted
+player_xp_change emitted
+player_xp_level_change emitted
+portal_create emitted
+portal_spawn emitted
+potential_spawns skipped: output: Vec<SpawnEntry>
+potion_brew_post skipped: output: [Option<ItemStack>;5]
+potion_brew_pre skipped: output: [Option<ItemStack>;5]
+potion_splash emitted
+pre_remove_side_effects skipped: not a method of the Hooks trait
+prepare_hopper_transfer emitted
+prepare_item_craft skipped: output `result`: `PrepareItemCraftEvent` has no `Option<ItemStack>` field of that name
+prepare_item_enchant emitted
+prepare_smithing skipped: output `result`: `PrepareSmithingEvent` has no `Option<ItemStack>` field of that name
+projectile_impact emitted
+projectile_launch emitted
+raid_spawn_wave emitted
+raid_state_change emitted
+rail_can_make_slopes skipped: not a method of the Hooks trait
+rail_direction skipped: not a method of the Hooks trait
+rail_flexible skipped: not a method of the Hooks trait
+rail_valid_shape skipped: not a method of the Hooks trait
+random_tick skipped: not a method of the Hooks trait
+recipe_book_categories skipped: output: Vec<RecipeBookCategory>
+recipe_property_sets skipped: has an output: its listeners write back, not in this slice
+recipe_sources emitted
+recipes_received skipped: argument `recipe_types` has type `&'a[String]` (kind Collection): no Lua conversion
+register_block_state_models emitted
+register_block_tint_sources skipped: argument `sources` has type `&'a mut dyn BlockTintSources` (kind DynHost): a mutable argument writes back, not in this slice
+register_cauldron_fluid_content skipped: has an output: its listeners write back, not in this slice
+register_cauldron_interaction skipped: argument `interactions` has type `&'a mut dyn CauldronInteractions` (kind DynHost): a mutable argument writes back, not in this slice
+register_client_commands emitted (host records)
+register_color_resolvers skipped: argument `resolvers` has type `&'a mut dyn ColorResolvers` (kind DynHost): a mutable argument writes back, not in this slice
+register_commands emitted (host records)
+register_configs emitted (host records)
+register_debug_entries skipped: has an output: its listeners write back, not in this slice
+register_debug_renderers skipped: has an output: its listeners write back, not in this slice
+register_dimension_transition_screen skipped: has an output: its listeners write back, not in this slice
+register_enchantment_damage_effects skipped: has an output: its listeners write back, not in this slice
+register_entity_layers skipped: argument `layers` has type `&'a mut dyn EntityLayers` (kind DynHost): a mutable argument writes back, not in this slice
+register_entity_renderers skipped: argument `renderers` has type `&'a mut dyn EntityRenderers` (kind DynHost): a mutable argument writes back, not in this slice
+register_entity_spectator_shaders skipped: has an output: its listeners write back, not in this slice
+register_fluid_models skipped: has an output: its listeners write back, not in this slice
+register_game_tests skipped: argument `functions` has type `&'a mut dyn GameTests` (kind DynHost): a mutable argument writes back, not in this slice
+register_gui_layers skipped: has an output: its listeners write back, not in this slice
+register_item_models emitted
+register_item_tint_sources emitted
+register_json_animation_types skipped: has an output: its listeners write back, not in this slice
+register_layer_definitions skipped: has an output: its listeners write back, not in this slice
+register_load_conditions skipped: has an output: its listeners write back, not in this slice
+register_model_loaders emitted
+register_particle_groups skipped: has an output: its listeners write back, not in this slice
+register_particle_providers skipped: argument `providers` has type `&'a mut dyn ParticleProviders` (kind DynHost): a mutable argument writes back, not in this slice
+register_preset_editors skipped: has an output: its listeners write back, not in this slice
+register_range_select_item_model_property emitted
+register_render_pipelines skipped: has an output: its listeners write back, not in this slice
+register_runtime_sprites skipped: has an output: its listeners write back, not in this slice
+register_select_item_model_property emitted
+register_special_model_renderer skipped: argument `renderers` has type `&'a mut dyn SpecialModelRenderers` (kind DynHost): a mutable argument writes back, not in this slice
+register_sprite_sources emitted
+register_texture_atlases skipped: has an output: its listeners write back, not in this slice
+register_villager_professions skipped: has an output: its listeners write back, not in this slice
+release_using skipped: not a method of the Hooks trait
+remove_block skipped: not a method of the Hooks trait
+render_arm skipped: argument `draw` has type `&'a mut dyn BlockEntityDrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+render_fog skipped: output: client::fog::FogData
+render_frame_post emitted
+render_frame_pre emitted
+render_gui_post skipped: output: Corners
+render_gui_pre emitted
+render_hand skipped: output: HandRender<'_>
+render_item_in_frame emitted
+render_level_stage skipped: argument `draw` has type `&'a mut dyn WorldDrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+render_living_post skipped: argument `parts` has type `Option<&'a PosedParts>` (kind Other): a reference inside Option has no Lua conversion
+render_living_pre skipped: output: HiddenParts
+render_name_tag emitted
+render_needs skipped: not a method of the Hooks trait
+render_player_post skipped: argument `parts` has type `Option<&'a PosedParts>` (kind Other): a reference inside Option has no Lua conversion
+render_player_pre skipped: output: HiddenParts
+render_tooltip_gather_components skipped: output: Vec<TooltipElement>
+render_tooltip_pre skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+render_tooltip_texture skipped: output: Option<Identifier>
+resource_pack_status emitted
+respawn_position skipped: not a method of the Hooks trait
+right_click_block emitted
+right_click_empty emitted
+right_click_item skipped: argument `click` has type `&'a ItemClick<'a>` (kind Event): no Lua conversion
+rotate skipped: not a method of the Hooks trait
+run_mod_command emitted
+scheduled_task emitted
+screen skipped: not a method of the Hooks trait
+screen_char_typed_post emitted
+screen_char_typed_pre skipped: output: Option<client::widgets::TextEdit>
+screen_click skipped: not a method of the Hooks trait
+screen_closing emitted
+screen_draw skipped: not a method of the Hooks trait
+screen_exclusion_areas skipped: has an output: its listeners write back, not in this slice
+screen_init_post emitted
+screen_key_pressed_post emitted
+screen_key_pressed_pre emitted
+screen_key_released_post emitted
+screen_key_released_pre emitted
+screen_mouse_button_pressed_post emitted
+screen_mouse_button_pressed_pre emitted
+screen_mouse_button_released_post emitted
+screen_mouse_button_released_pre emitted
+screen_mouse_dragged_post emitted
+screen_mouse_dragged_pre emitted
+screen_mouse_scrolled_post emitted
+screen_mouse_scrolled_pre emitted
+screen_opening skipped: output: Option<Answered<ScreenOpening>>
+screen_preedit_post skipped: argument `blocks` has type `&'a[String]` (kind Collection): no Lua conversion
+screen_preedit_pre skipped: argument `blocks` has type `&'a[String]` (kind Collection): no Lua conversion
+screen_render_background skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+screen_render_foreground skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+screen_render_inventory_mob_effects emitted
+screen_render_post skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+screen_render_pre skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+screen_room skipped: has an output: its listeners write back, not in this slice
+screen_tooltip skipped: not a method of the Hooks trait
+screen_transparent_background skipped: argument `batch` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+screenshot skipped: output: ScreenshotImage
+sculk_bloom emitted
+server_about_to_start emitted
+server_chat skipped: argument `message` has type `&'a mut text::Text` (kind Text): a mutable argument writes back, not in this slice
+server_started emitted
+server_starting emitted
+server_stopped emitted
+server_stopping emitted
+server_tick emitted
+server_tick_rate_changed emitted
+setting_changed emitted
+shader_params skipped: output: [[f32;4];8]
+should_apply_effect_tick_this_tick skipped: argument `effect` has type `EffectKey` (kind Other): no Lua conversion
+should_cause_block_break_reset skipped: not a method of the Hooks trait
+should_cause_reequip_animation skipped: not a method of the Hooks trait
+should_check_weak_power skipped: not a method of the Hooks trait
+should_display_fluid_overlay skipped: not a method of the Hooks trait
+should_hide_adjacent_fluid_face skipped: not a method of the Hooks trait
+should_redstone_wire_connect_to skipped: not a method of the Hooks trait
+sign_changed skipped: argument `lines` has type `&'a mut Vec<String>` (kind Collection): a mutable argument writes back, not in this slice
+sleep_finished_time skipped: output: ClockAdjustment
+smoke_source skipped: not a method of the Hooks trait
+sound_engine_load emitted
+sound_type skipped: not a method of the Hooks trait
+spawn_change emitted
+sponge_absorb emitted
+spread_players_teleport emitted
+sprite_source skipped: has an output: its listeners write back, not in this slice
+standalone_models skipped: has an output: its listeners write back, not in this slice
+state_at_viewpoint skipped: not a method of the Hooks trait
+state_for_placement skipped: not a method of the Hooks trait
+stateful_block_entity skipped: not a method of the Hooks trait
+submit_custom_geometry skipped: argument `draw` has type `&'a mut dyn WorldDrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+sweep_attack emitted
+tab_complete skipped: has an output: its listeners write back, not in this slice
+tags_updated emitted
+target_hit emitted
+teleport_command emitted
+texture_atlas_stitched emitted
+thunder_change emitted
+tick_block skipped: not a method of the Hooks trait
+tick_target_millis emitted
+time_skip emitted
+tnt_primed emitted
+toast_add emitted
+tool_modified_state skipped: not a method of the Hooks trait
+tooltip skipped: not a method of the Hooks trait
+tooltip_component skipped: not a method of the Hooks trait
+tooltip_component_draw skipped: not a method of the Hooks trait
+trade_select emitted
+trade_with_villager skipped: has an output: its listeners write back, not in this slice
+update_shape skipped: hot path (needs measurement)
+use_animation skipped: not a method of the Hooks trait
+use_duration skipped: not a method of the Hooks trait
+use_item skipped: not a method of the Hooks trait
+use_item_on skipped: not a method of the Hooks trait
+use_item_on_block emitted
+use_on skipped: not a method of the Hooks trait
+use_without_item skipped: not a method of the Hooks trait
+validate_tickets skipped: argument `validation` has type `&'a mut dyn TicketValidation` (kind DynHost): a mutable argument writes back, not in this slice
+vanilla_game_event emitted
+vault_change_state emitted
+vault_loot emitted
+vehicle_create emitted
+vehicle_damage emitted
+vehicle_destroy emitted
+vehicle_moved emitted
+viewed_level_sound skipped: argument `play_at` has type `&'a mut Option<[f64; 3]>` (kind Vector): a mutable argument writes back, not in this slice
+village_siege emitted
+visuals skipped: output: Vec<BlockRim>
+weak_changes skipped: not a method of the Hooks trait
+weather_change emitted
+whitelist_state_update emitted
+wind_burst emitted
+window_resize emitted
+world_border_bounds_change_finish emitted
+world_border_bounds_changed emitted
+world_border_center_changed emitted
+world_drawn skipped: not a method of the Hooks trait
+world_lifecycle emitted
+world_saved emitted
+world_view_drawn skipped: not a method of the Hooks trait
+world_views skipped: not a method of the Hooks trait
+xp_orb_targeting skipped: handle output
+xp_repair_ratio skipped: not a method of the Hooks trait
+zoom skipped: answer: Zoom
+
+# block parts (issue 74, P1): the BlockPart trait's methods
+block_part.adjacent_block_path_type emitted
+block_part.affect_neighbors_after_removal skipped: has an output: its listeners write back, not in this slice
+block_part.analog_output skipped: has an output: its listeners write back, not in this slice
+block_part.beacon_color_multiplier skipped: has an output: its listeners write back, not in this slice
+block_part.block_jump_factor skipped: hot path (needs measurement)
+block_part.block_path_type emitted
+block_part.block_render_visibility skipped: hot path (needs measurement)
+block_part.block_signal emitted
+block_part.block_speed_factor skipped: hot path (needs measurement)
+block_part.bounce_on emitted
+block_part.bounce_restitution skipped: has an output: its listeners write back, not in this slice
+block_part.can_be_connected_to emitted
+block_part.can_be_hydrated skipped: argument `fluid` has type `FluidState` (kind Other): no Lua conversion
+block_part.can_drop_from_explosion emitted
+block_part.can_entity_destroy skipped: hot path (needs measurement)
+block_part.can_harvest_block skipped: has an output: its listeners write back, not in this slice
+block_part.can_stick_to skipped: has an output: its listeners write back, not in this slice
+block_part.can_survive emitted
+block_part.can_sustain_plant emitted
+block_part.clone_item_stack emitted
+block_part.connects_to skipped: has an output: its listeners write back, not in this slice
+block_part.contents_changed emitted
+block_part.dispense_method skipped: answer: Dispensed
+block_part.enchant_power_bonus skipped: hot path (needs measurement)
+block_part.entity_inside skipped: has an output: its listeners write back, not in this slice
+block_part.exp_drop skipped: handle input: host `&dyn LevelHost` is not carried by a turn
+block_part.explosion_resistance emitted
+block_part.fall_on skipped: has an output: its listeners write back, not in this slice
+block_part.falling_tick skipped: hot path (needs measurement)
+block_part.fire_odds skipped: answer: (i32, i32)
+block_part.friction skipped: hot path (needs measurement)
+block_part.has_analog_output skipped: has an output: its listeners write back, not in this slice
+block_part.ignited_by_lava emitted
+block_part.is_bonemeal_success skipped: has an output: its listeners write back, not in this slice
+block_part.is_fertile skipped: has an output: its listeners write back, not in this slice
+block_part.is_fire_source skipped: hot path (needs measurement)
+block_part.is_ladder skipped: hot path (needs measurement)
+block_part.is_pathfindable skipped: has an output: its listeners write back, not in this slice
+block_part.is_signal_source emitted
+block_part.is_slime_block skipped: has an output: its listeners write back, not in this slice
+block_part.is_sticky_block skipped: has an output: its listeners write back, not in this slice
+block_part.is_valid_bonemeal_target emitted
+block_part.item_after_vertical_collision skipped: cancel hook has no `cancelled: bool` argument
+block_part.light_emission skipped: answer: u8
+block_part.makes_open_trapdoor_above_climbable skipped: hot path (needs measurement)
+block_part.may_place_on emitted
+block_part.minecart_pass skipped: hot path (needs measurement)
+block_part.neighbor_changed skipped: hot path (needs measurement)
+block_part.on_block_exploded emitted
+block_part.on_block_state_change emitted
+block_part.on_caught_fire emitted
+block_part.on_destroyed_by_player emitted
+block_part.on_destroyed_by_push_reaction skipped: argument `fluid` has type `FluidState` (kind Other): no Lua conversion
+block_part.on_neighbor_change emitted
+block_part.on_tree_grow skipped: worldgen worker
+block_part.perform_bonemeal emitted
+block_part.piston_carries_block_entity emitted
+block_part.piston_push_reaction emitted
+block_part.play_hit_sound skipped: cancel hook has no `cancelled: bool` argument
+block_part.rail_can_make_slopes skipped: has an output: its listeners write back, not in this slice
+block_part.rail_direction skipped: has an output: its listeners write back, not in this slice
+block_part.rail_flexible skipped: has an output: its listeners write back, not in this slice
+block_part.rail_valid_shape skipped: has an output: its listeners write back, not in this slice
+block_part.random_tick skipped: cancel hook has no `cancelled: bool` argument
+block_part.remove_block emitted
+block_part.respawn_position skipped: has an output: its listeners write back, not in this slice
+block_part.rotate skipped: worldgen worker
+block_part.should_check_weak_power skipped: has an output: its listeners write back, not in this slice
+block_part.should_display_fluid_overlay skipped: has an output: its listeners write back, not in this slice
+block_part.should_hide_adjacent_fluid_face skipped: has an output: its listeners write back, not in this slice
+block_part.should_redstone_wire_connect_to skipped: has an output: its listeners write back, not in this slice
+block_part.smoke_source emitted
+block_part.sound_type skipped: output: BlockSoundType
+block_part.state_at_viewpoint skipped: hot path (needs measurement)
+block_part.state_for_placement skipped: answer: Option<BlockState>
+block_part.tick_block skipped: cancel hook has no `cancelled: bool` argument
+block_part.tool_modified_state skipped: cancel hook has no `cancelled: bool` argument
+block_part.update_shape skipped: hot path (needs measurement)
+block_part.use_item_on emitted
+block_part.use_without_item emitted
+block_part.weak_changes skipped: has an output: its listeners write back, not in this slice
+
+# item parts (issue 74, P2): the ItemPart trait's methods
+item_part.apply_enchantments skipped: argument `enchantments` has type `&'a[(Arc<str>, u32)]` (kind Collection): no Lua conversion
+item_part.can_equip emitted
+item_part.can_fit_inside_container_items emitted
+item_part.can_grindstone_repair emitted
+item_part.can_perform_action emitted
+item_part.contained_fluid skipped: output: Option<FluidKey>
+item_part.crafting_remainder emitted
+item_part.creator_mod_id skipped: has an output: its listeners write back, not in this slice
+item_part.damage_item skipped: cancel hook has no `cancelled: bool` argument
+item_part.dispense_item skipped: answer: Dispensed
+item_part.empty_contents skipped: argument `hit` has type `Option<(BlockPos, Direction)>` (kind Other): no Lua conversion
+item_part.highlight_tip skipped: hot path (needs measurement)
+item_part.hurt_enemy emitted
+item_part.inventory_tick skipped: hot path (needs measurement)
+item_part.is_combine_repairable emitted
+item_part.is_not_replaceable_by_pick_action emitted
+item_part.is_piglin_currency emitted
+item_part.is_primary_item_for emitted
+item_part.item_bar skipped: hot path (needs measurement)
+item_part.item_decorations skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+item_part.item_interact_mob emitted
+item_part.makes_piglins_neutral emitted
+item_part.on_block_placed_by emitted
+item_part.on_dropped_by_player skipped: cancel hook has no `cancelled: bool` argument
+item_part.on_entity_item_update skipped: hot path (needs measurement)
+item_part.on_entity_swing skipped: cancel hook has no `cancelled: bool` argument
+item_part.on_item_use_first emitted
+item_part.on_left_click_entity skipped: cancel hook has no `cancelled: bool` argument
+item_part.on_use_tick skipped: hot path (needs measurement)
+item_part.release_using emitted
+item_part.should_cause_block_break_reset skipped: hot path (needs measurement)
+item_part.should_cause_reequip_animation emitted
+item_part.tooltip skipped: hot path (needs measurement)
+item_part.tooltip_component skipped: answer: [f32 ; 2]
+item_part.tooltip_component_draw skipped: argument `draw` has type `&'a mut dyn DrawContext` (kind DynHost): a mutable argument writes back, not in this slice
+item_part.use_animation skipped: hot path (needs measurement)
+item_part.use_duration skipped: hot path (needs measurement)
+item_part.use_item emitted
+item_part.use_on emitted
+item_part.xp_repair_ratio emitted
+
+# block entity parts (issue 74, P3): the BlockEntityPart trait's methods
+block_entity_part.block_entity skipped: NBT output (Compound is denied)
+block_entity_part.block_entity_client_tick skipped: hot path (needs measurement)
+block_entity_part.block_entity_client_ticks skipped: hot path (needs measurement)
+block_entity_part.block_entity_data_received emitted
+block_entity_part.block_entity_on_load emitted
+block_entity_part.block_entity_render_bounding_box skipped: hot path (needs measurement)
+block_entity_part.block_entity_submit skipped: hot path (needs measurement)
+block_entity_part.block_entity_tick skipped: hot path (needs measurement)
+block_entity_part.block_entity_ticks skipped: hot path (needs measurement)
+block_entity_part.block_entity_update_tag skipped: NBT output (Compound is denied)
+block_entity_part.block_entity_view_distance skipped: hot path (needs measurement)
+block_entity_part.menu_button skipped: output: ModBlockEntity
+block_entity_part.menu_quick_move skipped: cancel hook has no `cancelled: bool` argument
+block_entity_part.on_chunk_unloaded emitted
+block_entity_part.pre_remove_side_effects emitted
+block_entity_part.screen skipped: answer: Screen
+block_entity_part.screen_click emitted
+block_entity_part.screen_draw skipped: hot path (needs measurement)
+block_entity_part.screen_tooltip skipped: hot path (needs measurement)
+block_entity_part.stateful_block_entity skipped: attachment state: not a Part state in v1
+
+# fluid parts (issue 74, P4): the FluidPart trait's methods
+fluid_part.fluid_rules emitted
+
+# entity parts (issue 74, P5): the EntityPart trait's methods
+entity_part.general_entity_tick skipped: per-mob object, per-tick turn: needs measurement
+entity_part.is_shearable emitted
+entity_part.on_sheared emitted
+entity_part.register_behaviors skipped: declared in the entity part's behaviors table (not a handler)
+entity_part.register_goals skipped: declared in the entity part's goals table (not a handler)
+entity_part.spawn_cluster_size emitted
+
+# menu parts (issue 74, B): the MenuPart trait's methods
+menu_part.menu_slot_rules skipped: hot path (needs measurement): asked per click for each slot and stack it consults
+menu_part.menu_still_valid emitted
+menu_part.menu_transfer skipped: hot path (needs measurement): asked per recipe transfer action on a mod menu

@@ -873,11 +873,7 @@ impl Pvp {
             }
             "hudShadow" => u.shadow = flag(value, u.shadow),
             "hudPlace" => self.layout.parse(value),
-            "hudEditorKey" => {
-                if value.starts_with("key.") {
-                    self.editor_key = value.to_owned();
-                }
-            }
+            "hudEditorKey" if value.starts_with("key.") => self.editor_key = value.to_owned(),
             "hudPing" => u.ping = flag(value, u.ping),
             "hudPingCorner" => u.ping_corner = Corner::parse(value, u.ping_corner),
             "hudCoords" => u.coords = flag(value, u.coords),
@@ -1688,7 +1684,6 @@ mod tests {
         s.extras.pvp.tweaks.fire_lower = 60;
         let installed = |id: &str| Installed {
             id: id.into(),
-            kind: crate::mod_list::ModKind::Engine,
             title: id.into(),
             description: String::new(),
             problem: None,

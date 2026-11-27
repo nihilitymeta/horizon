@@ -99,10 +99,7 @@ fn ensure_idle(source: &Roots) -> Result<(), String> {
         .output();
     let output = output.map_err(|e| format!("Could not check running games and builds: {e}"))?;
     if !output.status.success() {
-        return Err(crate::i18n::tr(
-            "Could not check running games and builds; no files were moved.",
-        )
-        .into());
+        return Err("Could not check running games and builds; no files were moved.".into());
     }
     let roots: Vec<_> = [&source.launcher, &source.game, &source.build]
         .iter()

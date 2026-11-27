@@ -217,6 +217,9 @@ pub struct Settings {
     pub shader_packs: Vec<crate::shader_pack_list::Entry>,
     /// The picked pack's options while its Shader Options page is open.
     pub shader_options: Option<crate::shader_options::ShaderOptions>,
+    /// The name of the Horizon shader pack the renderer has loaded, from its manifest (set by
+    /// the game, not saved): `shader_packs` holds no titles until its page was opened.
+    pub running_pack: Option<String>,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -302,6 +305,7 @@ impl Default for Settings {
             mods: Default::default(),
             shader_packs: Vec::new(),
             shader_options: None,
+            running_pack: None,
         }
     }
 }
@@ -408,13 +412,13 @@ impl Settings {
         // Horizon's own key bindings live in horizon-extras.txt, not in options.txt.
         let emote = settings.extras.emote_key.clone();
         settings.keys.set("key.emote", &emote);
+        // The loaded set is the active one: `keybind` text components show its keys.
+        settings.keys.sync_action_bindings();
         // `Options.load`: `sharePresence` decides what the friends service posts.
         crate::social::set_share_presence(crate::social::SharePresence::of(
             settings.file.int("sharePresence").clamp(0, 2) as u8,
         ));
         settings.describe_for_crashes();
-        // A `mod.<id>` line the launcher wrote for one of the build's features switches it.
-        crate::mod_mirror::sync_from_mods(&mut settings);
         // Options.load: the backend asked for at startup, what a restart is measured from.
         Self {
             startup_api: settings.horizon.api,
@@ -526,6 +530,7 @@ impl Settings {
             mods: Default::default(),
             shader_packs: Vec::new(),
             shader_options: None,
+            running_pack: None,
             auto_jump: f.bool("autoJump"),
             language: f.string("lang"),
             force_unicode: f.bool("forceUnicodeFont"),
@@ -712,8 +717,7 @@ impl Settings {
             extras.emote_key = self.keys.get("key.emote").to_owned();
             extras.save(dir);
             horizon_hooks::settings::engine::save_own(dir, &[crate::extras::FILE]);
-            // The features' lines say what their switches say, for the launcher.
-            crate::mod_mirror::mods_mirroring(self).save(&crate::logging::shared_dir(dir));
+            self.mods.save(&crate::logging::shared_dir(dir));
         }
     }
     /// Volume of a sound source (master excluded).
@@ -781,6 +785,11 @@ pub enum Opt {
     InvertY,
     AllowCursorChanges,
     Volume(usize),
+    /// Setting `.1` of the native mod in row `.0` of Options > Mods, a range on a slider.
+    ModSetting(u16, u16),
+    /// Setting `.1` of the Lua mod in row `.0` of the provider's entries (Options > Mods > Config),
+    /// a number on a slider; its value is the provider's, not `Settings`'.
+    LuaSetting(usize, usize),
     SoundDevice,
     GuiScale,
     ViewBobbing,
@@ -906,6 +915,16 @@ pub enum Opt {
     MaxAnisotropy,
 }
 
+impl Settings {
+    /// GUI scaling inputs for this settings owner.
+    pub fn gui_scale_inputs(&self) -> crate::hud::GuiScale {
+        crate::hud::GuiScale {
+            requested: self.gui_scale,
+            unicode: self.force_unicode,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -939,7 +958,11 @@ mod tests {
             assert_eq!(sound_source(event), source, "{event}");
         }
         // Explicit sources still take precedence, including H331's arrow route.
-        let mut audio = crate::audio::Audio::silent(Path::new("/nonexistent/h068-audio"));
+        let mut audio = crate::audio::Audio::silent(
+            &horizon_assets::resource_source::ResourceSource::directory(
+                Path::new("/nonexistent/h068-audio").to_path_buf(),
+            ),
+        );
         audio.capture = Some(Vec::new());
         audio.play_on(6, "minecraft:entity.arrow.hit", Some([1.0; 3]), 1.0, 1.0);
         audio.play_on(4, "minecraft:entity.warden.hurt", Some([1.0; 3]), 1.0, 1.0);
@@ -1115,7 +1138,7 @@ mod tests {
     fn an_option_set_keeps_horizon_files() {
         let mut s = Settings::parse("fov:70\n");
         s.mods.enabled.insert("zoom".into());
-        s.extras.fullbright = true;
+        s.extras.minimap = true;
         s.horizon.fog = !s.horizon.fog;
         s.controller.vibration = !s.controller.vibration;
         let set = s.with_option("fov", "90").unwrap();

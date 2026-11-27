@@ -27,12 +27,12 @@ pub fn game_of(index: &Value) -> Result<(String, Option<Loader>), String> {
             "neoforge" => Kind::NeoForge,
             other => {
                 return Err(format!(
-                    "The pack needs {other}, which Horizon can't install."
+                    "The pack needs {other}, which Event Horizon can't install."
                 ))
             }
         };
         if loader.is_some() {
-            return Err(crate::i18n::tr("The pack names more than one mod loader.").into());
+            return Err("The pack names more than one mod loader.".into());
         }
         let version = version
             .as_str()

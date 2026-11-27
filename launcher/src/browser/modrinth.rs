@@ -112,6 +112,7 @@ pub(super) fn parse_hit(hit: &Value) -> Option<Project> {
         kind,
         game_versions: strings(&hit["versions"]),
         loaders: strings(&hit["categories"]),
+        blocked: None,
     })
 }
 
@@ -136,6 +137,7 @@ pub(super) fn parse_project(p: &Value) -> Option<Project> {
         kind,
         game_versions: strings(&p["game_versions"]),
         loaders: strings(&p["loaders"]),
+        blocked: None,
     })
 }
 
@@ -220,7 +222,8 @@ impl Source for Modrinth {
 
     fn project(&self, id: &str) -> Result<Project, String> {
         let p = get(&format!("{API}/project/{}", encode(id)))?;
-        parse_project(&p).ok_or_else(|| format!("Modrinth: {id} is not a pack Horizon loads."))
+        parse_project(&p)
+            .ok_or_else(|| format!("Modrinth: {id} is not a pack Event Horizon loads."))
     }
 
     fn versions(&self, project: &Project) -> Result<Vec<Version>, String> {

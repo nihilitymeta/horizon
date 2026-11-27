@@ -1,6 +1,6 @@
 //! A tag as SNBT, for the wire.
 
-use horizon_world::nbt::Tag;
+use horizon_core::nbt::Tag;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub fn serialize<S: Serializer>(tag: &Option<Tag>, s: S) -> Result<S::Ok, S::Error> {
@@ -11,5 +11,5 @@ pub fn serialize<S: Serializer>(tag: &Option<Tag>, s: S) -> Result<S::Ok, S::Err
 
 pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Tag>, D::Error> {
     Ok(Option::<String>::deserialize(d)?
-        .and_then(|t| horizon_world::nbt::parse_snbt(&t).ok().map(|(tag, _)| tag)))
+        .and_then(|t| horizon_core::nbt::parse_snbt(&t).ok().map(|(tag, _)| tag)))
 }

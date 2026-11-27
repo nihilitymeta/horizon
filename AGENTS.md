@@ -34,7 +34,7 @@ Feature → files → harness for the most-changed areas: [docs/architecture.md]
 - Everything players run is Rust. Python/Java only for dev tools and harness drivers in `tools/`.
 - Horizon-only features follow [docs/design-system.md](docs/design-system.md) and are off by default where
   they would change the vanilla look.
-- Small PRs (< ~500 lines of code; docs and test files don't count:
+- PRs under ~3000 lines of code (docs, test files, inline test modules and moved lines don't count:
   [CONTRIBUTING.md](CONTRIBUTING.md#pull-requests)). Labels: `feature` (players get something new), `skip-release`
   (they see no change), none for a fix. Agents never add `release-now`: the maintainer decides it. Merges ship in batches of 5, or after
   6 hours ([docs/release-flow.md](docs/release-flow.md)).
@@ -78,8 +78,7 @@ Game workspace (root `Cargo.toml`); `launcher/` and `crates/horizon-telemetry-se
 
 | Crate | Owns |
 |---|---|
-| `horizon-client` | Gameplay library (`src/lib.rs`: `game.rs` + `game/`, `entry.rs`). Also the dedicated server (`--dedicated`). Re-exports `horizon-client-lib` for existing mod paths. |
-| `event-horizon` | Event Horizon's executable (`src/main.rs`, named `horizon-client`) and built-in mod assembly (`src/lib.rs`). |
+| `horizon-client` | Gameplay library (`src/lib.rs`: `game.rs` + `game/`, `entry.rs`) and thin executable (`src/main.rs`). Also the dedicated server (`--dedicated`). Re-exports `horizon-client-lib` for existing mod paths. |
 | `horizon-client-lib` | Reusable client systems, `horizon-ctl`, probes and their tests. Its manifest points to the existing sources under `crates/horizon-client/`; the library root is `src/client_lib.rs`. It never depends on gameplay. |
 | `horizon-items` | Blocks and items below gameplay: `blocks.rs` (block facts), `items.rs`, `item_data.rs` (components), `enchant.rs`, `cooldowns.rs`, `bundle.rs`, `item_nbt.rs`. Re-exported as `horizon_client::items`... |
 | `horizon-command` | Command parsing (Brigadier): the vanilla tree, argument types, selectors, suggestions, the tree's network form. Re-exported as `horizon_client::command` |
@@ -109,7 +108,7 @@ Game workspace (root `Cargo.toml`); `launcher/` and `crates/horizon-telemetry-se
 | `horizon-system` | The machine the game runs on (OS, CPU, memory, drive, power, GPU maker and memory), for the crash report, the renderer's GPU info and telemetry |
 | `horizon-platform` | The platform's public API: what the Horizon layer may use of the engine ([docs/layers.md](docs/layers.md)); re-exports `horizon-system` today |
 | `horizon-hooks`, `horizon-game`, `horizon-official`, `horizon-heartbeat` | The layer seam: the engine's hooks for crates above it, the game an executable starts, the official executable (shipped as `horizon-client`) that registers Horizon's in-game parts, the first of them ([docs/layers.md](docs/layers.md#how-a-horizon-crate-plugs-in)) |
-| `horizon-dualsense`, `horizon-threads`, `horizon-release-sign`, `horizon-bots`, `xtask` | DualSense output, thread priorities, signed release checksums, load-test bots, repo tasks |
+| `horizon-dualsense`, `horizon-threads`, `horizon-release-sign`, `horizon-bots`, `xtask` | DualSense and Xbox One output, thread priorities, signed release checksums, load-test bots, repo tasks |
 | `launcher/` | GPUI launcher: `main.rs` (UI), `backend.rs` (installs, updates), `cli.rs`, `mcp.rs`, `*_page.rs` |
 
 Other top-level folders: `tools/` (harnesses and dev scripts), `tests/` (Python unit tests: `python3 -m
@@ -188,10 +187,10 @@ python3 tools/lang_coverage.py --summary --show-keys   # the same, then the keys
 
 `L:` = lib (`crates/horizon-client/src/`, or `crates/horizon-client-render/src/` for the modules that crate holds, under
 the same `horizon_client::<module>` paths), `G:` = gameplay (`crates/horizon-client/src/game/`), also in the lib in normal builds.
-Gameplay keeps its `horizon_client::<module>` imports through a self-crate alias. Event Horizon's
-`event-horizon` executable holds the allocator and API markers and calls `entry::main_with` with
-its built-in mods. For unit tests, the reusable lib excludes `entry` and `game`; gameplay tests
-run in the `horizon-client` library test target.
+Gameplay keeps its `horizon_client::<module>` imports through a self-crate alias. The executable
+contains only the allocator, mod API marker and a call to `entry::main`. For unit tests, the lib
+excludes `entry` and `game`, and the executable test target owns `game` so its process-wide test
+state stays separate from the library tests. This compiles gameplay twice for executable tests.
 
 | Subsystem | Files |
 |---|---|
@@ -249,7 +248,7 @@ When you change how the server and its clients talk (packets, tracking, guests, 
 it there. Other gameplay fixes are covered by their own harness and CI's parity job:
 
 ```sh
-cargo run --profile fast -p event-horizon -- --resources .local/horizon-client/26.3 --world T               # server thread
+cargo run --profile fast -p horizon-client -- --resources .local/horizon-client/26.3 --world T               # server thread
 python3 tools/lan_e2e.py --check <name>                  # host on its server thread, guest is a server client
 python3 tools/parity.py dedicated_server server_entities server_player_damage
 ```

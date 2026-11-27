@@ -210,7 +210,7 @@ impl Launcher {
         }
         let email = self.servers.value(Field::Email).trim().to_string();
         if !email.is_empty() && !email.contains('@') {
-            i.message = Some(Err(crate::i18n::tr("That isn't an email address.").into()));
+            i.message = Some(Err("That isn't an email address.".into()));
             return;
         }
         i.busy = true;
@@ -346,7 +346,7 @@ impl Launcher {
                     }));
                 panel = panel
                     .child(text(theme::UI).text_color(t.ink).child(tr(
-                        "Tailscale is installed. Sign in with your own account in Tailscale (Horizon never sees it), then come back here.",
+                        "Tailscale is installed. Sign in with your own account in Tailscale (Event Horizon never sees it), then come back here.",
                     )))
                     .when(cfg!(target_os = "linux"), |d| {
                         d.child(line(trf(
@@ -408,7 +408,7 @@ impl Launcher {
                 .child(self.invite_section(&ip, port, cx)),
         );
         panel = panel.child(line(
-            tr("Horizon never turns on Funnel: the server isn't put on the public internet, only shared with the people you invite.")
+            tr("Event Horizon never turns on Funnel: the server isn't put on the public internet, only shared with the people you invite.")
                 .into(),
         ));
         self.internet_message(panel)
@@ -460,7 +460,7 @@ impl Launcher {
                     check,
                 )),
             Some(State::SignedOut { auth_url }) => d
-                .child(ui::card_note(tr("Tailscale is installed. Sign in with your own account in Tailscale (Horizon never sees it), then come back here.")).mt(px(4.)))
+                .child(ui::card_note(tr("Tailscale is installed. Sign in with your own account in Tailscale (Event Horizon never sees it), then come back here.")).mt(px(4.)))
                 .child(act(
                     button("ts-login", "Sign in to Tailscale", Kind::Secondary, t).on_click(
                         cx.listener(move |this, _: &ClickEvent, _, cx| {
@@ -538,7 +538,7 @@ impl Launcher {
             .child(crate::glass_ui::card_heading(tr("Invite a friend")))
             .child(self.invite_section(&ip, port, cx))
             .child(crate::glass_ui::card_note(tr(
-                "Horizon never turns on Funnel: the server isn't put on the public internet, only shared with the people you invite.",
+                "Event Horizon never turns on Funnel: the server isn't put on the public internet, only shared with the people you invite.",
             )));
         self.internet_message(panel)
     }
@@ -801,8 +801,7 @@ impl Launcher {
                     let snippet = tailscale::snippet(ip, port);
                     safety = safety
                         .child(text(theme::UI).text_color(t.ink).child(
-                            "Your access controls are your own, so Horizon leaves them alone. To \
-                             keep shared friends to Minecraft, add this rule in the admin console:",
+                            "Your access controls are your own, so Event Horizon leaves them alone. To keep shared friends to Minecraft, add this rule in the admin console:",
                         ))
                         .child(
                             div()

@@ -96,6 +96,7 @@ actions! {
     DebugLightmapTexture, "key.debug.lightmapTexture", None;
     DebugImprovedTransparency, "key.debug.improvedTransparency", None;
     Emote, "key.emote", Some(KeyCode::KeyB);
+    DevTools, "key.devTools", Some(KeyCode::F8);
     HotbarPrevious, "pad.hotbarPrevious", None;
     HotbarNext, "pad.hotbarNext", None;
     Radial, "pad.radial", None;

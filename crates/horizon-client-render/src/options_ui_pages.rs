@@ -1,11 +1,10 @@
 //! The pages crates add to the options screens: a native mod's settings page (its keys and
 //! buttons), and the pages crates above the engine register (`horizon_hooks::pages`, docs/layers.md
-//! "Platform registries") with their entries on Horizon Settings. Kept out of options_ui.rs, which
-//! may not grow (tools/check_file_size.py).
+//! "Platform registries") with their entries on Horizon Settings. Kept out of options_ui.rs.
 use super::*;
 use horizon_hooks::pages as added;
 
-/// `selected_key` while a registered page's key waits (`selected_native_key`: page, row).
+/// `selected_key` while a registered page's key waits (`selected_page_key`: page, row).
 pub(super) const PAGE_KEY: &str = "horizon.pageKey";
 
 #[cfg(test)]
@@ -105,20 +104,15 @@ impl OptionsUi {
         // Two to a row, as vanilla's OptionsList.addSmall lays out
         // buttons; each opens one of Horizon's settings pages. Each page has
         // one way in: graphics and shader packs are Video Settings' (the graphics
-        // screen), the controller is Controls', mods are the Options screen's.
+        // screen), the controller is Controls', mods are the Options screen's. The
+        // registry's mod browser is Horizon's own and opens from here, not from the
+        // two-button Mods footer.
         let open = |key: &str, page: Page| button(0.0, 0.0, 150.0, tr(key), Act::Push(page));
         let mut rows: Vec<Row> = vec![
             Row::Buttons(
-                button(
-                    0.0,
-                    0.0,
-                    310.0,
-                    tr("horizon.pages.open.extras"),
-                    Act::Push(Page::Extras),
-                ),
-                None,
+                open("horizon.pages.open.extras", Page::Extras),
+                Some(open("horizon.pages.open.pvp", Page::Pvp)),
             ),
-            Row::Buttons(open("horizon.pages.open.pvp", Page::Pvp), None),
             Row::Buttons(
                 open(
                     "horizon.pages.open.split_setup",
@@ -139,6 +133,7 @@ impl OptionsUi {
                     Some(self.extra_button(s, crate::extras::Item::NoAi)),
                 )
             },
+            Row::Buttons(open("horizon.mods.browse", Page::ModBrowser), None),
         ];
         self.added_entries(&mut rows);
         rows
@@ -212,8 +207,7 @@ impl OptionsUi {
             }
             added::Row::Key { label, key } => {
                 let mut message = keybinds::display_name(&key);
-                if self.selected_key == Some(PAGE_KEY)
-                    && self.selected_native_key == Some((page, r))
+                if self.selected_key == Some(PAGE_KEY) && self.selected_page_key == Some((page, r))
                 {
                     message = Text::literal("> ")
                         .append(message.with_color(text::WHITE))
@@ -239,7 +233,7 @@ impl OptionsUi {
         match rows.get(r) {
             Some(added::Row::Key { .. }) => {
                 self.selected_key = Some(PAGE_KEY);
-                self.selected_native_key = Some((page, r));
+                self.selected_page_key = Some((page, r));
                 Vec::new()
             }
             Some(_) => {
@@ -257,98 +251,11 @@ impl OptionsUi {
         }
     }
 
-    /// A native mod's page: its name, its description, its toggle, then its configuration buttons.
-    pub(super) fn native_rows(&self, s: &Settings, i: usize) -> Vec<Row> {
-        let Some(m) = s.mods.installed.get(i) else {
-            return Vec::new();
-        };
-        let mut rows = vec![Row::Note(m.title.clone())];
-        if !m.description.is_empty() {
-            rows.push(Row::Note(m.description.clone()));
+    pub(super) fn bind_page_key(&mut self, value: String) -> Vec<Event> {
+        let (i, k) = self.selected_page_key.take().unwrap_or_default();
+        if let Some(page) = registered().get(i) {
+            page.act(k, added::Act::Bind(value));
         }
-
-        let on = s.mods.is_on(i);
-        let toggle_label = Text::translate(
-            "options.generic_value",
-            &[tr("horizon.mods.enabled"), on_off(on)],
-        );
-        rows.push(Row::Buttons(
-            button(0.0, 0.0, 310.0, toggle_label, Act::ToggleMod(i)),
-            None,
-        ));
-
-        let items = mod_items(&m.id);
-        if !items.is_empty() {
-            rows.push(Row::Header("horizon.mods.settings"));
-            let extra = |item: crate::extras::Item| {
-                let value = format!("{}: {}", item.caption_text(), item.value(&s.extras));
-                let label = if item.key_name().is_some() && self.selected_key == item.key_name() {
-                    Text::literal(format!("> {value} <")).with_color(text::YELLOW)
-                } else {
-                    Text::literal(value)
-                };
-                let widget = button(0.0, 0.0, 150.0, label, Act::Extra(item));
-                if !on
-                    || item
-                        .parent()
-                        .is_some_and(|p| p.switch(&s.extras) == Some(false))
-                {
-                    inactive(widget)
-                } else {
-                    widget
-                }
-            };
-            for chunk in items.chunks(2) {
-                let left = extra(chunk[0]);
-                let right = chunk.get(1).map(|&item| extra(item));
-                rows.push(Row::Buttons(left, right));
-            }
-        }
-
-        if let Some(page) = &m.native {
-            for (b, label) in page.buttons.iter().enumerate() {
-                let widget = button(
-                    0.0,
-                    0.0,
-                    310.0,
-                    Text::literal(label.clone()),
-                    Act::NativeButton(i, b),
-                );
-                rows.push(Row::Buttons(widget, None));
-            }
-        }
-        rows
-    }
-
-    /// A native mod's key waits for the next key or button pressed.
-    pub(super) fn wait_native_key(&mut self, i: usize, k: usize) {
-        self.selected_key = Some(NATIVE_KEY);
-        self.selected_native_key = Some((i, k));
-    }
-
-    /// The key pressed for the native mod's key, or the registered page's ([`PAGE_KEY`]), that
-    /// waited for one.
-    pub(super) fn bind_native_key(
-        &mut self,
-        s: &mut Settings,
-        name: &str,
-        value: String,
-    ) -> Vec<Event> {
-        let (i, k) = self.selected_native_key.take().unwrap_or_default();
-        if name == PAGE_KEY {
-            if let Some(page) = registered().get(i) {
-                page.act(k, added::Act::Bind(value));
-            }
-            return vec![Event::Changed];
-        }
-        let Some(m) = s.mods.installed.get(i) else {
-            return Vec::new();
-        };
-        let Some([key, ..]) = m.native.as_ref().and_then(|p| p.keys.get(k)) else {
-            return Vec::new();
-        };
-        let keys = s.mods.keys.entry(m.id.clone()).or_default();
-        keys.insert(key.clone(), value);
         vec![Event::Changed]
     }
 }

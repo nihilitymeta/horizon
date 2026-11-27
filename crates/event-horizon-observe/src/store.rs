@@ -5,11 +5,11 @@
 //! remote server sees none.
 use crate::names::received_name;
 use crate::wire::Wire;
-use horizon_world::nbt::Tag;
+use horizon_core::nbt::Tag;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 /// A window of the tools, by the command that opens it.
@@ -274,7 +274,7 @@ pub fn received(wire: Wire) {
             add(&[page.id], page.view);
             let data = page
                 .data
-                .and_then(|t| horizon_world::nbt::parse_snbt(&t).ok().map(|(tag, _)| tag));
+                .and_then(|t| horizon_core::nbt::parse_snbt(&t).ok().map(|(tag, _)| tag));
             if let Some(data) = data {
                 set_data(page.id, page.name, data);
             }
@@ -512,6 +512,8 @@ struct Observed {
 static WATCHING: AtomicBool = AtomicBool::new(false);
 /// Whether any watch has a window (a view or a path): the tools' pointer follows it.
 static SHOWING: AtomicBool = AtomicBool::new(false);
+/// How many times [`reset`] has run: a client greets a world once per count (`Wire::Hello`).
+static RESETS: AtomicU64 = AtomicU64::new(0);
 static STATE: Mutex<Observed> = Mutex::new(Observed {
     watch: Vec::new(),
     snapshots: Vec::new(),
@@ -674,8 +676,12 @@ pub fn set_log_file(id: u32, path: &str) {
     s.prune();
 }
 
-/// One entity's log stopped.
+/// One entity's log stopped: its window's mark goes, and its open file closes (dropped from
+/// [`LOGS`]), so no further line is written to it.
 pub fn stop_log(id: u32) {
+    LOGS.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(i, _)| *i != id);
     let mut s = state();
     if let Some(w) = s.watch.iter_mut().find(|w| w.id == id) {
         w.logged = false;
@@ -698,6 +704,7 @@ pub fn clear_logs() {
 /// path, log mark and stored snapshot goes, so an entity of the next world
 /// that happens to have the same id is not shown under the old one's window.
 pub fn reset() {
+    RESETS.fetch_add(1, Ordering::Relaxed);
     REQUESTS.lock().unwrap_or_else(|e| e.into_inner()).clear();
     WATCH.lock().unwrap_or_else(|e| e.into_inner()).clear();
     LOGS.lock().unwrap_or_else(|e| e.into_inner()).clear();
@@ -715,6 +722,11 @@ pub fn reset() {
     s.series.clear();
     s.blocks.clear();
     s.prune();
+}
+
+/// How many world closes ([`reset`]) this process has seen. It only grows.
+pub fn resets() -> u64 {
+    RESETS.load(Ordering::Relaxed)
 }
 
 /// Whether any window is wanted: a view or a path of some entity.
@@ -1106,6 +1118,31 @@ mod tests {
     }
 
     #[test]
+    fn a_stopped_log_closes_its_file_and_the_others_stay_open() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let dir = std::env::temp_dir().join(format!("eh-observe-stop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch folder");
+        let before = std::env::current_dir().expect("a working folder");
+        std::env::set_current_dir(&dir).expect("into the scratch folder");
+        let opened = open_log("Cow", 4).and_then(|_| open_log("Pig", 6));
+        stop_log(4);
+        let still_logging = is_logging();
+        let pig_mark = snapshots()
+            .into_iter()
+            .find(|w| w.id == 6)
+            .and_then(|w| w.log_file);
+        stop_log(6);
+        let idle = !is_logging();
+        std::env::set_current_dir(before).expect("back to the working folder");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(opened.is_ok(), "{opened:?}");
+        assert!(still_logging, "pig's log stays open after cow's stops");
+        assert!(pig_mark.is_some(), "pig's window keeps its log mark");
+        assert!(idle, "no log is open once the last one stops");
+    }
+
+    #[test]
     fn one_log_stops_without_the_others() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
         reset();
@@ -1219,5 +1256,21 @@ mod tests {
         // Closing stops them all: how many there were.
         assert_eq!(stop_logs(), 1);
         assert!(!is_logging());
+    }
+
+    #[test]
+    fn resets_counts_each_world_close_and_nothing_else() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let before = resets();
+        add(&[3], View::Data);
+        add_path(&[3], "Health");
+        push_server_command(7, Wire::Hello);
+        send_to_server(Wire::Hello);
+        clear(None);
+        assert_eq!(resets(), before, "only reset counts");
+        reset();
+        assert_eq!(resets(), before + 1);
+        reset();
+        assert_eq!(resets(), before + 2);
     }
 }

@@ -69,10 +69,9 @@ fn check(file: &Path) -> Result<(), String> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let zip = fs::File::open(file)
-        .ok()
-        .and_then(|f| zip::ZipArchive::new(f).ok())
-        .ok_or_else(|| format!("{name} is not a zip file that can be read."))?;
+    let archive = fs::File::open(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let zip = horizon_port_pack::zip_intake::open(archive)
+        .map_err(|e| format!("{}: {e}", file.display()))?;
     if zip.index_for_name("pack.mcmeta").is_none() {
         return Err(format!("{name} is not a pack: it has no pack.mcmeta."));
     }
@@ -217,7 +216,7 @@ impl Coverage {
     /// "Runs its 12 functions, 1 predicate. Not read yet: 40 worldgen, 3 recipes."
     pub fn summary(&self) -> String {
         let runs = match self.read.is_empty() {
-            true => "Nothing in it runs in Horizon yet.".to_string(),
+            true => "Nothing in it runs in Event Horizon yet.".to_string(),
             false => format!("Runs its {}.", counts(&self.read)),
         };
         match self.unread.is_empty() {
@@ -257,10 +256,9 @@ fn counts(list: &[(String, usize)]) -> String {
 /// Counts a data pack zip's files by kind, and splits them into what the game reads and what
 /// it doesn't yet.
 pub fn coverage(file: &Path) -> Result<Coverage, String> {
-    let zip = fs::File::open(file)
-        .ok()
-        .and_then(|f| zip::ZipArchive::new(f).ok())
-        .ok_or_else(|| format!("{} is not a zip file that can be read.", file.display()))?;
+    let archive = fs::File::open(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let zip = horizon_port_pack::zip_intake::open(archive)
+        .map_err(|e| format!("{}: {e}", file.display()))?;
     let mut kinds = std::collections::BTreeMap::<String, usize>::new();
     let names: Vec<_> = zip
         .file_names()

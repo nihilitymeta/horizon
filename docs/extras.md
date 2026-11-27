@@ -5,25 +5,21 @@ Mouse Tweaks-style inventory controls, inventory sorting, a smooth chat and a mu
 install looks and behaves exactly like vanilla 26.3, and turning an extra off
 again restores vanilla's behaviour completely.
 
-The **Zoom**, **Minimap**, **FPS counter** and **Keystrokes** extras are one built-in native mod now
-(`crates/event-horizon-extras`, [native-mods.md](native-mods.md)): they look and work as they did, and their settings and switches carry
-over. See [the extras that became a mod](#moved-to-native-mods).
-
 ## Where they live
 
 | Part | Code |
 |---|---|
 | Settings, parsing and saving | `crates/horizon-client-render/src/extras.rs` |
-| Dynamic lights: item glow, nearest sources | `crates/horizon-client-render/src/dynamic_light.rs` (unit tested), `game/dynamic_lights.rs`, `terrain.wgsl` and `entity.wgsl` (`dynamic_block_light`) |
+| FPS and click counters (for native mods) | `extras.rs` (pure logic, unit tested) |
+| Dynamic lights: item glow, nearest sources | `crates/horizon-client-render/src/dynamic_light.rs` (unit tested), `game/interface/dynamic_lights.rs`, `terrain.wgsl` and `entity.wgsl` (`dynamic_block_light`) |
 | HUD drawing (a native mod's minimap, corner stacking) | `crates/horizon-client/src/extras_hud.rs` |
-| Minimap colours, tiles and image (for whichever mod shows one) | `crates/horizon-client-render/src/minimap.rs` |
-| Reconnect policy and backoff | `crates/horizon-client/src/reconnect.rs`; its game glue (connect, join, leave, the countdown) in `game/extras/reconnect.rs` |
-| Game glue (input hooks, per-frame update) | `crates/horizon-client/src/game/extras.rs`; each extra's own glue in a child module, `game/extras/` |
-| Mouse Tweaks-style controls, sort buttons | `crates/horizon-client/src/game/extras/mouse_tweaks.rs`, `game/extras/sorting.rs` |
+| Minimap colours, tiles and image (for the Minimap native mod) | `crates/horizon-client-render/src/minimap.rs` |
+| Reconnect policy and backoff | `crates/horizon-client/src/reconnect.rs`; its game glue (connect, join, leave, the countdown) in `game/interface/extras/reconnect.rs` |
+| Game glue (input hooks, per-frame update) | `crates/horizon-client/src/game/interface/extras.rs`; each extra's own glue in a child module, `game/interface/extras/` |
+| Mouse Tweaks-style controls, sort buttons | `crates/horizon-client/src/game/interface/extras/mouse_tweaks.rs`, `game/interface/extras/sorting.rs` |
 | Sort order and its clicks | `crates/horizon-client/src/inv_sort.rs` (pure, unit tested) |
 | The music page's rows, and the pools it filters | `options_ui.rs` (`Page::Music`), `crates/horizon-client/src/music.rs` (`track_groups`, `MusicManager::set_off`), `sound_events.rs` (`sound_except`) |
-| Cosmetics (show mine, show others'), off with their flag | `extras.rs`, `crates/horizon-client/src/game/cosmetics.rs` ([cosmetics.md](cosmetics.md)) |
-| The settings page | `extras_ui.rs` (`Page::Extras`, on `settings_shell.rs`): **Options → Horizon Settings... → Extras...**; fullbright, dynamic lights and hiding block-break particles change the picture, so they are on the graphics screen's Quality page instead (`graphics_ui.rs`, **Options → Video Settings...**) |
+| The settings page | `options_ui.rs` (`Page::Extras`): **Options → Horizon Settings... → Extras...**; fullbright, dynamic lights and hiding block-break particles are on the graphics screen's Quality page instead (`graphics_ui.rs`, **Options → Video Settings...**) |
 
 The settings are grouped by extra, under a header each, one to a row, and the strip
 under the list says what the row in focus or under the pointer does. An
@@ -79,27 +75,15 @@ in Controls, and adding one would put a non-vanilla mapping into `options.txt`.
 
 ### Moved to native mods
 
-The **Zoom**, **Minimap**, **FPS counter** and **Keystrokes** extras are one built-in native mod:
-`crates/event-horizon-extras`, installed by `event_horizon::builtin_mods` before the developer tools and
-the Lua mods ([native-mods.md](native-mods.md)). Each of the four is its own row in **Options → Mods**, with its own
-switch (the `mod.<id>` line of `horizon-mods.txt`) and its own settings page under the switch.
-They look and work as the engine's own extras did, and a player's settings carry over:
+The **FPS counter**, **Keystrokes**, **Zoom** and the **Minimap** are official native mods now (in
+horizon-rust/horizon-mods under `native/<name>/`, [mods.md](modding/src/start/installing.md#horizons-official-mods)), with the same look and
+options. Players install them from the launcher's Mods page, and the launcher builds them into the game
+([modding/src/how-to/native-mods.md](modding/src/how-to/native-mods.md)). The game keeps
+the hook points they use (`crates/horizon-client/src/game/native_hooks/`), and `horizon-extras.txt` keeps the old
+keys and `movedToMods`. The Extras page keeps a **Zoom** row: the mod's switch and Settings button when
+it is built in, else a note saying to install it from the Mods page.
 
-- the values (`zoomLevel`, `zoomSmooth`, `zoomSensitivity`, `minimapCorner`, `minimapSize`, `minimapShape`,
-  `minimapZoom`, `minimapRotate`, `fpsCorner`, `fpsLows`, `keystrokesCorner`, `keystrokesCps`) move from
-  `horizon-extras.txt` into the mod's own settings (`.horizon-mod-data/<id>/`, read once with the same rules
-  the engine's parser had); the old file stays as it is;
-- the switches (`zoom`, `minimap`, `fps`, `keystrokes` in `horizon-extras.txt`) are the `mod.<id>` lines of
-  `horizon-mods.txt` from now on; a player's lines carry over (the engine mirrored them while they were extras),
-  and a line that is missing yet is seeded from the old file when it loads, so a fresh install has all four off;
-- the zoom's key (`key.zoom`, default C) and the minimap's (`key.minimap`, default M) stay the Key Binds rows they
-  are; the minimap key toggles the mod's switch as before.
-
-What the engine still does for the mod: it computes the minimap's tiles and draws the map a mod asks for
-(`native_minimap` in `native_hooks.rs`), it applies a mod's zoom to the field of view (`native_zoom`), and it
-tells the frame counter and the held keys through the host helpers (`frame_stats`, `key_down`, `playing`;
-[api/hook-points.md](api/hook-points.md)). The mod draws the FPS counter and keystrokes panels itself, in the `hud`
-hook, exactly as the engine's boxes looked. The engine draws the minimap itself, whichever mod asks for one:
+The game still draws the minimap, for the native mod (`native_minimap` in `native_hooks/`, [mods.md](modding/src/how-to/content-mods.md)):
 - a corner map (top right by default), square or round, small/medium/large, zoom 0.5 to 4 blocks per pixel, rotating
   with the player or north up, with the player arrow (vanilla's map decoration sprite);
 - vanilla's `MapColor` per block, as map items use, with the map item's height shading and water-depth dithering;
@@ -116,7 +100,7 @@ hook, exactly as the engine's boxes looked. The engine draws the minimap itself,
   (`LivingEntityRenderer.shouldShowName`).
 - Hidden in first person, while sleeping, in spectator mode, while invisible, and
   whenever the team's name tag visibility would hide it, exactly as the other
-  players' tags (`game/names.rs`, `own_name_tag`). Client-only: nothing is sent.
+  players' tags (`game/interface/names.rs`, `own_name_tag`). Client-only: nothing is sent.
 
 ### Hide block-break particles (`hideBlockParticles`, default off)
 - Hides the debris particles that burst from a block when it breaks
@@ -287,12 +271,18 @@ of P1: the others follow P1's answer.
 - The pools are filtered where they are picked (`sound_except` in
   `sound_events.rs`), the manager is `music.rs`, and the page is in `options_ui.rs`.
 
+### Modded splashes (`skipModdedSplashesIfVanillaModified`, default on)
+- NeoForge's client setting of the same name, with no Extras page entry. On, a
+  resource pack or a mod that provides `minecraft:texts/splashes.txt` replaces
+  the title screen's whole splash pool; off, every namespace's
+  `texts/splashes.txt` joins it (`crates/horizon-client/src/splashes.rs`). Read
+  on each resource reload.
+
 ## Shared rules
 
 - All extras are hidden with F1 and drawn in the HUD layer: under screens, over
-  the world, like vanilla's HUD. The engine's own extras give way to the debug
-  screen (F3) in the top left corner; the mod's panels skip the corners F3
-  takes (`corner_shown`).
+  the world, like vanilla's HUD. Extras in the top left corner give way to the
+  debug screen (F3), which shows the FPS anyway.
 - Corners stack: extras placed in the same corner stack downward (top corners)
   or upward (bottom corners) in the order a mod's minimap, then mods' panels. The top
   right corner starts below the status effect icons.

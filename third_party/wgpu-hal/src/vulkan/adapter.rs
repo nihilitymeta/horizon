@@ -146,7 +146,6 @@ pub struct PhysicalDeviceFeatures {
     vulkan_memory_model: Option<vk::PhysicalDeviceVulkanMemoryModelFeaturesKHR<'static>>,
 
     shader_draw_parameters: Option<vk::PhysicalDeviceShaderDrawParametersFeatures<'static>>,
-
 }
 
 impl PhysicalDeviceFeatures {
@@ -2665,6 +2664,7 @@ impl super::Adapter {
         } else {
             None
         };
+
         let naga_options = {
             use naga::back::spv;
 

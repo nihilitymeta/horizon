@@ -1,0 +1,409 @@
+{
+  "schema": 2,
+  "hash": "e113db1f95c292ef2796afae2d1783dc",
+  "hooks": [
+    {
+      "id": "hook:add_attribute_tooltips",
+      "hash": "a8bfb96d83f7db7973ec8f2c7eaba5f7",
+      "doc": "`AddAttributeTooltipsEvent`: the lines that follow a stack's attribute lines\n(`ItemStack.addAttributeTooltips`), after the modifiers the stack shows and\n`gather_skipped_attribute_tooltips` left in. Push lines to `lines`, each with a colour as\n`rgba` packs it (`u32::MAX` keeps the text's own); they land beside the attribute lines\nwithout finding where those end. `shown` is whether the stack's\n`minecraft:tooltip_display` shows the attribute modifiers (`shouldShow`); the hook is\nasked either way. `player` and `player_entity_id` are the local player's,\n`None` for the recipe book's search text, which has none and drops the colours, and for a stack\nnested in another's tooltip (a crossbow's loaded projectile); `advanced`\n(F3+H) and `creative` (a creative tab's own slot) are the tooltip's `TooltipFlag`. Asked\neach frame the tooltip shows, only while a mod listens. Client-side.\nA component deeper than 512 nodes refuses capture or the whole writeback;\nno event field is applied if any Text field fails conversion.",
+      "engine": {
+        "target": "horizon_client::game::native_hooks::add_attribute_tooltips::Game<'_>::native_add_attribute_tooltips"
+      },
+      "counterparts": {
+        "neoforge": [
+          "AddAttributeTooltipsEvent"
+        ]
+      },
+      "version": 1,
+      "side": "client",
+      "contract": "listen",
+      "cancellable": false,
+      "arguments": [
+        {
+          "name": "player",
+          "type": "Option<u128>"
+        },
+        {
+          "name": "player_entity_id",
+          "type": "Option<i32>"
+        },
+        {
+          "name": "stack",
+          "type": "&'a item::item_stack::ItemStack"
+        },
+        {
+          "name": "shown",
+          "type": "bool"
+        },
+        {
+          "name": "advanced",
+          "type": "bool"
+        },
+        {
+          "name": "creative",
+          "type": "bool"
+        },
+        {
+          "name": "lines",
+          "type": "&'a mut Vec<(text::Text, u32)>"
+        }
+      ],
+      "refs": [
+        "type:AddAttributeTooltipsEvent",
+        "type:item::item_stack::ItemStack",
+        "type:text::Text"
+      ],
+      "fields": [
+        {
+          "id": "hook:add_attribute_tooltips.player",
+          "hash": "51e440d39520ed7cd17acbc086e30352",
+          "type": "Option<u128>",
+          "refs": [
+            "hook:add_attribute_tooltips"
+          ]
+        },
+        {
+          "id": "hook:add_attribute_tooltips.player_entity_id",
+          "hash": "775353d2692e5d49971e184c9be09bc3",
+          "type": "Option<i32>",
+          "refs": [
+            "hook:add_attribute_tooltips"
+          ]
+        },
+        {
+          "id": "hook:add_attribute_tooltips.stack",
+          "hash": "5336e318267b36c3fcf145774a5b8c65",
+          "type": "&'a item::item_stack::ItemStack",
+          "refs": [
+            "hook:add_attribute_tooltips",
+            "type:item::item_stack::ItemStack"
+          ]
+        },
+        {
+          "id": "hook:add_attribute_tooltips.shown",
+          "hash": "d04aefc4fcb0f9a427497fc582fa6e7c",
+          "type": "bool",
+          "refs": [
+            "hook:add_attribute_tooltips"
+          ]
+        },
+        {
+          "id": "hook:add_attribute_tooltips.advanced",
+          "hash": "d04aefc4fcb0f9a427497fc582fa6e7c",
+          "type": "bool",
+          "refs": [
+            "hook:add_attribute_tooltips"
+          ]
+        },
+        {
+          "id": "hook:add_attribute_tooltips.creative",
+          "hash": "d04aefc4fcb0f9a427497fc582fa6e7c",
+          "type": "bool",
+          "refs": [
+            "hook:add_attribute_tooltips"
+          ]
+        },
+        {
+          "id": "hook:add_attribute_tooltips.lines",
+          "hash": "604493a0ef609bb35c126b6647e034c1",
+          "type": "&'a mut Vec<(text::Text, u32)>",
+          "refs": [
+            "hook:add_attribute_tooltips",
+            "type:text::Text"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hook:add_server_reload_listeners",
+      "hash": "69dfd5d2318516e51bbbc79b03585533",
+      "doc": "Register server data reload listeners after packs are selected. The\nhost gives registry access at registration, as\n`AddServerReloadListenersEvent.getRegistryAccess` does. Runs every data\nload on the owning server thread in Reloading: only registry facts,\nsettings and mod-list reads are available through this Host. World\nhandles, services and transactions panic naming the phase. Existing\ndata-load callbacks retain their DataLoadContext; no setup event is added.",
+      "engine": {
+        "target": "horizon_client::game::native_hooks::add_server_reload_listeners::Game<'_>::native_add_server_reload_listeners"
+      },
+      "counterparts": {
+        "neoforge": [
+          "AddServerReloadListenersEvent"
+        ]
+      },
+      "version": 1,
+      "side": "server",
+      "contract": "listen",
+      "host": "read",
+      "arguments": [
+        {
+          "name": "listeners",
+          "type": "&'a mut dyn ServerReloadListeners"
+        }
+      ],
+      "refs": [
+        "trait:ServerReloadListeners",
+        "type:AddServerReloadListenersEvent"
+      ],
+      "fields": [
+        {
+          "id": "hook:add_server_reload_listeners.listeners",
+          "hash": "f1271004cc405d055d8203433c68e5f6",
+          "type": "&'a mut dyn ServerReloadListeners",
+          "refs": [
+            "hook:add_server_reload_listeners",
+            "trait:ServerReloadListeners"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hook:affect_neighbors_after_removal",
+      "hash": "f66e6bd3ebda3edfb5958ee98a249105",
+      "doc": "`Block.affectNeighborsAfterRemoval` for a mod's block: an authoritative server removed the\nblock `state` from `pos` (`moved`: a piston pushed it) and has run its template class's own\nupdates. Push onto `updates` the neighbour updates it wants, in order: `OutputSignal`\n(`updateNeighbourForOutputSignal`), `Neighbours` (`updateNeighborsAt`) and\n`NeighboursExcept(direction)` (`updateNeighborsAtExceptFromFacing`); the level runs each\nat once, as the block's own override would. Answered from inside the level's write: it\nreads, and cannot write blocks or spawn entities.",
+      "engine": {
+        "target": "horizon_client::game::native_hooks::affect_neighbors_after_removal::GameLevel<'_>::native_affect_neighbors_after_removal"
+      },
+      "counterparts": {
+        "neoforge": [
+          "none (vanilla Block.affectNeighborsAfterRemoval; NeoForge adds no event or extension for it)"
+        ]
+      },
+      "version": 1,
+      "side": "server",
+      "contract": "collect",
+      "scope": {
+        "kind": "block",
+        "key": "state"
+      },
+      "arguments": [
+        {
+          "name": "dimension",
+          "type": "LevelDimension"
+        },
+        {
+          "name": "pos",
+          "type": "BlockPos"
+        },
+        {
+          "name": "state",
+          "type": "BlockState"
+        },
+        {
+          "name": "moved",
+          "type": "bool"
+        }
+      ],
+      "output": {
+        "name": "updates",
+        "type": "&'a mut Vec<NeighbourUpdate>"
+      },
+      "refs": [
+        "type:AffectNeighborsAfterRemovalEvent",
+        "type:BlockPos",
+        "type:BlockState",
+        "type:LevelDimension",
+        "type:NeighbourUpdate"
+      ],
+      "fields": [
+        {
+          "id": "hook:affect_neighbors_after_removal.dimension",
+          "hash": "afcf3f02486860a848a766ff3d0f18ad",
+          "type": "LevelDimension",
+          "refs": [
+            "hook:affect_neighbors_after_removal",
+            "type:LevelDimension"
+          ]
+        },
+        {
+          "id": "hook:affect_neighbors_after_removal.pos",
+          "hash": "bf8d45612bba403e52969c08f589af5a",
+          "type": "BlockPos",
+          "refs": [
+            "hook:affect_neighbors_after_removal",
+            "type:BlockPos"
+          ]
+        },
+        {
+          "id": "hook:affect_neighbors_after_removal.state",
+          "hash": "ca956149abd5df575f815884348dab57",
+          "type": "BlockState",
+          "refs": [
+            "hook:affect_neighbors_after_removal",
+            "type:BlockState"
+          ]
+        },
+        {
+          "id": "hook:affect_neighbors_after_removal.moved",
+          "hash": "8cc66f1777ae616c750249db3add89c6",
+          "type": "bool",
+          "refs": [
+            "hook:affect_neighbors_after_removal"
+          ]
+        },
+        {
+          "id": "hook:affect_neighbors_after_removal.updates",
+          "hash": "0dca6c1756bdc48e01d6716d165deb14",
+          "type": "&'a mut Vec<NeighbourUpdate>",
+          "refs": [
+            "hook:affect_neighbors_after_removal",
+            "type:NeighbourUpdate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hook:animal_tame",
+      "hash": "236965df1ff213c3cffe0b2b87f30181",
+      "doc": "The player `tamer` (UUID) and `tamer_entity_id` is about to tame the\nmob `entity` of `kind` (`AnimalTameEvent`): its taming roll succeeded\n(a wolf's bone, a cat's fish, a parrot's seeds or a nautilus's food;\na horse, donkey, mule or llama the player rides). Set `cancel` for the\nattempt to fail instead, as a failed roll does: smoke for a pet, and\na horse bucks its rider off. Before `entity_tame`. Server-side.",
+      "engine": {
+        "target": "horizon_client::game::native_hooks::animal_tame::Game<'_>::native_animal_tame"
+      },
+      "counterparts": {
+        "neoforge": [
+          "AnimalTameEvent"
+        ],
+        "paper": [
+          "EntityTameEvent"
+        ]
+      },
+      "version": 1,
+      "side": "server",
+      "contract": "cancel",
+      "cancellable": true,
+      "arguments": [
+        {
+          "name": "tamer",
+          "type": "u128"
+        },
+        {
+          "name": "tamer_entity_id",
+          "type": "i32"
+        },
+        {
+          "name": "entity",
+          "type": "u32"
+        },
+        {
+          "name": "kind",
+          "type": "&'a str"
+        },
+        {
+          "name": "cancelled",
+          "type": "bool"
+        }
+      ],
+      "refs": [
+        "type:AnimalTameEvent"
+      ],
+      "fields": [
+        {
+          "id": "hook:animal_tame.tamer",
+          "hash": "c7eefec9db6b2d28eb2bb0a9f17a6b29",
+          "type": "u128",
+          "refs": [
+            "hook:animal_tame"
+          ]
+        },
+        {
+          "id": "hook:animal_tame.tamer_entity_id",
+          "hash": "5deb85b7a9188042d697cba98621fe90",
+          "type": "i32",
+          "refs": [
+            "hook:animal_tame"
+          ]
+        },
+        {
+          "id": "hook:animal_tame.entity",
+          "hash": "64abfb2c4608ae691c5517b4228dcac2",
+          "type": "u32",
+          "refs": [
+            "hook:animal_tame"
+          ]
+        },
+        {
+          "id": "hook:animal_tame.kind",
+          "hash": "92feccbd7eccf8983978573ab4bcbb03",
+          "type": "&'a str",
+          "refs": [
+            "hook:animal_tame"
+          ]
+        },
+        {
+          "id": "hook:animal_tame.cancelled",
+          "hash": "7ce14623236a148d6c5dd51bf30a00e6",
+          "type": "bool",
+          "refs": [
+            "hook:animal_tame"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hook:attack_entity",
+      "hash": "17bd48c105d6bfb6937892ef6a46a655",
+      "doc": "A player attacks the entity `entity` (`Entity.getId`) of type `kind`\n(`minecraft:item_frame`, `minecraft:cow`, `minecraft:player`) standing\nat `pos`: `ServerGamePacketListenerImpl.handleInteract`'s attack, once\nin reach, where `Player.attack` starts. The swing has not begun, so the\nattacking player's attack strength is still the charge the blow uses\n(vanilla reads it at the start of `Player.attack`; the swing resets it\nafterwards). Set `canceled` and the blow does nothing (no damage, no\nknockback, the frame keeps its item). Server-side, for every player of\nthe world (`host.players().acting_player()` says who).",
+      "engine": {
+        "target": "horizon_client::game::native_hooks::base::Game<'_>::native_attack_entity"
+      },
+      "counterparts": {
+        "neoforge": [
+          "AttackEntityEvent"
+        ]
+      },
+      "version": 1,
+      "side": "server",
+      "contract": "cancel",
+      "arguments": [
+        {
+          "name": "entity",
+          "type": "i32"
+        },
+        {
+          "name": "kind",
+          "type": "&'a str"
+        },
+        {
+          "name": "pos",
+          "type": "[f64; 3]"
+        },
+        {
+          "name": "cancelled",
+          "type": "bool"
+        }
+      ],
+      "refs": [
+        "type:AttackEntityEvent"
+      ],
+      "fields": [
+        {
+          "id": "hook:attack_entity.entity",
+          "hash": "89e21752f46e4d1b83140bc7ac094e89",
+          "type": "i32",
+          "refs": [
+            "hook:attack_entity"
+          ]
+        },
+        {
+          "id": "hook:attack_entity.kind",
+          "hash": "ec37ffc348f03cf2832d170829539032",
+          "type": "&'a str",
+          "refs": [
+            "hook:attack_entity"
+          ]
+        },
+        {
+          "id": "hook:attack_entity.pos",
+          "hash": "22d986e36ea21b66a392c7538a6478b6",
+          "type": "[f64; 3]",
+          "refs": [
+            "hook:attack_entity"
+          ]
+        },
+        {
+          "id": "hook:attack_entity.cancelled",
+          "hash": "78120e249d35ff8f2f4f482b18a9cc34",
+          "type": "bool",
+          "refs": [
+            "hook:attack_entity"
+          ]
+        }
+      ]
+    }
+  ]
+}

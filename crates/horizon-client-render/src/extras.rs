@@ -1,11 +1,9 @@
-//! Horizon's optional extras (lighting, inventory tools): their
+//! Horizon's optional extras (minimap, lighting, inventory tools): their
 //! settings, kept in `horizon-extras.txt` next to `options.txt` so that file
 //! stays exactly vanilla's, and the logic behind them. Every extra is off by
 //! default; see `docs/extras.md`. Horizon's own switches outside the Extras page
-//! (No AI, Agent Control) are kept here too. The zoom,
-//! minimap, FPS counter and keystrokes extras are the built-in native mod
-//! `crates/event-horizon-extras`; their old lines in that file stay unread.
-use std::{fs, path::Path};
+//! (No AI, Agent Control) are kept here too.
+use std::{collections::VecDeque, fs, path::Path};
 
 pub const FILE: &str = "horizon-extras.txt";
 /// The name the options screen uses while the sort key waits for a key.
@@ -16,57 +14,12 @@ const SKIN_LAYERS_KEY: &str = "threeDSkinLayers";
 const EMOTE_KEY: &str = "emoteKey";
 const OLD_EMOTE_LINE: &str = "key_key.emote";
 
-/// The minimap's sizes in GUI pixels, and its zooms in blocks per pixel, as
-/// the built-in extras mod offers them and `native_minimap` clamps them.
+/// The minimap's sizes in GUI pixels, and its zooms in blocks per pixel.
 pub const MINIMAP_SIZES: [(u8, &str); 3] = [(64, "Small"), (96, "Medium"), (128, "Large")];
 pub const MINIMAP_ZOOMS: [f32; 4] = [0.5, 1.0, 2.0, 4.0];
 
 /// A screen corner for an overlay.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Corner {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-impl Corner {
-    pub const ALL: [Corner; 4] = [
-        Corner::TopLeft,
-        Corner::TopRight,
-        Corner::BottomLeft,
-        Corner::BottomRight,
-    ];
-    pub fn name(self) -> &'static str {
-        match self {
-            Corner::TopLeft => "top_left",
-            Corner::TopRight => "top_right",
-            Corner::BottomLeft => "bottom_left",
-            Corner::BottomRight => "bottom_right",
-        }
-    }
-    pub fn label(self) -> &'static str {
-        match self {
-            Corner::TopLeft => "Top left",
-            Corner::TopRight => "Top right",
-            Corner::BottomLeft => "Bottom left",
-            Corner::BottomRight => "Bottom right",
-        }
-    }
-    /// The corner `s` names (`top_left`...), or `default`. How the settings
-    /// files name a corner, and the built-in extras mod reads them.
-    pub fn parse(s: &str, default: Corner) -> Corner {
-        Self::ALL
-            .into_iter()
-            .find(|c| c.name() == s)
-            .unwrap_or(default)
-    }
-    pub fn top(self) -> bool {
-        matches!(self, Corner::TopLeft | Corner::TopRight)
-    }
-    pub fn left(self) -> bool {
-        matches!(self, Corner::TopLeft | Corner::BottomLeft)
-    }
-}
+pub use mod_api::client::extras::Corner;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Extras {
@@ -79,6 +32,15 @@ pub struct Extras {
     pub fullbright: bool,
     /// Held, dropped and burning light sources light their surroundings (`dynamic_light`).
     pub dynamic_lights: bool,
+    pub zoom: bool,
+    /// A vanilla key name (`key.keyboard.z`).
+    pub zoom_key: String,
+    /// The zoom the key starts at.
+    pub zoom_level: u8,
+    /// Ease through vanilla's FOV easing (as the spyglass does).
+    pub zoom_smooth: bool,
+    /// Divide mouse turning by the zoom.
+    pub zoom_sensitivity: bool,
     /// Far terrain a zoom magnifies is planned finer, so a spyglass does not
     /// show the coarse cells it was given for an unzoomed screen
     /// (`lod::Aim`). Costs far tiles while the zoom is held and gives them
@@ -86,11 +48,28 @@ pub struct Extras {
     /// (`lodDistance`) and the view is actually zoomed. Off by default until
     /// a measurement shows the extra tiles land while the zoom is still held.
     pub lod_zoom_detail: bool,
-    /// The extras that became the built-in native mod
-    /// (`crates/event-horizon-extras`) once had their settings here: the
-    /// lines stay unread, kept as they were (`movedToMods` says which mods
-    /// they became).
+    /// The FPS counter and keystrokes extras are official mods now: their
+    /// old settings stay here, kept as they were.
+    pub fps: bool,
+    pub fps_corner: Corner,
+    /// Also show the minimum and 1% low.
+    pub fps_lows: bool,
+    pub keystrokes: bool,
+    pub keystrokes_corner: Corner,
+    /// Clicks per second under the mouse buttons.
+    pub keystrokes_cps: bool,
+    /// The official mods once installed for the extras they replace, by mod
+    /// id (`movedToMods`).
     pub moved: Vec<String>,
+    pub minimap: bool,
+    pub minimap_corner: Corner,
+    /// Side in GUI pixels (`MINIMAP_SIZES`).
+    pub minimap_size: u8,
+    pub minimap_round: bool,
+    /// Blocks per pixel (`MINIMAP_ZOOMS`).
+    pub minimap_zoom: f32,
+    /// Turn with the player (forward up) instead of north up.
+    pub minimap_rotate: bool,
     /// Retry lost multiplayer connections (`reconnect`).
     pub auto_reconnect: bool,
     /// Positional sounds leave a few static sound channels free for UI sounds
@@ -98,6 +77,10 @@ pub struct Extras {
     pub ui_sound_reserve: bool,
     /// The player's own name tag over its model in third person.
     pub own_name_tag: bool,
+    /// NeoForge's `skipModdedSplashesIfVanillaModified`, on by default: a
+    /// pack's own `minecraft` splashes replace every namespace's
+    /// (`horizon_client::splashes::pool`). No Extras page entry.
+    pub skip_modded_splashes_if_vanilla_modified: bool,
     /// No particles from breaking or mining a block (other particles stay).
     pub hide_block_particles: bool,
     /// Mouse Tweaks-style drags in the inventory and storage containers.
@@ -151,9 +134,6 @@ pub struct Extras {
     pub three_d_skin_layers: bool,
     /// The PvP & HUD page's options (`pvp`).
     pub pvp: crate::pvp::Pvp,
-    /// Lines this build does not read (the built-in extras mod's old lines, a key from
-    /// another build), kept verbatim and written back, so saving never drops them.
-    pub unread: Vec<String>,
 }
 impl Default for Extras {
     fn default() -> Self {
@@ -162,11 +142,29 @@ impl Default for Extras {
             pregen: false,
             fullbright: false,
             dynamic_lights: false,
+            zoom: false,
+            zoom_key: "key.keyboard.z".into(),
+            zoom_level: 4,
+            zoom_smooth: true,
+            zoom_sensitivity: true,
             lod_zoom_detail: false,
+            fps: false,
+            fps_corner: Corner::TopLeft,
+            fps_lows: false,
+            keystrokes: false,
+            keystrokes_corner: Corner::TopLeft,
+            keystrokes_cps: true,
             moved: Vec::new(),
+            minimap: false,
+            minimap_corner: Corner::TopRight,
+            minimap_size: 96,
+            minimap_round: false,
+            minimap_zoom: 1.0,
+            minimap_rotate: false,
             auto_reconnect: false,
             ui_sound_reserve: false,
             own_name_tag: false,
+            skip_modded_splashes_if_vanilla_modified: true,
             hide_block_particles: false,
             mouse_tweaks: false,
             mouse_tweaks_wheel: true,
@@ -187,7 +185,6 @@ impl Default for Extras {
             music_page: false,
             three_d_skin_layers: false,
             pvp: Default::default(),
-            unread: Vec::new(),
         }
     }
 }
@@ -217,7 +214,24 @@ impl Extras {
                 "pregen" => e.pregen = flag(e.pregen),
                 "fullbright" => e.fullbright = flag(e.fullbright),
                 "dynamicLights" => e.dynamic_lights = flag(e.dynamic_lights),
+                "zoom" => e.zoom = flag(e.zoom),
+                "zoomKey" if value.starts_with("key.") => e.zoom_key = value.to_owned(),
+                "zoomLevel" => {
+                    if let Ok(v) = value.parse::<u8>() {
+                        e.zoom_level = v.clamp(2, 10);
+                    }
+                }
+                "zoomSmooth" => e.zoom_smooth = flag(e.zoom_smooth),
+                "zoomSensitivity" => e.zoom_sensitivity = flag(e.zoom_sensitivity),
                 "lodZoomDetail" => e.lod_zoom_detail = flag(e.lod_zoom_detail),
+                "fps" => e.fps = flag(e.fps),
+                "fpsCorner" => e.fps_corner = Corner::parse(value, e.fps_corner),
+                "fpsLows" => e.fps_lows = flag(e.fps_lows),
+                "keystrokes" => e.keystrokes = flag(e.keystrokes),
+                "keystrokesCorner" => {
+                    e.keystrokes_corner = Corner::parse(value, e.keystrokes_corner)
+                }
+                "keystrokesCps" => e.keystrokes_cps = flag(e.keystrokes_cps),
                 "movedToMods" => {
                     e.moved = value
                         .split(',')
@@ -226,23 +240,33 @@ impl Extras {
                         .map(str::to_owned)
                         .collect()
                 }
+                "minimap" => e.minimap = flag(e.minimap),
+                "minimapCorner" => e.minimap_corner = Corner::parse(value, e.minimap_corner),
+                "minimapSize" => {
+                    if let Some(&(v, _)) = MINIMAP_SIZES.iter().find(|s| s.0.to_string() == value) {
+                        e.minimap_size = v;
+                    }
+                }
+                "minimapShape" => e.minimap_round = value == "round",
+                "minimapZoom" => {
+                    if let Some(&z) = MINIMAP_ZOOMS.iter().find(|z| z.to_string() == value) {
+                        e.minimap_zoom = z;
+                    }
+                }
+                "minimapRotate" => e.minimap_rotate = flag(e.minimap_rotate),
                 "autoReconnect" => e.auto_reconnect = flag(e.auto_reconnect),
                 "uiSoundReserve" => e.ui_sound_reserve = flag(e.ui_sound_reserve),
                 "ownNameTag" => e.own_name_tag = flag(e.own_name_tag),
+                "skipModdedSplashesIfVanillaModified" => {
+                    e.skip_modded_splashes_if_vanilla_modified =
+                        flag(e.skip_modded_splashes_if_vanilla_modified)
+                }
                 "hideBlockParticles" => e.hide_block_particles = flag(e.hide_block_particles),
                 "mouseTweaks" => e.mouse_tweaks = flag(e.mouse_tweaks),
                 "mouseTweaksWheel" => e.mouse_tweaks_wheel = flag(e.mouse_tweaks_wheel),
                 "sort" => e.sort = flag(e.sort),
-                "sortKey" => {
-                    if value.starts_with("key.") {
-                        e.sort_key = value.to_owned();
-                    }
-                }
-                EMOTE_KEY => {
-                    if value.starts_with("key.") {
-                        e.emote_key = value.to_owned();
-                    }
-                }
+                "sortKey" if value.starts_with("key.") => e.sort_key = value.to_owned(),
+                EMOTE_KEY if value.starts_with("key.") => e.emote_key = value.to_owned(),
                 "chatAnimation" => e.chat_animation = flag(e.chat_animation),
                 "chatIndicator" => e.chat_indicator = flag(e.chat_indicator),
                 horizon_core::no_ai::KEY => e.no_ai = flag(e.no_ai),
@@ -268,9 +292,7 @@ impl Extras {
                 "musicPage" => e.music_page = flag(e.music_page),
                 SKIN_LAYERS_KEY => e.three_d_skin_layers = flag(e.three_d_skin_layers),
                 key => {
-                    if !e.pvp.parse_line(key, value) {
-                        e.unread.push(line.to_owned());
-                    }
+                    e.pvp.parse_line(key, value);
                 }
             }
         }
@@ -278,16 +300,38 @@ impl Extras {
     }
     pub fn serialize(&self) -> String {
         let mut text = format!(
-            "packBrowser:{}\npregen:{}\nfullbright:{}\ndynamicLights:{}\nlodZoomDetail:{}\nmovedToMods:{}\nautoReconnect:{}\nuiSoundReserve:{}\nownNameTag:{}\nhideBlockParticles:{}\nmouseTweaks:{}\nmouseTweaksWheel:{}\nsort:{}\nsortKey:{}\nchatAnimation:{}\nchatIndicator:{}\n{}:{}\nagentControl:{}\nreproKeys:{}\nsplitscreen:{}\nsplitscreenTwo:{}\nsplitscreenThree:{}\nsplitscreenNames:{}\nwheelCyclesListSettings:{}\nmusicOff:{}\nmusicPage:{}\n{}:{}\n",
+            "packBrowser:{}\npregen:{}\nfullbright:{}\ndynamicLights:{}\nzoom:{}\nzoomKey:{}\nzoomLevel:{}\nzoomSmooth:{}\nzoomSensitivity:{}\nlodZoomDetail:{}\nfps:{}\nfpsCorner:{}\nfpsLows:{}\nkeystrokes:{}\nkeystrokesCorner:{}\nkeystrokesCps:{}\nmovedToMods:{}\nminimap:{}\nminimapCorner:{}\nminimapSize:{}\nminimapShape:{}\nminimapZoom:{}\nminimapRotate:{}\nautoReconnect:{}\nuiSoundReserve:{}\nownNameTag:{}\nskipModdedSplashesIfVanillaModified:{}\nhideBlockParticles:{}\nmouseTweaks:{}\nmouseTweaksWheel:{}\nsort:{}\nsortKey:{}\nchatAnimation:{}\nchatIndicator:{}\n{}:{}\nagentControl:{}\nreproKeys:{}\nsplitscreen:{}\nsplitscreenTwo:{}\nsplitscreenThree:{}\nsplitscreenNames:{}\nwheelCyclesListSettings:{}\nmusicOff:{}\nmusicPage:{}\n{}:{}\n",
             bool_text(self.pack_browser),
             bool_text(self.pregen),
             bool_text(self.fullbright),
             bool_text(self.dynamic_lights),
+            bool_text(self.zoom),
+            self.zoom_key,
+            self.zoom_level,
+            bool_text(self.zoom_smooth),
+            bool_text(self.zoom_sensitivity),
             bool_text(self.lod_zoom_detail),
+            bool_text(self.fps),
+            self.fps_corner.name(),
+            bool_text(self.fps_lows),
+            bool_text(self.keystrokes),
+            self.keystrokes_corner.name(),
+            bool_text(self.keystrokes_cps),
             self.moved.join(","),
+            bool_text(self.minimap),
+            self.minimap_corner.name(),
+            self.minimap_size,
+            if self.minimap_round {
+                "round"
+            } else {
+                "square"
+            },
+            self.minimap_zoom,
+            bool_text(self.minimap_rotate),
             bool_text(self.auto_reconnect),
             bool_text(self.ui_sound_reserve),
             bool_text(self.own_name_tag),
+            bool_text(self.skip_modded_splashes_if_vanilla_modified),
             bool_text(self.hide_block_particles),
             bool_text(self.mouse_tweaks),
             bool_text(self.mouse_tweaks_wheel),
@@ -311,10 +355,6 @@ impl Extras {
         );
         text.push_str(&format!("{EMOTE_KEY}:{}\n", self.emote_key));
         self.pvp.serialize(&mut text);
-        for line in &self.unread {
-            text.push_str(line);
-            text.push('\n');
-        }
         text
     }
     /// Adopts the settings `options.txt` held before they moved here, while
@@ -375,6 +415,91 @@ impl Extras {
 pub fn fov_target(vanilla: f32, zoom: f32) -> f32 {
     if zoom == 1.0 { vanilla } else { vanilla / zoom }
 }
+/// Frame times over the last few seconds: frames per second, the minimum
+/// and the 1% low, recomputed twice a second.
+pub struct FpsCounter {
+    /// (end time in seconds, frame milliseconds), oldest first.
+    frames: VecDeque<(f64, f32)>,
+    shown: FpsReading,
+    computed_at: f64,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FpsReading {
+    pub fps: u32,
+    pub min: u32,
+    pub low: u32,
+}
+/// Seconds the minimum and 1% low look back.
+const LOW_WINDOW: f64 = 5.0;
+impl Default for FpsCounter {
+    fn default() -> Self {
+        Self {
+            frames: VecDeque::new(),
+            shown: FpsReading::default(),
+            computed_at: f64::NEG_INFINITY,
+        }
+    }
+}
+impl FpsCounter {
+    /// A frame that ended at `now` (seconds) and took `ms`.
+    pub fn record(&mut self, now: f64, ms: f32) {
+        self.frames.push_back((now, ms));
+        while self
+            .frames
+            .front()
+            .is_some_and(|&(t, _)| now - t > LOW_WINDOW)
+        {
+            self.frames.pop_front();
+        }
+        if now - self.computed_at >= 0.5 {
+            self.computed_at = now;
+            self.shown = self.compute(now);
+        }
+    }
+    fn compute(&self, now: f64) -> FpsReading {
+        let fps = self.frames.iter().filter(|&&(t, _)| now - t < 1.0).count() as u32;
+        let mut times: Vec<f32> = self.frames.iter().map(|f| f.1).collect();
+        if times.is_empty() {
+            return FpsReading::default();
+        }
+        times.sort_by(|a, b| b.total_cmp(a));
+        let to_fps = |ms: f32| (1000.0 / ms.max(0.001)).round() as u32;
+        // The 1% low: the frame rate of the 99th percentile frame time.
+        let low = times[(times.len() - 1) / 100];
+        FpsReading {
+            fps,
+            min: to_fps(times[0]),
+            low: to_fps(low),
+        }
+    }
+    pub fn reading(&self) -> FpsReading {
+        self.shown
+    }
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+/// Clicks of one button in the last second.
+#[derive(Default)]
+pub struct Cps {
+    clicks: VecDeque<f64>,
+}
+impl Cps {
+    pub fn click(&mut self, now: f64) {
+        self.clicks.push_back(now);
+        self.forget(now);
+    }
+    fn forget(&mut self, now: f64) {
+        while self.clicks.front().is_some_and(|&t| now - t >= 1.0) {
+            self.clicks.pop_front();
+        }
+    }
+    pub fn per_second(&mut self, now: f64) -> usize {
+        self.forget(now);
+        self.clicks.len()
+    }
+}
 /// Two players sharing a window (`splitscreen_two`): halves this way.
 pub const SPLIT_TWO: [&str; 3] = ["Auto", "Side by side", "Top and bottom"];
 /// Three players sharing a window (`splitscreen_three`).
@@ -413,7 +538,7 @@ pub enum Item {
     /// On the PvP & HUD page (`pvp::rows`).
     Pvp(crate::pvp::Opt),
 }
-/// The Extras page: headers (language keys) and items (Horizon extras only).
+/// The Extras page: headers (language keys) and items.
 pub fn rows() -> Vec<Result<Item, &'static str>> {
     use Item::*;
     // Fullbright, Dynamic lights and Hide block-break particles change the picture: they
@@ -443,7 +568,6 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         Ok(PackBrowser),
     ]
 }
-
 impl Item {
     /// The language key of the caption (`horizon.*`, assets/horizon/lang).
     pub fn caption_key(self) -> &'static str {
@@ -671,7 +795,6 @@ impl Item {
     /// either way). The sort key binds instead.
     pub fn cycle(self, e: &mut Extras, back: bool) {
         match self {
-            Item::SortKey => {}
             Item::Fullbright => e.fullbright = !e.fullbright,
             Item::DynamicLights => e.dynamic_lights = !e.dynamic_lights,
             Item::OwnNameTag => e.own_name_tag = !e.own_name_tag,
@@ -692,6 +815,7 @@ impl Item {
             Item::PackBrowser => e.pack_browser = !e.pack_browser,
             Item::Pregen => e.pregen = !e.pregen,
             Item::Pvp(o) => o.cycle(&mut e.pvp, back),
+            Item::SortKey => {}
         }
     }
     /// The key name the options screen waits on for a key item.
@@ -722,7 +846,7 @@ mod tests {
     fn everything_is_off_by_default_and_round_trips() {
         let d = Extras::default();
         assert!(!d.fullbright && !d.dynamic_lights);
-        assert!(!d.auto_reconnect);
+        assert!(!d.zoom && !d.fps && !d.keystrokes && !d.minimap && !d.auto_reconnect);
         assert!(!d.mouse_tweaks && !d.sort && !d.own_name_tag && !d.ui_sound_reserve);
         assert!(!d.hide_block_particles && !d.pregen);
         assert!(!d.music_page && d.music_off.is_empty());
@@ -735,8 +859,19 @@ mod tests {
         Item::DynamicLights.cycle(&mut e, false);
         assert_eq!(Item::DynamicLights.switch(&e), Some(true));
         assert_eq!(Extras::parse(&e.serialize()), e);
-        e.lod_zoom_detail = true;
+        e.zoom = true;
+        e.zoom_key = "key.keyboard.c".into();
+        e.zoom_level = 6;
+        e.fps_corner = Corner::BottomRight;
+        e.keystrokes = true;
+        e.keystrokes_cps = false;
         e.moved = vec!["fps_overlay".into(), "keystrokes".into()];
+        e.minimap = true;
+        e.minimap_size = 128;
+        e.minimap_round = true;
+        e.minimap_zoom = 0.5;
+        e.minimap_rotate = true;
+        e.minimap_corner = Corner::BottomLeft;
         e.auto_reconnect = true;
         Item::Pregen.cycle(&mut e, false);
         assert_eq!(Item::Pregen.switch(&e), Some(true));
@@ -771,20 +906,11 @@ mod tests {
 
     #[test]
     fn bad_lines_keep_defaults() {
-        let e = Extras::parse("sortKey:z\nsplitscreenTwo:9\nnoise");
-        assert_eq!(e.sort_key, "key.keyboard.unknown");
-        assert_eq!(e.splitscreen_two, 2);
-        // The extras that became the built-in native mod leave their old lines
-        // unread, in whatever shape they are.
-        let e = Extras::parse("zoom:maybe\nzoomLevel:99\nfpsCorner:middle\nminimap:true\n");
-        assert_eq!(e.unread.len(), 4);
-        assert_eq!(
-            Extras {
-                unread: Vec::new(),
-                ..e
-            },
-            Extras::default()
-        );
+        let e = Extras::parse("zoom:maybe\nzoomLevel:99\nfpsCorner:middle\nzoomKey:z\nnoise");
+        assert!(!e.zoom);
+        assert_eq!(e.zoom_level, 10);
+        assert_eq!(e.fps_corner, Corner::TopLeft);
+        assert_eq!(e.zoom_key, "key.keyboard.z");
     }
 
     #[test]
@@ -813,81 +939,53 @@ mod tests {
     }
 
     #[test]
-    fn lines_this_build_does_not_read_survive_a_save() {
-        let dir =
-            std::env::temp_dir().join(format!("horizon-extras-unread-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        // The built-in extras mod's old lines (its settings moved to the mod), a line this
-        // build never wrote, and known lines in a form the parser does not take.
-        let old = "zoomLevel:6\nzoomSmooth:false\nminimapCorner:bottom_left\nminimapSize:128\n\
-                   minimapShape:round\nminimapZoom:0.5\nminimapRotate:true\nfpsCorner:bottom_right\n\
-                   fpsLows:true\nkeystrokesCorner:top_right\nkeystrokesCps:false\nfutureThing:7\n\
-                   fullbright:true\nemoteKey:key.keyboard.unknown\nsortKey:nonsense\n";
-        std::fs::write(dir.join(FILE), old).unwrap();
-        let e = Extras::load(&dir);
-        assert!(e.fullbright);
-        e.save(&dir);
-        let saved = std::fs::read_to_string(dir.join(FILE)).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-        for line in [
-            "zoomLevel:6",
-            "zoomSmooth:false",
-            "minimapCorner:bottom_left",
-            "minimapSize:128",
-            "minimapShape:round",
-            "minimapZoom:0.5",
-            "minimapRotate:true",
-            "fpsCorner:bottom_right",
-            "fpsLows:true",
-            "keystrokesCorner:top_right",
-            "keystrokesCps:false",
-            "futureThing:7",
-        ] {
-            assert!(saved.lines().any(|l| l == line), "{line} lost:\n{saved}");
+    fn fps_counter_reports_rate_minimum_and_low() {
+        let mut c = FpsCounter::default();
+        let mut t = 0.0;
+        // Two seconds at 100 fps with one 50 ms hitch.
+        for i in 0..200 {
+            let ms = if i == 150 { 50.0 } else { 10.0 };
+            t += f64::from(ms) / 1000.0;
+            c.record(t, ms);
         }
-        // Known keys are written once, with their current values.
-        assert_eq!(
-            saved
-                .lines()
-                .filter(|l| l.starts_with("fullbright:"))
-                .count(),
-            1
-        );
-        assert!(saved.lines().any(|l| l == "fullbright:true"));
-        assert_eq!(
-            saved
-                .lines()
-                .filter(|l| l.starts_with("sort:") || l.starts_with("sortKey:"))
-                .count(),
-            2
-        );
-        assert!(saved.lines().any(|l| l == "sortKey:key.keyboard.unknown"));
-        assert_eq!(
-            saved.lines().filter(|l| l.starts_with("emoteKey:")).count(),
-            1
-        );
-        // And a save of what was saved changes nothing.
-        assert_eq!(Extras::parse(&saved), e);
-        assert_eq!(Extras::parse(&saved).serialize(), saved);
+        c.computed_at = f64::NEG_INFINITY;
+        c.record(t + 0.01, 10.0);
+        let r = c.reading();
+        assert!((95..=101).contains(&r.fps), "{r:?}");
+        assert_eq!(r.min, 20);
+        assert_eq!(r.low, 100, "one frame in 200 is under the 1% mark");
+        // Hitches beyond 1% of frames pull the 1% low down.
+        let mut c = FpsCounter::default();
+        let mut t = 0.0;
+        for i in 0..100 {
+            let ms = if i % 25 == 0 { 40.0 } else { 10.0 };
+            t += f64::from(ms) / 1000.0;
+            c.record(t, ms);
+        }
+        c.computed_at = f64::NEG_INFINITY;
+        c.record(t, 10.0);
+        assert_eq!(c.reading().low, 25);
     }
 
     #[test]
-    fn a_known_key_with_a_bad_value_is_written_once_with_its_default() {
-        // A key the build reads, with a value that is not a key name: the line is consumed
-        // and ignored, so the default is written once and the bad line is not kept beside it.
-        for (name, default) in [
-            ("sortKey", "key.keyboard.unknown"),
-            ("emoteKey", "key.keyboard.b"),
-            ("hudEditorKey", "key.keyboard.unknown"),
-        ] {
-            let saved = Extras::parse(&format!("{name}:nonsense\n")).serialize();
-            let lines: Vec<&str> = saved
-                .lines()
-                .filter(|l| l.split_once(':').is_some_and(|(k, _)| k == name))
-                .collect();
-            let expected = format!("{name}:{default}");
-            assert_eq!(lines, [expected.as_str()], "{name}:\n{saved}");
+    fn old_frames_leave_the_window() {
+        let mut c = FpsCounter::default();
+        c.record(0.0, 100.0);
+        for i in 1..=700 {
+            c.record(f64::from(i) / 100.0, 10.0);
         }
+        assert_eq!(c.reading().min, 100, "the 100 ms frame is 7 s old");
+    }
+
+    #[test]
+    fn cps_counts_the_last_second() {
+        let mut cps = Cps::default();
+        for i in 0..10 {
+            cps.click(f64::from(i) * 0.1);
+        }
+        assert_eq!(cps.per_second(0.95), 10);
+        assert_eq!(cps.per_second(1.25), 7);
+        assert_eq!(cps.per_second(3.0), 0);
     }
 
     #[test]
@@ -895,8 +993,11 @@ mod tests {
         let mut e = Extras::default();
         Item::Sort.cycle(&mut e, true);
         assert_eq!(Item::Sort.value(&e), "On");
-        assert!(e.set_key(SORT_KEY, "key.keyboard.r".into()));
-        assert_eq!(e.sort_key, "key.keyboard.r");
+        // The minimap's old keys still parse, for the move to its mod.
+        assert_eq!(
+            Extras::parse("minimapSize:7\nminimapZoom:3").minimap_zoom,
+            1.0
+        );
         for item in rows().into_iter().flatten() {
             assert!(!item.caption().is_empty() && !item.description().is_empty());
         }

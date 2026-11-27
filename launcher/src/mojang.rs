@@ -357,7 +357,7 @@ fn fetch_file(fetch: Fetch, file: &File) -> Result<Vec<u8>, String> {
     }
     match sha1_hex(&body) {
         actual if actual == file.sha1 => Ok(body),
-        actual => Err(format!("is not the one Horizon pins (sha1 {actual})")),
+        actual => Err(format!("is not the one Event Horizon pins (sha1 {actual})")),
     }
 }
 

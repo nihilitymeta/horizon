@@ -28,7 +28,7 @@ impl Launcher {
             if tag.is_empty() {
                 "Minecraft"
             } else {
-                "Horizon"
+                "Event Horizon"
             },
             |i| i.name.as_str(),
         );
@@ -121,25 +121,38 @@ impl Launcher {
             .children(instance.map(|i| {
                 shell::text(night::UI, c(n.ink_soft)).child(instances_page::played_line(i))
             }));
-        // A Java instance (no Horizon tag) isn't offered Horizon's updates.
-        // Horizon's newer Nightly is no update of an Event Horizon build.
-        if let Some(release) =
-            self.updates.horizon.as_ref().filter(|_| {
-                !tag.is_empty() && !horizon_launcher::game_sources::is_event_horizon(tag)
-            })
-        {
-            let installing = self.installing.as_ref().filter(|(t, _)| *t == release.tag);
+        // Which update the hero offers for this build (`offered_update`): Horizon's newer release,
+        // or the newer release of the GitHub source that installed it.
+        let follows = instance.is_some_and(|i| i.version.is_none());
+        if let Some(offer) = offered_update(
+            tag,
+            follows,
+            &self.source_updates,
+            self.updates.horizon.as_ref(),
+        ) {
+            let (version, installing, source_tag) = match offer {
+                Offer::Horizon(release) => (
+                    update_name(release).to_string(),
+                    self.installing
+                        .as_ref()
+                        .filter(|(t, _)| *t == release.tag)
+                        .map(|(_, p)| *p),
+                    None,
+                ),
+                Offer::Source(release) => (
+                    horizon_launcher::game_sources::release_name(&release.tag),
+                    None,
+                    Some(tag.to_string()),
+                ),
+            };
             let line = shell::text(night::CAPTION, c(n.muted))
                 .flex()
                 .items_center()
                 .gap(px(8.))
                 .child(div().size(px(6.)).bg(c(n.accent_hi)))
-                .child(trf(
-                    "{version} available",
-                    &[("version", update_name(release))],
-                ));
+                .child(trf("{version} available", &[("version", version.as_str())]));
             hero = hero.child(match installing {
-                Some((_, p)) => line
+                Some(p) => line
                     .child(
                         div()
                             .w(px(120.))
@@ -155,8 +168,11 @@ impl Launcher {
                         .cursor_pointer()
                         .hover(|s| s.opacity(0.8))
                         .child(tr("Install"))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                            this.install_update();
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            match &source_tag {
+                                Some(tag) => this.install_source_update(tag),
+                                None => this.install_update(),
+                            }
                             cx.notify();
                         })),
                 ),
@@ -248,7 +264,15 @@ impl Launcher {
             .child(label(
                 tr(if running { "Running" } else { "Play" }).to_string(),
             ));
-        match play_press(ready, self.owner, self.preparing || running) {
+        match play_press(
+            ready,
+            if horizon_launcher::developer_offline::selected() {
+                Some(true)
+            } else {
+                self.owner
+            },
+            self.preparing || running,
+        ) {
             PlayPress::Nothing => play = disabled(play),
             PlayPress::Play => {
                 play = play.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -260,7 +284,10 @@ impl Launcher {
             PlayPress::PrepareThenPlay => {
                 play = play.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.picker.open = false;
-                    this.play_when_prepared = this.selected().cloned();
+                    this.play_when_prepared = this
+                        .selected()
+                        .cloned()
+                        .zip(this.selected_instance().map(|i| i.id.clone()));
                     this.prepare(backend::MinecraftFrom::Install);
                     cx.notify();
                 }))
@@ -566,9 +593,37 @@ fn time_left(spent: Duration, from: usize, done: usize, total: usize) -> Option<
         .then(|| spent.mul_f64(total.saturating_sub(done) as f64 / (done - from) as f64))
 }
 
+/// The update the hero offers for the build `tag`. A build a GitHub source installed is offered
+/// that source's newer release, as the glass look's Play button does (only for an instance that
+/// follows the newest build). Any other build that is not Event Horizon's is offered Horizon's
+/// newer release. A Java instance (no `tag`) and a local Event Horizon build are offered nothing.
+pub(super) enum Offer<'a> {
+    Horizon(&'a Release),
+    Source(&'a horizon_launcher::game_sources::Release),
+}
+
+pub(super) fn offered_update<'a>(
+    tag: &str,
+    follows: bool,
+    source_updates: &'a [(String, horizon_launcher::game_sources::Release)],
+    horizon: Option<&'a Release>,
+) -> Option<Offer<'a>> {
+    if tag.is_empty() {
+        return None;
+    }
+    if let Some((_, release)) = source_updates.iter().find(|(v, _)| v == tag) {
+        return follows.then_some(Offer::Source(release));
+    }
+    if horizon_launcher::game_sources::is_event_horizon(tag) {
+        return None;
+    }
+    horizon.map(Offer::Horizon)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use horizon_launcher::game_sources::Release as SourceRelease;
 
     #[test]
     fn time_left_follows_the_pace_since_first_seen() {
@@ -585,6 +640,64 @@ mod tests {
         assert_eq!(backend::PrepareStep::ALL, [Files, Java, Sounds, Prepare]);
         for s in backend::PrepareStep::ALL {
             assert_eq!(backend::PrepareStep::ALL[s as usize], s);
+        }
+    }
+
+    fn horizon_release() -> Release {
+        Release {
+            tag: "v0.3.0".into(),
+            name: "0.3.0".into(),
+            body: String::new(),
+            date: String::new(),
+            time: String::new(),
+            asset: None,
+            prerelease: false,
+            nightly: None,
+        }
+    }
+
+    fn source_release() -> SourceRelease {
+        SourceRelease {
+            repo: "nihilitymeta/horizon".into(),
+            tag: "eh-v0.2.0".into(),
+            asset: "event-horizon-linux.tar.gz".into(),
+            url: String::new(),
+            size: 0,
+            published: String::new(),
+            sha256: None,
+        }
+    }
+
+    #[test]
+    fn a_java_instance_is_offered_nothing() {
+        let horizon = horizon_release();
+        let sources = vec![("".to_string(), source_release())];
+        assert!(offered_update("", true, &sources, Some(&horizon)).is_none());
+    }
+
+    #[test]
+    fn a_source_installed_build_is_offered_its_source_update_for_an_instance_that_follows() {
+        let horizon = horizon_release();
+        let sources = vec![("build-a".to_string(), source_release())];
+        match offered_update("build-a", true, &sources, Some(&horizon)) {
+            Some(Offer::Source(r)) => assert_eq!(r.tag, "eh-v0.2.0"),
+            _ => panic!("the source's release is offered"),
+        }
+    }
+
+    #[test]
+    fn a_source_update_is_not_offered_to_an_instance_that_is_pinned() {
+        let horizon = horizon_release();
+        let sources = vec![("build-a".to_string(), source_release())];
+        assert!(offered_update("build-a", false, &sources, Some(&horizon)).is_none());
+    }
+
+    #[test]
+    fn a_horizon_build_is_offered_horizons_newer_release() {
+        let horizon = horizon_release();
+        match offered_update("v0.2.0", false, &[], Some(&horizon)) {
+            Some(Offer::Horizon(r)) => assert_eq!(r.tag, "v0.3.0"),
+            _ => panic!("Horizon's release is offered"),
         }
     }
 }

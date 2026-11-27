@@ -1,0 +1,3 @@
+# event-horizon-lua's ignored tests that never run in the daily shards, and who runs them (README.md: `manual`).
+event-horizon-lua builtin::tests::hot_path_bench by-hand manual # a benchmark, run by hand
+event-horizon-lua menu_tests::menu_still_valid_bench by-hand manual # a benchmark, run by hand

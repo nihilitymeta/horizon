@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// Where cosmetics are bought and the founder set is claimed: the website's shop.
-pub const SHOP_URL: &str = "https://playhorizon.dev/shop";
+pub const SHOP_URL: &str = horizon_addresses::SHOP;
 
 /// Why a request to the service failed, in words for the player.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,7 +43,7 @@ impl Error {
     pub fn message(&self) -> String {
         match self {
             Self::Offline => {
-                tr("Could not reach Horizon's cosmetics service. Check your internet connection.")
+                tr("Could not reach Event Horizon's cosmetics service. Check your internet connection.")
                     .into()
             }
             Self::Account(e) => tr(e).into(),
@@ -66,7 +66,7 @@ impl Error {
             })
             .into(),
             Self::Service(_) => {
-                tr("Horizon's cosmetics service had a problem. Try again later.").into()
+                tr("Event Horizon's cosmetics service had a problem. Try again later.").into()
             }
         }
     }

@@ -125,7 +125,7 @@ pub fn paint(hwnd: isize, semibold: &'static [u8], mono: &'static [u8], logs: &[
         let old_mark = SelectObject(hdc, mark);
         SetBkMode(hdc, TRANSPARENT as i32);
         SetTextColor(hdc, WORDMARK);
-        let text: Vec<u16> = "Horizon".encode_utf16().collect();
+        let text: Vec<u16> = "Event Horizon".encode_utf16().collect();
         let mut mark_rect = RECT {
             left: 0,
             top: top as i32,

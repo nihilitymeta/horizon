@@ -245,7 +245,7 @@ pub fn device_code(ep: &Endpoints, client_id: &str) -> Result<DeviceCode, String
 fn oauth_error(v: &Value) -> String {
     match v.get("error").and_then(Value::as_str) {
         Some("authorization_declined") => "Sign-in was declined in the browser.".into(),
-        Some("expired_token") => crate::i18n::tr("The sign-in code expired. Start again.").into(),
+        Some("expired_token") => "The sign-in code expired. Start again.".into(),
         Some("bad_verification_code") => "The sign-in code was not recognised. Start again.".into(),
         Some("invalid_grant") => SIGN_IN_AGAIN.into(),
         Some("invalid_client" | "unauthorized_client") => {
@@ -299,12 +299,12 @@ pub fn wait_for_sign_in(
         let until = std::time::Instant::now() + Duration::from_secs(interval);
         while std::time::Instant::now() < until {
             if cancelled() {
-                return Err(crate::i18n::tr("Sign-in cancelled.").into());
+                return Err("Sign-in cancelled.".into());
             }
             std::thread::sleep(Duration::from_millis(100));
         }
         if now() > code.expires_at {
-            return Err(crate::i18n::tr("The sign-in code expired. Start again.").into());
+            return Err("The sign-in code expired. Start again.".into());
         }
         match poll(ep, client_id, code)? {
             Poll::Pending => {}
@@ -1380,11 +1380,7 @@ fn set_item(items: &dyn Items, key: &str, secret: &str) -> Result<(), String> {
 /// the player's credential store is full (an undocumented limit of its total size). The Xbox app
 /// and the Minecraft Launcher are known to leave hundreds of items there (#4313, #4366).
 #[cfg(any(target_os = "windows", test))]
-pub const CREDENTIAL_MANAGER_FULL: &str = "Windows Credential Manager is full, so Horizon can't \
-     keep your sign-in (Windows error 8; it isn't your computer's memory). Open Credential Manager \
-     from the Start menu, go to Windows Credentials and remove entries you no longer use, then sign \
-     in again. The Xbox app and the Minecraft Launcher often leave many XblGrts and Xbl| entries \
-     there; removing an entry can sign the app that made it out.";
+pub const CREDENTIAL_MANAGER_FULL: &str = "Windows Credential Manager is full, so Event Horizon can't keep your sign-in (Windows error 8; it isn't your computer's memory). Open Credential Manager from the Start menu, go to Windows Credentials and remove entries you no longer use, then sign in again. The Xbox app and the Minecraft Launcher often leave many XblGrts and Xbl| entries there; removing an entry can sign the app that made it out.";
 
 /// What the launcher says for a Windows error code Credential Manager gave when writing an item,
 /// when it says more than the code.
@@ -2209,7 +2205,7 @@ fn accept_sign_in(
     progress: &dyn Fn(session::Phase),
 ) -> Result<(), String> {
     if cancelled() {
-        return Err(crate::i18n::tr("Sign-in cancelled.").into());
+        return Err("Sign-in cancelled.".into());
     }
     if let Some(expected) = expected {
         if expected.uuid != account.uuid {
