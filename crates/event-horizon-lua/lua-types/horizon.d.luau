@@ -3753,6 +3753,8 @@ export type BlockEntityRef = {
 	data_slots: (BlockEntityRef) -> {number}?,
 	level: (BlockEntityRef) -> LevelRef?,
 	lock: (BlockEntityRef) -> Compound?,
+	-- needs the "nbt" power (granted by the owner in lua-mods/enabled.toml)
+	merge_data: (BlockEntityRef, Compound) -> boolean,
 	name: (BlockEntityRef) -> string?,
 	position: (BlockEntityRef) -> { x: number, y: number, z: number }?,
 	set_changed: (BlockEntityRef) -> boolean,
@@ -3909,6 +3911,8 @@ export type EntityRef = {
 	leash_to_knot: (EntityRef, { x: number, y: number, z: number }) -> boolean,
 	level: (EntityRef) -> LevelRef?,
 	max_air_supply: (EntityRef) -> number?,
+	-- needs the "nbt" power (granted by the owner in lua-mods/enabled.toml)
+	merge_nbt: (EntityRef, Compound) -> boolean,
 	name: (EntityRef) -> string?,
 	no_gravity: (EntityRef) -> boolean?,
 	no_physics: (EntityRef) -> boolean?,

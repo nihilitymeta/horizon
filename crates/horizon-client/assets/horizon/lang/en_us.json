@@ -301,7 +301,7 @@
   "horizon.mods.power.commands.label": "Run commands",
   "horizon.mods.power.commands.description": "Not available yet: this build does not unlock anything for this power.",
   "horizon.mods.power.nbt.label": "Edit saved data",
-  "horizon.mods.power.nbt.description": "Not available yet: this build does not unlock anything for this power.",
+  "horizon.mods.power.nbt.description": "Lets the mod merge raw NBT into saved entities and block entities. Players are never changed this way, and the keys UUID, id, Pos, Passengers, Inventory, EnderItems and eh_mod_data are refused.",
   "horizon.mods.power.spawn.label": "Spawn and award",
   "horizon.mods.power.spawn.description": "Change where the world spawns players for everyone, spawn mobs and items (a few per turn, capped), create experience orbs, and respawn dead players.",
   "horizon.mods.power.registration.label": "Register content",

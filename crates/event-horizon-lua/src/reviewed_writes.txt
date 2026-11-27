@@ -225,3 +225,5 @@ PlayerRef::respawn spawn
 PlayerRef::drop_stack inventory
 PlayerRef::set_ender_chest_slot inventory
 PlayerRef::set_inventory_slot inventory
+BlockEntityRef::merge_data nbt
+EntityRef::merge_nbt nbt

@@ -330,7 +330,7 @@ mod tests {
         let text = include_str!("generated/handles.rs");
         let denied = [
             "EntityRef::run_command",
-            "EntityRef::merge_nbt",
+            "BlockEntityRef::replace_data",
             "EntityRef::remove",
             "PlayerRef::disconnect",
             "PlayerRef::set_game_mode",

@@ -282,7 +282,7 @@ mod tests {
     ];
 
     /// The gated writes, written out by hand (not read from the generator): each op and its power.
-    const GATED: [(&str, Power); 36] = [
+    const GATED: [(&str, Power); 38] = [
         ("BossBarRef::remove", Power::World),
         ("BossBarRef::remove_player", Power::World),
         ("EntityRef::discard", Power::World),
@@ -319,6 +319,8 @@ mod tests {
         ("LivingRef::set_hand_item", Power::Inventory),
         ("PlayerRef::drop_stack", Power::Inventory),
         ("LivingRef::set_equipment", Power::Inventory),
+        ("EntityRef::merge_nbt", Power::Nbt),
+        ("BlockEntityRef::merge_data", Power::Nbt),
     ];
 
     #[test]
@@ -334,7 +336,6 @@ mod tests {
             "PlayerRef::send_map",
             "PlayerRef::disconnect",
             "EntityRef::remove",
-            "EntityRef::merge_nbt",
             "PlayerRef::set_nickname",
             "EntityRef::run_command",
             "LevelRef::add_water_ticket",
@@ -646,9 +647,9 @@ mod tests {
         assert!(has_ops(Power::Explosions));
         assert!(has_ops(Power::GameRules));
         assert!(has_ops(Power::Inventory));
+        assert!(has_ops(Power::Nbt));
         for power in [
             Power::Commands,
-            Power::Nbt,
             Power::Registration,
             Power::Transactions,
             Power::Network,

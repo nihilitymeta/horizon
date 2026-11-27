@@ -22,6 +22,9 @@ impl crate::handles::Family for mod_api::BlockEntityRef {
         methods.add_function("lock", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "BlockEntityRef::lock", this, args)
         });
+        methods.add_function("merge_data", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "BlockEntityRef::merge_data", this, args)
+        });
         methods.add_function("name", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "BlockEntityRef::name", this, args)
         });
@@ -480,6 +483,9 @@ impl crate::handles::Family for mod_api::EntityRef {
         });
         methods.add_function("max_air_supply", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::max_air_supply", this, args)
+        });
+        methods.add_function("merge_nbt", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "EntityRef::merge_nbt", this, args)
         });
         methods.add_function("name", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "EntityRef::name", this, args)
@@ -1899,6 +1905,15 @@ fn block_entity_ref_lock(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn block_entity_ref_merge_data(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("BlockEntityRef::merge_data", args, 1)?;
+    let this: mod_api::BlockEntityRef = crate::handles::receiver(this, "BlockEntityRef::merge_data")?;
+    let a0: mod_api::Compound = args.get(0)?;
+    let out = crate::handles::ok_or_raise(this.merge_data(server, a0))?;
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn block_entity_ref_name(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     crate::handles::Args::new("BlockEntityRef::name", args, 0)?;
     let this: mod_api::BlockEntityRef = crate::handles::receiver(this, "BlockEntityRef::name")?;
@@ -3045,6 +3060,15 @@ fn entity_ref_max_air_supply(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHo
     let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::max_air_supply")?;
     let read = crate::handles::read_of(host)?;
     let out = this.max_air_supply(read);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn entity_ref_merge_nbt(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("EntityRef::merge_nbt", args, 1)?;
+    let this: mod_api::EntityRef = crate::handles::receiver(this, "EntityRef::merge_nbt")?;
+    let a0: mod_api::Compound = args.get(0)?;
+    let out = this.merge_nbt(server, a0);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -6745,6 +6769,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "BlockEntityRef::data_slots" => 100,
         "BlockEntityRef::level" => 1,
         "BlockEntityRef::lock" => 1,
+        "BlockEntityRef::merge_data" => 10,
         "BlockEntityRef::name" => 1,
         "BlockEntityRef::position" => 1,
         "BlockEntityRef::set_changed" => 10,
@@ -6883,6 +6908,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "EntityRef::leash_to_knot" => 10,
         "EntityRef::level" => 1,
         "EntityRef::max_air_supply" => 1,
+        "EntityRef::merge_nbt" => 10,
         "EntityRef::name" => 1,
         "EntityRef::no_gravity" => 1,
         "EntityRef::no_physics" => 1,
@@ -7323,6 +7349,7 @@ pub fn run(
         "BlockEntityRef::data_slots" => block_entity_ref_data_slots(lua, host, this, args),
         "BlockEntityRef::level" => block_entity_ref_level(lua, host, this, args),
         "BlockEntityRef::lock" => block_entity_ref_lock(lua, host, this, args),
+        "BlockEntityRef::merge_data" => block_entity_ref_merge_data(lua, host, this, args),
         "BlockEntityRef::name" => block_entity_ref_name(lua, host, this, args),
         "BlockEntityRef::position" => block_entity_ref_position(lua, host, this, args),
         "BlockEntityRef::set_changed" => block_entity_ref_set_changed(lua, host, this, args),
@@ -7461,6 +7488,7 @@ pub fn run(
         "EntityRef::leash_to_knot" => entity_ref_leash_to_knot(lua, host, this, args),
         "EntityRef::level" => entity_ref_level(lua, host, this, args),
         "EntityRef::max_air_supply" => entity_ref_max_air_supply(lua, host, this, args),
+        "EntityRef::merge_nbt" => entity_ref_merge_nbt(lua, host, this, args),
         "EntityRef::name" => entity_ref_name(lua, host, this, args),
         "EntityRef::no_gravity" => entity_ref_no_gravity(lua, host, this, args),
         "EntityRef::no_physics" => entity_ref_no_physics(lua, host, this, args),

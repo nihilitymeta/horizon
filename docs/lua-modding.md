@@ -141,7 +141,8 @@ A disabled, skipped or refused mod holds no power at all.
 | `explosions` | 2 writes: `level:explode(source, center, power, fire, interaction, settings)` and `level:explosion_destroy_blocks(positions, source, center, power, fire, interaction)`. The power is a Lua number from 0 to `explosion_power` (default 16, owner ceiling 64): a missing, non-number (a string, even `"999"`), negative, NaN, infinite or larger power is refused before the host sees the call. One hook turn may cause at most `explosions_per_turn` explosions over both writes (default 4, owner ceiling 64): the fifth is refused. The read `explosion_resistance` needs no power. Still denied: `explosion_resistances` (its `ResistanceCells` argument does not convert) |
 | `game_rules` | 1 write: `level:set_game_rule(name, value)`. It changes the world's saved rules, and a changed rule stays changed after the mod is removed. The value is a boolean, a whole number, or `{tag = "bool", true}` / `{tag = "int", 7}` |
 | `players` | no write yet. `PlayerRef::disconnect` (remove a player with a reason they see) is denied: a mod may never remove the host or an operator, and the host API cannot yet tell the host from another player in a turn. The power can be requested and granted, and it gates nothing in this build |
-| `commands`, `nbt`, `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
+| `nbt` | 2 writes: `EntityRef:merge_nbt(table)` (a raw merge into a saved entity; returns true when its data changed) and `BlockEntityRef:merge_data(table)` (a raw merge into a saved block entity). A merge adds and changes keys; it cannot remove one, so `{}` changes nothing. Refused by the guard: any merge into a player (`horizon: merge_nbt refused: players cannot be changed with raw NBT`), and a table whose top-level keys include `UUID`, `id`, `Pos`, `Passengers`, `Inventory`, `EnderItems` or `horizon:attachments` (a block entity merge also refuses `x`, `y`, `z`) (`horizon: merge_data refused: key Pos cannot be merged`; case-sensitive, top level only). Still denied: `replace_data`, `set_lock`, `EntityRef:nbt` (a raw read), `set_persistent_data` on a player, and every raw NBT write to a player |
+| `commands`, `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
 | `network`, `files` | reserved: they can be requested and granted, but they are never effective |
 
 The gated list is generated (`generated/powers.rs`). Every other write stays denied, among them the writes that are loot or world operations: `LevelRef::destroy_block`, `LevelRef::block_drops` and `LevelRef::roll_loot`.
@@ -150,6 +151,15 @@ Denied until the maintainer decides, although their slice argument now converts:
 (`DENIED_UNTIL_DECIDED` in the generator).
 Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are not
 gated.
+
+### Per-mod private data
+
+A mod's private data on a player, an entity or a block entity is `horizon.attachment_get`,
+`horizon.attachment_set` and `horizon.attachment_remove` (players included), under the mod's own
+namespace. No raw NBT is needed for it. See the attachment functions in the Lua API.
+
+Raw NBT merges (`merge_nbt`, `merge_data`) need the `nbt` power, never target a player, and refuse the keys
+`UUID`, `id`, `Pos`, `Passengers`, `Inventory`, `EnderItems` and `horizon:attachments` (top level, case-sensitive); a block entity merge also refuses `x`, `y` and `z`.
 
 Known limits of the power check:
 

@@ -368,6 +368,15 @@ pub(crate) fn scoped<R>(
                     spent += 1;
                     return Err(refusal);
                 }
+                // The raw merge's own rules (a player target, the protected keys), as a guard refusal.
+                if let Err(refusal) = crate::nbt_merge::check(&op, &this, &args, &turn_host) {
+                    if spent + 1 > TURN_BUDGET {
+                        void.spent.set(true);
+                        return Err(Error::runtime(SPENT));
+                    }
+                    spent += 1;
+                    return Err(refusal);
+                }
                 if spent + cost > TURN_BUDGET {
                     void.spent.set(true);
                     return Err(Error::runtime(SPENT));

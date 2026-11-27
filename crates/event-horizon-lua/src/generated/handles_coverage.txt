@@ -9,7 +9,7 @@ BlockEntityRef: 17 members
   handle:BlockEntityRef::kind skipped: unconvertible return: Option<BlockEntityTypeKey>
   handle:BlockEntityRef::level bound, cost 1
   handle:BlockEntityRef::lock bound, cost 1
-  handle:BlockEntityRef::merge_data skipped: powerful (needs manifest power): argument `Compound`
+  handle:BlockEntityRef::merge_data bound, cost 10, gated: nbt
   handle:BlockEntityRef::name bound, cost 1
   handle:BlockEntityRef::position bound, cost 1
   handle:BlockEntityRef::replace_data skipped: powerful (needs manifest power): argument `Compound`
@@ -171,7 +171,7 @@ EntityRef: 114 members
   handle:EntityRef::leash_to_knot bound, cost 10
   handle:EntityRef::level bound, cost 1
   handle:EntityRef::max_air_supply bound, cost 1
-  handle:EntityRef::merge_nbt skipped: powerful (needs manifest power): name contains `nbt`
+  handle:EntityRef::merge_nbt bound, cost 10, gated: nbt
   handle:EntityRef::name bound, cost 1
   handle:EntityRef::nbt skipped: powerful (needs manifest power): name contains `nbt`
   handle:EntityRef::no_gravity bound, cost 1
@@ -768,16 +768,17 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 564 of 724; heavy 28
+summary: bound 566 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 52
+  skipped, powerful (needs manifest power): 50
   skipped, unconvertible arg: 44
   skipped, unconvertible return: 41
   gated: explosions 2
   gated: game_rules 1
   gated: inventory 6
+  gated: nbt 2
   gated: spawn 7
   gated: world 20
 heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

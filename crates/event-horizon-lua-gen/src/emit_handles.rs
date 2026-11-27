@@ -214,6 +214,8 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("LivingRef::set_hand_item", "inventory"),
     ("PlayerRef::drop_stack", "inventory"),
     ("LivingRef::set_equipment", "inventory"),
+    ("EntityRef::merge_nbt", "nbt"),
+    ("BlockEntityRef::merge_data", "nbt"),
 ];
 
 /// The writes the slice argument arm (`&[T]`) newly binds that the lead has not decided. Each is an
@@ -1752,7 +1754,6 @@ mod tests {
     fn the_powerful_table_denies_the_names_the_design_lists() {
         let cases = [
             "fn run_command(self, _: &mut dyn ServerHost, _: &str) -> bool",
-            "fn merge_nbt(self, _: &mut dyn ServerHost) -> bool",
             "fn spawn_mob(self, _: &mut dyn ServerHost) -> bool",
             "fn explode(self, _: &mut dyn ServerHost) -> bool",
             "fn set_game_rule(self, _: &mut dyn ServerHost) -> bool",
@@ -1945,12 +1946,12 @@ mod tests {
         assert!(bad_power.contains("names power `network`"), "{bad_power}");
         let denied = [(
             "EntityRef",
-            "merge_nbt",
-            "fn merge_nbt(self, _: &mut dyn ServerHost) -> bool",
+            "nbt",
+            "fn nbt(self, _: &mut dyn ServerHost) -> bool",
         )];
         let (denied_emitted, denied_surface) = emit_members(&denied, &["EntityRef"]);
         let unbound = check_gated(
-            &[("EntityRef::merge_nbt", "nbt")],
+            &[("EntityRef::nbt", "nbt")],
             &denied_surface,
             &families,
             &plain,

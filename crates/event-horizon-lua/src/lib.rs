@@ -55,6 +55,9 @@ mod manifest_tests;
 #[cfg(test)]
 mod menu_tests;
 mod mob_turn;
+mod nbt_merge;
+#[cfg(test)]
+mod nbt_merge_tests;
 pub mod package;
 pub mod powers;
 pub mod provider;

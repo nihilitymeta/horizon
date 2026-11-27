@@ -4,9 +4,11 @@
 
 /// The gated host operations: `("Family::method", power)`, sorted by op.
 pub const GATED: &[(&str, crate::manifest::Power)] = &[
+    ("BlockEntityRef::merge_data", crate::manifest::Power::Nbt),
     ("BossBarRef::remove", crate::manifest::Power::World),
     ("BossBarRef::remove_player", crate::manifest::Power::World),
     ("EntityRef::discard", crate::manifest::Power::World),
+    ("EntityRef::merge_nbt", crate::manifest::Power::Nbt),
     ("EntityRef::remove_tag", crate::manifest::Power::World),
     ("EntityRef::teleport_to_level", crate::manifest::Power::World),
     ("LevelRef::award_experience", crate::manifest::Power::Spawn),
