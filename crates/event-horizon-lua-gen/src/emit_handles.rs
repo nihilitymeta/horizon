@@ -128,12 +128,6 @@ fn powerful(member: &MemberIr) -> Option<String> {
     if READS_WITHOUT_POWER.contains(&format!("{owner}::{name}").as_str()) {
         return None;
     }
-    if DENIED_UNTIL_DECIDED.contains(&format!("{owner}::{name}").as_str()) {
-        return Some(
-            "powerful (needs manifest power): denied until the lead decides (DENIED_UNTIL_DECIDED)"
-                .to_owned(),
-        );
-    }
     let rule = if POWERFUL_OWNERS
         .iter()
         .any(|powerful| owner.contains(powerful))
@@ -217,17 +211,9 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("EntityRef::merge_nbt", "nbt"),
     ("EntityRef::run_command", "commands"),
     ("BlockEntityRef::merge_data", "nbt"),
-];
-
-/// The writes the slice argument arm (`&[T]`) newly binds that the lead has not decided. Each is an
-/// ordinary server write with a slice argument: it would bind ungated, so [`powerful`] denies it by
-/// name until the lead decides whether it is a power (`award_recipes`, `reset_recipes`, `send_map`).
-/// The lead decides these; removing an entry binds the write, so an entry is removed only with a
-/// decision, a gate in [`GATED_WRITES`] and a reviewed line in `reviewed_writes.txt`.
-const DENIED_UNTIL_DECIDED: &[&str] = &[
-    "PlayerRef::award_recipes",
-    "PlayerRef::reset_recipes",
-    "PlayerRef::send_map",
+    ("PlayerRef::award_recipes", "players"),
+    ("PlayerRef::reset_recipes", "players"),
+    ("PlayerRef::send_map", "players"),
 ];
 
 /// The explosion reads that carry a power's name part but need no power: a `&mut dyn ServerHost`
@@ -327,6 +313,9 @@ enum Arg {
     /// A borrowed slice, `&[T]`: read as an owned `Vec<T>` and passed by reference. `strs` marks
     /// `&[&str]`: the strings are read as `Vec<String>` and passed as a `Vec<&str>` shim.
     Slice { ty: String, strs: bool },
+    /// A borrowed byte slice, `&[u8]`: read by `Args::bytes`, which takes a Lua string or an array table
+    /// of integers 0..255 (a picture of 16384 bytes is past the list cap of `Args::get`).
+    Bytes,
 }
 
 /// How the result becomes a Lua value.
@@ -910,6 +899,9 @@ fn arg_of(text: &str, families: &[&str], plain: &Plain) -> Result<Arg, String> {
                     optional: false,
                     by_ref: true,
                 }),
+                TypeIr::List(elem) if spelling(elem, plain).as_deref() == Some("u8") => {
+                    Ok(Arg::Bytes)
+                }
                 TypeIr::List(elem) => {
                     let ty =
                         spelling(&TypeIr::List(elem.clone()), plain).ok_or_else(unconvertible)?;
@@ -1109,6 +1101,7 @@ fn operation(family: &str, bound: &Bound) -> String {
                     format!("&{name}")
                 },
             ),
+            Arg::Bytes => (format!("args.bytes({index})?"), format!("&{name}")),
             Arg::Get { by_ref, .. } => (
                 format!("args.get({index})?"),
                 if *by_ref {
@@ -1133,6 +1126,7 @@ fn operation(family: &str, bound: &Bound) -> String {
         };
         let ty = match arg {
             Arg::Get { ty, .. } | Arg::Handle { ty } | Arg::Slice { ty, .. } => ty.clone(),
+            Arg::Bytes => "Vec<u8>".to_owned(),
             Arg::OptHandle { ty } => format!("Option<{ty}>"),
             Arg::State => "mod_api::BlockState".to_owned(),
             Arg::Stack { optional: true, .. } => "Option<mod_api::ItemStack>".to_owned(),
@@ -1693,10 +1687,10 @@ mod tests {
         assert!(err.starts_with("unconvertible arg: &[ItemStack]"), "{err}");
     }
 
-    /// The three writes the slice arm newly reaches are denied by name until the lead decides: they do
-    /// not bind ungated, and their rule says so.
+    /// The three writes the slice arm newly reaches are gated under `players` (pw-9): they bind behind the
+    /// power, not ungated, and the byte picture reads through `Args::bytes`.
     #[test]
-    fn the_writes_awaiting_a_decision_are_denied_by_name() {
+    fn the_recipe_and_map_writes_are_gated_under_players() {
         for (name, signature) in [
             (
                 "award_recipes",
@@ -1711,15 +1705,20 @@ mod tests {
                 "fn send_map(self, _: &mut dyn ServerHost, _: i32, _: &[u8]) -> bool",
             ),
         ] {
+            let op = format!("PlayerRef::{name}");
+            assert_eq!(power_in(GATED_WRITES, &op), Some("players"), "{name}");
             let member = members(&[("PlayerRef", name, signature)]).remove(0);
-            let err = classify(&member, "PlayerRef", &["PlayerRef"], &plain()).expect_err(name);
-            assert_eq!(
-                reason_category(&err),
-                "powerful (needs manifest power)",
-                "{name}: {err}"
-            );
-            assert!(err.contains("DENIED_UNTIL_DECIDED"), "{name}: {err}");
+            let bound = classify(&member, "PlayerRef", &["PlayerRef"], &plain())
+                .unwrap_or_else(|err| panic!("{name}: {err}"));
+            assert!(bound.write, "{name}");
         }
+        let text =
+            write_text("fn send_map(self, _: &mut dyn ServerHost, _: i32, _: &[u8]) -> bool");
+        assert!(
+            text.contains("    let a1: Vec<u8> = args.bytes(1)?;\n"),
+            "{text}"
+        );
+        assert!(text.contains("this.send_map(server, a0, &a1)"), "{text}");
     }
 
     #[test]

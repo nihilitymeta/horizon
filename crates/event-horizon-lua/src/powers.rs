@@ -14,8 +14,9 @@
 //! - The gated table is generated (`generated/powers.rs`, from `GATED_WRITES` in the generator): the
 //!   `world` and `spawn` writes (the item spawns among them, capped in [`guard`]), then `explosions`
 //!   (`explode`, `explosion_destroy_blocks`, with the power cap in [`guard`]), `game_rules`
-//!   (`set_game_rule`), `inventory` (the player's and the living's item writes) and `commands`
-//!   (`EntityRef::run_command`, checked by `command_guard.rs`). Every other write stays denied.
+//!   (`set_game_rule`), `inventory` (the player's and the living's item writes), `commands`
+//!   (`EntityRef::run_command`, checked by `command_guard.rs`) and `players` (`award_recipes`,
+//!   `reset_recipes`, `send_map`, checked in [`guard`]). Every other write stays denied.
 //! - Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are NOT gated, and stay
 //!   that way.
 
@@ -118,12 +119,29 @@ const SPAWN_OPS: &[&str] = &[
     "LevelRef::pop_resource",
 ];
 
-/// What one hook turn has done so far, counted by [`guard`]: the explosions and the spawns. One value per
-/// turn, held by the turn's scope; a refused call is not counted.
+/// The most map pictures one hook turn may send by default, over `send_map`: the ninth is refused before the
+/// host sees it. A placeholder like [`DEFAULT_SPAWNS_PER_TURN`]; the owner may change it (`[limits] maps_per_turn`).
+pub const DEFAULT_MAPS_PER_TURN: u32 = 8;
+
+/// The most map pictures per turn an owner may set (`maps_per_turn`); a hard ceiling in code.
+pub const MAPS_PER_TURN_CEILING: u32 = 64;
+
+/// The bytes of one map picture (`send_map`): 128 x 128 colours, a longer or shorter one is refused.
+pub const MAP_BYTES: usize = 16 * 1024;
+
+/// The most recipe ids one `award_recipes` or `reset_recipes` call may name.
+pub const RECIPE_IDS_PER_CALL: usize = 64;
+
+/// The most characters one recipe id may have.
+pub const RECIPE_ID_CHARS: usize = 128;
+
+/// What one hook turn has done so far, counted by [`guard`]: the explosions, the spawns and the map pictures.
+/// One value per turn, held by the turn's scope; a refused call is not counted.
 #[derive(Debug, Default)]
 pub(crate) struct TurnCounts {
     pub explosions: u32,
     pub spawns: u32,
+    pub maps: u32,
 }
 
 /// The default cap on an explosion's power (the `power` argument of the explosion writes, a Lua number): a
@@ -151,6 +169,8 @@ pub struct Limits {
     pub explosions_per_turn: u32,
     /// The most item and mob spawns one hook turn may cause.
     pub spawns_per_turn: u32,
+    /// The most map pictures one hook turn may send.
+    pub maps_per_turn: u32,
 }
 
 impl Default for Limits {
@@ -159,6 +179,7 @@ impl Default for Limits {
             explosion_power: DEFAULT_EXPLOSION_POWER,
             explosions_per_turn: DEFAULT_EXPLOSIONS_PER_TURN,
             spawns_per_turn: DEFAULT_SPAWNS_PER_TURN,
+            maps_per_turn: DEFAULT_MAPS_PER_TURN,
         }
     }
 }
@@ -190,6 +211,20 @@ pub(crate) fn guard(
         return crate::command_guard::check(args, commands);
     }
     let method = op.rsplit("::").next().unwrap_or(op);
+    if RECIPE_OPS.contains(&op) {
+        return check_recipe_ids(method, args);
+    }
+    if op == SEND_MAP_OP {
+        check_map_bytes(method, args)?;
+        if counts.maps >= limits.maps_per_turn {
+            return Err(refusal(
+                method,
+                &format!("at most {} maps per turn", limits.maps_per_turn),
+            ));
+        }
+        counts.maps += 1;
+        return Ok(());
+    }
     if SPAWN_OPS.contains(&op) {
         if counts.spawns >= limits.spawns_per_turn {
             return Err(Error::runtime(format!(
@@ -225,6 +260,97 @@ pub(crate) fn guard(
         )));
     }
     Ok(())
+}
+
+/// The recipe writes whose one argument is the list of recipe ids (`&[&str]`).
+const RECIPE_OPS: &[&str] = &["PlayerRef::award_recipes", "PlayerRef::reset_recipes"];
+
+/// The map write: its first argument is the map id, its second the picture's bytes.
+const SEND_MAP_OP: &str = "PlayerRef::send_map";
+
+/// A refusal of a gated call, naming the method and the problem, never the arguments.
+fn refusal(method: &str, reason: &str) -> Error {
+    Error::runtime(format!("horizon: {method} refused: {reason}"))
+}
+
+/// The recipe ids of `award_recipes` and `reset_recipes`: a list of at most [`RECIPE_IDS_PER_CALL`] strings,
+/// each non-empty, at most [`RECIPE_ID_CHARS`] characters and free of control characters. A missing or
+/// non-table argument passes here; the conversion refuses it.
+fn check_recipe_ids(method: &str, args: &MultiValue) -> Result<(), Error> {
+    let Some(Value::Table(table)) = args.front() else {
+        return Ok(());
+    };
+    let mut count = 0usize;
+    for pair in table.pairs::<Value, Value>() {
+        let (_, item) = pair.map_err(|_| refusal(method, "the recipe list cannot be read"))?;
+        count += 1;
+        if count > RECIPE_IDS_PER_CALL {
+            return Err(refusal(
+                method,
+                &format!("at most {RECIPE_IDS_PER_CALL} recipe ids per call"),
+            ));
+        }
+        let Value::String(text) = item else {
+            return Err(refusal(method, "each recipe id must be a string"));
+        };
+        let Ok(text) = text.to_str() else {
+            return Err(refusal(method, "a recipe id must be UTF-8 text"));
+        };
+        if text.is_empty() {
+            return Err(refusal(method, "a recipe id is empty"));
+        }
+        if text.chars().count() > RECIPE_ID_CHARS {
+            return Err(refusal(
+                method,
+                &format!("a recipe id is longer than {RECIPE_ID_CHARS} characters"),
+            ));
+        }
+        if text.chars().any(char::is_control) {
+            return Err(refusal(method, "a recipe id has a control character"));
+        }
+    }
+    Ok(())
+}
+
+/// The picture of `send_map`: a Lua string or an array table of integers 0 to 255, at most [`MAP_BYTES`]
+/// long. A string of any other length, or a table entry outside 0 to 255, is refused. A missing or other
+/// argument passes here; the conversion refuses it.
+fn check_map_bytes(method: &str, args: &MultiValue) -> Result<(), Error> {
+    match args.get(1) {
+        Some(Value::String(text)) if text.as_bytes().len() > MAP_BYTES => Err(refusal(
+            method,
+            &format!("a map is at most {MAP_BYTES} bytes"),
+        )),
+        Some(Value::Table(table)) => {
+            let mut count = 0usize;
+            for pair in table.pairs::<Value, Value>() {
+                let (_, item) = pair.map_err(|_| refusal(method, "the map cannot be read"))?;
+                count += 1;
+                if count > MAP_BYTES {
+                    return Err(refusal(
+                        method,
+                        &format!("a map is at most {MAP_BYTES} bytes"),
+                    ));
+                }
+                let whole = match item {
+                    Value::Integer(value) => (0..=255).contains(&value),
+                    Value::Number(value) => value.fract() == 0.0 && (0.0..=255.0).contains(&value),
+                    _ => false,
+                };
+                if !whole {
+                    return Err(refusal(
+                        method,
+                        "a map byte must be a whole number from 0 to 255",
+                    ));
+                }
+            }
+            if count != table.raw_len() {
+                return Err(refusal(method, "a map must be an array of bytes"));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The refusal of a gated call of mod `owner` that needs `power` and does not hold it: the one warning
@@ -289,7 +415,7 @@ mod tests {
     ];
 
     /// The gated writes, written out by hand (not read from the generator): each op and its power.
-    const GATED: [(&str, Power); 39] = [
+    const GATED: [(&str, Power); 42] = [
         ("BossBarRef::remove", Power::World),
         ("BossBarRef::remove_player", Power::World),
         ("EntityRef::discard", Power::World),
@@ -329,6 +455,9 @@ mod tests {
         ("EntityRef::run_command", Power::Commands),
         ("EntityRef::merge_nbt", Power::Nbt),
         ("BlockEntityRef::merge_data", Power::Nbt),
+        ("PlayerRef::award_recipes", Power::Players),
+        ("PlayerRef::reset_recipes", Power::Players),
+        ("PlayerRef::send_map", Power::Players),
     ];
 
     #[test]
@@ -339,9 +468,6 @@ mod tests {
         }
         for op in [
             "EntityRef::set_glowing",
-            "PlayerRef::award_recipes",
-            "PlayerRef::reset_recipes",
-            "PlayerRef::send_map",
             "PlayerRef::disconnect",
             "EntityRef::remove",
             "PlayerRef::set_nickname",
@@ -350,8 +476,6 @@ mod tests {
             "LevelRef::block_drops",
             "LevelRef::roll_loot",
             "LivingRef::hurt_and_break",
-            "PlayerRef::award_recipes",
-            "PlayerRef::send_map",
             "EntityRef::run_command_with_output",
         ] {
             assert_eq!(required(op), None, "{op} stays denied");
@@ -567,11 +691,13 @@ mod tests {
             explosion_power: 2.0,
             explosions_per_turn: 1,
             spawns_per_turn: 2,
+            maps_per_turn: 1,
         };
         let high = Limits {
             explosion_power: 64.0,
             explosions_per_turn: 10,
             spawns_per_turn: 100,
+            maps_per_turn: 10,
         };
         let refusal = guard(
             "LevelRef::explode",
@@ -679,15 +805,198 @@ mod tests {
         );
     }
 
+    /// The recipe ids of `award_recipes` and `reset_recipes` are a list of at most 64 strings, each
+    /// non-empty, at most 128 characters and free of control characters; anything else is refused by name.
+    #[test]
+    fn the_recipe_ids_are_bounded_and_clean() -> mlua::Result<()> {
+        let lua = mlua::Lua::new();
+        let call = |items: Vec<Value>| -> mlua::Result<MultiValue> {
+            let table = lua.create_sequence_from(items)?;
+            Ok(MultiValue::from_vec(vec![Value::Table(table)]))
+        };
+        let text = |s: &str| -> mlua::Result<Value> { Ok(Value::String(lua.create_string(s)?)) };
+        let check = |op: &str, args: &MultiValue| {
+            guard(
+                op,
+                args,
+                &mut TurnCounts::default(),
+                &Limits::default(),
+                &CommandPolicy::default(),
+            )
+        };
+        let refusal_of = |op: &str, args: &MultiValue| check(op, args).expect_err(op).to_string();
+        for op in ["PlayerRef::award_recipes", "PlayerRef::reset_recipes"] {
+            let method = op.rsplit("::").next().unwrap_or(op);
+            let full: Vec<Value> = (0..64)
+                .map(|_| text("minecraft:stone"))
+                .collect::<mlua::Result<_>>()?;
+            assert!(check(op, &call(full)?).is_ok(), "{op}: 64 ids pass");
+            let too_many: Vec<Value> = (0..65).map(|_| text("a")).collect::<mlua::Result<_>>()?;
+            assert_eq!(
+                refusal_of(op, &call(too_many)?),
+                format!("runtime error: horizon: {method} refused: at most 64 recipe ids per call"),
+                "{op}"
+            );
+            let longest = "a".repeat(128);
+            assert!(
+                check(op, &call(vec![text(&longest)?])?).is_ok(),
+                "{op}: 128 chars pass"
+            );
+            let longer = "a".repeat(129);
+            assert_eq!(
+                refusal_of(op, &call(vec![text(&longer)?])?),
+                format!(
+                    "runtime error: horizon: {method} refused: a recipe id is longer than 128 characters"
+                ),
+                "{op}"
+            );
+            assert_eq!(
+                refusal_of(op, &call(vec![text("")?])?),
+                format!("runtime error: horizon: {method} refused: a recipe id is empty"),
+                "{op}"
+            );
+            assert_eq!(
+                refusal_of(op, &call(vec![text("a\nb")?])?),
+                format!(
+                    "runtime error: horizon: {method} refused: a recipe id has a control character"
+                ),
+                "{op}"
+            );
+            assert_eq!(
+                refusal_of(op, &call(vec![Value::Integer(5)])?),
+                format!(
+                    "runtime error: horizon: {method} refused: each recipe id must be a string"
+                ),
+                "{op}"
+            );
+        }
+        Ok(())
+    }
+
+    /// `send_map`'s picture is a Lua string or an array table of integers 0 to 255, at most 16 KiB long; a
+    /// bad byte or a longer picture is refused by name, and a refused picture is not counted.
+    #[test]
+    fn a_map_picture_is_at_most_16_kib_of_bytes() -> mlua::Result<()> {
+        let lua = mlua::Lua::new();
+        let args = |picture: Value| MultiValue::from_vec(vec![Value::Integer(7), picture]);
+        let table = |items: Vec<Value>| -> mlua::Result<Value> {
+            Ok(Value::Table(lua.create_sequence_from(items)?))
+        };
+        let mut counts = TurnCounts::default();
+        let mut send = |picture: Value| {
+            guard(
+                "PlayerRef::send_map",
+                &args(picture),
+                &mut counts,
+                &Limits::default(),
+                &CommandPolicy::default(),
+            )
+        };
+        let full = "x".repeat(MAP_BYTES);
+        assert!(send(Value::String(lua.create_string(&full)?)).is_ok());
+        let over = "x".repeat(MAP_BYTES + 1);
+        let refusal = send(Value::String(lua.create_string(&over)?)).expect_err("16385 bytes");
+        assert_eq!(
+            refusal.to_string(),
+            "runtime error: horizon: send_map refused: a map is at most 16384 bytes"
+        );
+        let bytes: Vec<Value> = (0..MAP_BYTES)
+            .map(|i| Value::Integer((i % 256) as i64))
+            .collect();
+        assert!(send(table(bytes)?).is_ok(), "16384 bytes in a table pass");
+        let longer: Vec<Value> = (0..=MAP_BYTES).map(|_| Value::Integer(0)).collect();
+        assert_eq!(
+            send(table(longer)?).expect_err("16385 entries").to_string(),
+            "runtime error: horizon: send_map refused: a map is at most 16384 bytes"
+        );
+        for bad in [Value::Integer(256), Value::Integer(-1), Value::Number(1.5)] {
+            assert_eq!(
+                send(table(vec![Value::Integer(1), bad])?)
+                    .expect_err("a byte outside 0 to 255")
+                    .to_string(),
+                "runtime error: horizon: send_map refused: a map byte must be a whole number from 0 to 255"
+            );
+        }
+        let text_entry = lua.create_string("x")?;
+        assert!(send(table(vec![Value::String(text_entry)])?).is_err());
+        assert_eq!(counts.maps, 2, "the refused pictures are not counted");
+        Ok(())
+    }
+
+    /// One turn may send at most `DEFAULT_MAPS_PER_TURN` map pictures: the next is refused before the host
+    /// sees it, and an owner's `maps_per_turn` replaces the count.
+    #[test]
+    fn a_turn_may_send_only_so_many_maps() -> mlua::Result<()> {
+        let lua = mlua::Lua::new();
+        let args = MultiValue::from_vec(vec![
+            Value::Integer(7),
+            Value::String(lua.create_string("picture")?),
+        ]);
+        let mut counts = TurnCounts::default();
+        for i in 0..DEFAULT_MAPS_PER_TURN {
+            assert!(
+                guard(
+                    "PlayerRef::send_map",
+                    &args,
+                    &mut counts,
+                    &Limits::default(),
+                    &CommandPolicy::default()
+                )
+                .is_ok(),
+                "map {i}"
+            );
+        }
+        let refusal = guard(
+            "PlayerRef::send_map",
+            &args,
+            &mut counts,
+            &Limits::default(),
+            &CommandPolicy::default(),
+        )
+        .expect_err("the ninth map");
+        assert_eq!(
+            refusal.to_string(),
+            "runtime error: horizon: send_map refused: at most 8 maps per turn"
+        );
+        let one = Limits {
+            maps_per_turn: 1,
+            ..Limits::default()
+        };
+        let mut lowered = TurnCounts::default();
+        assert!(
+            guard(
+                "PlayerRef::send_map",
+                &args,
+                &mut lowered,
+                &one,
+                &CommandPolicy::default()
+            )
+            .is_ok()
+        );
+        assert!(
+            guard(
+                "PlayerRef::send_map",
+                &args,
+                &mut lowered,
+                &one,
+                &CommandPolicy::default()
+            )
+            .is_err()
+        );
+        Ok(())
+    }
+
     /// The defaults are the placeholders the write-powers design named, and each owner ceiling is above them.
     #[test]
     fn the_defaults_are_the_placeholders_under_the_ceilings() {
         assert_eq!(Limits::default().explosion_power, 16.0);
         assert_eq!(Limits::default().explosions_per_turn, 4);
         assert_eq!(Limits::default().spawns_per_turn, 64);
+        assert_eq!(Limits::default().maps_per_turn, 8);
         const { assert!(DEFAULT_EXPLOSION_POWER <= EXPLOSION_POWER_CEILING) };
         const { assert!(DEFAULT_EXPLOSIONS_PER_TURN <= EXPLOSIONS_PER_TURN_CEILING) };
         const { assert!(DEFAULT_SPAWNS_PER_TURN <= SPAWNS_PER_TURN_CEILING) };
+        const { assert!(DEFAULT_MAPS_PER_TURN <= MAPS_PER_TURN_CEILING) };
     }
 
     /// `has_ops` is true exactly for the powers the generated table gates.

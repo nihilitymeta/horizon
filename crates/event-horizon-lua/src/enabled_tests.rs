@@ -411,6 +411,7 @@ fn absent_limits_are_the_defaults_with_no_notice() {
     assert_eq!(enabled.limits.explosion_power, 16.0);
     assert_eq!(enabled.limits.explosions_per_turn, 4);
     assert_eq!(enabled.limits.spawns_per_turn, 64);
+    assert_eq!(enabled.limits.maps_per_turn, 8);
     assert!(enabled.notice.is_none());
     put(root.path(), "[mods]\nfoo = true\n");
     assert_eq!(read(root.path()).limits, Limits::default());
@@ -422,16 +423,17 @@ fn each_limit_is_read_within_its_range() {
     let root = tempfile::tempdir().unwrap();
     put(
         root.path(),
-        "[limits]\nexplosion_power = 2.5\nexplosions_per_turn = 1\nspawns_per_turn = 512\n",
+        "[limits]\nexplosion_power = 2.5\nexplosions_per_turn = 1\nspawns_per_turn = 512\nmaps_per_turn = 2\n",
     );
     let enabled = read(root.path());
     assert_eq!(enabled.limits.explosion_power, 2.5);
     assert_eq!(enabled.limits.explosions_per_turn, 1);
     assert_eq!(enabled.limits.spawns_per_turn, 512);
+    assert_eq!(enabled.limits.maps_per_turn, 2);
     assert!(enabled.notice.is_none());
     put(
         root.path(),
-        "[limits]\nexplosion_power = 64\nexplosions_per_turn = 64\nspawns_per_turn = 1024\n",
+        "[limits]\nexplosion_power = 64\nexplosions_per_turn = 64\nspawns_per_turn = 1024\nmaps_per_turn = 64\n",
     );
     let enabled = read(root.path());
     assert_eq!(
@@ -440,6 +442,7 @@ fn each_limit_is_read_within_its_range() {
     );
     assert_eq!(enabled.limits.explosions_per_turn, 64);
     assert_eq!(enabled.limits.spawns_per_turn, 1024);
+    assert_eq!(enabled.limits.maps_per_turn, 64);
     assert!(enabled.notice.is_none());
 }
 
@@ -468,7 +471,7 @@ fn an_invalid_or_above_ceiling_limit_falls_back_to_the_default_with_one_notice()
 
     put(
         root.path(),
-        "[limits]\nexplosion_power = \"16\"\nspawns_per_turn = 1025\nexplosions_per_turn = 5\n",
+        "[limits]\nexplosion_power = \"16\"\nspawns_per_turn = 1025\nexplosions_per_turn = 5\nmaps_per_turn = 65\n",
     );
     let enabled = read(root.path());
     assert_eq!(
@@ -482,6 +485,10 @@ fn an_invalid_or_above_ceiling_limit_falls_back_to_the_default_with_one_notice()
     assert_eq!(
         enabled.limits.explosions_per_turn, 5,
         "a valid key beside them still takes"
+    );
+    assert_eq!(
+        enabled.limits.maps_per_turn, 8,
+        "above the map ceiling is the default"
     );
     assert!(enabled.notice.is_some());
 

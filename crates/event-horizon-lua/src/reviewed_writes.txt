@@ -228,3 +228,6 @@ PlayerRef::set_ender_chest_slot inventory
 PlayerRef::set_inventory_slot inventory
 BlockEntityRef::merge_data nbt
 EntityRef::merge_nbt nbt
+PlayerRef::award_recipes players
+PlayerRef::reset_recipes players
+PlayerRef::send_map players

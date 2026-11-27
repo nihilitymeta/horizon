@@ -609,7 +609,7 @@ PlayerRef: 112 members
   handle:PlayerRef::ambient_mood skipped: other: host kind &dyn ClientHost
   handle:PlayerRef::announced_channels bound, cost 100
   handle:PlayerRef::attack_strength_scale bound, cost 1
-  handle:PlayerRef::award_recipes skipped: powerful (needs manifest power): denied until the lead decides (DENIED_UNTIL_DECIDED)
+  handle:PlayerRef::award_recipes bound, cost 10, gated: players
   handle:PlayerRef::award_stat skipped: powerful (needs manifest power): name contains `award_stat`
   handle:PlayerRef::back_mod_menu_slots skipped: unconvertible arg: Vec<MenuSlotPlace>
   handle:PlayerRef::block_breaking skipped: other: host kind &dyn ClientHost
@@ -668,13 +668,13 @@ PlayerRef: 112 members
   handle:PlayerRef::remove_fake skipped: powerful (needs manifest power): name contains `remove`
   handle:PlayerRef::remove_item_cooldown skipped: powerful (needs manifest power): name contains `remove`
   handle:PlayerRef::request_recipe_book_settings skipped: client write: &mut dyn ClientHost
-  handle:PlayerRef::reset_recipes skipped: powerful (needs manifest power): denied until the lead decides (DENIED_UNTIL_DECIDED)
+  handle:PlayerRef::reset_recipes bound, cost 10, gated: players
   handle:PlayerRef::reset_stat skipped: powerful (needs manifest power): name contains `reset_stat`
   handle:PlayerRef::respawn bound, cost 10, gated: spawn
   handle:PlayerRef::respawn_config skipped: unconvertible return: Option<Option<PlayerRespawnConfig>>
   handle:PlayerRef::sees bound, cost 1
   handle:PlayerRef::selected_slot bound, cost 1
-  handle:PlayerRef::send_map skipped: powerful (needs manifest power): denied until the lead decides (DENIED_UNTIL_DECIDED)
+  handle:PlayerRef::send_map bound, cost 10, gated: players
   handle:PlayerRef::send_payload skipped: unconvertible arg: &PayloadId
   handle:PlayerRef::set_abilities skipped: unconvertible arg: PlayerAbilities
   handle:PlayerRef::set_chunk_areas skipped: unconvertible arg: &[ChunkArea]
@@ -768,11 +768,11 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 567 of 724; heavy 28
+summary: bound 570 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 49
+  skipped, powerful (needs manifest power): 46
   skipped, unconvertible arg: 44
   skipped, unconvertible return: 41
   gated: commands 1
@@ -780,6 +780,7 @@ summary: bound 567 of 724; heavy 28
   gated: game_rules 1
   gated: inventory 6
   gated: nbt 2
+  gated: players 3
   gated: spawn 7
   gated: world 20
 heavy (cost 100): handle:BlockEntityRef::data_slots, handle:BlockEntityRef::viewers, handle:BossBarRef::players, handle:ChunkRef::watchers, handle:EntityRef::indirect_passengers, handle:EntityRef::parts, handle:EntityRef::passengers, handle:EntityRef::tags, handle:LevelRef::all_entities, handle:LevelRef::block_shape, handle:LevelRef::clip, handle:LevelRef::datapack_entries, handle:LevelRef::entities_in, handle:LevelRef::fluid_shape, handle:LevelRef::forced_chunks, handle:LevelRef::loaded_chunks, handle:LevelRef::online_players, handle:LevelRef::raids, handle:LevelRef::ray_trace_entities, handle:LivingRef::attribute_modifiers, handle:LivingRef::attributes, handle:PlayerRef::announced_channels, handle:PlayerRef::discovered_recipes, handle:PlayerRef::item_cooldowns, handle:RaidRef::heroes, handle:RaidRef::raiders, handle:RaidRef::wave_raiders, handle:UnspawnedMobRef::tags

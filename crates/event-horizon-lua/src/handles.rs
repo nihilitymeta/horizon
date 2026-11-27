@@ -125,6 +125,31 @@ impl Args {
         T::from_lua_value(&self.value(index)).map_err(|err| self.refuse(index, err))
     }
 
+    /// The argument at `index` as bytes: a Lua string, or an array table of integers 0 to 255. The guard
+    /// (`powers::guard`) has already checked the length and every entry; this reads them.
+    pub fn bytes(&self, index: usize) -> mlua::Result<Vec<u8>> {
+        match self.value(index) {
+            Value::String(text) => Ok(text.as_bytes().to_vec()),
+            Value::Table(table) => {
+                let len = table.raw_len();
+                let mut out = Vec::with_capacity(len);
+                for item in 1..=len {
+                    let value: Value =
+                        table.raw_get(item).map_err(|err| self.refuse(index, err))?;
+                    out.push(u8::from_lua_value(&value).map_err(|err| self.refuse(index, err))?);
+                }
+                Ok(out)
+            }
+            other => Err(self.refuse(
+                index,
+                format!(
+                    "expected a string or an array table, got {}",
+                    other.type_name()
+                ),
+            )),
+        }
+    }
+
     /// The argument at `index` as a handle of family `F`.
     pub fn handle<F: Family>(&self, index: usize) -> mlua::Result<F> {
         family_of(&self.value(index))
@@ -335,9 +360,6 @@ mod tests {
             "PlayerRef::set_game_mode",
             "PlayerRef::award_stat",
             "PlayerRef::reset_stat",
-            "PlayerRef::award_recipes",
-            "PlayerRef::reset_recipes",
-            "PlayerRef::send_map",
         ];
         for member in denied {
             assert!(

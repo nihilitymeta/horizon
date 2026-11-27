@@ -1537,6 +1537,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         methods.add_function("attack_strength_scale", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::attack_strength_scale", this, args)
         });
+        methods.add_function("award_recipes", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::award_recipes", this, args)
+        });
         methods.add_function("can_eat", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::can_eat", this, args)
         });
@@ -1657,6 +1660,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         methods.add_function("previous_game_mode", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::previous_game_mode", this, args)
         });
+        methods.add_function("reset_recipes", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::reset_recipes", this, args)
+        });
         methods.add_function("respawn", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::respawn", this, args)
         });
@@ -1665,6 +1671,9 @@ impl crate::handles::Family for mod_api::PlayerRef {
         });
         methods.add_function("selected_slot", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::selected_slot", this, args)
+        });
+        methods.add_function("send_map", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "PlayerRef::send_map", this, args)
         });
         methods.add_function("set_ender_chest_slot", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "PlayerRef::set_ender_chest_slot", this, args)
@@ -5889,6 +5898,16 @@ fn player_ref_attack_strength_scale(lua: &mlua::Lua, host: &mut crate::hostcall:
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn player_ref_award_recipes(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::award_recipes", args, 1)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::award_recipes")?;
+    let a0: Vec<String> = args.get(0)?;
+    let a0_refs: Vec<&str> = a0.iter().map(String::as_str).collect();
+    let out = this.award_recipes(server, &a0_refs);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn player_ref_can_eat(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let args = crate::handles::Args::new("PlayerRef::can_eat", args, 1)?;
     let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::can_eat")?;
@@ -6233,6 +6252,16 @@ fn player_ref_previous_game_mode(lua: &mlua::Lua, host: &mut crate::hostcall::Tu
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
+fn player_ref_reset_recipes(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::reset_recipes", args, 1)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::reset_recipes")?;
+    let a0: Vec<String> = args.get(0)?;
+    let a0_refs: Vec<&str> = a0.iter().map(String::as_str).collect();
+    let out = this.reset_recipes(server, &a0_refs);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn player_ref_respawn(_lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let server = crate::handles::server_of(host)?;
     crate::handles::Args::new("PlayerRef::respawn", args, 0)?;
@@ -6255,6 +6284,16 @@ fn player_ref_selected_slot(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHos
     let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::selected_slot")?;
     let read = crate::handles::read_of(host)?;
     let out = this.selected_slot(read);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn player_ref_send_map(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("PlayerRef::send_map", args, 2)?;
+    let this: mod_api::PlayerRef = crate::handles::receiver(this, "PlayerRef::send_map")?;
+    let a0: i32 = args.get(0)?;
+    let a1: Vec<u8> = args.bytes(1)?;
+    let out = this.send_map(server, a0, &a1);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -7242,6 +7281,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::address" => 1,
         "PlayerRef::announced_channels" => 100,
         "PlayerRef::attack_strength_scale" => 1,
+        "PlayerRef::award_recipes" => 10,
         "PlayerRef::can_eat" => 1,
         "PlayerRef::can_harm" => 1,
         "PlayerRef::can_use_game_master_blocks" => 1,
@@ -7282,9 +7322,11 @@ pub fn cost(op: &str) -> Option<u32> {
         "PlayerRef::place_block" => 10,
         "PlayerRef::play_sound" => 10,
         "PlayerRef::previous_game_mode" => 1,
+        "PlayerRef::reset_recipes" => 10,
         "PlayerRef::respawn" => 10,
         "PlayerRef::sees" => 1,
         "PlayerRef::selected_slot" => 1,
+        "PlayerRef::send_map" => 10,
         "PlayerRef::set_ender_chest_slot" => 10,
         "PlayerRef::set_exhaustion" => 10,
         "PlayerRef::set_exp_cooldown" => 10,
@@ -7823,6 +7865,7 @@ pub fn run(
         "PlayerRef::address" => player_ref_address(lua, host, this, args),
         "PlayerRef::announced_channels" => player_ref_announced_channels(lua, host, this, args),
         "PlayerRef::attack_strength_scale" => player_ref_attack_strength_scale(lua, host, this, args),
+        "PlayerRef::award_recipes" => player_ref_award_recipes(lua, host, this, args),
         "PlayerRef::can_eat" => player_ref_can_eat(lua, host, this, args),
         "PlayerRef::can_harm" => player_ref_can_harm(lua, host, this, args),
         "PlayerRef::can_use_game_master_blocks" => player_ref_can_use_game_master_blocks(lua, host, this, args),
@@ -7863,9 +7906,11 @@ pub fn run(
         "PlayerRef::place_block" => player_ref_place_block(lua, host, this, args),
         "PlayerRef::play_sound" => player_ref_play_sound(lua, host, this, args),
         "PlayerRef::previous_game_mode" => player_ref_previous_game_mode(lua, host, this, args),
+        "PlayerRef::reset_recipes" => player_ref_reset_recipes(lua, host, this, args),
         "PlayerRef::respawn" => player_ref_respawn(lua, host, this, args),
         "PlayerRef::sees" => player_ref_sees(lua, host, this, args),
         "PlayerRef::selected_slot" => player_ref_selected_slot(lua, host, this, args),
+        "PlayerRef::send_map" => player_ref_send_map(lua, host, this, args),
         "PlayerRef::set_ender_chest_slot" => player_ref_set_ender_chest_slot(lua, host, this, args),
         "PlayerRef::set_exhaustion" => player_ref_set_exhaustion(lua, host, this, args),
         "PlayerRef::set_exp_cooldown" => player_ref_set_exp_cooldown(lua, host, this, args),

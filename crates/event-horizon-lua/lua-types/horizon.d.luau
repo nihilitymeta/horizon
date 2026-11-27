@@ -4309,6 +4309,8 @@ export type PlayerRef = {
 	address: (PlayerRef) -> string?,
 	announced_channels: (PlayerRef) -> {string}?,
 	attack_strength_scale: (PlayerRef, number) -> number?,
+	-- needs the "players" power (granted by the owner in lua-mods/enabled.toml)
+	award_recipes: (PlayerRef, {string}) -> number?,
 	can_eat: (PlayerRef, boolean) -> boolean?,
 	can_harm: (PlayerRef, PlayerRef) -> boolean?,
 	can_use_game_master_blocks: (PlayerRef) -> boolean?,
@@ -4351,10 +4353,14 @@ export type PlayerRef = {
 	place_block: (PlayerRef, LevelRef, { x: number, y: number, z: number }, BlockStateSpec, boolean) -> (),
 	play_sound: (PlayerRef, string, SoundSource, number, number) -> boolean,
 	previous_game_mode: (PlayerRef) -> GameMode??,
+	-- needs the "players" power (granted by the owner in lua-mods/enabled.toml)
+	reset_recipes: (PlayerRef, {string}) -> number?,
 	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
 	respawn: (PlayerRef) -> (),
 	sees: (PlayerRef, PlayerRef) -> boolean,
 	selected_slot: (PlayerRef) -> number?,
+	-- needs the "players" power (granted by the owner in lua-mods/enabled.toml)
+	send_map: (PlayerRef, number, {number}) -> boolean,
 	-- needs the "inventory" power (granted by the owner in lua-mods/enabled.toml)
 	set_ender_chest_slot: (PlayerRef, number, ItemStackSpec?) -> (),
 	set_exhaustion: (PlayerRef, number) -> boolean,

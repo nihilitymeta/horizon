@@ -38,9 +38,12 @@ pub const GATED: &[(&str, crate::manifest::Power)] = &[
     ("LivingRef::set_hand_item", crate::manifest::Power::Inventory),
     ("MobRef::remove_goal", crate::manifest::Power::World),
     ("MobRef::remove_target_goal", crate::manifest::Power::World),
+    ("PlayerRef::award_recipes", crate::manifest::Power::Players),
     ("PlayerRef::drop_stack", crate::manifest::Power::Inventory),
     ("PlayerRef::give_stack", crate::manifest::Power::Inventory),
+    ("PlayerRef::reset_recipes", crate::manifest::Power::Players),
     ("PlayerRef::respawn", crate::manifest::Power::Spawn),
+    ("PlayerRef::send_map", crate::manifest::Power::Players),
     ("PlayerRef::set_ender_chest_slot", crate::manifest::Power::Inventory),
     ("PlayerRef::set_inventory_slot", crate::manifest::Power::Inventory),
 ];

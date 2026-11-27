@@ -809,6 +809,10 @@ mod tests {
         rule: Option<(String, mod_api::GameRuleValue)>,
         /// The line and level of each command the host was asked to run as `ME`.
         commands: Vec<(String, mod_api::PermissionLevel)>,
+        /// The op (`award` or `reset`) and the recipe ids of each recipe write the host was asked for (pw-9).
+        recipes: Vec<(&'static str, Vec<String>)>,
+        /// The map id and bytes of each picture the host was asked to send (pw-9).
+        maps: Vec<(i32, Vec<u8>)>,
         /// How many times the host was asked for a block's break speed with a tool.
         tool_calls: Cell<u32>,
         /// The count of the tool stack the last break-speed question carried (None: no tool).
@@ -826,6 +830,8 @@ mod tests {
                 radius: None,
                 rule: None,
                 commands: Vec::new(),
+                recipes: Vec::new(),
+                maps: Vec::new(),
                 tool_calls: Cell::new(0),
                 tool_count: Cell::new(None),
             }
@@ -998,6 +1004,23 @@ mod tests {
     /// The stack writes of pw-5: counted as writes; the double keeps no items, so each takes the stack it is
     /// given and answers as the game does for a stack it can place.
     impl PlayersBackendMut for Fake {
+        fn player_award_recipes(&mut self, _: PlayerRef, recipes: &[&str]) -> Option<i32> {
+            self.writes += 1;
+            self.recipes
+                .push(("award", recipes.iter().map(|r| r.to_string()).collect()));
+            Some(recipes.len() as i32)
+        }
+        fn player_reset_recipes(&mut self, _: PlayerRef, recipes: &[&str]) -> Option<i32> {
+            self.writes += 1;
+            self.recipes
+                .push(("reset", recipes.iter().map(|r| r.to_string()).collect()));
+            Some(recipes.len() as i32)
+        }
+        fn player_send_map(&mut self, _: PlayerRef, map_id: i32, colors: &[u8]) -> bool {
+            self.writes += 1;
+            self.maps.push((map_id, colors.to_vec()));
+            true
+        }
         fn player_give_stack(
             &mut self,
             _: PlayerRef,
@@ -3381,6 +3404,105 @@ mod tests {
             );
             assert_eq!(fake.writes, 0, "{op}: the host is not called");
         }
+    }
+
+    /// The recipe and map writes (pw-9) called directly through the dispatcher: without the `players` power each
+    /// is refused with the power message and the host is not called; granted, the host is called once with
+    /// the argument it was given. A recipe list past its bound is refused by the guard before the host sees it.
+    #[test]
+    fn a_recipe_or_map_write_reaches_the_host_only_with_the_players_power() {
+        let root = tempfile::tempdir().unwrap();
+        let player = mod_api::__private::game::player_ref(me(), 1);
+        let recipe_args = |lua: &Lua| -> mlua::Result<MultiValue> {
+            let list = lua
+                .create_sequence_from(vec![Value::String(lua.create_string("minecraft:stone")?)])?;
+            Ok(MultiValue::from_vec(vec![Value::Table(list)]))
+        };
+        let map_args = |lua: &Lua| -> mlua::Result<MultiValue> {
+            Ok(MultiValue::from_vec(vec![
+                Value::Integer(7),
+                Value::String(lua.create_string("picture")?),
+            ]))
+        };
+        for op in [
+            "PlayerRef::award_recipes",
+            "PlayerRef::reset_recipes",
+            "PlayerRef::send_map",
+        ] {
+            let id = format!("pw_players_{}", op.replace("::", "_"));
+            let method = op.rsplit("::").next().unwrap_or(op);
+            let args: &dyn Fn(&Lua) -> mlua::Result<MultiValue> = if op == "PlayerRef::send_map" {
+                &map_args
+            } else {
+                &recipe_args
+            };
+            let call = |requested: &[Power], granted: &[Power]| {
+                direct_call(
+                    root.path(),
+                    &id,
+                    requested,
+                    granted,
+                    op,
+                    |lua| lua.create_userdata(Token(player)),
+                    |lua| args(lua),
+                )
+            };
+            for (requested, granted) in [
+                (&[][..], &[][..]),
+                (&[][..], &[Power::Players][..]),
+                (&[Power::Players][..], &[][..]),
+            ] {
+                let (result, fake) = call(requested, granted);
+                let err = result.expect_err(op);
+                assert!(
+                    err.contains(&format!("horizon: {method} needs the \"players\" power")),
+                    "{op}: {err}"
+                );
+                assert_eq!(fake.writes, 0, "{op}: the host is not called");
+            }
+            let (result, fake) = call(&[Power::Players], &[Power::Players]);
+            assert!(result.is_ok(), "{op}: {result:?}");
+            assert_eq!(fake.writes, 1, "{op}: the host is called once");
+            match op {
+                "PlayerRef::award_recipes" => {
+                    assert_eq!(
+                        fake.recipes,
+                        [("award", vec!["minecraft:stone".to_owned()])]
+                    );
+                }
+                "PlayerRef::reset_recipes" => {
+                    assert_eq!(
+                        fake.recipes,
+                        [("reset", vec!["minecraft:stone".to_owned()])]
+                    );
+                }
+                _ => assert_eq!(fake.maps, [(7, b"picture".to_vec())]),
+            }
+        }
+        // Granted, but the list is over its bound: the guard refuses it and the host is not called.
+        let too_many = |lua: &Lua| -> mlua::Result<MultiValue> {
+            let items: Vec<Value> = (0..65)
+                .map(|_| lua.create_string("a").map(Value::String))
+                .collect::<mlua::Result<_>>()?;
+            Ok(MultiValue::from_vec(vec![Value::Table(
+                lua.create_sequence_from(items)?,
+            )]))
+        };
+        let (result, fake) = direct_call(
+            root.path(),
+            "pw_players_too_many",
+            &[Power::Players],
+            &[Power::Players],
+            "PlayerRef::award_recipes",
+            |lua| lua.create_userdata(Token(player)),
+            too_many,
+        );
+        let err = result.expect_err("65 recipe ids");
+        assert!(
+            err.contains("horizon: award_recipes refused: at most 64 recipe ids per call"),
+            "{err}"
+        );
+        assert_eq!(fake.writes, 0, "the guard refuses before the host");
     }
 
     /// The owner's limits through Lua: a lowered `explosions_per_turn` refuses the second explosion, and a raised
