@@ -329,7 +329,6 @@ mod tests {
         let coverage = include_str!("generated/handles_coverage.txt");
         let text = include_str!("generated/handles.rs");
         let denied = [
-            "EntityRef::run_command",
             "BlockEntityRef::replace_data",
             "EntityRef::remove",
             "PlayerRef::disconnect",

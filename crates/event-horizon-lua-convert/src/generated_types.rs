@@ -6737,6 +6737,22 @@ impl ToLuaValue for mod_api::PermissionLevel {
     }
 }
 
+const PERMISSION_LEVEL_NAMES: &[&str] = &["all", "moderators", "gamemasters", "admins", "owners"];
+
+impl FromLuaValue for mod_api::PermissionLevel {
+    fn from_lua_value(value: &Value) -> Result<Self, ConvertError> {
+        let name = <String as FromLuaValue>::from_lua_value(value)?;
+        match name.as_str() {
+            "all" => Ok(mod_api::PermissionLevel::All),
+            "moderators" => Ok(mod_api::PermissionLevel::Moderators),
+            "gamemasters" => Ok(mod_api::PermissionLevel::Gamemasters),
+            "admins" => Ok(mod_api::PermissionLevel::Admins),
+            "owners" => Ok(mod_api::PermissionLevel::Owners),
+            _ => Err(ConvertError::unknown_variant(&name, PERMISSION_LEVEL_NAMES)),
+        }
+    }
+}
+
 impl ToLuaValue for mod_api::PermissionsChangedEvent<'_> {
     fn to_lua_value(&self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
@@ -11620,6 +11636,12 @@ mod unit_enum_tests {
     fn path_type_names_round_trip() {
         let lua = Lua::new();
         check(&lua, super::PATH_TYPE_NAMES, vec![mod_api::PathType::Blocked, mod_api::PathType::Open, mod_api::PathType::Walkable, mod_api::PathType::WalkableDoor, mod_api::PathType::Trapdoor, mod_api::PathType::PowderSnow, mod_api::PathType::OnTopOfPowderSnow, mod_api::PathType::Fence, mod_api::PathType::Lava, mod_api::PathType::Water, mod_api::PathType::WaterBorder, mod_api::PathType::Rail, mod_api::PathType::UnpassableRail, mod_api::PathType::FireInNeighbor, mod_api::PathType::Fire, mod_api::PathType::DamagingInNeighbor, mod_api::PathType::Damaging, mod_api::PathType::DoorOpen, mod_api::PathType::DoorWoodClosed, mod_api::PathType::DoorIronClosed, mod_api::PathType::Breach, mod_api::PathType::Leaves, mod_api::PathType::StickyHoney, mod_api::PathType::Cocoa, mod_api::PathType::DamageCautious, mod_api::PathType::OnTopOfTrapdoor, mod_api::PathType::BigMobsCloseToDanger]);
+    }
+
+    #[test]
+    fn permission_level_names_round_trip() {
+        let lua = Lua::new();
+        check(&lua, super::PERMISSION_LEVEL_NAMES, vec![mod_api::PermissionLevel::All, mod_api::PermissionLevel::Moderators, mod_api::PermissionLevel::Gamemasters, mod_api::PermissionLevel::Admins, mod_api::PermissionLevel::Owners]);
     }
 
     #[test]

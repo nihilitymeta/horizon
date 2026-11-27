@@ -493,3 +493,83 @@ fn an_invalid_or_above_ceiling_limit_falls_back_to_the_default_with_one_notice()
         "a [limits] that is not a table is one notice"
     );
 }
+
+/// `[command_allow]` is absent by default: no list for any mod, and no notice.
+#[test]
+fn absent_command_allow_gives_no_list_and_no_notice() {
+    let root = tempfile::tempdir().unwrap();
+    let enabled = read(root.path());
+    assert_eq!(enabled.command_allow("alpha"), None);
+    assert!(enabled.notice.is_none());
+}
+
+/// A valid list is read for its mod: its names as given, an empty list kept (it allows none), and `"*"`
+/// accepted anywhere in a list. No notice.
+#[test]
+fn a_valid_command_allow_list_is_read_for_its_mod() {
+    let root = tempfile::tempdir().unwrap();
+    put(
+        root.path(),
+        "[command_allow]\nalpha = [\"say\", \"give\"]\nbeta = [\"say\", \"*\"]\ngamma = []\n",
+    );
+    let enabled = read(root.path());
+    assert_eq!(
+        enabled.command_allow("alpha"),
+        Some(vec!["say".to_owned(), "give".to_owned()])
+    );
+    assert_eq!(
+        enabled.command_allow("beta"),
+        Some(vec!["say".to_owned(), "*".to_owned()])
+    );
+    assert_eq!(enabled.command_allow("gamma"), Some(Vec::new()));
+    assert_eq!(enabled.command_allow("delta"), None);
+    assert!(enabled.notice.is_none());
+}
+
+/// An invalid entry is ignored as a whole, so its mod keeps the default: a non-list, a non-string name, a
+/// name with whitespace, an empty or over-long name, more than 64 names, and an invalid id. One notice
+/// counts them all; the valid entry beside them is read.
+#[test]
+fn invalid_command_allow_entries_are_ignored_with_one_notice() {
+    let root = tempfile::tempdir().unwrap();
+    let long = "a".repeat(65);
+    let many = (0..65)
+        .map(|n| format!("\"n{n}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    put(
+        root.path(),
+        &format!(
+            "[command_allow]\n\
+             alpha = \"say\"\n\
+             beta = [\"say\", 3]\n\
+             gamma = [\"say hi\"]\n\
+             delta = [\"\"]\n\
+             epsilon = [\"{long}\"]\n\
+             zeta = [{many}]\n\
+             eta = [\"say\"]\n\
+             \"bad id\" = [\"say\"]\n\
+             ok = [\"say\"]\n"
+        ),
+    );
+    let enabled = read(root.path());
+    for id in [
+        "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "bad id",
+    ] {
+        assert_eq!(enabled.command_allow(id), None, "{id}");
+    }
+    assert_eq!(enabled.command_allow("eta"), Some(vec!["say".to_owned()]));
+    assert_eq!(enabled.command_allow("ok"), Some(vec!["say".to_owned()]));
+    let notice = enabled.notice.expect("one notice for the file");
+    assert!(notice.contains("7 entries"), "{notice}");
+}
+
+/// A `[command_allow]` that is not a table is one notice, and every mod keeps the default.
+#[test]
+fn a_command_allow_that_is_not_a_table_is_one_notice() {
+    let root = tempfile::tempdir().unwrap();
+    put(root.path(), "command_allow = [\"say\"]\n");
+    let enabled = read(root.path());
+    assert_eq!(enabled.command_allow("alpha"), None);
+    assert!(enabled.notice.is_some());
+}

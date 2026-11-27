@@ -215,6 +215,7 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("PlayerRef::drop_stack", "inventory"),
     ("LivingRef::set_equipment", "inventory"),
     ("EntityRef::merge_nbt", "nbt"),
+    ("EntityRef::run_command", "commands"),
     ("BlockEntityRef::merge_data", "nbt"),
 ];
 
@@ -1753,7 +1754,7 @@ mod tests {
     #[test]
     fn the_powerful_table_denies_the_names_the_design_lists() {
         let cases = [
-            "fn run_command(self, _: &mut dyn ServerHost, _: &str) -> bool",
+            "fn kill_mob(self, _: &mut dyn ServerHost) -> bool",
             "fn spawn_mob(self, _: &mut dyn ServerHost) -> bool",
             "fn explode(self, _: &mut dyn ServerHost) -> bool",
             "fn set_game_rule(self, _: &mut dyn ServerHost) -> bool",
@@ -1994,6 +1995,20 @@ mod tests {
         assert!(
             transaction.ends_with("argument `&Transaction`"),
             "{transaction}"
+        );
+    }
+
+    /// pw-8: `run_command` is gated under `commands`, and its `CommandResult` twin stays out until the
+    /// generator can convert that result (`generated/handles_coverage.txt` shows the reason).
+    #[test]
+    fn run_command_is_gated_under_commands_and_its_result_twin_stays_out() {
+        assert_eq!(
+            power_in(GATED_WRITES, "EntityRef::run_command"),
+            Some("commands")
+        );
+        assert_eq!(
+            power_in(GATED_WRITES, "EntityRef::run_command_with_output"),
+            None
         );
     }
 

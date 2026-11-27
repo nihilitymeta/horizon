@@ -919,7 +919,7 @@ mod tests {
         assert_eq!(power_names(&list), ["commands", "world", "files"]);
         let commands = view(&list, "commands");
         assert!(
-            commands.requested && !commands.granted && !commands.available && !commands.reserved
+            commands.requested && !commands.granted && commands.available && !commands.reserved
         );
         assert_eq!(commands.label_key, "horizon.mods.power.commands.label");
         assert_eq!(
@@ -1010,7 +1010,6 @@ mod tests {
             (("gamma_mod", "commands", true), POWER_NOT_REQUESTED),
             (("nope", "world", false), UNKNOWN_MOD),
             (("gamma_mod", "flying", false), POWER_UNKNOWN),
-            (("alpha_mod", "commands", true), POWER_UNAVAILABLE),
             (("alpha_mod", "files", true), POWER_UNAVAILABLE),
         ];
         for ((id, power, granted), key) in cases {

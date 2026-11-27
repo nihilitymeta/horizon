@@ -272,6 +272,8 @@ pub(crate) struct Void {
     powers: Vec<Power>,
     /// The owner's limits the guard checks a gated call against (`powers::Limits`).
     limits: crate::powers::Limits,
+    /// The owner's command rule for the mod, checked by the guard of `run_command` (`command_guard.rs`).
+    commands: crate::command_guard::CommandPolicy,
 }
 
 impl Void {
@@ -284,6 +286,10 @@ impl Void {
             owner: m.id().to_owned(),
             powers: m.powers().to_vec(),
             limits: m.limits(),
+            commands: crate::command_guard::CommandPolicy {
+                owner: m.id().to_owned(),
+                allow: m.command_allow(),
+            },
         }
     }
 
@@ -360,7 +366,9 @@ pub(crate) fn scoped<R>(
                 }
                 // The guard's own rules refuse a call the power check let through, before the host sees it. Like
                 // a power refusal it is a plain error and costs one unit.
-                if let Err(refusal) = crate::powers::guard(&op, &args, &mut counts, &void.limits) {
+                if let Err(refusal) =
+                    crate::powers::guard(&op, &args, &mut counts, &void.limits, &void.commands)
+                {
                     if spent + 1 > TURN_BUDGET {
                         void.spent.set(true);
                         return Err(Error::runtime(SPENT));
@@ -799,6 +807,8 @@ mod tests {
         radius: Option<f32>,
         /// The rule and value of the last `set_game_rule` the host was asked for.
         rule: Option<(String, mod_api::GameRuleValue)>,
+        /// The line and level of each command the host was asked to run as `ME`.
+        commands: Vec<(String, mod_api::PermissionLevel)>,
         /// How many times the host was asked for a block's break speed with a tool.
         tool_calls: Cell<u32>,
         /// The count of the tool stack the last break-speed question carried (None: no tool).
@@ -815,6 +825,7 @@ mod tests {
                 calls: Cell::new(0),
                 radius: None,
                 rule: None,
+                commands: Vec::new(),
                 tool_calls: Cell::new(0),
                 tool_count: Cell::new(None),
             }
@@ -1028,6 +1039,19 @@ mod tests {
     }
 
     impl EntitiesBackendMut for Fake {
+        /// Records the line and level as the host would run them, and answers success for `ME`.
+        fn entity_run_command(
+            &mut self,
+            entity: EntityRef,
+            line: &str,
+            level: mod_api::PermissionLevel,
+        ) -> bool {
+            if !is_me(entity) {
+                return false;
+            }
+            self.commands.push((line.to_owned(), level));
+            true
+        }
         fn entity_set_velocity(&mut self, entity: EntityRef, velocity: [f64; 3]) -> bool {
             self.writes += 1;
             if !is_me(entity) {
@@ -3516,5 +3540,189 @@ mod tests {
             lines[0]
         );
         assert_eq!(fake.writes, 64, "the host saw 64 spawns");
+    }
+
+    /// Mod `id` whose handler runs `e:run_command(line, level)` under pcall and logs the result. It holds
+    /// `commands` in effect, with the owner's allow list `allow`.
+    fn command_mod(
+        root: &Path,
+        id: &str,
+        line: &str,
+        level: &str,
+        allow: Option<&[&str]>,
+    ) -> LuaMod {
+        let source = format!(
+            "horizon.on(\"block_receive_game\", function(event)\n\
+               local e = event.entity\n\
+               local ok, err = pcall(function() return e:run_command({line:?}, {level:?}) end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)"
+        );
+        let mut m = load(root, id, &source);
+        m.set_powers(crate::powers::effective(
+            &[Power::Commands],
+            &[Power::Commands],
+        ));
+        m.set_command_allow(
+            allow.map(|names| names.iter().map(|name| (*name).to_owned()).collect()),
+        );
+        m
+    }
+
+    /// The refusal text of `run_command` for mod `id`, as the handler's pcall logs it.
+    fn assert_command_refused(line: &str, reason: &str) {
+        let message = format!("horizon: run_command refused: {reason}");
+        assert!(
+            line.starts_with("false runtime error: ") && line.contains(&message),
+            "{line}"
+        );
+    }
+
+    /// The `commands` power's line rules through Lua: a granted mod's `say hi` reaches the host once, with
+    /// the level it passed; the `/`, the `minecraft:` prefix and surrounding spaces are allowed.
+    #[test]
+    fn a_granted_command_reaches_the_host_once_with_its_level() {
+        let root = tempfile::tempdir().unwrap();
+        let (lines, fake) = run_gated(command_mod(
+            root.path(),
+            "cmd_say",
+            "say hi",
+            "gamemasters",
+            None,
+        ));
+        assert_eq!(lines, ["true true"]);
+        assert_eq!(
+            fake.commands,
+            [("say hi".to_owned(), mod_api::PermissionLevel::Gamemasters)]
+        );
+        for (index, line) in ["/say hi", "  say hi", "minecraft:say hi"]
+            .iter()
+            .enumerate()
+        {
+            let id = format!("cmd_form_{index}");
+            let (lines, fake) = run_gated(command_mod(root.path(), &id, line, "all", None));
+            assert_eq!(lines, ["true true"], "{line}");
+            assert_eq!(fake.commands.len(), 1, "{line}");
+        }
+    }
+
+    /// The mod without the `commands` power is refused before the host sees the call.
+    #[test]
+    fn a_mod_without_commands_is_refused_and_the_host_is_not_called() {
+        let root = tempfile::tempdir().unwrap();
+        let source = "horizon.on(\"block_receive_game\", function(event)\n\
+               local e = event.entity\n\
+               local ok, err = pcall(function() return e:run_command('say hi', 'all') end)\n\
+               horizon.log(tostring(ok) .. \" \" .. tostring(err))\n\
+             end)";
+        let mut m = load(root.path(), "cmd_none", source);
+        m.set_powers(crate::powers::effective(&[Power::Commands], &[]));
+        let (lines, fake) = run_gated(m);
+        assert!(lines[0].starts_with("false "), "{}", lines[0]);
+        assert!(fake.commands.is_empty());
+    }
+
+    /// The default set: `give` is refused, and the owner's list permits it, and only it.
+    #[test]
+    fn the_default_set_refuses_give_and_an_owner_list_permits_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (lines, fake) = run_gated(command_mod(
+            root.path(),
+            "cmd_def",
+            "give @s stone",
+            "all",
+            None,
+        ));
+        assert_command_refused(
+            &lines[0],
+            "\"give\" is not an allowed command for cmd_def; the owner may list it under [command_allow]",
+        );
+        assert!(fake.commands.is_empty());
+        let (lines, fake) = run_gated(command_mod(
+            root.path(),
+            "cmd_list",
+            "give @s stone",
+            "all",
+            Some(&["say", "give"][..]),
+        ));
+        assert_eq!(lines, ["true true"]);
+        assert_eq!(fake.commands.len(), 1);
+    }
+
+    /// `*` permits any name, still refuses the never list, and the level cap holds for it.
+    #[test]
+    fn a_wildcard_permits_any_name_but_never_the_never_list() {
+        let root = tempfile::tempdir().unwrap();
+        let (lines, fake) = run_gated(command_mod(
+            root.path(),
+            "cmd_star",
+            "give @s stone",
+            "all",
+            Some(&["*"][..]),
+        ));
+        assert_eq!(lines, ["true true"]);
+        assert_eq!(fake.commands.len(), 1);
+        for (id, line) in [
+            ("cmd_star_exec", "execute as @a run say hi"),
+            ("cmd_star_op", "op steve"),
+            ("cmd_star_kick", "kick steve"),
+        ] {
+            let name = line.split_whitespace().next().unwrap();
+            let (lines, fake) =
+                run_gated(command_mod(root.path(), id, line, "all", Some(&["*"][..])));
+            assert_command_refused(&lines[0], &format!("\"{name}\" cannot be run by a mod"));
+            assert!(fake.commands.is_empty(), "{line}");
+        }
+    }
+
+    /// The level cap: `admins` (3) is refused and `gamemasters` (2) passes.
+    #[test]
+    fn a_level_above_two_is_refused_and_two_passes() {
+        let root = tempfile::tempdir().unwrap();
+        let (lines, fake) = run_gated(command_mod(
+            root.path(),
+            "cmd_lvl3",
+            "say hi",
+            "admins",
+            None,
+        ));
+        assert_command_refused(&lines[0], "permission level is capped at 2");
+        assert!(fake.commands.is_empty());
+        let (lines, fake) = run_gated(command_mod(
+            root.path(),
+            "cmd_lvl2",
+            "say hi",
+            "gamemasters",
+            None,
+        ));
+        assert_eq!(lines, ["true true"]);
+        assert_eq!(fake.commands.len(), 1);
+    }
+
+    /// A line with no name, a newline or an over-long line is refused and the host is not called.
+    #[test]
+    fn an_empty_or_invalid_line_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        let long = "a".repeat(1025);
+        for (id, line, reason) in [
+            ("cmd_empty", "", "no command"),
+            ("cmd_slash", "/", "no command"),
+            (
+                "cmd_newline",
+                "say hi\nkick steve",
+                "the command line is not valid",
+            ),
+            ("cmd_long", long.as_str(), "the command line is not valid"),
+        ] {
+            let (lines, fake) = run_gated(command_mod(
+                root.path(),
+                id,
+                line,
+                "all",
+                Some(&["say"][..]),
+            ));
+            assert_command_refused(&lines[0], reason);
+            assert!(fake.commands.is_empty(), "{id}");
+        }
     }
 }

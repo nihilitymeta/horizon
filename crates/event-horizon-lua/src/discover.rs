@@ -185,6 +185,8 @@ pub struct ScannedMod {
     pub powers: Vec<Power>,
     /// The owner's limits on the gated writes (`[limits]`, `powers::Limits`).
     pub limits: crate::powers::Limits,
+    /// The owner's `[command_allow]` list for the mod (`command_guard.rs`); `None` for the default set.
+    pub command_allow: Option<Vec<String>>,
 }
 
 /// What a scan found. `loaded` is in load order. `disabled` lists the installed mods the enabled
@@ -383,6 +385,7 @@ pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan 
             let granted = states.granted(&item.found.id);
             let powers = powers::effective(&requested, &granted);
             let limits = states.limits;
+            let command_allow = states.command_allow(&item.found.id);
             out.requested
                 .insert(item.found.id.clone(), requested.clone());
             out.loaded.push(ScannedMod {
@@ -394,6 +397,7 @@ pub fn scan_on(game_dir: &Path, dev_paths: &[PathBuf], dedicated: bool) -> Scan 
                 granted,
                 powers,
                 limits,
+                command_allow,
             });
         }
     }

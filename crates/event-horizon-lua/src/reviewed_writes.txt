@@ -191,6 +191,7 @@ RaidRef::stop
 # gated writes (power)
 BossBarRef::remove world
 BossBarRef::remove_player world
+EntityRef::run_command commands
 EntityRef::discard world
 EntityRef::remove_tag world
 EntityRef::teleport_to_level world

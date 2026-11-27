@@ -299,7 +299,7 @@
   "horizon.mods.not_built": " (Not built)",
   "horizon.mods.dev": " (Dev)",
   "horizon.mods.power.commands.label": "Run commands",
-  "horizon.mods.power.commands.description": "Not available yet: this build does not unlock anything for this power.",
+  "horizon.mods.power.commands.description": "Runs game commands as the mod's player or mob, at permission level 2 or lower. By default only say, tellraw, title, playsound, particle, effect, tag, bossbar and scoreboard run; the owner can list others.",
   "horizon.mods.power.nbt.label": "Edit saved data",
   "horizon.mods.power.nbt.description": "Lets the mod merge raw NBT into saved entities and block entities. Players are never changed this way, and the keys UUID, id, Pos, Passengers, Inventory, EnderItems and eh_mod_data are refused.",
   "horizon.mods.power.spawn.label": "Spawn and award",

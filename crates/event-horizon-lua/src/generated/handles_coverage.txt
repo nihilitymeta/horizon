@@ -193,7 +193,7 @@ EntityRef: 114 members
   handle:EntityRef::reset_fall_distance bound, cost 10
   handle:EntityRef::root_vehicle bound, cost 1
   handle:EntityRef::rotation bound, cost 1
-  handle:EntityRef::run_command skipped: powerful (needs manifest power): name contains `run_command`
+  handle:EntityRef::run_command bound, cost 10, gated: commands
   handle:EntityRef::run_command_with_output skipped: powerful (needs manifest power): name contains `run_command`
   handle:EntityRef::set_air_supply bound, cost 10
   handle:EntityRef::set_collision_exclusions skipped: unconvertible arg: &[[f64; 6]]
@@ -768,13 +768,14 @@ SoundRef: 3 members, not generated: no member binds
   handle:SoundRef::state skipped: other: host kind &dyn ClientHost
   handle:SoundRef::stop skipped: other: host kind &dyn ClientHost
 
-summary: bound 566 of 724; heavy 28
+summary: bound 567 of 724; heavy 28
   skipped, client write: 6
   skipped, generics: 4
   skipped, other: 13
-  skipped, powerful (needs manifest power): 50
+  skipped, powerful (needs manifest power): 49
   skipped, unconvertible arg: 44
   skipped, unconvertible return: 41
+  gated: commands 1
   gated: explosions 2
   gated: game_rules 1
   gated: inventory 6

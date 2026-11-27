@@ -134,6 +134,8 @@ pub struct LuaMod {
     /// The owner's limits on the guard of the gated writes (`[limits]` in enabled.toml, `powers.rs`); the
     /// defaults until `set_limits`.
     limits: crate::powers::Limits,
+    /// The owner's `[command_allow]` list for the mod (`command_guard.rs`); `None` for the default set.
+    command_allow: Option<Vec<String>>,
     /// The state the mod runs in. A swap replaces it under the write lock (`swap_state`); `lua()`
     /// hands out a handle to the state as it is then.
     lua: RwLock<Lua>,
@@ -309,6 +311,16 @@ impl LuaMod {
         self.limits
     }
 
+    /// Records the owner's `[command_allow]` list for the mod, as the scan read it (`discover::ScannedMod`).
+    pub(crate) fn set_command_allow(&mut self, allow: Option<Vec<String>>) {
+        self.command_allow = allow;
+    }
+
+    /// The owner's command allow list in effect for the mod's turns, `None` for the default set.
+    pub(crate) fn command_allow(&self) -> Option<Vec<String>> {
+        self.command_allow.clone()
+    }
+
     /// Whether the mod was started from a dev path, so `reload` may re-read its folder.
     pub(crate) fn is_dev(&self) -> bool {
         self.dev
@@ -397,6 +409,7 @@ impl LuaMod {
             dev: false,
             powers: Vec::new(),
             limits: crate::powers::Limits::default(),
+            command_allow: None,
             lua: RwLock::new(built.lua),
             log,
             turn: Turn::default(),

@@ -14,6 +14,9 @@ mod behavior_tests;
 mod block_state_tests;
 pub mod budget;
 pub mod builtin;
+pub mod command_guard;
+#[cfg(test)]
+mod command_guard_tests;
 pub mod commands;
 pub mod console;
 mod data_maps;

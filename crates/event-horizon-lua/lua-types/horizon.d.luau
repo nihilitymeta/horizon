@@ -3950,6 +3950,8 @@ export type EntityRef = {
 	reset_fall_distance: (EntityRef) -> boolean,
 	root_vehicle: (EntityRef) -> EntityRef?,
 	rotation: (EntityRef) -> { x: number, y: number }?,
+	-- needs the "commands" power (granted by the owner in lua-mods/enabled.toml)
+	run_command: (EntityRef, string, PermissionLevel) -> boolean,
 	set_air_supply: (EntityRef, number) -> boolean,
 	set_custom_name: (EntityRef, Text?) -> boolean,
 	set_custom_name_visible: (EntityRef, boolean) -> boolean,

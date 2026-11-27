@@ -14,13 +14,14 @@
 //! - The gated table is generated (`generated/powers.rs`, from `GATED_WRITES` in the generator): the
 //!   `world` and `spawn` writes (the item spawns among them, capped in [`guard`]), then `explosions`
 //!   (`explode`, `explosion_destroy_blocks`, with the power cap in [`guard`]), `game_rules`
-//!   (`set_game_rule`) and `inventory` (the player's and the living's item writes). Every other write
-//!   stays denied.
+//!   (`set_game_rule`), `inventory` (the player's and the living's item writes) and `commands`
+//!   (`EntityRef::run_command`, checked by `command_guard.rs`). Every other write stays denied.
 //! - Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are NOT gated, and stay
 //!   that way.
 
 use mlua::{Error, MultiValue, Value};
 
+use crate::command_guard::CommandPolicy;
 use crate::host::warn_problem;
 use crate::manifest::Power;
 
@@ -175,13 +176,19 @@ const EXPLOSION_POWER_ARGS: &[(&str, usize)] = &[
 /// for an explosion: its power must be a Lua number (an integer or a float), finite, and at most
 /// `limits.explosion_power`. A missing argument, a string (even one that looks like a number), NaN,
 /// infinity or a larger power is refused before the host sees the call. The explosions of a turn are
-/// capped at `limits.explosions_per_turn`, the spawns at `limits.spawns_per_turn`. Any other call passes.
+/// capped at `limits.explosions_per_turn`, the spawns at `limits.spawns_per_turn`. `EntityRef::run_command`
+/// is checked against the mod's `commands` (`command_guard::check`: the level cap, the allow list, the
+/// never list). Any other call passes.
 pub(crate) fn guard(
     op: &str,
     args: &MultiValue,
     counts: &mut TurnCounts,
     limits: &Limits,
+    commands: &CommandPolicy,
 ) -> Result<(), Error> {
+    if op == "EntityRef::run_command" {
+        return crate::command_guard::check(args, commands);
+    }
     let method = op.rsplit("::").next().unwrap_or(op);
     if SPAWN_OPS.contains(&op) {
         if counts.spawns >= limits.spawns_per_turn {
@@ -282,7 +289,7 @@ mod tests {
     ];
 
     /// The gated writes, written out by hand (not read from the generator): each op and its power.
-    const GATED: [(&str, Power); 38] = [
+    const GATED: [(&str, Power); 39] = [
         ("BossBarRef::remove", Power::World),
         ("BossBarRef::remove_player", Power::World),
         ("EntityRef::discard", Power::World),
@@ -319,6 +326,7 @@ mod tests {
         ("LivingRef::set_hand_item", Power::Inventory),
         ("PlayerRef::drop_stack", Power::Inventory),
         ("LivingRef::set_equipment", Power::Inventory),
+        ("EntityRef::run_command", Power::Commands),
         ("EntityRef::merge_nbt", Power::Nbt),
         ("BlockEntityRef::merge_data", Power::Nbt),
     ];
@@ -337,7 +345,6 @@ mod tests {
             "PlayerRef::disconnect",
             "EntityRef::remove",
             "PlayerRef::set_nickname",
-            "EntityRef::run_command",
             "LevelRef::add_water_ticket",
             "LevelRef::destroy_block",
             "LevelRef::block_drops",
@@ -345,6 +352,7 @@ mod tests {
             "LivingRef::hurt_and_break",
             "PlayerRef::award_recipes",
             "PlayerRef::send_map",
+            "EntityRef::run_command_with_output",
         ] {
             assert_eq!(required(op), None, "{op} stays denied");
         }
@@ -404,6 +412,7 @@ mod tests {
                 &args(power),
                 &mut TurnCounts::default(),
                 &Limits::default(),
+                &CommandPolicy::default(),
             )
         };
         assert!(ok(Value::Number(16.0)).is_ok());
@@ -433,7 +442,8 @@ mod tests {
                 "LevelRef::explosion_destroy_blocks",
                 &blocks(Value::Number(16.0)),
                 &mut TurnCounts::default(),
-                &Limits::default()
+                &Limits::default(),
+                &CommandPolicy::default()
             )
             .is_ok()
         );
@@ -442,6 +452,7 @@ mod tests {
             &blocks(Value::Number(17.5)),
             &mut TurnCounts::default(),
             &Limits::default(),
+            &CommandPolicy::default(),
         )
         .expect_err("power 17.5 is above the cap");
         assert!(
@@ -456,7 +467,8 @@ mod tests {
                 "LevelRef::strike_lightning",
                 &args(Value::Number(99.0)),
                 &mut TurnCounts::default(),
-                &Limits::default()
+                &Limits::default(),
+                &CommandPolicy::default()
             )
             .is_ok()
         );
@@ -474,7 +486,8 @@ mod tests {
                     "LevelRef::explode",
                     &args(Value::Number(4.0)),
                     &mut count,
-                    &Limits::default()
+                    &Limits::default(),
+                    &CommandPolicy::default()
                 )
                 .is_ok()
             );
@@ -484,6 +497,7 @@ mod tests {
             &args(Value::Number(4.0)),
             &mut count,
             &Limits::default(),
+            &CommandPolicy::default(),
         )
         .expect_err("the fifth explosion of a turn");
         assert_eq!(
@@ -496,7 +510,8 @@ mod tests {
                 "LevelRef::explode",
                 &args(Value::Number(99.0)),
                 &mut count,
-                &Limits::default()
+                &Limits::default(),
+                &CommandPolicy::default()
             )
             .is_err()
         );
@@ -512,13 +527,27 @@ mod tests {
         for i in 0..DEFAULT_SPAWNS_PER_TURN {
             let op = SPAWN_OPS[i as usize % SPAWN_OPS.len()];
             assert!(
-                guard(op, &args, &mut counts, &Limits::default()).is_ok(),
+                guard(
+                    op,
+                    &args,
+                    &mut counts,
+                    &Limits::default(),
+                    &CommandPolicy::default()
+                )
+                .is_ok(),
                 "spawn {i}"
             );
         }
         for op in SPAWN_OPS {
             let method = op.rsplit("::").next().unwrap_or(op);
-            let refusal = guard(op, &args, &mut counts, &Limits::default()).expect_err(op);
+            let refusal = guard(
+                op,
+                &args,
+                &mut counts,
+                &Limits::default(),
+                &CommandPolicy::default(),
+            )
+            .expect_err(op);
             assert_eq!(
                 refusal.to_string(),
                 format!("runtime error: horizon: {method} refused: at most 64 spawns per turn"),
@@ -549,6 +578,7 @@ mod tests {
             &args(Value::Number(3.0)),
             &mut TurnCounts::default(),
             &low,
+            &CommandPolicy::default(),
         )
         .expect_err("3 is above the lowered cap of 2");
         assert_eq!(
@@ -560,7 +590,8 @@ mod tests {
                 "LevelRef::explode",
                 &args(Value::Number(50.0)),
                 &mut TurnCounts::default(),
-                &high
+                &high,
+                &CommandPolicy::default()
             )
             .is_ok()
         );
@@ -570,7 +601,8 @@ mod tests {
                 "LevelRef::explode",
                 &args(Value::Number(1.0)),
                 &mut count,
-                &low
+                &low,
+                &CommandPolicy::default()
             )
             .is_ok()
         );
@@ -579,7 +611,8 @@ mod tests {
                 "LevelRef::explode",
                 &args(Value::Number(1.0)),
                 &mut count,
-                &low
+                &low,
+                &CommandPolicy::default()
             )
             .is_err()
         );
@@ -590,17 +623,33 @@ mod tests {
                     "LevelRef::explode",
                     &args(Value::Number(1.0)),
                     &mut count,
-                    &high
+                    &high,
+                    &CommandPolicy::default()
                 )
                 .is_ok()
             );
         }
         let mut counts = TurnCounts::default();
         for _ in 0..2 {
-            assert!(guard("LevelRef::spawn_mob", &MultiValue::new(), &mut counts, &low).is_ok());
+            assert!(
+                guard(
+                    "LevelRef::spawn_mob",
+                    &MultiValue::new(),
+                    &mut counts,
+                    &low,
+                    &CommandPolicy::default()
+                )
+                .is_ok()
+            );
         }
-        let refusal = guard("LevelRef::spawn_mob", &MultiValue::new(), &mut counts, &low)
-            .expect_err("the third spawn is above the lowered cap of 2");
+        let refusal = guard(
+            "LevelRef::spawn_mob",
+            &MultiValue::new(),
+            &mut counts,
+            &low,
+            &CommandPolicy::default(),
+        )
+        .expect_err("the third spawn is above the lowered cap of 2");
         assert_eq!(
             refusal.to_string(),
             "runtime error: horizon: spawn_mob refused: at most 2 spawns per turn"
@@ -612,7 +661,8 @@ mod tests {
                     "LevelRef::spawn_item",
                     &MultiValue::new(),
                     &mut counts,
-                    &high
+                    &high,
+                    &CommandPolicy::default()
                 )
                 .is_ok()
             );
@@ -622,7 +672,8 @@ mod tests {
                 "LevelRef::spawn_item",
                 &MultiValue::new(),
                 &mut counts,
-                &high
+                &high,
+                &CommandPolicy::default()
             )
             .is_err()
         );
@@ -649,7 +700,6 @@ mod tests {
         assert!(has_ops(Power::Inventory));
         assert!(has_ops(Power::Nbt));
         for power in [
-            Power::Commands,
             Power::Registration,
             Power::Transactions,
             Power::Network,

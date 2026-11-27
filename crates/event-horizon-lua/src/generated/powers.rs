@@ -10,6 +10,7 @@ pub const GATED: &[(&str, crate::manifest::Power)] = &[
     ("EntityRef::discard", crate::manifest::Power::World),
     ("EntityRef::merge_nbt", crate::manifest::Power::Nbt),
     ("EntityRef::remove_tag", crate::manifest::Power::World),
+    ("EntityRef::run_command", crate::manifest::Power::Commands),
     ("EntityRef::teleport_to_level", crate::manifest::Power::World),
     ("LevelRef::award_experience", crate::manifest::Power::Spawn),
     ("LevelRef::block_random_tick", crate::manifest::Power::World),

@@ -142,7 +142,8 @@ A disabled, skipped or refused mod holds no power at all.
 | `game_rules` | 1 write: `level:set_game_rule(name, value)`. It changes the world's saved rules, and a changed rule stays changed after the mod is removed. The value is a boolean, a whole number, or `{tag = "bool", true}` / `{tag = "int", 7}` |
 | `players` | no write yet. `PlayerRef::disconnect` (remove a player with a reason they see) is denied: a mod may never remove the host or an operator, and the host API cannot yet tell the host from another player in a turn. The power can be requested and granted, and it gates nothing in this build |
 | `nbt` | 2 writes: `EntityRef:merge_nbt(table)` (a raw merge into a saved entity; returns true when its data changed) and `BlockEntityRef:merge_data(table)` (a raw merge into a saved block entity). A merge adds and changes keys; it cannot remove one, so `{}` changes nothing. Refused by the guard: any merge into a player (`horizon: merge_nbt refused: players cannot be changed with raw NBT`), and a table whose top-level keys include `UUID`, `id`, `Pos`, `Passengers`, `Inventory`, `EnderItems` or `horizon:attachments` (a block entity merge also refuses `x`, `y`, `z`) (`horizon: merge_data refused: key Pos cannot be merged`; case-sensitive, top level only). Still denied: `replace_data`, `set_lock`, `EntityRef:nbt` (a raw read), `set_persistent_data` on a player, and every raw NBT write to a player |
-| `commands`, `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
+| `commands` | 1 write: `entity:run_command(line, level)`, which runs a game command as the entity (the player, or a mob). `level` is `"all"`, `"moderators"` or `"gamemasters"` (the level cap is 2: `"admins"` and `"owners"` are refused). The line is checked against the command allowlist below before the host sees it. Still denied: `run_command_with_output` (its result is not yet a Lua value) and the console-level command runner |
+| `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
 | `network`, `files` | reserved: they can be requested and granted, but they are never effective |
 
 The gated list is generated (`generated/powers.rs`). Every other write stays denied, among them the writes that are loot or world operations: `LevelRef::destroy_block`, `LevelRef::block_drops` and `LevelRef::roll_loot`.
@@ -187,6 +188,34 @@ number (for the power), or above its ceiling is the default instead, and the fil
 one notice in the log for all of them. A missing `[limits]` table is the defaults. The
 ceilings are constants in the code: an owner cannot set a value above them, and a mod
 can never read or change these numbers (`powers.rs`, `Limits`; `enabled.rs`).
+
+### Command allowlist (`enabled.toml` `[command_allow]`)
+
+A mod granted `commands` runs `entity:run_command(line, level)` through this allowlist (`command_guard.rs`):
+
+```toml
+[grants]
+alpha = ["commands"]
+
+[command_allow]
+alpha = ["say", "give"]       # replaces the default set for alpha
+beta = ["*"]                  # any command not on the never list, still at level 2 or lower
+```
+
+- **Default set** (a mod with no `[command_allow]` entry): `say`, `tellraw`, `title`, `playsound`, `particle`, `effect`, `tag`, `bossbar`, `scoreboard`. Anything else is refused.
+- **Never** (refused whatever the owner lists, `*` included): `execute`, `function`, `reload`, `datapack`, `op`, `deop`, `ban`, `ban-ip`, `pardon`, `kick`, `stop`, `save-all`, `whitelist`, `perf`, `debug`.
+- **Level cap**: `all`, `moderators` and `gamemasters` pass; `admins` and `owners` are refused. Level 3 and 4 commands therefore cannot run from a mod.
+- **Names**: the command name is the first word of the line, after trimming spaces, one leading `/` and a `minecraft:` prefix. Matching is exact and case-sensitive. List bare names (`give`, not `minecraft:give`).
+- **Lines**: at most 1024 characters, with no newline, carriage return or NUL.
+- **Invalid entries** (not a list of strings, a name with a space or longer than 64 characters, more than 64 names, an invalid mod id) are ignored as a whole, so the mod gets the default set; one notice counts them. An empty list allows no command.
+
+The refusals are plain Lua errors that `pcall` can catch, and the host is not called:
+
+- `horizon: run_command refused: permission level is capped at 2`
+- `horizon: run_command refused: "<name>" cannot be run by a mod`
+- `horizon: run_command refused: "<name>" is not an allowed command for <mod>; the owner may list it under [command_allow]`
+- `horizon: run_command refused: no command` (an empty line, or only a slash)
+- `horizon: run_command refused: the command line is not valid`
 
 ### Showing errors on screen
 

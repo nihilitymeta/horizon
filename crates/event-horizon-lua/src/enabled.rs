@@ -17,6 +17,13 @@
 //! (default 64, ceiling 1024). A value that is missing, negative, not a number of its kind, or above its
 //! ceiling is the default instead, and counts in the same notice. A mod never reads or changes them.
 //!
+//! A `[command_allow]` table, `id = ["name", ...]`, holds the command names a mod may run under the
+//! `commands` power (see `command_guard.rs`). A mod with no entry runs the built-in default set; an
+//! entry replaces it, `"*"` allows any name not on the never list, and an empty list allows none. An
+//! entry that is not a list of strings, names a whitespace or over-long name, has more than 64 names,
+//! or names an invalid id is ignored as a whole, so the mod gets the default; each one counts in the
+//! same notice.
+//!
 //! A `[display]` table, `errors = "owner"`, asks for one chat line to the owner per mod with a problem
 //! (see `display.rs`). `"off"` is the default; an absent, invalid or unknown value reads as `"off"` and
 //! counts in the same notice.
@@ -34,6 +41,7 @@ use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::command_guard::{MAX_NAMES, valid_allow_name};
 use crate::discover::DIR;
 use crate::display::Errors;
 use crate::manifest::{Power, valid_id};
@@ -51,6 +59,8 @@ const TABLE: &str = "mods";
 const GRANTS: &str = "grants";
 /// The table that holds the owner's limits on the gated writes (see `powers.rs`).
 const LIMITS: &str = "limits";
+/// The table that holds the command names each mod may run (see `command_guard.rs`).
+const COMMAND_ALLOW: &str = "command_allow";
 /// The table that holds the display settings: `errors = "off" | "owner"` (see `display.rs`).
 const DISPLAY: &str = "display";
 /// The most mods that may hold grants in one file; the rest are ignored (and counted).
@@ -69,6 +79,8 @@ pub struct Enabled {
     pub display: Errors,
     /// The `[limits]` the file sets; the defaults for each one it leaves out or gets wrong.
     pub limits: Limits,
+    /// The `[command_allow]` lists the file gives, per mod id; a mod without one has the default set.
+    pub command_allow: HashMap<String, Vec<String>>,
     pub notice: Option<String>,
 }
 
@@ -83,12 +95,18 @@ impl Enabled {
         self.grants.get(id).cloned().unwrap_or_default()
     }
 
+    /// The command names the file lets the mod `id` run, `None` when the file gives it no list.
+    pub fn command_allow(&self, id: &str) -> Option<Vec<String>> {
+        self.command_allow.get(id).cloned()
+    }
+
     fn ignored(what: &str) -> Enabled {
         Enabled {
             states: HashMap::new(),
             grants: HashMap::new(),
             display: Errors::Off,
             limits: Limits::default(),
+            command_allow: HashMap::new(),
             notice: Some(format!("enabled.toml {what}; every mod is enabled")),
         }
     }
@@ -131,6 +149,7 @@ fn parse(table: &toml::Table) -> Enabled {
     let mut grants = HashMap::new();
     let mut display = Errors::Off;
     let mut limits = Limits::default();
+    let mut command_allow = HashMap::new();
     let mut ignored = 0usize;
     for (key, value) in table {
         if key == GRANTS {
@@ -143,6 +162,15 @@ fn parse(table: &toml::Table) -> Enabled {
         if key == LIMITS {
             match value {
                 toml::Value::Table(caps) => ignored += parse_limits(caps, &mut limits),
+                _ => ignored += 1,
+            }
+            continue;
+        }
+        if key == COMMAND_ALLOW {
+            match value {
+                toml::Value::Table(mods) => {
+                    ignored += parse_command_allow(mods, &mut command_allow);
+                }
                 _ => ignored += 1,
             }
             continue;
@@ -178,8 +206,39 @@ fn parse(table: &toml::Table) -> Enabled {
         grants,
         display,
         limits,
+        command_allow,
         notice,
     }
+}
+
+/// The valid `[command_allow]` lists into `out`; returns how many entries were ignored. An entry is a
+/// list of at most [`MAX_NAMES`] names, each one a string that [`valid_allow_name`] accepts; any other
+/// entry is ignored as a whole, so the mod keeps the default set. An empty list is kept: it allows none.
+fn parse_command_allow(mods: &toml::Table, out: &mut HashMap<String, Vec<String>>) -> usize {
+    let mut ignored = 0;
+    for (id, value) in mods {
+        let toml::Value::Array(names) = value else {
+            ignored += 1;
+            continue;
+        };
+        if !valid_id(id) || names.len() > MAX_NAMES {
+            ignored += 1;
+            continue;
+        }
+        let mut list = Vec::with_capacity(names.len());
+        for name in names {
+            match name.as_str() {
+                Some(text) if valid_allow_name(text) => list.push(text.to_owned()),
+                _ => break,
+            }
+        }
+        if list.len() == names.len() {
+            out.insert(id.clone(), list);
+        } else {
+            ignored += 1;
+        }
+    }
+    ignored
 }
 
 /// The `[limits]` table into `out`: each cap the file gives in its range, the rest left at the default.
