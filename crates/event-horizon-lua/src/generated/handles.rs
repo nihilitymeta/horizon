@@ -808,6 +808,12 @@ impl crate::handles::Family for mod_api::LevelRef {
         methods.add_function("epoch", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::epoch", this, args)
         });
+        methods.add_function("explode", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::explode", this, args)
+        });
+        methods.add_function("explosion_destroy_blocks", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::explosion_destroy_blocks", this, args)
+        });
         methods.add_function("explosion_resistance", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::explosion_resistance", this, args)
         });
@@ -933,6 +939,9 @@ impl crate::handles::Family for mod_api::LevelRef {
         });
         methods.add_function("set_clock_time", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::set_clock_time", this, args)
+        });
+        methods.add_function("set_game_rule", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
+            crate::hostcall::host_call(lua, "LevelRef::set_game_rule", this, args)
         });
         methods.add_function("set_respawn_data", |lua: &mlua::Lua, (this, args): (mlua::AnyUserData, mlua::MultiValue)| {
             crate::hostcall::host_call(lua, "LevelRef::set_respawn_data", this, args)
@@ -3882,6 +3891,34 @@ fn level_ref_epoch(lua: &mlua::Lua, _host: &mut crate::hostcall::TurnHost<'_>, t
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out.get(), lua)
 }
 
+fn level_ref_explode(_lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::explode", args, 6)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::explode")?;
+    let a0: Option<mod_api::EntityRef> = args.opt_handle(0)?;
+    let a1: [f64; 3] = args.get(1)?;
+    let a2: f32 = args.get(2)?;
+    let a3: bool = args.get(3)?;
+    let a4: mod_api::ExplosionInteraction = args.get(4)?;
+    let a5: mod_api::ExplosionSettings = args.get(5)?;
+    crate::handles::ok_or_raise(this.explode(server, a0, a1, a2, a3, a4, a5))?;
+    Ok(mlua::Value::Nil)
+}
+
+fn level_ref_explosion_destroy_blocks(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::explosion_destroy_blocks", args, 6)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::explosion_destroy_blocks")?;
+    let a0: Vec<[i32; 3]> = args.get(0)?;
+    let a1: Option<mod_api::EntityRef> = args.opt_handle(1)?;
+    let a2: [f64; 3] = args.get(2)?;
+    let a3: f32 = args.get(3)?;
+    let a4: bool = args.get(4)?;
+    let a5: mod_api::ExplosionInteraction = args.get(5)?;
+    let out = crate::handles::ok_or_raise(this.explosion_destroy_blocks(server, &a0, a1, a2, a3, a4, a5))?;
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
 fn level_ref_explosion_resistance(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
     let server = crate::handles::server_of(host)?;
     let args = crate::handles::Args::new("LevelRef::explosion_resistance", args, 6)?;
@@ -4265,6 +4302,16 @@ fn level_ref_set_clock_time(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHos
     let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_clock_time")?;
     let a0: i64 = args.get(0)?;
     let out = this.set_clock_time(server, a0);
+    event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
+}
+
+fn level_ref_set_game_rule(lua: &mlua::Lua, host: &mut crate::hostcall::TurnHost<'_>, this: &mlua::AnyUserData, args: mlua::MultiValue) -> mlua::Result<mlua::Value> {
+    let server = crate::handles::server_of(host)?;
+    let args = crate::handles::Args::new("LevelRef::set_game_rule", args, 2)?;
+    let this: mod_api::LevelRef = crate::handles::receiver(this, "LevelRef::set_game_rule")?;
+    let a0: String = args.get(0)?;
+    let a1: mod_api::GameRuleValue = args.get(1)?;
+    let out = this.set_game_rule(server, &a0, a1);
     event_horizon_lua_convert::scalar::ToLuaValue::to_lua_value(&out, lua)
 }
 
@@ -6773,6 +6820,8 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::entities_in" => 100,
         "LevelRef::entity_ticking" => 1,
         "LevelRef::epoch" => 1,
+        "LevelRef::explode" => 10,
+        "LevelRef::explosion_destroy_blocks" => 10,
         "LevelRef::explosion_resistance" => 10,
         "LevelRef::fluid_flow" => 1,
         "LevelRef::fluid_height" => 1,
@@ -6815,6 +6864,7 @@ pub fn cost(op: &str) -> Option<u32> {
         "LevelRef::set_biome" => 10,
         "LevelRef::set_break_progress" => 10,
         "LevelRef::set_clock_time" => 10,
+        "LevelRef::set_game_rule" => 10,
         "LevelRef::set_respawn_data" => 10,
         "LevelRef::set_weather" => 10,
         "LevelRef::set_weather_levels" => 10,
@@ -7336,6 +7386,8 @@ pub fn run(
         "LevelRef::entities_in" => level_ref_entities_in(lua, host, this, args),
         "LevelRef::entity_ticking" => level_ref_entity_ticking(lua, host, this, args),
         "LevelRef::epoch" => level_ref_epoch(lua, host, this, args),
+        "LevelRef::explode" => level_ref_explode(lua, host, this, args),
+        "LevelRef::explosion_destroy_blocks" => level_ref_explosion_destroy_blocks(lua, host, this, args),
         "LevelRef::explosion_resistance" => level_ref_explosion_resistance(lua, host, this, args),
         "LevelRef::fluid_flow" => level_ref_fluid_flow(lua, host, this, args),
         "LevelRef::fluid_height" => level_ref_fluid_height(lua, host, this, args),
@@ -7378,6 +7430,7 @@ pub fn run(
         "LevelRef::set_biome" => level_ref_set_biome(lua, host, this, args),
         "LevelRef::set_break_progress" => level_ref_set_break_progress(lua, host, this, args),
         "LevelRef::set_clock_time" => level_ref_set_clock_time(lua, host, this, args),
+        "LevelRef::set_game_rule" => level_ref_set_game_rule(lua, host, this, args),
         "LevelRef::set_respawn_data" => level_ref_set_respawn_data(lua, host, this, args),
         "LevelRef::set_weather" => level_ref_set_weather(lua, host, this, args),
         "LevelRef::set_weather_levels" => level_ref_set_weather_levels(lua, host, this, args),

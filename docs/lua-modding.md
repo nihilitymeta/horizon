@@ -137,12 +137,15 @@ A disabled, skipped or refused mod holds no power at all.
 |---|---|
 | `world` | 20 writes: removing entities and block-entity bars, `remove_block`, weather, clock time, world border, lightning, saving, random ticks, teleports, and removing mob goals |
 | `spawn` | 4 writes: `award_experience`, `set_respawn_data`, `PlayerRef::respawn`, and `spawn_mob` (a mob joins the level, as a natural spawn does). Still denied: `spawn_item`, `spawn_item_with_motion` and `pop_resource`, whose item stack argument does not convert from Lua |
-| `explosions` | no write yet. `explode` stays denied: its `ExplosionSettings` argument has no Lua conversion. `explosion_destroy_blocks` stays denied: its block list (`&[[i32; 3]]`) does not convert from Lua. The read `explosion_resistance` needs no power and is callable; `explosion_resistances` stays denied: its `ResistanceCells` argument does not convert. The guard already refuses an explosion whose power is above 16 (a placeholder cap, `MAX_EXPLOSION_POWER`), but no explosion write binds yet, so the cap has nothing to refuse |
-| `game_rules` | no write yet: `set_game_rule` stays denied, since its `GameRuleValue` argument (a data-carrying enum) does not convert from Lua. `set_difficulty` does not exist in this build |
+| `explosions` | 2 writes: `level:explode(source, center, power, fire, interaction, settings)` and `level:explosion_destroy_blocks(positions, source, center, power, fire, interaction)`. The power is a Lua number from 0 to 16 (`MAX_EXPLOSION_POWER`, a placeholder cap): a missing, non-number (a string, even `"999"`), negative, NaN, infinite or larger power is refused before the host sees the call. One hook turn may cause at most 4 explosions over both writes (`MAX_EXPLOSIONS_PER_TURN`, also a placeholder): the fifth is refused. The read `explosion_resistance` needs no power. Still denied: `explosion_resistances` (its `ResistanceCells` argument does not convert) |
+| `game_rules` | 1 write: `level:set_game_rule(name, value)`. It changes the world's saved rules, and a changed rule stays changed after the mod is removed. The value is a boolean, a whole number, or `{tag = "bool", true}` / `{tag = "int", 7}` |
 | `commands`, `nbt`, `registration`, `transactions` | named in the manifest and the Mods screen; no write is gated by them yet, so granting them does nothing |
 | `network`, `files` | reserved: they can be requested and granted, but they are never effective |
 
 The gated list is generated (`generated/powers.rs`). Every other write stays denied.
+Denied until the maintainer decides, although their slice argument now converts:
+`PlayerRef::award_recipes`, `PlayerRef::reset_recipes` and `PlayerRef::send_map`
+(`DENIED_UNTIL_DECIDED` in the generator).
 Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are not
 gated.
 

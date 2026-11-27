@@ -127,6 +127,12 @@ fn powerful(member: &MemberIr) -> Option<String> {
     if READS_WITHOUT_POWER.contains(&format!("{owner}::{name}").as_str()) {
         return None;
     }
+    if DENIED_UNTIL_DECIDED.contains(&format!("{owner}::{name}").as_str()) {
+        return Some(
+            "powerful (needs manifest power): denied until the lead decides (DENIED_UNTIL_DECIDED)"
+                .to_owned(),
+        );
+    }
     let rule = if POWERFUL_OWNERS
         .iter()
         .any(|powerful| owner.contains(powerful))
@@ -195,6 +201,20 @@ pub const GATED_WRITES: &[(&str, &str)] = &[
     ("LevelRef::set_respawn_data", "spawn"),
     ("PlayerRef::respawn", "spawn"),
     ("LevelRef::spawn_mob", "spawn"),
+    ("LevelRef::explode", "explosions"),
+    ("LevelRef::explosion_destroy_blocks", "explosions"),
+    ("LevelRef::set_game_rule", "game_rules"),
+];
+
+/// The writes the slice argument arm (`&[T]`) newly binds that the lead has not decided. Each is an
+/// ordinary server write with a slice argument: it would bind ungated, so [`powerful`] denies it by
+/// name until the lead decides whether it is a power (`award_recipes`, `reset_recipes`, `send_map`).
+/// The lead decides these; removing an entry binds the write, so an entry is removed only with a
+/// decision, a gate in [`GATED_WRITES`] and a reviewed line in `reviewed_writes.txt`.
+const DENIED_UNTIL_DECIDED: &[&str] = &[
+    "PlayerRef::award_recipes",
+    "PlayerRef::reset_recipes",
+    "PlayerRef::send_map",
 ];
 
 /// The explosion reads that carry a power's name part but need no power: a `&mut dyn ServerHost`
@@ -263,6 +283,10 @@ const HAND_NAMED: &[&str] = &[
     "BlockPos",
     "Compound",
     "Duration",
+    "ExplosionBlockParticle",
+    "ExplosionCalculator",
+    "ExplosionSettings",
+    "GameRuleValue",
     "Identifier",
     "Rotation",
     "Text",
@@ -282,6 +306,9 @@ enum Arg {
     State,
     /// An optional string, `Option<&str>`: read as `Option<String>`, passed as `Option<&str>`.
     OptStr,
+    /// A borrowed slice, `&[T]`: read as an owned `Vec<T>` and passed by reference. `strs` marks
+    /// `&[&str]`: the strings are read as `Vec<String>` and passed as a `Vec<&str>` shim.
+    Slice { ty: String, strs: bool },
 }
 
 /// How the result becomes a Lua value.
@@ -837,6 +864,14 @@ fn arg_of(text: &str, families: &[&str], plain: &Plain) -> Result<Arg, String> {
                     ty: path_of(name),
                     by_ref: true,
                 }),
+                TypeIr::List(elem) => {
+                    let ty =
+                        spelling(&TypeIr::List(elem.clone()), plain).ok_or_else(unconvertible)?;
+                    Ok(Arg::Slice {
+                        ty,
+                        strs: matches!(**elem, TypeIr::Str),
+                    })
+                }
                 _ => Err(unconvertible()),
             };
         }
@@ -1005,6 +1040,14 @@ fn operation(family: &str, bound: &Bound) -> String {
     for (index, arg) in bound.args.iter().enumerate() {
         let name = format!("a{index}");
         let (line, pass) = match arg {
+            Arg::Slice { strs, .. } => (
+                format!("args.get({index})?"),
+                if *strs {
+                    format!("&{name}_refs")
+                } else {
+                    format!("&{name}")
+                },
+            ),
             Arg::Get { by_ref, .. } => (
                 format!("args.get({index})?"),
                 if *by_ref {
@@ -1019,12 +1062,18 @@ fn operation(family: &str, bound: &Bound) -> String {
             Arg::OptStr => (format!("args.get({index})?"), format!("{name}.as_deref()")),
         };
         let ty = match arg {
-            Arg::Get { ty, .. } | Arg::Handle { ty } => ty.clone(),
+            Arg::Get { ty, .. } | Arg::Handle { ty } | Arg::Slice { ty, .. } => ty.clone(),
             Arg::OptHandle { ty } => format!("Option<{ty}>"),
             Arg::State => "mod_api::BlockState".to_owned(),
             Arg::OptStr => "Option<String>".to_owned(),
         };
         let _ = writeln!(body, "    let {name}: {ty} = {line};");
+        if let Arg::Slice { strs: true, .. } = arg {
+            let _ = writeln!(
+                body,
+                "    let {name}_refs: Vec<&str> = {name}.iter().map(String::as_str).collect();"
+            );
+        }
         call_args.push(pass);
     }
     let call = format!("this.{}({})", bound.name, call_args.join(", "));
@@ -1471,6 +1520,72 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("\"EntityRef::nudge\" => 10,"), "{text}");
+    }
+
+    /// A borrowed slice of a convertible element binds: `&[[i32; 3]]` reads a list of positions, and
+    /// `&[&str]` reads a list of strings and passes them as a `&[&str]`, through a `Vec<&str>` shim.
+    #[test]
+    fn a_borrowed_slice_of_a_convertible_element_binds() {
+        let positions = one("fn f(self, _: &dyn Host, _: &[[i32; 3]]) -> Option<bool>").unwrap();
+        assert_eq!(
+            positions.args,
+            [Arg::Slice {
+                ty: "Vec<[i32; 3]>".to_owned(),
+                strs: false
+            }]
+        );
+        let names = one("fn f(self, _: &dyn Host, _: &[&str]) -> Option<bool>").unwrap();
+        assert_eq!(
+            names.args,
+            [Arg::Slice {
+                ty: "Vec<String>".to_owned(),
+                strs: true
+            }]
+        );
+        let text = write_text("fn award(self, _: &mut dyn ServerHost, _: &[&str]) -> Option<i32>");
+        assert!(
+            text.contains("    let a0: Vec<String> = args.get(0)?;\n    let a0_refs: Vec<&str> = a0.iter().map(String::as_str).collect();\n"),
+            "{text}"
+        );
+        assert!(text.contains("this.award(server, &a0_refs)"), "{text}");
+    }
+
+    /// A borrowed slice of an element that does not convert stays unbound: `&[ItemStack]` has no Lua
+    /// conversion yet.
+    #[test]
+    fn a_borrowed_slice_of_an_unconvertible_element_does_not_bind() {
+        let err = one("fn f(self, _: &dyn Host, _: &[ItemStack]) -> Option<bool>")
+            .expect_err("an ItemStack slice");
+        assert!(err.starts_with("unconvertible arg: &[ItemStack]"), "{err}");
+    }
+
+    /// The three writes the slice arm newly reaches are denied by name until the lead decides: they do
+    /// not bind ungated, and their rule says so.
+    #[test]
+    fn the_writes_awaiting_a_decision_are_denied_by_name() {
+        for (name, signature) in [
+            (
+                "award_recipes",
+                "fn award_recipes(self, _: &mut dyn ServerHost, _: &[&str]) -> Option<i32>",
+            ),
+            (
+                "reset_recipes",
+                "fn reset_recipes(self, _: &mut dyn ServerHost, _: &[&str]) -> Option<i32>",
+            ),
+            (
+                "send_map",
+                "fn send_map(self, _: &mut dyn ServerHost, _: i32, _: &[u8]) -> bool",
+            ),
+        ] {
+            let member = members(&[("PlayerRef", name, signature)]).remove(0);
+            let err = classify(&member, "PlayerRef", &["PlayerRef"], &plain()).expect_err(name);
+            assert_eq!(
+                reason_category(&err),
+                "powerful (needs manifest power)",
+                "{name}: {err}"
+            );
+            assert!(err.contains("DENIED_UNTIL_DECIDED"), "{name}: {err}");
+        }
     }
 
     #[test]

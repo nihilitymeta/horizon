@@ -11,8 +11,9 @@
 //!   `Void` carries that set, see `hostcall.rs`). Otherwise the call is refused as a plain Lua error,
 //!   which `pcall` can catch: the turn is not voided, the refusal costs one budget unit, the host is
 //!   not called, and the warning is written once per mod and power, never with the arguments.
-//! - The gated table is generated (`generated/powers.rs`, from `GATED_WRITES` in the generator): the first
-//!   wave is the `world` and `spawn` writes listed there. Every other write stays denied.
+//! - The gated table is generated (`generated/powers.rs`, from `GATED_WRITES` in the generator): the
+//!   `world` and `spawn` writes, then `explosions` (`explode`, `explosion_destroy_blocks`, with the power
+//!   cap in [`guard`]) and `game_rules` (`set_game_rule`). Every other write stays denied.
 //! - Declarations, `event.feedback`, the `horizon.attachment_*` calls and settings are NOT gated, and stay
 //!   that way.
 
@@ -96,34 +97,50 @@ pub fn required(op: &str) -> Option<Power> {
         .map(|(_, power)| *power)
 }
 
-/// The placeholder cap on an explosion's power (the radius argument of the explosion writes): a call
-/// above it is refused before the host sees it. It is a placeholder, not a balance decision; the design
-/// sets the real number. A refused call costs one unit, as a power refusal does.
+/// The cap on an explosion's power (the `power` argument of the explosion writes, a Lua number): a call
+/// above it is refused before the host sees it. It is the placeholder the write-powers design named; the
+/// balance number is a maintainer decision. A refused call costs one unit, as a power refusal does.
 pub const MAX_EXPLOSION_POWER: f64 = 16.0;
 
-/// The explosion writes the cap checks, `(op, index of the power among the Lua arguments)`. Each is
-/// listed only so the cap applies once the op binds: `explode` and `explosion_destroy_blocks` do not
-/// convert from Lua yet (docs/lua-modding.md, the `explosions` row), so no mod reaches the check today.
+/// The most explosions one hook turn may cause, over both explosion writes: the fifth is refused before the
+/// host sees it. A placeholder like [`MAX_EXPLOSION_POWER`]: the balance number is a maintainer decision.
+pub const MAX_EXPLOSIONS_PER_TURN: u32 = 4;
+
+/// The explosion writes the cap checks, `(op, index of the power among the Lua arguments)`, counted
+/// after the handle. Checked against the surface: `explode(entity, position, power, ...)` and
+/// `explosion_destroy_blocks(positions, entity, position, power, ...)` (surface.json).
 const EXPLOSION_POWER_ARGS: &[(&str, usize)] = &[
     ("LevelRef::explode", 2),
     ("LevelRef::explosion_destroy_blocks", 3),
 ];
 
 /// The guard of a gated call, run after its power check passed and before the host is called. It
-/// refuses with a plain Lua error when a rule of the guard says no. The rule: an explosion whose power
-/// is above [`MAX_EXPLOSION_POWER`] (or NaN). Any other call passes; a missing or non-numeric power is
-/// left to the host's own conversion.
-pub(crate) fn guard(op: &str, args: &MultiValue) -> Result<(), Error> {
+/// refuses with a plain Lua error when a rule of the guard says no. The rule for an explosion: its power
+/// must be a Lua number (an integer or a float), finite, and at most [`MAX_EXPLOSION_POWER`]. A missing
+/// argument, a string (even one that looks like a number), NaN, infinity or a larger power is refused
+/// before the host sees the call. Any other call passes.
+pub(crate) fn guard(op: &str, args: &MultiValue, explosions: &mut u32) -> Result<(), Error> {
     let Some((_, index)) = EXPLOSION_POWER_ARGS.iter().find(|(name, _)| *name == op) else {
         return Ok(());
     };
-    let Some(power) = args.get(*index).and_then(Value::as_f64) else {
-        return Ok(());
+    let power = match args.get(*index) {
+        Some(Value::Integer(value)) => Some(*value as f64),
+        Some(Value::Number(value)) => Some(*value),
+        _ => None,
     };
-    if power.is_nan() || power > MAX_EXPLOSION_POWER {
-        let method = op.rsplit("::").next().unwrap_or(op);
+    let method = op.rsplit("::").next().unwrap_or(op);
+    match power {
+        Some(power) if power.is_finite() && (0.0..=MAX_EXPLOSION_POWER).contains(&power) => {}
+        _ => {
+            return Err(Error::runtime(format!(
+                "horizon: {method} refused: power must be a number from 0 to {MAX_EXPLOSION_POWER}"
+            )));
+        }
+    }
+    *explosions += 1;
+    if *explosions > MAX_EXPLOSIONS_PER_TURN {
         return Err(Error::runtime(format!(
-            "horizon: {method} refused: power {power} is above the cap of {MAX_EXPLOSION_POWER}"
+            "horizon: {method} refused: at most {MAX_EXPLOSIONS_PER_TURN} explosions per turn"
         )));
     }
     Ok(())
@@ -189,7 +206,7 @@ mod tests {
     ];
 
     /// The first wave, written out by hand (not read from the generator): each op and its power.
-    const FIRST_WAVE: [(&str, Power); 24] = [
+    const FIRST_WAVE: [(&str, Power); 27] = [
         ("BossBarRef::remove", Power::World),
         ("BossBarRef::remove_player", Power::World),
         ("EntityRef::discard", Power::World),
@@ -214,6 +231,9 @@ mod tests {
         ("LevelRef::set_respawn_data", Power::Spawn),
         ("LevelRef::spawn_mob", Power::Spawn),
         ("PlayerRef::respawn", Power::Spawn),
+        ("LevelRef::explode", Power::Explosions),
+        ("LevelRef::explosion_destroy_blocks", Power::Explosions),
+        ("LevelRef::set_game_rule", Power::GameRules),
     ];
 
     #[test]
@@ -224,9 +244,9 @@ mod tests {
         }
         for op in [
             "EntityRef::set_glowing",
-            "LevelRef::explode",
-            "LevelRef::explosion_destroy_blocks",
-            "LevelRef::set_game_rule",
+            "PlayerRef::award_recipes",
+            "PlayerRef::reset_recipes",
+            "PlayerRef::send_map",
             "LevelRef::spawn_item",
             "LevelRef::spawn_item_with_motion",
             "LevelRef::pop_resource",
@@ -282,37 +302,86 @@ mod tests {
         );
     }
 
-    /// The explosion cap refuses a power above [`MAX_EXPLOSION_POWER`] and passes one at it. The rule is
-    /// checked on the guard itself: no explosion write binds yet, so no mod reaches it through Lua.
+    /// The explosion guard passes a power that is a finite number from 0 to the cap, and refuses every
+    /// other power with one plain message: too large, negative, NaN, infinite, a string, or missing.
     #[test]
-    fn an_explosion_above_the_cap_is_refused_and_one_at_it_passes() {
+    fn an_explosion_power_must_be_a_finite_number_from_zero_to_the_cap() {
+        let lua = mlua::Lua::new();
         let args = |power: Value| MultiValue::from_vec(vec![Value::Nil, Value::Nil, power]);
-        let refusal = guard("LevelRef::explode", &args(Value::Number(17.0)))
-            .expect_err("power 17 is above the cap");
-        assert_eq!(
-            refusal.to_string(),
-            "runtime error: horizon: explode refused: power 17 is above the cap of 16"
-        );
-        assert!(guard("LevelRef::explode", &args(Value::Number(16.0))).is_ok());
-        assert!(guard("LevelRef::explode", &args(Value::Integer(16))).is_ok());
-        assert!(guard("LevelRef::explode", &args(Value::Number(f64::NAN))).is_err());
+        let message =
+            "runtime error: horizon: explode refused: power must be a number from 0 to 16";
+        let ok = |power: Value| guard("LevelRef::explode", &args(power), &mut 0);
+        assert!(ok(Value::Number(16.0)).is_ok());
+        assert!(ok(Value::Integer(16)).is_ok());
+        assert!(ok(Value::Integer(3)).is_ok());
+        assert!(ok(Value::Number(0.0)).is_ok());
+        for refused in [
+            Value::Number(17.0),
+            Value::Number(-0.5),
+            Value::Integer(-1),
+            Value::Number(f64::NAN),
+            Value::Number(f64::INFINITY),
+            Value::Number(f64::NEG_INFINITY),
+            Value::Integer(17),
+            Value::String(lua.create_string("999").expect("a Lua string")),
+            Value::Nil,
+            Value::Boolean(true),
+        ] {
+            let refusal = ok(refused.clone()).expect_err("a refused power");
+            assert_eq!(refusal.to_string(), message, "{refused:?}");
+        }
         // The power of explosion_destroy_blocks is its fourth argument.
-        let blocks = MultiValue::from_vec(vec![
-            Value::Nil,
-            Value::Nil,
-            Value::Nil,
-            Value::Number(17.5),
-        ]);
-        let refusal = guard("LevelRef::explosion_destroy_blocks", &blocks)
-            .expect_err("power 17.5 is above the cap");
+        let blocks =
+            |power: Value| MultiValue::from_vec(vec![Value::Nil, Value::Nil, Value::Nil, power]);
+        assert!(
+            guard(
+                "LevelRef::explosion_destroy_blocks",
+                &blocks(Value::Number(16.0)),
+                &mut 0
+            )
+            .is_ok()
+        );
+        let refusal = guard(
+            "LevelRef::explosion_destroy_blocks",
+            &blocks(Value::Number(17.5)),
+            &mut 0,
+        )
+        .expect_err("power 17.5 is above the cap");
         assert!(
             refusal.to_string().contains(
-                "horizon: explosion_destroy_blocks refused: power 17.5 is above the cap of 16"
+                "horizon: explosion_destroy_blocks refused: power must be a number from 0 to 16"
             ),
             "{refusal}"
         );
         // Any other op passes, whatever its numbers.
-        assert!(guard("LevelRef::strike_lightning", &args(Value::Number(99.0))).is_ok());
+        assert!(
+            guard(
+                "LevelRef::strike_lightning",
+                &args(Value::Number(99.0)),
+                &mut 0
+            )
+            .is_ok()
+        );
+    }
+
+    /// One turn may cause at most `MAX_EXPLOSIONS_PER_TURN` explosions over both writes: the next is
+    /// refused, and a refused power does not use one up.
+    #[test]
+    fn a_turn_may_cause_only_so_many_explosions() {
+        let args = |power: Value| MultiValue::from_vec(vec![Value::Nil, Value::Nil, power]);
+        let mut count = 0;
+        for _ in 0..MAX_EXPLOSIONS_PER_TURN {
+            assert!(guard("LevelRef::explode", &args(Value::Number(4.0)), &mut count).is_ok());
+        }
+        let refusal = guard("LevelRef::explode", &args(Value::Number(4.0)), &mut count)
+            .expect_err("the fifth explosion of a turn");
+        assert_eq!(
+            refusal.to_string(),
+            "runtime error: horizon: explode refused: at most 4 explosions per turn"
+        );
+        let mut count = 0;
+        assert!(guard("LevelRef::explode", &args(Value::Number(99.0)), &mut count).is_err());
+        assert_eq!(count, 0, "a refused power is not counted");
     }
 
     /// `has_ops` is true exactly for the powers the generated table gates.
@@ -320,12 +389,12 @@ mod tests {
     fn a_power_has_ops_when_the_table_gates_a_write_for_it() {
         assert!(has_ops(Power::World));
         assert!(has_ops(Power::Spawn));
+        assert!(has_ops(Power::Explosions));
+        assert!(has_ops(Power::GameRules));
         for power in [
             Power::Commands,
             Power::Nbt,
             Power::Registration,
-            Power::Explosions,
-            Power::GameRules,
             Power::Transactions,
             Power::Network,
             Power::Files,

@@ -332,6 +332,7 @@ pub(crate) fn scoped<R>(
     }
     lua.scope(|scope| {
         let mut spent = 0u32;
+        let mut explosions = 0u32;
         let calls = scope.create_function_mut(
             move |lua: &Lua, (op, this, args): (String, AnyUserData, MultiValue)| {
                 if void.panic.borrow().is_some() {
@@ -356,7 +357,7 @@ pub(crate) fn scoped<R>(
                 }
                 // The guard's own rules refuse a call the power check let through, before the host sees it. Like
                 // a power refusal it is a plain error and costs one unit.
-                if let Err(refusal) = crate::powers::guard(&op, &args) {
+                if let Err(refusal) = crate::powers::guard(&op, &args, &mut explosions) {
                     if spent + 1 > TURN_BUDGET {
                         void.spent.set(true);
                         return Err(Error::runtime(SPENT));
@@ -779,6 +780,10 @@ mod tests {
         glowing: Option<bool>,
         writes: u32,
         calls: Cell<u32>,
+        /// The radius (the power) of the last blast the host was asked for.
+        radius: Option<f32>,
+        /// The rule and value of the last `set_game_rule` the host was asked for.
+        rule: Option<(String, mod_api::GameRuleValue)>,
     }
 
     impl Fake {
@@ -789,6 +794,8 @@ mod tests {
                 glowing: None,
                 writes: 0,
                 calls: Cell::new(0),
+                radius: None,
+                rule: None,
             }
         }
 
@@ -855,6 +862,46 @@ mod tests {
         ) -> Option<EntityRef> {
             self.writes += 1;
             None
+        }
+        /// Counts the blast as a write and keeps its radius; the test world has no blocks or entities to hit.
+        fn level_explode(
+            &mut self,
+            _: LevelRef,
+            _: Option<EntityRef>,
+            _: [f64; 3],
+            radius: f32,
+            _: bool,
+            _: mod_api::ExplosionInteraction,
+            _: mod_api::ExplosionSettings,
+        ) -> Result<(), mod_api::ExplodeError> {
+            self.writes += 1;
+            self.radius = Some(radius);
+            Ok(())
+        }
+        /// Counts the blast as a write, keeps its radius, and destroys each position it was given.
+        fn level_explosion_destroy_blocks(
+            &mut self,
+            _: LevelRef,
+            positions: &[[i32; 3]],
+            _: Option<EntityRef>,
+            _: [f64; 3],
+            radius: f32,
+            _: bool,
+            _: mod_api::ExplosionInteraction,
+        ) -> Result<u32, mod_api::ExplosionDestroyError> {
+            self.writes += 1;
+            self.radius = Some(radius);
+            Ok(positions.len() as u32)
+        }
+        fn level_set_game_rule(
+            &mut self,
+            _: LevelRef,
+            rule: &str,
+            value: mod_api::GameRuleValue,
+        ) -> bool {
+            self.writes += 1;
+            self.rule = Some((rule.to_owned(), value));
+            true
         }
         /// A read: the test world has no blast to resist, so every cell answers no resistance.
         fn level_explosion_resistance(
@@ -2872,7 +2919,7 @@ mod tests {
             out
         })
         .unwrap();
-        assert_eq!(refusals.len(), 24);
+        assert_eq!(refusals.len(), 27);
         for (op, power, err) in refusals {
             let method = op.rsplit("::").next().unwrap_or(op);
             assert!(
@@ -2883,5 +2930,193 @@ mod tests {
             );
         }
         assert_eq!(fake.writes, 0);
+    }
+
+    /// The three explosion and game rule writes through the real Lua handle: requested and granted, each
+    /// reaches the host once; requested but not granted, or not requested, each is refused and the host
+    /// is not called.
+    #[test]
+    fn an_explosion_or_a_game_rule_reaches_the_host_only_with_its_power() {
+        let root = tempfile::tempdir().unwrap();
+        for (method, call, power) in [
+            (
+                "explode",
+                "lv:explode(nil, {x = 0.0, y = 64.0, z = 0.0}, 4.0, false, \"none\", {})",
+                Power::Explosions,
+            ),
+            (
+                "explosion_destroy_blocks",
+                "lv:explosion_destroy_blocks({{x = 1, y = 64, z = 1}}, nil, {x = 0.0, y = 64.0, z = 0.0}, 4.0, false, \"none\")",
+                Power::Explosions,
+            ),
+            (
+                "set_game_rule",
+                "lv:set_game_rule(\"keep_inventory\", true)",
+                Power::GameRules,
+            ),
+        ] {
+            let id = format!("pw_{method}_both");
+            let (lines, fake) = run_gated(gated_level(root.path(), &id, call, &[power], &[power]));
+            assert_eq!(lines, ["true nil"], "{method}");
+            assert_eq!(
+                fake.writes, 1,
+                "{method}: the granted call reaches the host"
+            );
+            for (case, requested, granted) in [
+                ("none", vec![], vec![]),
+                ("inert", vec![], vec![power]),
+                ("not_granted", vec![power], vec![]),
+            ] {
+                let id = format!("pw_{method}_{case}");
+                let (lines, fake) =
+                    run_gated(gated_level(root.path(), &id, call, &requested, &granted));
+                assert_eq!(lines.len(), 1, "{id}");
+                assert_refused_method(&lines[0], &id, method, power.name());
+                assert_eq!(fake.writes, 0, "{id}: the host is not called");
+            }
+        }
+    }
+
+    /// At most four explosions per hook turn, through Lua: the fifth `explode` of one handler is refused and
+    /// the host saw four.
+    #[test]
+    fn a_turn_may_cause_only_four_explosions_through_lua() {
+        let root = tempfile::tempdir().unwrap();
+        let call = "for i = 1, 5 do lv:explode(nil, {x = 0.0, y = 64.0, z = 0.0}, 4.0, false, \"none\", {}) end";
+        let (lines, fake) = run_gated(gated_level(
+            root.path(),
+            "pw_per_turn",
+            call,
+            &[Power::Explosions],
+            &[Power::Explosions],
+        ));
+        assert_eq!(lines.len(), 1);
+        assert!(
+            lines[0].starts_with("false runtime error: ")
+                && lines[0].contains("horizon: explode refused: at most 4 explosions per turn"),
+            "{}",
+            lines[0]
+        );
+        assert_eq!(fake.writes, 4, "the host saw four explosions");
+    }
+
+    /// The explosion cap, through Lua: a power of 16 (an integer or a float) reaches the host as the radius;
+    /// 17, NaN, infinity, the string "999" and a missing power are refused by the guard and the host is not
+    /// called. Both explosion writes carry the power as their argument after the handle.
+    #[test]
+    fn an_explosion_power_reaches_the_host_only_as_a_number_at_most_the_cap() {
+        let root = tempfile::tempdir().unwrap();
+        let explode = |power: &str| {
+            format!(
+                "lv:explode(nil, {{x = 0.0, y = 64.0, z = 0.0}}, {power}, false, \"none\", {{}})"
+            )
+        };
+        let blocks = |power: &str| {
+            format!(
+                "lv:explosion_destroy_blocks({{{{x = 1, y = 64, z = 1}}}}, nil, {{x = 0.0, y = 64.0, z = 0.0}}, {power}, false, \"none\")"
+            )
+        };
+        for (method, call) in [
+            ("explode", explode("16")),
+            ("explode", explode("16.0")),
+            ("explosion_destroy_blocks", blocks("16")),
+        ] {
+            let id = format!("pw_cap_pass_{method}_{}", call.len());
+            let (lines, fake) = run_gated(gated_level(
+                root.path(),
+                &id,
+                &call,
+                &[Power::Explosions],
+                &[Power::Explosions],
+            ));
+            assert_eq!(lines, ["true nil"], "{call}");
+            assert_eq!(fake.radius, Some(16.0), "{call}");
+            assert_eq!(fake.writes, 1, "{call}");
+        }
+        let message = "horizon: explode refused: power must be a number from 0 to 16";
+        for (case, power) in [
+            ("seventeen", "17"),
+            ("nan", "(0 / 0)"),
+            ("infinite", "(1 / 0)"),
+            ("string", "\"999\""),
+            ("missing", "nil"),
+        ] {
+            let id = format!("pw_cap_{case}");
+            let call = format!(
+                "lv:explode(nil, {{x = 0.0, y = 64.0, z = 0.0}}, {power}, false, \"none\", {{}})"
+            );
+            let (lines, fake) = run_gated(gated_level(
+                root.path(),
+                &id,
+                &call,
+                &[Power::Explosions],
+                &[Power::Explosions],
+            ));
+            assert_eq!(lines.len(), 1, "{id}");
+            assert!(
+                lines[0].starts_with("false runtime error: ") && lines[0].contains(message),
+                "{id}: {}",
+                lines[0]
+            );
+            assert_eq!(fake.writes, 0, "{id}: the host is not called");
+        }
+        let id = "pw_cap_blocks_seventeen";
+        let (lines, fake) = run_gated(gated_level(
+            root.path(),
+            id,
+            &blocks("17"),
+            &[Power::Explosions],
+            &[Power::Explosions],
+        ));
+        assert!(
+            lines[0].contains(
+                "horizon: explosion_destroy_blocks refused: power must be a number from 0 to 16"
+            ),
+            "{}",
+            lines[0]
+        );
+        assert_eq!(fake.writes, 0);
+    }
+
+    /// `set_game_rule` hands the host the rule and the value it was given: a bare `true`, and a tagged
+    /// integer `{tag = "int", 3}`. Without `game_rules` it is refused and the host is not called.
+    #[test]
+    fn set_game_rule_hands_the_host_its_value_only_with_the_game_rules_power() {
+        let root = tempfile::tempdir().unwrap();
+        for (id, call, rule, value) in [
+            (
+                "pw_rule_bool",
+                "lv:set_game_rule(\"keep_inventory\", true)",
+                "keep_inventory",
+                mod_api::GameRuleValue::Bool(true),
+            ),
+            (
+                "pw_rule_int",
+                "lv:set_game_rule(\"random_tick_speed\", {tag = \"int\", 3})",
+                "random_tick_speed",
+                mod_api::GameRuleValue::Int(3),
+            ),
+        ] {
+            let (lines, fake) = run_gated(gated_level(
+                root.path(),
+                id,
+                call,
+                &[Power::GameRules],
+                &[Power::GameRules],
+            ));
+            assert_eq!(lines, ["true nil"], "{id}");
+            assert_eq!(fake.writes, 1, "{id}");
+            assert_eq!(fake.rule, Some((rule.to_owned(), value)), "{id}");
+        }
+        let (lines, fake) = run_gated(gated_level(
+            root.path(),
+            "pw_rule_bare",
+            "lv:set_game_rule(\"keep_inventory\", true)",
+            &[],
+            &[],
+        ));
+        assert_refused_method(&lines[0], "pw_rule_bare", "set_game_rule", "game_rules");
+        assert_eq!(fake.writes, 0);
+        assert_eq!(fake.rule, None);
     }
 }

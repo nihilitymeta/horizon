@@ -196,10 +196,13 @@ EntityRef::remove_tag world
 EntityRef::teleport_to_level world
 LevelRef::award_experience spawn
 LevelRef::block_random_tick world
+LevelRef::explode explosions
+LevelRef::explosion_destroy_blocks explosions
 LevelRef::invalidate_capabilities world
 LevelRef::remove_block world
 LevelRef::request_save world
 LevelRef::set_clock_time world
+LevelRef::set_game_rule game_rules
 LevelRef::set_respawn_data spawn
 LevelRef::spawn_mob spawn
 LevelRef::set_weather world

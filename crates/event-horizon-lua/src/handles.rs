@@ -305,13 +305,14 @@ mod tests {
         let denied = [
             "EntityRef::run_command",
             "EntityRef::merge_nbt",
-            "LevelRef::explode",
-            "LevelRef::set_game_rule",
             "EntityRef::remove",
             "PlayerRef::disconnect",
             "PlayerRef::set_game_mode",
             "PlayerRef::award_stat",
             "PlayerRef::reset_stat",
+            "PlayerRef::award_recipes",
+            "PlayerRef::reset_recipes",
+            "PlayerRef::send_map",
         ];
         for member in denied {
             assert!(

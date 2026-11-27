@@ -4022,6 +4022,10 @@ export type LevelRef = {
 	entities_in: (LevelRef, { x: number, y: number, z: number }, { x: number, y: number, z: number }) -> {EntityRef}?,
 	entity_ticking: (LevelRef, { x: number, y: number, z: number }) -> boolean?,
 	epoch: (LevelRef) -> WorldEpoch,
+	-- needs the "explosions" power (granted by the owner in lua-mods/enabled.toml)
+	explode: (LevelRef, EntityRef?, { x: number, y: number, z: number }, number, boolean, ExplosionInteraction, any) -> (), -- Rust: ExplosionSettings
+	-- needs the "explosions" power (granted by the owner in lua-mods/enabled.toml)
+	explosion_destroy_blocks: (LevelRef, {{ x: number, y: number, z: number }}, EntityRef?, { x: number, y: number, z: number }, number, boolean, ExplosionInteraction) -> number,
 	explosion_resistance: (LevelRef, { x: number, y: number, z: number }, EntityRef?, { x: number, y: number, z: number }, number, boolean, ExplosionInteraction) -> ExplosionResistance?,
 	fluid_flow: (LevelRef, { x: number, y: number, z: number }) -> Vec3?,
 	fluid_height: (LevelRef, { x: number, y: number, z: number }) -> number?,
@@ -4068,6 +4072,8 @@ export type LevelRef = {
 	set_break_progress: (LevelRef, number, { x: number, y: number, z: number }, number) -> boolean,
 	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
 	set_clock_time: (LevelRef, number) -> boolean,
+	-- needs the "game_rules" power (granted by the owner in lua-mods/enabled.toml)
+	set_game_rule: (LevelRef, string, GameRuleValue) -> boolean,
 	-- needs the "spawn" power (granted by the owner in lua-mods/enabled.toml)
 	set_respawn_data: (LevelRef, { x: number, y: number, z: number }, number, number) -> boolean,
 	-- needs the "world" power (granted by the owner in lua-mods/enabled.toml)
