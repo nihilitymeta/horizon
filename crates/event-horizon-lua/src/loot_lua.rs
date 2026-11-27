@@ -5,7 +5,7 @@
 
 use event_horizon_lua_convert::scalar::ToLuaValue;
 use mlua::{Lua, Table, Value};
-use mod_api::{BlockState, Host, LootDrops};
+use mod_api::{BlockState, Host, ItemStack, LootDrops};
 
 use crate::stacks;
 
@@ -16,12 +16,14 @@ pub(crate) fn carried(host: &dyn Host, drops: &LootDrops<'_>) -> Option<()> {
         stacks::state_in(host, Some(&state))?;
     }
     stacks::stack_in(host, drops.tool)?;
+    stacks::stack_in(host, weapon_item(drops, host).as_ref())?;
     Some(())
 }
 
 /// The context as Lua: `table`, `dimension`, `origin` (`{x=, y=, z=}`, numbers),
 /// `block` (`{pos, state}` or nil), `entity` (`{id, type}` or nil), `player` (a UUID string or nil),
-/// `damage_source` (the `HurtSource` table or nil), `tool` (a stack table or nil), `explosion`
+/// `damage_source` (the `HurtSource` table or nil), `tool` (a stack table or nil), `weapon_item`
+/// (the death weapon as a stack table or nil, from `LootDrops::weapon_item`), `explosion`
 /// (a number or nil) and `used` (a boolean).
 pub(crate) fn loot_drops_lua(
     lua: &Lua,
@@ -37,9 +39,23 @@ pub(crate) fn loot_drops_lua(
     table.raw_set("player", drops.player.to_lua_value(lua)?)?;
     table.raw_set("damage_source", drops.damage_source.to_lua_value(lua)?)?;
     table.raw_set("tool", tool_lua(lua, drops.tool, host)?)?;
+    table.raw_set("weapon_item", weapon_lua(lua, drops, host)?)?;
     table.raw_set("explosion", drops.explosion.to_lua_value(lua)?)?;
     table.raw_set("used", drops.used)?;
     Ok(table)
+}
+
+/// The death weapon, read when the hook runs (the vocab's `LootDrops::weapon_item`). None for a
+/// non-death drop, or when the weapon is absent or unavailable.
+fn weapon_item(drops: &LootDrops<'_>, host: &dyn Host) -> Option<ItemStack> {
+    drops.weapon_item(host)
+}
+
+fn weapon_lua(lua: &Lua, drops: &LootDrops<'_>, host: &dyn Host) -> mlua::Result<Value> {
+    let weapon = weapon_item(drops, host);
+    let spec = stacks::stack_in(host, weapon.as_ref())
+        .ok_or_else(|| mlua::Error::runtime("a carried value has no id"))?;
+    spec.to_lua_value(lua)
 }
 
 fn block_lua(

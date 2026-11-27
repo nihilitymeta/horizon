@@ -151,6 +151,7 @@ impl Mapper<'_> {
             "Duration" => "number".to_owned(),
             "BlockState" => "BlockStateSpec".to_owned(),
             "ItemStack" => "ItemStackSpec".to_owned(),
+            "LootDrops" => "LootDropsContext".to_owned(),
             "ConfigFile" => "ConfigFile".to_owned(),
             other if self.families.iter().any(|family| family == other) => other.to_owned(),
             other => match self.names.get(other).cloned() {

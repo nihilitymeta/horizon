@@ -186,6 +186,61 @@ fn a_mob_death_context_reaches_the_handler_with_its_entity_and_player() {
 }
 
 #[test]
+fn the_context_fields_of_a_mob_death_reach_the_handler_with_their_types() {
+    let mut server = stick_host();
+    let (log, _) = fire(
+        "horizon.on(\"loot_drops\", function(event) local c = event.context horizon.log(tostring(c.origin.y == 64) .. \" \" .. tostring(c.used) .. \" \" .. tostring(c.explosion == nil) .. \" \" .. tostring(c.damage_source == nil)) end)",
+        &mob_context(),
+        &mut server,
+        vec![stick(1)],
+    );
+    assert_eq!(log, ["true false true true"]);
+}
+
+#[test]
+fn a_death_weapon_reaches_the_handler_as_weapon_item() {
+    let mut server = stick_host();
+    let weapon = stick(1);
+    let context = mod_api::LootDrops::from(mod_api::__private::built::LootDrops {
+        table: "minecraft:entities/zombie",
+        dimension: "minecraft:overworld",
+        origin: [0.5, 64.0, 0.5],
+        block: None,
+        entity: Some((7, "minecraft:zombie")),
+        player: Some(1),
+        damage_source: Some(mod_api::HurtSource {
+            damage_type: "minecraft:player_attack",
+            causing: 1,
+            direct: 1,
+            position: None,
+        }),
+        weapon: Some(&weapon),
+        tool: None,
+        explosion: None,
+        used: false,
+    });
+    let (log, _) = fire(
+        "horizon.on(\"loot_drops\", function(event) horizon.log(event.context.weapon_item.id .. \" \" .. tostring(event.context.weapon_item.count)) end)",
+        &context,
+        &mut server,
+        vec![stick(1)],
+    );
+    assert_eq!(log, ["minecraft:stick 1"]);
+}
+
+#[test]
+fn a_context_without_a_death_weapon_reaches_the_handler_as_nil_weapon_item() {
+    let mut server = stick_host();
+    let (log, _) = fire(
+        "horizon.on(\"loot_drops\", function(event) horizon.log(tostring(event.context.weapon_item == nil)) end)",
+        &mob_context(),
+        &mut server,
+        vec![stick(1)],
+    );
+    assert_eq!(log, ["true"]);
+}
+
+#[test]
 fn a_stack_the_handler_appends_reaches_the_drops() {
     let mut server = stick_host();
     let (_, drops) = fire(

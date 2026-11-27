@@ -37,6 +37,23 @@ export type BlockStateSpec = { id: string, props: { [string]: string }? }
 -- patch as a compound (item.rs: an id at most 256 bytes). `nbt` may be left out.
 export type ItemStackSpec = { id: string, count: number, nbt: Compound? }
 
+-- The `loot_drops` context (loot_lua.rs loot_drops_lua; read-only). Hand-written, because the
+-- converter builds the table by hand. `block` is `{pos, state}`, `entity` is `{id, type}`,
+-- `player` a UUID string, `tool` and `weapon_item` item stacks (`{id, count, nbt}`).
+export type LootDropsContext = {
+	table: string,
+	dimension: string,
+	origin: { x: number, y: number, z: number },
+	block: { pos: BlockPos, state: BlockStateSpec }?,
+	entity: { id: number, type: string }?,
+	player: string?,
+	damage_source: HurtSource?,
+	tool: ItemStackSpec?,
+	weapon_item: ItemStackSpec?,
+	explosion: number?,
+	used: boolean,
+}
+
 -- A handle of an entity, a level, a block entity, ... is a userdata. Each family's methods are
 -- generated below as a `*Ref` type; a method is called with a colon: `player:name()`.
 
@@ -1662,7 +1679,7 @@ export type LootConditionEvent = {
 }
 
 export type LootDropsEvent = {
-	context: any, -- read-only -- Rust: LootDrops
+	context: LootDropsContext, -- read-only
 	drops: {ItemStackSpec}, -- answer
 }
 

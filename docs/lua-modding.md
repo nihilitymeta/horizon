@@ -432,6 +432,7 @@ end)
 | `player` | nil, or the player's UUID as a string |
 | `damage_source` | nil, or the damage source table |
 | `tool` | nil, or a stack table `{id, count, nbt}` |
+| `weapon_item` | nil, or the death weapon as a stack table `{id, count, nbt}`: the weapon of a player's or mob's killing blow (nil for a block break) |
 | `explosion` | nil, or a number |
 | `used` | a boolean: true for a player's use |
 
@@ -470,7 +471,8 @@ end)
 - `kind`, the condition's type; `data`, the condition's object; `ctx`, the roll's context.
 - `ctx` has `queried_table_id`, `queried_stack`, `entity`, `damage`, `player`, `tool`,
   `block`, `luck`, `biome`, `seed` and `place`, as the type file (`horizon.d.luau`) declares
-  them. Missing values are nil. `seed` is a decimal string, because a roll's seed does not fit a Lua number.
+  them. Missing values are nil. `queried_stack` is an item stack in the `ItemStackSpec` shape
+  `{id, count, nbt}` (`nbt` optional), the same shape as the stacks of `loot_drops`. `seed` is a decimal string, because a roll's seed does not fit a Lua number.
 - `holds` takes a boolean. Any other value is refused and `holds` stays `false`.
 
 ### loot_function
