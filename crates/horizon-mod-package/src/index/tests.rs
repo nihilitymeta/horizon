@@ -489,7 +489,7 @@ fn a_shader_pack_for_a_line_only_the_game_serves_keeps_the_index_s_checks() {
     ] {
         let e = refused.unwrap_err();
         assert!(
-            e.contains("needs shader API 0.1; this Horizon serves 0.2"),
+            e.contains("needs shader API 0.1; this Event Horizon serves 0.2"),
             "{e}"
         );
     }

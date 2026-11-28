@@ -712,7 +712,7 @@ mod tests {
         assert_eq!(
             lines,
             [
-                "Horizon pass detail (timestamps inside passes)",
+                "Event Horizon pass detail (timestamps inside passes)",
                 "GPU culling › cull: 0.31 ms",
                 "P3: 1.00M fragments, 4000.00 per pixel, 1.00k vertices, 300 of 400 triangles kept",
                 "  a: 600k fragments, 2400.00 per pixel, 1.00k vertices, 300 of 400 triangles kept",
@@ -740,7 +740,7 @@ mod tests {
         assert_eq!(
             lines,
             [
-                "Horizon pass detail (separate passes, adds GPU time)",
+                "Event Horizon pass detail (separate passes, adds GPU time)",
                 "GPU counters: Vulkan only"
             ]
         );

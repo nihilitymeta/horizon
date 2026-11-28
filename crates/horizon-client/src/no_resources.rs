@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn a_hook_gives_the_text_and_the_page() {
         let screen = screen(Some(GET));
-        assert_eq!(screen.title, "Start Horizon from the launcher");
+        assert_eq!(screen.title, "Start Event Horizon from the launcher");
         assert_eq!(
             screen.paragraphs[2],
             "Download the launcher at example.org/get, then press Play there."
