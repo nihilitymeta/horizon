@@ -424,6 +424,33 @@ fn has_game_files(installed: &[String], selected: Option<&str>) -> bool {
     })
 }
 
+/// What [`install`] does before importing when the installed versions may hold no game files.
+#[derive(Debug, PartialEq)]
+enum Start {
+    /// Game files are there: import onto them.
+    Proceed,
+    /// No game files and no developer base: install Horizon's newest release first.
+    Latest,
+    /// A developer base is installed but not selected. Upstream's release is not tried for it,
+    /// because automatic updates never replace a developer base; the player selects it.
+    Unselected(String),
+}
+
+/// Decides [`Start`] for `installed` and the `selected` version. The newest developer base comes
+/// first, as [`backend::installed`] lists the newest versions first.
+fn start_from(installed: &[String], selected: Option<&str>) -> Start {
+    if has_game_files(installed, selected) {
+        return Start::Proceed;
+    }
+    match installed
+        .iter()
+        .find(|v| crate::developer_install::is_developer(v))
+    {
+        Some(base) => Start::Unselected(base.clone()),
+        None => Start::Latest,
+    }
+}
+
 /// Installs `release` and records it as its source's; selects it as [`selects`] says, or always
 /// when `select`. Horizon's newest release is installed first when there are no game files yet.
 /// Returns the version it made.
@@ -434,8 +461,17 @@ pub fn install(release: &Release, select: bool) -> Result<String, String> {
         .and_then(|s| s.installed);
     let settings = backend::Settings::load();
     let select = select || selects(settings.selected.as_deref(), before.as_ref());
-    if !has_game_files(&backend::installed(), settings.selected.as_deref()) {
-        backend::install_tag("latest", true, |_| {})?;
+    match start_from(&backend::installed(), settings.selected.as_deref()) {
+        Start::Proceed => {}
+        Start::Latest => {
+            backend::install_tag("latest", true, |_| {})?;
+        }
+        Start::Unselected(base) => {
+            return Err(trf(
+                "A local developer base is installed but not selected. Select it with \"horizon-launcher settings selected-version {version}\" (see \"horizon-launcher versions\") and try again.",
+                &[("version", base.as_str())],
+            ));
+        }
     }
     let file = fetch(release, MAX_ARCHIVE)?;
     let made = build_import::import_as(&file, None, &release.label(), select);
@@ -822,6 +858,30 @@ mod tests {
         assert!(!has_game_files(&owned(&[dev]), Some("v0.1.0")));
         assert!(!has_game_files(&owned(&[]), None));
         assert!(!has_game_files(&owned(&["launcher@0.2.40"]), None));
+    }
+
+    #[test]
+    fn start_proceeds_on_game_files_bootstraps_only_without_a_developer_base() {
+        let owned = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        let dev = "developer-abc123";
+        // The selected developer base holds the files: no upstream bootstrap.
+        assert_eq!(start_from(&owned(&[dev]), Some(dev)), Start::Proceed);
+        assert_eq!(start_from(&owned(&["v0.1.0"]), None), Start::Proceed);
+        // A developer base installed but not selected: the error names it, no bootstrap.
+        assert_eq!(
+            start_from(&owned(&[dev]), None),
+            Start::Unselected(dev.to_owned())
+        );
+        assert_eq!(
+            start_from(&owned(&["developer-old", dev]), Some("v0.1.0")),
+            Start::Unselected("developer-old".to_owned())
+        );
+        // No developer base: bootstrap Horizon's newest release, as before.
+        assert_eq!(start_from(&owned(&[]), None), Start::Latest);
+        assert_eq!(
+            start_from(&owned(&["launcher@0.2.40"]), None),
+            Start::Latest
+        );
     }
 
     #[test]

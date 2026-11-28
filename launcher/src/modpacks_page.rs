@@ -346,7 +346,7 @@ impl Launcher {
                     )),
                 );
             let detail = trf(
-                "{version} from Horizon's registry, its own profile: {mods}",
+                "{version} from Event Horizon's registry, its own profile: {mods}",
                 &[("version", &p.version), ("mods", &p.mods.join(", "))],
             );
             list = list.child(index_row(

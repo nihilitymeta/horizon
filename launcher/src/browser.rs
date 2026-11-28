@@ -286,7 +286,7 @@ pub trait Source: Send + Sync {
 pub const CURSEFORGE_SOON: &str = "CurseForge support is coming soon.";
 /// What another source answers for shader packs: Horizon's own are on its registry only.
 pub const SHADERS_ON_HORIZON: &str =
-    "Horizon's shader packs are on Horizon's registry: pick Horizon.";
+    "Event Horizon's shader packs are on Event Horizon's registry: pick Event Horizon.";
 
 /// The sources this launcher uses: Modrinth and Horizon's registry. CurseForge support is coming
 /// soon: its API needs a paid key, so no search or install goes to it; `curseforge` is kept for

@@ -318,7 +318,7 @@ impl Launcher {
             .p(px(16.))
             .text_size(px(theme::UI.px))
             .text_color(t.ink)
-            .child(caps(tr("Not reviewed by the Horizon registry")).text_color(t.danger))
+            .child(caps(tr("Not reviewed by the Event Horizon registry")).text_color(t.danger))
             .child(what)
             .child(
                 tr("Native mods run with full access to this computer. Read the source before you install it."),

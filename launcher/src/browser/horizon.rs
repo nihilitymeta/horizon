@@ -646,10 +646,10 @@ impl Source for Registry {
         let index = index()?;
         let p = index
             .project(id)
-            .ok_or_else(|| format!("{id} isn't in Horizon's registry."))?;
+            .ok_or_else(|| format!("{id} isn't in Event Horizon's registry."))?;
         project_of(&index, p).ok_or_else(|| {
             format!(
-                "{} is a {} in Horizon's registry: this launcher can't install those yet.",
+                "{} is a {} in Event Horizon's registry: this launcher can't install those yet.",
                 p.name,
                 p.kind.name()
             )
@@ -660,7 +660,7 @@ impl Source for Registry {
         let index = index()?;
         let p = index
             .project(&project.id)
-            .ok_or_else(|| format!("{} isn't in Horizon's registry.", project.title))?;
+            .ok_or_else(|| format!("{} isn't in Event Horizon's registry.", project.title))?;
         Ok(p.versions
             .iter()
             .map(|v| version_of(&index, p, v))
@@ -688,7 +688,7 @@ impl Source for Registry {
         let index = index()?;
         let p = index
             .project(&project.id)
-            .ok_or_else(|| format!("{} isn't in Horizon's registry.", project.title))?;
+            .ok_or_else(|| format!("{} isn't in Event Horizon's registry.", project.title))?;
         let newest = p.versions.first();
         let mut body = p.description.clone();
         if let Some(v) = newest.filter(|v| !v.capabilities.is_empty()) {
@@ -844,7 +844,7 @@ fn install_from(
 ) -> Result<Vec<installed::Entry>, String> {
     let p = index
         .project(&project.id)
-        .ok_or_else(|| format!("{} isn't in Horizon's registry.", project.title))?;
+        .ok_or_else(|| format!("{} isn't in Event Horizon's registry.", project.title))?;
     let v = newest(index, p)?;
     install_version(index, local, p, v, home, progress).map(|e| vec![e])
 }
@@ -870,7 +870,12 @@ fn fetch_datapack_from(
     let p = index
         .project(&project.id)
         .filter(|p| p.kind == index::Kind::DataPack)
-        .ok_or_else(|| format!("{} isn't a data pack in Horizon's registry.", project.title))?;
+        .ok_or_else(|| {
+            format!(
+                "{} isn't a data pack in Event Horizon's registry.",
+                project.title
+            )
+        })?;
     let v = newest(index, p)?;
     let file = &version_of(index, p, v).files[0];
     let path = fetch(file, folder, local, progress)?;

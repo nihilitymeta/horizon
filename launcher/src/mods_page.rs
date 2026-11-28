@@ -1686,7 +1686,7 @@ impl Launcher {
                     &t,
                 );
             } else if m.source == SourceId::Horizon {
-                tr("Nothing in Horizon's registry matches yet.")
+                tr("Nothing in Event Horizon's registry matches yet.")
             } else if m.everything {
                 tr("Nothing found.")
             } else {

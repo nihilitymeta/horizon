@@ -19,7 +19,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// What a player is told before a mod from GitHub is installed.
-pub const WARNING: &str = "Not reviewed by the Horizon registry. Native mods run with full access to this computer. Read the source first.";
+pub const WARNING: &str = "Not reviewed by the Event Horizon registry. Native mods run with full access to this computer. Read the source first.";
 
 /// The most a release asset or a mod's archive may be.
 const MAX_ASSET: u64 = 64 << 20;
