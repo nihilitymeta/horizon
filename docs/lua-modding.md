@@ -197,12 +197,13 @@ can never read or change these numbers (`powers.rs`, `Limits`; `enabled.rs`).
 like every gated write. The guard (`disconnect.rs`) refuses a player at permission level 2 or
 above, a reason that is not one plain string, and a second disconnect in one turn (with
 `kicks_per_turn` at its default of 1). It cannot tell the host from another player, and it
-does not have to: in a singleplayer world without cheats the host has permission level 0, so
-a mod granted `players` can remove the host, the way Bukkit's `kick` removes anyone not
-protected by a permission level. The host API itself refuses the single-player owner
-(its doc says `/kick` refuses the owner), which is the only host protection the call has;
-that is INFERRED from the host's documentation, not from a test here. Grant `players`
-only to a mod you trust with that.
+does not have to: the singleplayer host has permission level 4, even in a survival world
+without cheats (checked in a real game on 2026-11-27: `permission_level()` returned 4 and
+`disconnect` was refused by the guard, the player stayed in the world). So a mod granted
+`players` cannot remove the host or any operator; it can remove a player below level 2, the
+way Bukkit's `kick` removes anyone not protected by a permission level. A second, non-operator
+player on a LAN or dedicated server was not tested here. Grant `players` only to a mod you
+trust with that.
 
 ### Command allowlist (`enabled.toml` `[command_allow]`)
 
