@@ -61,6 +61,7 @@ EntityRef::set_air_supply
 EntityRef::set_custom_name
 EntityRef::set_custom_name_visible
 EntityRef::set_damage_cooldown_time
+EntityRef::set_fall_distance
 EntityRef::set_glowing
 EntityRef::set_hanging_direction
 EntityRef::set_head_yaw
@@ -74,12 +75,15 @@ EntityRef::set_portal_cooldown
 EntityRef::set_remaining_fire_ticks
 EntityRef::set_rotation
 EntityRef::set_silent
+EntityRef::set_swimming
 EntityRef::set_ticks_frozen
 EntityRef::set_velocity
+EntityRef::set_visible_to
 EntityRef::start_riding
 EntityRef::stop_riding
 EntityRef::teleport_to
 EntityRef::uuid
+EntityRef::visible_to
 ItemEntityRef::set_default_pickup_delay
 ItemEntityRef::set_never_pickup
 ItemEntityRef::set_no_pickup_delay
@@ -110,8 +114,10 @@ LivingRef::set_is_jumping
 LivingRef::set_item_use_remaining
 LivingRef::set_riptiding
 LivingRef::set_sleeping_pos
+LivingRef::set_sprinting
 LivingRef::set_stinger_count
 LivingRef::set_stinger_removal_ticks
+LivingRef::set_tamed
 LivingRef::set_waypoint_color
 LivingRef::set_waypoint_style
 LivingRef::start_sleeping
@@ -137,6 +143,7 @@ MobRef::clear_restriction
 MobRef::jump
 MobRef::look_at
 MobRef::move_to
+MobRef::reset_goals
 MobRef::restrict_to
 MobRef::set_aggressive
 MobRef::set_ai_paused
@@ -174,6 +181,7 @@ PlayerRef::set_saturation
 PlayerRef::set_selected_slot
 PlayerRef::set_sleep_ignored
 PlayerRef::set_sleep_timer
+PlayerRef::set_velocity
 PlayerRef::set_warden_warning_cooldown
 PlayerRef::show_block
 PlayerRef::stop_sound

@@ -34,6 +34,8 @@ pub const MINECRAFT_ISSUES: &str = "https://bugs.mojang.com";
 /// The front of a GitHub repository's address: the launcher reads a source's repository and its release
 /// links against it (`https://github.com/<owner>/<repo>/...`).
 pub const GITHUB_REPOSITORIES: &str = "https://github.com/";
+/// The GitHub repository whose main branch is trusted for prebuilt native-mod base commits.
+pub const HORIZON_GITHUB_REPO: &str = "horizon-rust/horizon";
 
 /// Horizon's license and issue tracker, offered by the official build's Mods screen.
 pub const LICENSE: &str = "https://github.com/horizon-rust/horizon/blob/main/LICENSE";
@@ -81,10 +83,6 @@ pub const HOSTING_PARTNER: &str = "https://my.sculkhosting.com/ref/horizon";
 
 /// The official cosmetics shop.
 pub const SHOP: &str = "https://playhorizon.dev/shop";
-
-/// The GitHub profile of who made the launcher's look, credited in Settings' About (its picture is
-/// `<this>.png`).
-pub const LAUNCHER_LOOK_CREDIT: &str = "https://github.com/Xmilon";
 
 /// The official launcher installer's product home.
 pub const LAUNCHER_ABOUT: &str = "https://playhorizon.dev";

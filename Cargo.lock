@@ -406,9 +406,9 @@ dependencies = [
 
 [[package]]
 name = "bstr"
-version = "1.13.1"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f"
+checksum = "a680398c10c7bc0488067c4612226ea905a85f607134b69f3068d505d58c4214"
 dependencies = [
  "memchr",
  "serde_core",
@@ -532,7 +532,7 @@ dependencies = [
  "io-lifetimes",
  "ipnet",
  "maybe-owned",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "rustix-linux-procfs",
  "windows-sys 0.59.0",
  "winx",
@@ -547,7 +547,7 @@ dependencies = [
  "cap-primitives",
  "io-extras",
  "io-lifetimes",
- "rustix 1.1.5",
+ "rustix 1.1.6",
 ]
 
 [[package]]
@@ -558,10 +558,9 @@ dependencies = [
  "dunce",
  "horizon-addresses",
  "horizon-mod-package",
- "horizon-mod-point-emit",
  "horizon-mod-source",
  "horizon-mod-surface",
- "horizon-mod-wasm",
+ "horizon-mod-vocab",
  "horizon-port-pack",
  "horizon-release-sign",
  "libc",
@@ -573,10 +572,9 @@ dependencies = [
  "tempfile",
  "toml 1.1.6+spec-1.1.0",
  "toml_edit 0.25.15+spec-1.1.0",
- "ureq",
  "wasm-encoder 0.261.0",
  "wasmparser 0.261.0",
- "wasmtime",
+ "wat",
  "zip",
 ]
 
@@ -1824,7 +1822,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94e7099f6313ecacbe1256e8ff9d617b75d1bcb16a6fddef94866d225a01a14a"
 dependencies = [
  "io-lifetimes",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "windows-sys 0.59.0",
 ]
 
@@ -1834,7 +1832,7 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
 dependencies = [
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "windows-sys 0.61.2",
 ]
 
@@ -1960,7 +1958,7 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
 dependencies = [
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "windows-link",
 ]
 
@@ -2094,9 +2092,9 @@ dependencies = [
 
 [[package]]
 name = "globset"
-version = "0.4.21"
+version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f98b0d85522dc0a824cfebbc9594ff4a9b289c568bea0370319dfbdf20ccdd2d"
+checksum = "71217a07f20b48b4938c14203b77b610f8a7fa6762c3f75394a10c5f31e5aee0"
 dependencies = [
  "aho-corasick",
  "bstr",
@@ -2355,6 +2353,7 @@ dependencies = [
  "horizon-bench",
  "horizon-chat-filter",
  "horizon-client-core",
+ "horizon-client-gameplay",
  "horizon-client-input",
  "horizon-client-lib",
  "horizon-client-render",
@@ -2365,8 +2364,8 @@ dependencies = [
  "horizon-engine-slots",
  "horizon-friends",
  "horizon-game-discovery",
+ "horizon-gameplay",
  "horizon-guest-stack",
- "horizon-hdr",
  "horizon-hooks",
  "horizon-items",
  "horizon-java-properties",
@@ -2387,25 +2386,22 @@ dependencies = [
  "horizon-shaders",
  "horizon-system",
  "horizon-telemetry",
- "horizon-theme",
  "horizon-threads",
  "horizon-world",
  "log",
- "miniz_oxide 0.8.9",
  "naga",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "png",
  "pollster",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "serde",
  "serde_json",
  "sha1",
  "sha2",
  "tempfile",
  "toml 1.1.6+spec-1.1.0",
- "unicode-bidi",
  "ureq",
  "wat",
  "wgpu",
@@ -2425,12 +2421,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "horizon-client-gameplay"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "horizon-client-lib",
+ "horizon-core",
+ "horizon-world",
+ "log",
+ "serde_json",
+]
+
+[[package]]
 name = "horizon-client-input"
 version = "0.1.0"
 dependencies = [
  "arboard",
  "horizon-client-core",
  "horizon-engine-slots",
+ "horizon-hooks",
  "horizon-mod-api-macros",
  "horizon-theme",
  "log",
@@ -2444,6 +2453,8 @@ version = "0.1.0"
 dependencies = [
  "ab_glyph",
  "bytemuck",
+ "cap-fs-ext",
+ "cap-std",
  "chrono",
  "crc32fast",
  "dunce",
@@ -2491,6 +2502,7 @@ dependencies = [
  "miniz_oxide 0.8.9",
  "mio",
  "naga",
+ "nix",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
@@ -2498,15 +2510,19 @@ dependencies = [
  "png",
  "pollster",
  "rayon",
- "rustix 1.1.5",
+ "rustix 1.1.6",
+ "same-file",
  "serde",
  "serde_json",
  "sha1",
  "sha2",
+ "shlex",
+ "smallvec",
  "tempfile",
  "unicode-bidi",
  "ureq",
  "wgpu",
+ "windows-sys 0.61.2",
  "winit",
  "xxhash-rust",
  "zip",
@@ -2558,7 +2574,7 @@ dependencies = [
  "naga",
  "png",
  "pollster",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "serde",
  "serde_json",
  "sha1",
@@ -2631,7 +2647,6 @@ dependencies = [
 name = "horizon-engine-slots"
 version = "0.1.0"
 dependencies = [
- "horizon-mod-api-gen",
  "horizon-mod-vocab",
 ]
 
@@ -2662,6 +2677,7 @@ dependencies = [
  "horizon-mod-host",
  "horizon-mod-package",
  "horizon-protocol",
+ "horizon-theme",
  "serde_json",
  "tempfile",
  "winresource",
@@ -2676,6 +2692,27 @@ dependencies = [
  "quote",
  "serde_json",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "horizon-gameplay"
+version = "0.1.0"
+dependencies = [
+ "horizon-assets",
+ "horizon-client-core",
+ "horizon-client-lib",
+ "horizon-command",
+ "horizon-core",
+ "horizon-engine-slots",
+ "horizon-items",
+ "horizon-mod-package",
+ "horizon-mod-runtime",
+ "horizon-mod-vocab",
+ "horizon-protocol",
+ "horizon-threads",
+ "horizon-world",
+ "log",
+ "serde_json",
 ]
 
 [[package]]
@@ -2771,7 +2808,6 @@ version = "0.1.0"
 dependencies = [
  "heck 0.5.0",
  "horizon-game-discovery",
- "horizon-mod-point-shape",
  "horizon-mod-source",
  "horizon-mod-surface",
  "prettyplease",
@@ -2803,7 +2839,6 @@ dependencies = [
 name = "horizon-mod-api-macros"
 version = "0.1.0"
 dependencies = [
- "horizon-mod-point-shape",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -2867,7 +2902,6 @@ dependencies = [
  "horizon-core",
  "horizon-mod-api",
  "horizon-mod-api-macros",
- "horizon-mod-point-shape",
  "horizon-mod-surface",
  "horizon-mod-vocab",
  "horizon-shader-api",
@@ -2876,7 +2910,7 @@ dependencies = [
  "minisign-verify",
  "os_pipe",
  "png",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "semver",
  "serde",
  "serde_json",
@@ -2894,37 +2928,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "horizon-mod-point-emit"
-version = "0.1.0"
-dependencies = [
- "horizon-mod-package",
- "serde",
-]
-
-[[package]]
-name = "horizon-mod-point-shape"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "horizon-mod-points"
 version = "0.1.0"
-dependencies = [
- "horizon-engine-slots",
- "horizon-mod-api",
- "horizon-mod-api-gen",
- "horizon-mod-api-macros",
- "horizon-mod-point-shape",
- "quote",
- "serde_json",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "horizon-mod-render"
@@ -2994,27 +2999,25 @@ version = "0.1.0"
 dependencies = [
  "horizon-client-core",
  "horizon-core",
- "horizon-engine-slots",
  "horizon-guest-stack",
  "horizon-java-properties",
  "horizon-mod-api",
  "horizon-mod-api-gen",
  "horizon-mod-api-macros",
  "horizon-mod-package",
- "horizon-mod-point-emit",
- "horizon-mod-points",
  "horizon-mod-runtime",
  "horizon-threads",
  "horizon-world",
  "libc",
  "log",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "serde_json",
  "sha2",
  "tempfile",
  "wasmparser 0.261.0",
  "wasmtime",
  "wat",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3036,7 +3039,14 @@ name = "horizon-modding-examples"
 version = "0.0.0"
 dependencies = [
  "horizon-mod-api",
- "horizon-mod-points",
+]
+
+[[package]]
+name = "horizon-name-tag"
+version = "0.1.0"
+dependencies = [
+ "horizon-hooks",
+ "horizon-platform",
 ]
 
 [[package]]
@@ -3060,9 +3070,11 @@ dependencies = [
  "horizon-friends",
  "horizon-game",
  "horizon-heartbeat",
+ "horizon-name-tag",
  "horizon-official-servers",
  "horizon-perf-share",
  "horizon-platform",
+ "horizon-theme",
  "log",
  "winresource",
 ]
@@ -3139,7 +3151,6 @@ dependencies = [
  "horizon-java-properties",
  "horizon-mod-api-gen",
  "horizon-mod-package",
- "horizon-mod-point-shape",
  "horizon-perf-format",
  "horizon-prepare",
  "horizon-protocol",
@@ -3205,6 +3216,8 @@ dependencies = [
  "horizon-mod-runtime",
  "horizon-threads",
  "horizon-world",
+ "idna",
+ "idna_adapter",
  "ipconfig",
  "log",
  "serde_json",
@@ -3285,6 +3298,7 @@ dependencies = [
  "horizon-core",
  "horizon-platform",
  "horizon-server-files",
+ "rustix 1.1.6",
  "serde",
  "toml 1.1.6+spec-1.1.0",
  "toml_edit 0.25.15+spec-1.1.0",
@@ -3363,11 +3377,12 @@ dependencies = [
  "horizon-assets",
  "horizon-core",
  "horizon-threads",
+ "indexmap 2.14.2",
  "libm",
  "log",
  "lz4_flex",
  "postcard",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "serde",
  "serde_json",
  "sha2",
@@ -3526,9 +3541,9 @@ checksum = "cd62e6b5e86ea8eeeb8db1de02880a6abc01a397b2ebb64b5d74ac255318f5cb"
 
 [[package]]
 name = "ignore"
-version = "0.4.34"
+version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "484be5657551d7868d67587df967fb4fcbe9d266a761cc855aaa148fda0b3cc7"
+checksum = "df0a7d5f105e76bda602bed0a44af048542d3c9af12ec35aaf16f106c6f34270"
 dependencies = [
  "crossbeam-deque",
  "globset",
@@ -4013,9 +4028,9 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lua-src"
-version = "551.0.2"
+version = "551.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d400ffef0e3d4d29287092bdc5a276d0bf468b2c69709d5bab0d469312d9f947"
+checksum = "fc850974ab58b3b4bb65ac2415a077861a1c16b087629ee01cd04ccb9c82be61"
 dependencies = [
  "cc",
 ]
@@ -4032,9 +4047,9 @@ dependencies = [
 
 [[package]]
 name = "luau0-src"
-version = "0.22.0+luau740"
+version = "0.24.1+luau748"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ea012e8a8aaff2f7b6c788fad41a60630003b6a0932bcf045f7d14952c9bd31"
+checksum = "ab2f621c6f730cd6bce953ba86144e1c3acd1e7b4f0032bfac14d31ea2c9fb34"
 dependencies = [
  "cc",
 ]
@@ -4061,6 +4076,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 
 [[package]]
+name = "maybe-dangling"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59dbb09ed53f8e4f314e353dc6c1853ae5b4c480a668a422657804a544ea9f65"
+
+[[package]]
 name = "maybe-owned"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4078,7 +4099,7 @@ version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57804b2c9b69967f1536a56f86297e367a33b19e98852ed624b84551cdbc0d90"
 dependencies = [
- "rustix 1.1.5",
+ "rustix 1.1.6",
 ]
 
 [[package]]
@@ -4167,13 +4188,14 @@ dependencies = [
 
 [[package]]
 name = "mlua"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a7ae6b65bf54b7fdd4cf5b6f44f60862350ebf3fe3779b3a9cc005e7fa14f81"
+checksum = "b9d9ed6deb2d17dbd89b71140f7fb8c6a3e5d897cd1bbc82ffaec1658bed6983"
 dependencies = [
  "bstr",
  "either",
  "libc",
+ "maybe-dangling",
  "mlua-sys",
  "num-traits",
  "parking_lot",
@@ -4182,9 +4204,9 @@ dependencies = [
 
 [[package]]
 name = "mlua-sys"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1631cda17bd6486410ab751d91f5fd4484f441589278cdad879eb3afc721a285"
+checksum = "8db86de232224cf3909104dd1a2b46eaf94f0f31e137dd15f1ff185a1e54a31f"
 dependencies = [
  "cc",
  "cfg-if",
@@ -5147,7 +5169,7 @@ dependencies = [
  "concurrent-queue",
  "hermit-abi 0.5.3",
  "pin-project-lite",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "windows-sys 0.61.2",
 ]
 
@@ -5824,9 +5846,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.1.5"
+version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891efababe418670775f199f0d233d84843c227a0949a883ce15b37c78d6629d"
+checksum = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
 dependencies = [
  "bitflags 2.13.2",
  "errno",
@@ -5842,7 +5864,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fc84bf7e9aa16c4f2c758f27412dc9841341e16aa682d9c7ac308fe3ee12056"
 dependencies = [
  "once_cell",
- "rustix 1.1.5",
+ "rustix 1.1.6",
 ]
 
 [[package]]
@@ -6508,7 +6530,7 @@ dependencies = [
  "fastrand",
  "getrandom 0.4.3",
  "once_cell",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "windows-sys 0.61.2",
 ]
 
@@ -7189,7 +7211,7 @@ dependencies = [
  "postcard",
  "pulley-interpreter",
  "rayon",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "serde",
  "serde_derive",
  "smallvec",
@@ -7288,7 +7310,7 @@ checksum = "6326d47c759c0478489a034f1282a6f516ce97594f9af785539697d03add17ec"
 dependencies = [
  "cc",
  "libc",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "wasmtime-environ",
  "wasmtime-internal-versioned-export-macros",
  "windows-sys 0.61.2",
@@ -7368,7 +7390,7 @@ checksum = "38a91b4eaddff87b1cd1074985e3713da4af2c49742d1b356b2c01670a67a078"
 dependencies = [
  "cc",
  "downcast-rs",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "scoped-tls",
  "smallvec",
  "wayland-sys",
@@ -7381,7 +7403,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3c36a0f861ad76d0901f2800b46321410d9f73f2ea88aac0650d86c32688073"
 dependencies = [
  "bitflags 2.13.2",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "wayland-backend",
  "wayland-scanner",
 ]
@@ -7403,7 +7425,7 @@ version = "0.31.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a52d18780be9b1314328a3de5f930b73d2200112e3849ca6cb11822793fb34d"
 dependencies = [
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "wayland-client",
  "xcursor",
 ]
@@ -8180,7 +8202,7 @@ dependencies = [
  "libc",
  "log",
  "os_pipe",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "thiserror 2.0.21",
  "tree_magic_mini",
  "wayland-backend",
@@ -8217,7 +8239,7 @@ dependencies = [
  "libc",
  "libloading",
  "once_cell",
- "rustix 1.1.5",
+ "rustix 1.1.6",
  "x11rb-protocol",
 ]
 

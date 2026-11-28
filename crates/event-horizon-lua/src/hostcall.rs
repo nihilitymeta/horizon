@@ -2385,13 +2385,13 @@ mod tests {
                     && !line.starts_with("menu_part.")
             })
             .collect();
-        assert_eq!(lines.len(), 749);
+        assert_eq!(lines.len(), 819);
         // The BlockPart methods: one line each, emitted or with its reason.
         let parts: Vec<&str> = coverage
             .lines()
             .filter(|line| line.starts_with("block_part."))
             .collect();
-        assert_eq!(parts.len(), 81);
+        assert_eq!(parts.len(), 84);
         assert_eq!(
             parts
                 .iter()
@@ -2410,12 +2410,12 @@ mod tests {
             )
         );
         assert!(parts.contains(&"block_part.rotate skipped: worldgen worker"));
-        // The ItemPart methods: 40 lines, 19 emitted; the nine hot ones and a block-only type skipped.
+        // The ItemPart methods: 41 lines, 19 emitted; the nine hot ones and a block-only type skipped.
         let items: Vec<&str> = coverage
             .lines()
             .filter(|line| line.starts_with("item_part."))
             .collect();
-        assert_eq!(items.len(), 40);
+        assert_eq!(items.len(), 41);
         assert_eq!(
             items
                 .iter()
@@ -2433,19 +2433,19 @@ mod tests {
                 .count(),
             9
         );
-        // The BlockEntityPart methods: 20 lines, 5 emitted; the nine hot ones, the two NBT ones and the
+        // The BlockEntityPart methods: 22 lines, 6 emitted; the nine hot ones, the two NBT ones and the
         // attachment one skipped.
         let block_entities: Vec<&str> = coverage
             .lines()
             .filter(|line| line.starts_with("block_entity_part."))
             .collect();
-        assert_eq!(block_entities.len(), 20);
+        assert_eq!(block_entities.len(), 22);
         assert_eq!(
             block_entities
                 .iter()
                 .filter(|line| line.ends_with(" emitted"))
                 .count(),
-            5
+            6
         );
         assert!(block_entities.contains(&"block_entity_part.on_chunk_unloaded emitted"));
         assert!(block_entities.contains(&"block_entity_part.block_entity_on_load emitted"));
@@ -2493,7 +2493,7 @@ mod tests {
             .filter(|line| line.ends_with(" emitted"))
             .count();
         assert_eq!(emitted, crate::generated::hooks::EMITTED.len());
-        assert!(coverage.contains("# hooks: 749, emitted: 410, skipped: 339\n"));
+        assert!(coverage.contains("# hooks: 819, emitted: 446, skipped: 373\n"));
         assert!(lines.contains(&"loot_function emitted"));
         assert!(lines.contains(&"loot_condition emitted"));
         assert!(lines.contains(&"player_command emitted"));

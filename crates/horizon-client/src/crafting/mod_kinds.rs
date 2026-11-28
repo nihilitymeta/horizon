@@ -1,4 +1,4 @@
-//! Registered serializer resolution, fatal unknown IDs and shared grid dispatch.
+//! Registered serializer resolution, fatal unknown IDs of code mods and shared grid dispatch.
 use super::*;
 use mod_api::{CraftingGrid, CraftingRecipeHandler, CraftingRecipeValue};
 use std::result::Result;
@@ -20,26 +20,48 @@ fn source_path(name: &str) -> String {
     let (namespace, path) = name.split_once(':').unwrap_or(("minecraft", name));
     format!("data/{namespace}/recipe/{path}.json")
 }
+/// What a recipe file's `type` resolves to before the file is parsed.
+/// `Debug` is for the tests' `unwrap_err`, which reads the reason a type is refused.
+#[derive(Debug)]
+pub enum Reading {
+    /// A registered reader: the file is read as this recipe type.
+    Type(String),
+    /// Nothing loaded here reads it: a carried content mod's own type.
+    Unread,
+}
 /// Resolve the file's serializer before parsing, after source conditions have run.
-pub fn recipe_type(file: &str, serializer: &str) -> Result<String, String> {
+/// A namespace code owns must have registered its serializer; a carried content
+/// mod's own stays unread.
+pub fn recipe_type(file: &str, serializer: &str) -> Result<Reading, String> {
     if super::VANILLA_RECIPE_SERIALIZERS.contains(&serializer) {
-        return Ok(if serializer.starts_with("minecraft:crafting_") {
-            "minecraft:crafting"
-        } else if serializer.starts_with("minecraft:smithing_") {
-            "minecraft:smithing"
-        } else {
-            serializer
-        }
-        .into());
+        return Ok(Reading::Type(
+            if serializer.starts_with("minecraft:crafting_") {
+                "minecraft:crafting"
+            } else if serializer.starts_with("minecraft:smithing_") {
+                "minecraft:smithing"
+            } else {
+                serializer
+            }
+            .into(),
+        ));
     }
-    mod_api::__private::parts_installation::recipe_serializer(serializer)
-        .map(|(recipe_type, _)| recipe_type)
-        .ok_or_else(|| {
-            format!(
-                "recipe {}, unregistered recipe serializer {serializer}",
-                source_path(file)
-            )
-        })
+    if let Some((recipe_type, _)) =
+        mod_api::__private::parts_installation::recipe_serializer(serializer)
+    {
+        return Ok(Reading::Type(recipe_type));
+    }
+    let (namespace, _) = serializer
+        .split_once(':')
+        .unwrap_or(("minecraft", serializer));
+    if namespace == "minecraft"
+        || mod_api::__private::installed_code_ids().any(|id| id == namespace)
+    {
+        return Err(format!(
+            "recipe {}, unregistered recipe serializer {serializer}",
+            source_path(file)
+        ));
+    }
+    Ok(Reading::Unread)
 }
 
 #[cfg(test)]
@@ -191,19 +213,22 @@ pub(crate) mod tests;
 
 impl Recipes {
     /// Lookup preserves the dimensions supplied to recipe_for, including rectangles.
+    #[allow(clippy::too_many_arguments)]
     pub fn find_with_dimensions(
         &self,
         context: &LoopContext,
+        crafter: Crafter,
         grid: &[Option<ItemStack>],
         size: usize,
         width: usize,
         height: usize,
         map_scale: &dyn Fn(i32) -> Option<u8>,
     ) -> Option<(&str, ItemStack)> {
-        let vanilla = Input::of(grid, size);
+        let vanilla = Input::of_rect(grid, size, width, height);
         if vanilla.is_none() && !self.mod_crafting {
             return None;
         }
+        let vanilla_stacks = vanilla.as_ref().map(InputStacks::from_input);
         let input = self
             .mod_crafting
             .then(|| snapshot_dimensions(grid, size, width, height))
@@ -213,6 +238,10 @@ impl Recipes {
             context,
             map_scale,
         };
+        // A mod that chooses among the matches (`crafting_recipe_choice`) sees them all;
+        // otherwise the first match is made, as `RecipeManager.getRecipeFor` does.
+        let choosing = crate::native_client_hooks::crafting_recipe_choice_listens();
+        let mut matches: Vec<(&str, ItemStack)> = Vec::new();
         for (id, recipe) in &self.crafting {
             let result = match recipe {
                 Recipe::Mod(recipe) => input
@@ -220,14 +249,67 @@ impl Recipes {
                     .and_then(|input| recipe.assemble_owned(input.clone())),
                 _ => vanilla
                     .as_ref()
-                    .and_then(|input| Self::assemble_if_matches(&ctx, input, recipe)),
+                    .zip(vanilla_stacks.as_ref())
+                    .and_then(|(input, stacks)| {
+                        Self::assemble_if_matches(&ctx, input, stacks.as_slice(), recipe)
+                    }),
             };
-            if let Some(output) = result {
-                return output.map(|output| (id.as_str(), output));
+            match result {
+                Some(Some(output)) if choosing => matches.push((id.as_str(), output)),
+                Some(output) if matches.is_empty() => {
+                    return output.map(|output| (id.as_str(), output));
+                }
+                _ => {}
             }
         }
-        None
+        if matches.len() < 2 {
+            return matches.pop();
+        }
+        let cells: Vec<Option<ItemStack>> = (0..height)
+            .flat_map(|y| (0..width).map(move |x| y * size + x))
+            .map(|i| grid.get(i).cloned().flatten())
+            .collect();
+        let recipes: Vec<String> = matches.iter().map(|(id, _)| qualified(id)).collect();
+        let results: Vec<ItemStack> = matches.iter().map(|(_, output)| output.clone()).collect();
+        let mut choice = 0;
+        crate::native_client_hooks::crafting_recipe_choice(
+            context,
+            crafter,
+            &cells,
+            width,
+            &recipes,
+            &results,
+            &mut choice,
+        );
+        let chosen = usize::try_from(choice)
+            .ok()
+            .filter(|&i| i < matches.len())
+            .unwrap_or(0);
+        Some(matches.swap_remove(chosen))
     }
+}
+
+/// The game's `crafting_recipe_choice` entry point: `choice` arrives as 0, the first match, and
+/// the mods listening may set it to another of `recipes`. Asked by `find_with_dimensions` only
+/// when the ingredients match more than one recipe; `player` and `crafter` say who crafts
+/// (`Crafter`).
+#[inline(never)]
+pub fn native_crafting_recipe_choice(call: CraftingRecipeChoiceCall<'_>) {
+    mod_api::dispatch_crafting_recipe_choice(
+        &horizon_client_render::api_context::LoopReader(call.context).context(),
+        call.values,
+    );
+}
+
+/// A `crafting_recipe_choice` invocation: the loop context of the side that matches and the
+/// hook's declared arguments.
+#[doc(hidden)]
+pub struct CraftingRecipeChoiceCall<'a> {
+    pub context: &'a LoopContext,
+    pub values: mod_api::__private::CraftingRecipeChoiceCall<'a>,
+}
+
+impl Recipes {
     /// Remainders for a rectangular host lookup, placed back on the padded grid.
     pub fn mod_remainders_rect(
         &self,
@@ -271,8 +353,27 @@ impl Recipes {
     }
 }
 
+/// The requested names that are recipe serializers of another type, each with the type it
+/// reads as (`minecraft:crafting_shaped` is a `minecraft:crafting` recipe): a sync selects by
+/// type, so such a name selects nothing.
+pub fn serializers_asked_as_types(requested: &[String]) -> Vec<(&str, String)> {
+    requested
+        .iter()
+        .filter_map(|name| match recipe_type("sync", name) {
+            Ok(Reading::Type(kind)) if kind != *name => Some((name.as_str(), kind)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Recipe types selected for sync; registered crafting serializers share crafting.
 pub fn sync_recipe_types(requested: &[String]) -> Vec<String> {
+    for (serializer, kind) in serializers_asked_as_types(requested) {
+        log::warn!(
+            "datapack_sync asked for {serializer}, a recipe serializer: recipe types select \
+             recipes, so it selects none; ask for {kind}"
+        );
+    }
     let mut types = requested.to_vec();
     if !mod_api::__private::parts_installation::crafting_recipe_kinds().is_empty() {
         types.push("minecraft:crafting".into());
@@ -282,9 +383,21 @@ pub fn sync_recipe_types(requested: &[String]) -> Vec<String> {
     types
 }
 /// Resolve file serializers to recipe types at the content transport boundary.
+/// A file nothing here reads is not sent.
 pub fn file_has_type(file: &Value, types: &[String]) -> bool {
+    matches!(reading(file), Some(Reading::Type(kind)) if types.contains(&kind))
+}
+/// Whether any reader here takes the file's `type`. A file none takes is dropped by the
+/// loader, so it takes no display number either.
+pub fn readable(file: &Value) -> bool {
+    !matches!(reading(file), Some(Reading::Unread))
+}
+fn reading(file: &Value) -> Option<Reading> {
     file["type"]
         .as_str()
         .and_then(|id| recipe_type("sync", id).ok())
-        .is_some_and(|kind| types.contains(&kind))
 }
+
+#[cfg(test)]
+#[path = "recipe_choice_tests.rs"]
+mod recipe_choice_tests;

@@ -93,21 +93,41 @@ fn base_for(
 
 /// Installs the game program at `path` (or the one inside an archive there) as a new version on
 /// the game files of `requested` (default: [`base_for`]), prepared from another version where it
-/// can be, and selects it. Importing the same program again selects the version it made before.
+/// can be, and uses it for the selected Horizon instance. Importing the same program again uses
+/// the version it made before.
 pub fn import(path: &Path, requested: Option<&str>) -> Result<String, String> {
+    import_for(path, requested, &crate::instances::selected())
+}
+
+pub fn import_for(
+    path: &Path,
+    requested: Option<&str>,
+    instance: &crate::instances::Instance,
+) -> Result<String, String> {
     let file = path.file_name().map_or_else(
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
     );
-    import_as(path, requested, &file, true)
+    import_into(path, requested, &file, instance, true)
 }
 
 /// [`import`], with `from` as what the Versions page says it was made from (a GitHub source names
-/// its release, `game_sources`), selected only when `select`. Everything else is [`import`]'s.
+/// its release, `game_sources`), used for the selected instance only when `select`. Everything
+/// else is [`import`]'s.
 pub fn import_as(
     path: &Path,
     requested: Option<&str>,
     from: &str,
+    select: bool,
+) -> Result<String, String> {
+    import_into(path, requested, from, &crate::instances::selected(), select)
+}
+
+fn import_into(
+    path: &Path,
+    requested: Option<&str>,
+    from: &str,
+    instance: &crate::instances::Instance,
     select: bool,
 ) -> Result<String, String> {
     let file = path.file_name().map_or_else(
@@ -118,7 +138,10 @@ pub fn import_as(
     if !is_game(&program) {
         return Err(not_a_game(&file));
     }
-    let selected = backend::Settings::load().selected;
+    let selected = instance
+        .resolve_version(None)
+        .ok()
+        .filter(|tag| instance.version.is_some() || !crate::developer_install::is_developer(tag));
     let base = base_for(&backend::installed(), requested, selected.as_deref())?;
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let tag = install_in(&backend::version_dir(""), &base, &program, from, &date)?;
@@ -131,10 +154,7 @@ pub fn import_as(
     }
     backend::reuse_prepared_for(&tag);
     if select {
-        // Read again: the window may have saved other settings during the copy.
-        let mut settings = backend::Settings::load();
-        settings.selected = Some(tag.clone());
-        settings.save()?;
+        crate::instances::use_version_for(&instance.id, &tag)?;
     }
     Ok(tag)
 }

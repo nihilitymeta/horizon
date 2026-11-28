@@ -110,7 +110,32 @@ const POWERFUL_NAME_PARTS: &[&str] = &[
 /// Owners whose every member is powerful.
 const POWERFUL_OWNERS: &[&str] = &["Registrar"];
 /// Owner and name part: a method of the owner whose name contains the part is powerful.
-const POWERFUL_OWNER_NAMES: &[(&str, &str)] = &[("MerchantRef", "offer")];
+const POWERFUL_OWNER_NAMES: &[(&str, &str)] = &[
+    ("MerchantRef", "offer"),
+    // Writes upstream added in the 2026-11-28 sync, denied until a power decides them (reviewed by
+    // the lead): an explosion or its fuse (bypasses the explosion cap), the world's blocks, biomes
+    // and maps, items a shear drops (bypasses the spawn cap), a mob's attack and conversion, a
+    // player's resource pack, advancements, statistics, profile, list name, dialogs and view distance.
+    ("EntityRef", "detonate"),
+    ("EntityRef", "set_fuse"),
+    ("LevelRef", "fill_biome"),
+    ("LevelRef", "generate_tree"),
+    ("LevelRef", "new_map"),
+    ("LevelRef", "set_map_locked"),
+    ("MobRef", "shear"),
+    ("MobRef", "zombify"),
+    ("MobRef", "attack"),
+    ("PlayerRef", "send_resource_pack"),
+    ("PlayerRef", "set_advancements"),
+    ("PlayerRef", "set_statistics"),
+    ("PlayerRef", "set_profile_property"),
+    ("PlayerRef", "set_list_name"),
+    ("PlayerRef", "show_dialog_id"),
+    ("PlayerRef", "clear_dialog"),
+    ("PlayerRef", "set_view_distance"),
+    ("PlayerRef", "refresh"),
+    ("PlayerRef", "crafting_changed"),
+];
 /// Parameter types that make a write powerful: NBT, a transaction, an item stack, a permission level.
 const POWERFUL_ARG_TYPES: &[&str] = &[
     "Compound",

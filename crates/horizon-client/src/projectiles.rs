@@ -445,6 +445,11 @@ pub trait ProjectileWorld {
     fn empty(&self, _p: [i32; 3]) -> bool {
         true
     }
+    /// The check that opens `AbstractArrow.tick`: `at` lies inside one of the
+    /// collision boxes of the block it is in.
+    fn inside_collision(&self, _at: Vec3) -> bool {
+        false
+    }
     /// `Level.loadedAndEntityCanStandOn(p, projectile)` with the projectile's
     /// feet at `entity_y`: the top face of the block's collision shape is
     /// full (`Block.isFaceFull`), as on a top slab, not only a full cube.
@@ -697,6 +702,12 @@ impl Projectile {
             self.yaw += rotation;
             self.previous_yaw += rotation;
             self.needs_sync = true;
+        }
+        // `ShulkerBullet.tick` turns the bullet (`rotateTowardsMovement(0.5F)`)
+        // after `hitTargetOrDeflectSelf`, so a deflection in its tick is
+        // followed by the turn, from the reversed motion.
+        if !by_attack && matches!(self.kind, ProjectileKind::ShulkerBullet { .. }) {
+            self.rotate_towards_movement(0.5);
         }
         (self.owner, self.owner_uuid, self.guest) = owner;
         self.owner_vehicle = None;
@@ -1040,7 +1051,9 @@ impl Projectile {
             self.velocity.z + source_velocity.z,
         );
     }
-    /// AbstractHurtingProjectile: movement along the direction at the acceleration power.
+    /// `AbstractHurtingProjectile(type, x, y, z, direction, level)`: movement
+    /// along the direction at the acceleration power. `snapTo` keeps the new
+    /// entity's rotation (0, 0); `rotateTowardsMovement` turns it from there.
     pub fn fireball(
         kind: ProjectileKind,
         position: Vec3,
@@ -1052,8 +1065,17 @@ impl Projectile {
             .sqrt()
             .max(1.0e-9);
         p.velocity = Vec3::new(dir[0] / len * 0.1, dir[1] / len * 0.1, dir[2] / len * 0.1);
-        p.update_rotation();
         p
+    }
+    /// `AbstractHurtingProjectile(type, mob, direction, level)` ends with
+    /// `setRot(mob.getYRot(), mob.getXRot())`: a mob's fireball starts with
+    /// its shooter's angles (`setRot` takes both % 360, `setXRot` clamps the
+    /// pitch to +-90), not its motion's. `yRotO`/`xRotO` stay as `snapTo` left
+    /// them.
+    pub fn shot_by(mut self, yaw: f32, pitch: f32) -> Self {
+        self.yaw = yaw % 360.0;
+        self.pitch = (pitch % 360.0).clamp(-90.0, 90.0);
+        self
     }
     /// `ThrownEgg`'s item: what its hatchlings' variant comes from.
     pub fn set_egg_item(&mut self, stack: &crate::items::ItemStack) {
@@ -1084,13 +1106,15 @@ impl Projectile {
         stack.count = 1;
         self.item = Some(stack);
     }
+    /// The angles along the motion as `Projectile.shoot` sets them:
+    /// `(float)(Mth.atan2(..) * Mth.RAD_TO_DEG)`, the table `Mth.atan2` and the
+    /// float `180 / pi`, not the exact ones.
     fn update_rotation(&mut self) {
+        use horizon_core::geometry::trig::atan2_degrees;
         let v = self.velocity;
         let sd = (v.x * v.x + v.z * v.z).sqrt();
-        use horizon_core::geometry::trig::atan2;
-        // Projectile.shoot uses Mth.atan2 and widened float degree constants.
-        self.yaw = (atan2(v.x, v.z) * 180.0 / f64::from(std::f32::consts::PI)) as f32;
-        self.pitch = (atan2(v.y, sd) * 180.0 / f64::from(std::f32::consts::PI)) as f32;
+        self.yaw = atan2_degrees(v.x, v.z);
+        self.pitch = atan2_degrees(v.y, sd);
         // `Projectile.shoot` ends with `yRotO = getYRot(); xRotO = getXRot()`:
         // a freshly shot projectile interpolates from the rotation it was
         // aimed along, not from where it was created.
@@ -1123,6 +1147,15 @@ impl Projectile {
         }
         self.pitch = self.previous_pitch + t * (x_rot - self.previous_pitch);
         self.yaw = self.previous_yaw + t * (y_rot - self.previous_yaw);
+    }
+    /// `AbstractHurtingProjectile`: fireballs, wither skulls, dragon fireballs
+    /// and wind charges ease towards their motion with `rotateTowardsMovement`.
+    fn turns_like_hurting_projectile(&self) -> bool {
+        self.is_fireball()
+            || matches!(
+                self.kind,
+                ProjectileKind::WindCharge | ProjectileKind::BreezeWindCharge
+            )
     }
     /// The kinds whose tick turns them with `Projectile.updateRotation`: a
     /// `ThrowableProjectile` (the thrown kinds and the experience bottle) and
@@ -1362,7 +1395,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if Some(*who) == self.collision_owner() && !self.left_owner {
+            if !self.target_allowed(*who) {
                 continue;
             }
             if let Some(at) = b.inflate(Vec3::new(margin, margin, margin)).clip(from, end) {
@@ -1390,7 +1423,9 @@ impl Projectile {
             return (false, Hit::Block { pos, at, face });
         }
         self.position = to;
-        self.update_rotation();
+        // `ProjectileUtil.rotateTowardsMovement(this, 0.5F)` ends every tick,
+        // after the move and after a hit (`deflect` turns a deflected bullet).
+        self.rotate_towards_movement(0.5);
         if let Some(b) = target {
             let (dir, steps) = match self.kind {
                 ProjectileKind::ShulkerBullet { dir, steps, .. } => (dir, steps),
@@ -1679,6 +1714,25 @@ impl Projectile {
     fn hit_margin(&self) -> f64 {
         f64::from(((self.age as i32 - 2) as f32 / 20.0).clamp(0.0, 0.3))
     }
+    /// `Projectile.canHitEntity`: the shooter and the vehicle it rides are
+    /// refused until the projectile has left them. `AbstractArrow.canHitEntity`
+    /// adds one rule, `Player.canHarmPlayer` between a player shooter and a
+    /// player target; a projectile that is not an arrow has no such filter, so
+    /// it can hit an ally of its shooter.
+    pub fn can_hit_entity(
+        &self,
+        who: Who,
+        can_harm_player: impl FnOnce(Option<Who>, Who) -> bool,
+    ) -> bool {
+        if !self.left_owner && (Some(who) == self.owner || Some(who) == self.collision_owner()) {
+            return false;
+        }
+        self.arrow.is_none() || can_harm_player(self.owner, who)
+    }
+    /// `Projectile.canHitEntity` alone, for a non-arrow projectile's search.
+    fn target_allowed(&self, who: Who) -> bool {
+        self.can_hit_entity(who, |_, _| true)
+    }
     fn tick_inner(&mut self, w: &impl ProjectileWorld, impact: bool) -> (bool, Hit) {
         // `Entity.setOldPosAndRot` (the previous position and rotation the
         // renderer interpolates from), kept across the `impact` flag's arrival
@@ -1743,7 +1797,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if Some(*who) == self.collision_owner() && !self.left_owner {
+            if !self.target_allowed(*who) {
                 continue;
             }
             let inflated = b.inflate(Vec3::new(margin, margin, margin));
@@ -1764,6 +1818,13 @@ impl Projectile {
             self.left_owner = owner_box
                 .is_none_or(|b| !b.inflate(Vec3::new(1.0, 1.0, 1.0)).contains(self.position));
         }
+        // `AbstractHurtingProjectile.tick` turns the projectile
+        // (`rotateTowardsMovement(0.2F)`) before it handles a hit, so a hit
+        // that leaves it alive (a breeze's deflection, a dragon fireball's own
+        // dragon) still has the turn.
+        if impact && self.turns_like_hurting_projectile() && (best.is_some() || block.is_some()) {
+            self.rotate_towards_movement(0.2);
+        }
         // DragonFireball.onHit does nothing for its own owner (`ownedBy`): the
         // selected hit is not replaced by what lies behind it, nothing happens,
         // and the fireball keeps its motion. AbstractHurtingProjectile.tick
@@ -1776,7 +1837,8 @@ impl Projectile {
         {
             self.position = at;
             self.touching_water = w.in_water(self.bounds());
-            let alive = self.position.y >= w.below_world_y() && self.age < 1200;
+            // No age limit: `DragonFireball` lives until it hits or leaves the world.
+            let alive = self.position.y >= w.below_world_y();
             return (alive, Hit::None);
         }
         // LlamaSpit never discards on an entity: `onHitEntity` only hurts, so
@@ -1824,16 +1886,12 @@ impl Projectile {
                 self.velocity.y * drag - self.get_gravity(),
                 self.velocity.z * drag,
             );
-            return (
-                self.position.y >= w.below_world_y() && self.age < 6000,
-                spit_hit,
-            );
+            return (self.position.y >= w.below_world_y(), spit_hit);
         }
         self.position = to;
-        // Fireballs ease towards the motion (`ProjectileUtil.rotateTowardsMovement`);
-        // wind charges still face their motion at once; the thrown kinds turned
-        // in `tick` above.
-        if self.is_fireball() {
+        // `AbstractHurtingProjectile.tick` (fireballs and wind charges) eases towards the motion
+        // (`ProjectileUtil.rotateTowardsMovement`); the thrown kinds turned in `tick` above.
+        if self.turns_like_hurting_projectile() {
             self.rotate_towards_movement(0.2);
         } else if !self.turns_with_update_rotation() {
             self.update_rotation();
@@ -1842,8 +1900,13 @@ impl Projectile {
         // it touches now, and their currents push it.
         self.touching_water = w.in_water(self.bounds());
         self.velocity = w.pushed_by_currents(self.bounds(), self.velocity);
-        let alive = self.position.y >= w.below_world_y()
-            && self.age < if self.is_fireball() { 1200 } else { 6000 };
+        // No kind counts its age: a projectile that meets nothing lives as long
+        // as its chunk does. `Entity.onBelowWorld` is the only removal here.
+        // Vanilla's `AbstractHurtingProjectile.tick` also discards when the
+        // owner is removed or the chunk is unloaded; `ProjectileWorld` offers no
+        // owner-alive or chunk-loaded answer to build that branch from, so the
+        // divergence is intended until #21117 carries it.
+        let alive = self.position.y >= w.below_world_y();
         (alive, Hit::None)
     }
     /// AbstractArrow.onHitEntity damage: ceil(speed * base) plus crit bonus.
@@ -2759,6 +2822,70 @@ mod tests {
         assert_eq!(p.velocity.x.to_bits(), 0x3fef_ae14_8000_0000);
         assert!((p.velocity.y + 0.06).abs() < 1e-9);
     }
+    /// Vanilla's projectile classes count no age: a fireball summoned with
+    /// `acceleration_power:0`, a `NoGravity` thrown item and a llama spit that
+    /// meet nothing live as long as their chunk does (#20710). `Entity.onBelowWorld`
+    /// is still a removal.
+    #[test]
+    fn a_projectile_that_meets_nothing_has_no_lifetime() {
+        let w = Empty(vec![]);
+        for kind in [
+            ProjectileKind::LargeFireball { power: 0 },
+            ProjectileKind::DragonFireball,
+            ProjectileKind::WitherSkull { dangerous: false },
+            ProjectileKind::WindCharge,
+            ProjectileKind::EnderPearl,
+            ProjectileKind::Snowball,
+            ProjectileKind::LlamaSpit,
+        ] {
+            let label = format!("{kind:?}");
+            let mut p = Projectile::new(kind, Vec3::new(0.5, 100.0, 0.5), None);
+            // Nothing brings it down and nothing is on its way: the motionless
+            // projectile of `/summon ... {NoGravity:1b,acceleration_power:0d}`.
+            p.no_gravity = true;
+            p.acceleration = 0.0;
+            for _ in 0..6001 {
+                let age = p.age;
+                assert!(p.tick(&w).0, "{label} discarded at age {age}");
+            }
+            assert_eq!(p.age, 6001, "{label}");
+        }
+        let mut below =
+            Projectile::new(ProjectileKind::Snowball, Vec3::new(0.5, -129.0, 0.5), None);
+        assert!(!below.tick(&w).0, "onBelowWorld still discards");
+    }
+    /// The DragonFireball owner-hit early return: a fireball whose ray meets
+    /// its own dragon does nothing and stays there (#20710). This is the one
+    /// branch whose age bound (1200) the change removed, so it gets its own
+    /// stay-alive: vanilla's `DragonFireball` never counts its age either.
+    /// After the early return the fireball sits on its dragon's inflated box,
+    /// where a ray has no entry to hit, so every tick re-pins one arrival: the
+    /// `control_a_dragon_fireball_stops_at_its_owner_and_flies_on` control above
+    /// already shows what one arrival does (stop, no hit, motion kept).
+    #[test]
+    fn a_dragon_fireball_parked_on_its_owner_has_no_lifetime() {
+        let boxed = |x: f64| Aabb::new(Vec3::new(x, 100.0, 0.0), Vec3::new(x + 0.2, 101.0, 1.0));
+        let mut p = Projectile::new(
+            ProjectileKind::DragonFireball,
+            Vec3::new(0.0, 100.5, 0.5),
+            Some(Who::Mob(7)),
+        );
+        p.left_owner = true;
+        // No wall behind: the fireball eases its motion every tick, and a wall
+        // would take a legitimate block impact sooner or later. `Empty` clips
+        // nothing, so the ray only ever meets its own dragon's box.
+        let w = Empty(vec![(Who::Mob(7), boxed(0.4))]);
+        for _ in 0..1201 {
+            p.position = Vec3::new(0.0, 100.5, 0.5);
+            p.velocity = Vec3::new(0.5, 0.0, 0.0);
+            let age = p.age;
+            assert!(
+                p.tick(&w).0,
+                "the fireball arriving at its owner discarded at age {age}"
+            );
+        }
+        assert_eq!(p.age, 1201);
+    }
     #[test]
     fn arrow_damage_is_speed_times_base() {
         let mut p = Projectile::new(
@@ -2819,6 +2946,33 @@ mod tests {
         p.tick(&w);
         // Fresh Java 26.3: (0.1 + 0.1) * (double) 0.95f.
         assert_eq!(p.velocity.x, 0.189_999_997_615_814_2);
+    }
+
+    /// `AbstractHurtingProjectile(type, x, y, z, direction, level)` leaves the
+    /// rotation `snapTo` kept, (0, 0); the mob's constructor then
+    /// `setRot(mob.getYRot(), mob.getXRot())`. The first tick eases a fifth of
+    /// the way from there (`rotateTowardsMovement(0.2F)`) towards the motion,
+    /// which along +x is yRot atan2(0, x) + 90 = 90 and xRot atan2(x, 0) - 90 = 0.
+    #[test]
+    fn a_mobs_fireball_starts_with_its_shooters_angles() {
+        let at = Vec3::new(0.0, 100.0, 0.0);
+        let plain = Projectile::fireball(ProjectileKind::SmallFireball, at, None, [1.0, 0.0, -1.0]);
+        assert_eq!((plain.yaw, plain.pitch), (0.0, 0.0));
+        // setRot takes both % 360; setXRot clamps the pitch to +-90.
+        let shot = |yaw, pitch| {
+            Projectile::fireball(ProjectileKind::SmallFireball, at, None, [1.0, 0.0, 0.0])
+                .shot_by(yaw, pitch)
+        };
+        let p = shot(-400.0, 30.0);
+        assert_eq!((p.yaw, p.pitch), (-40.0, 30.0));
+        let p = shot(10.0, 450.0);
+        assert_eq!((p.yaw, p.pitch), (10.0, 90.0));
+        let mut p = shot(360.0, 30.0);
+        p.tick(&Empty(vec![]));
+        // 0 + 0.2 * (90 - 0), and 30 + 0.2 * (x - 30) where x is
+        // (float)(pi / 2 * 57.2957763671875) - 90 = -7.6e-6 (the bytecode
+        // multiplies by the folded RAD_TO_DEG), in floats.
+        assert_eq!((p.yaw, p.pitch), (18.0, 23.999_998));
     }
 
     /// `Fireball.setItem` with `Fireball.defineSynchedData`'s default and
@@ -3307,6 +3461,97 @@ mod arrow_color_tests {
             .potion_extra
             .push(("custom_color".into(), Tag::Int(0x8012_3456u32 as i32)));
         assert_eq!(color(&plain), 0x8012_3456u32 as i32);
+    }
+}
+
+#[cfg(test)]
+mod can_hit_entity_tests {
+    use super::*;
+
+    /// A world with one target and no block: the tick's hit search alone.
+    struct OneTarget {
+        targets: Vec<(Who, Aabb)>,
+    }
+    impl ProjectileWorld for OneTarget {
+        fn clip(&self, _: Vec3, _: Vec3) -> Option<(Vec3, [i32; 3], [i32; 3])> {
+            None
+        }
+        fn in_water(&self, _: Aabb) -> bool {
+            false
+        }
+        fn targets(&self) -> &[(Who, Aabb)] {
+            &self.targets
+        }
+    }
+    fn at(x: f64) -> Aabb {
+        Aabb::new(Vec3::new(x, 100.0, 0.0), Vec3::new(x + 0.2, 101.0, 1.0))
+    }
+    fn projectile(kind: ProjectileKind, owner: Option<Who>) -> Projectile {
+        let mut p = Projectile::new(kind, Vec3::new(0.0, 100.5, 0.5), owner);
+        p.velocity = Vec3::new(1.0, 0.0, 0.0);
+        p.age = 5;
+        p
+    }
+    fn arrow(owner: Option<Who>) -> Projectile {
+        projectile(
+            ProjectileKind::Arrow {
+                base_damage: 2.0,
+                critical: false,
+                effect: None,
+            },
+            owner,
+        )
+    }
+    #[test]
+    fn the_shooter_is_refused_until_the_projectile_has_left() {
+        let mut p = projectile(ProjectileKind::Snowball, Some(Who::Player));
+        assert!(
+            !p.can_hit_entity(Who::Player, |_, _| true),
+            "the shooter is not hit"
+        );
+        p.left_owner = true;
+        assert!(
+            p.can_hit_entity(Who::Player, |_, _| true),
+            "the shooter is hit once the projectile has left"
+        );
+    }
+    #[test]
+    fn an_arrow_refuses_a_player_its_owner_cannot_harm() {
+        // A guest shooter (`Who::Mob(5)`) against the host player: the owner
+        // skip does not apply, so only the arrow's player rule decides.
+        let p = arrow(Some(Who::Mob(5)));
+        assert!(
+            !p.can_hit_entity(Who::Player, |_, _| false),
+            "friendly fire off: a player target is refused"
+        );
+        assert!(
+            p.can_hit_entity(Who::Player, |_, _| true),
+            "friendly fire on: the player is a target"
+        );
+        // The rule only applies between players; it never refuses a mob.
+        assert!(
+            p.can_hit_entity(Who::Mob(7), |_, who| who != Who::Player),
+            "a mob target is not refused"
+        );
+    }
+    #[test]
+    fn a_non_arrow_projectile_hits_an_ally_of_its_shooter() {
+        // `Projectile.canHitEntity` has no team rule: a snowball flies into a
+        // teammate of the player who threw it.
+        let world = OneTarget {
+            targets: vec![(Who::Mob(7), at(0.4))],
+        };
+        let mut p = projectile(ProjectileKind::Snowball, Some(Who::Player));
+        assert!(
+            matches!(
+                p.tick(&world).1,
+                Hit::Entity {
+                    who: Who::Mob(7),
+                    ..
+                }
+            ),
+            "the ally is hit"
+        );
     }
 }
 crate::impl_joined!(Projectile);

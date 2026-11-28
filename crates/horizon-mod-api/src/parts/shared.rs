@@ -70,6 +70,7 @@ pub struct PartRegistrar {
     pub(crate) spawn_placements: Vec<SpawnPlacementDeclaration>,
     /// The entity Part state declarations, for the game to check their entity types.
     pub(crate) entity_part_states: Vec<mod_vocab::__private::EntityPartStateDeclaration>,
+    pub(crate) entity_tick_each: Vec<Option<Box<str>>>,
     pub(crate) registry_keys: Rc<RefCell<horizon_mod_runtime::registry_keys::Requests>>,
     pub(crate) effects: OnceLock<horizon_mod_runtime::registry_keys::Effects>,
     pub(crate) controllers: Vec<ControllerInfo>,
@@ -79,6 +80,7 @@ pub struct PartRegistrar {
     pub(crate) dimension_shape: fn(&crate::DimensionSettings) -> bool,
     pub(crate) chunk_generators: Vec<ChunkGeneratorInfo>,
     pub(crate) biome_sources: Vec<BiomeSourceInfo>,
+    pub(crate) density_function_types: Vec<DensityFunctionTypeInfo>,
     pub(crate) refused: Vec<String>,
     /// The Part state keys this mod declared, with their types' Wire layouts and names.
     pub(crate) part_states: HashMap<(&'static str, &'static str), (u64, &'static str)>,
@@ -115,6 +117,7 @@ impl PartRegistrar {
             general_entity_types: Vec::new(),
             spawn_placements: Vec::new(),
             entity_part_states: Vec::new(),
+            entity_tick_each: Vec::new(),
             registry_keys: Default::default(),
             effects: OnceLock::new(),
             controllers: Vec::new(),
@@ -124,6 +127,7 @@ impl PartRegistrar {
             dimension_shape: |_| false,
             chunk_generators: Vec::new(),
             biome_sources: Vec::new(),
+            density_function_types: Vec::new(),
             refused: Vec::new(),
             part_states: HashMap::new(),
         }
@@ -298,6 +302,7 @@ pub(crate) fn install_registrar(
         entity_attribute_modifications: registrar.entity_attribute_modifications,
         spawn_placements: registrar.spawn_placements,
         entity_part_states: registrar.entity_part_states,
+        entity_tick_each: registrar.entity_tick_each,
         resolved_block_entity_types: OnceLock::new(),
         registry_keys: Rc::try_unwrap(registrar.registry_keys)
             .unwrap_or_else(|_| unreachable!("registration scope has ended"))
@@ -315,6 +320,7 @@ pub(crate) fn install_registrar(
         dimensions: registrar.dimensions,
         chunk_generators: registrar.chunk_generators,
         biome_sources: registrar.biome_sources,
+        density_function_types: registrar.density_function_types,
         warnings: registrar.warnings,
     };
     mod_vocab::__private::parts_installation::install(installed);

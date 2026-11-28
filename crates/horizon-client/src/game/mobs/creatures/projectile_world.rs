@@ -70,6 +70,23 @@ impl ProjectileWorld for ProjWorld<'_, '_> {
     fn empty(&self, p: [i32; 3]) -> bool {
         self.w.facts.is_air(self.w.world.block(p[0], p[1], p[2]))
     }
+    fn inside_collision(&self, at: Vec3) -> bool {
+        let p = BlockPos::containing(at);
+        let state = self.w.world.block(p.x, p.y, p.z);
+        if self.w.facts.is_air(state) {
+            return false;
+        }
+        let mut scene = SceneCollisions {
+            world: self.w.world,
+            binding: self.w.collision,
+            subject: None,
+        };
+        let origin = Vec3::new(f64::from(p.x), f64::from(p.y), f64::from(p.z));
+        self.w
+            .collision
+            .collision_shape(&mut scene, state, [p.x, p.y, p.z])
+            .is_ok_and(|s| s.boxes().iter().any(|b| b.move_by(origin).contains(at)))
+    }
     /// `WebBlock.entityInside` and `PowderSnowBlock.entityInside`.
     fn stuck_speed(&self, p: [i32; 3]) -> Option<Vec3> {
         horizon_client::projectiles::stuck_speed_of(
@@ -93,5 +110,62 @@ impl ProjectileWorld for ProjWorld<'_, '_> {
             BlockPos::new(p[0], p[1], p[2]),
             entity_y,
         )
+    }
+}
+
+impl Game<'_> {
+    /// `Entity.getTeam` of a player a projectile can name: the host under
+    /// `Who::Player`, a guest under its entity id. `None` for a mob, which
+    /// `AbstractArrow.canHitEntity` does not team-check.
+    fn player_team_of(&self, who: Who) -> Option<Option<&horizon_client::scoreboard::Team>> {
+        match who {
+            Who::Player => Some(self.player_team()),
+            Who::Mob(id) => self
+                .lan
+                .as_ref()
+                .and_then(|h| h.hub.guests.iter().find(|g| g.entity_id as u32 == id))
+                .map(|g| self.score.board.players_team(&g.name)),
+        }
+    }
+}
+
+impl horizon_client::arrows::CanHarmPlayer for Game<'_> {
+    /// `owner.canHarmPlayer(target)`, which a server player answers as
+    /// `ServerPlayer.canHarmPlayer`: the `pvp` game rule is on and the
+    /// shooter's team lets it hurt the target. Only an arrow whose owner and
+    /// target are both players reads the rule; a mob on the shooter's team is
+    /// still a target.
+    fn can_harm_player(&self, owner: Option<Who>, who: Who) -> bool {
+        let Some(owner) = owner else {
+            return true;
+        };
+        let (Some(owner_team), Some(target_team)) =
+            (self.player_team_of(owner), self.player_team_of(who))
+        else {
+            return true;
+        };
+        self.player_may_harm(owner_team, target_team)
+    }
+}
+
+#[cfg(test)]
+mod can_harm_player_tests {
+    use super::*;
+    use crate::game::game_tests::tests::server_game;
+    use horizon_client::arrows::CanHarmPlayer;
+    use horizon_client::gamerules::Value;
+
+    /// `ServerPlayer.canHarmPlayer` reads the `pvp` game rule: with it off, a
+    /// player's arrow passes through a player (here the shooter itself, once
+    /// the arrow has left it).
+    #[test]
+    #[ignore = "daily"]
+    fn an_arrow_between_players_follows_the_pvp_rule() {
+        let mut resources = None;
+        let mut game = server_game(&mut resources);
+        assert!(game.ui.rules.set("pvp", Value::Bool(false)));
+        assert!(!game.can_harm_player(Some(Who::Player), Who::Player));
+        assert!(game.ui.rules.set("pvp", Value::Bool(true)));
+        assert!(game.can_harm_player(Some(Who::Player), Who::Player));
     }
 }
